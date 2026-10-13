@@ -8,6 +8,7 @@ use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use inkframe_audio::{Clip, SAMPLE_RATE};
 use inkframe_core::{Color, Document, Element, Point, Shape, Style, Transform};
 use inkframe_export::{ExportError, ExportFormat, ExportSettings, export, ffmpeg};
 
@@ -33,15 +34,20 @@ fn scratch_dir(name: &str) -> PathBuf {
 }
 
 fn settings(format: ExportFormat, output: PathBuf, transparent: bool) -> ExportSettings {
-    ExportSettings { format, output, frames: 0..=2, scale: 1.0, transparent }
+    ExportSettings { format, output, frames: 0..=2, scale: 1.0, transparent, project_dir: None }
 }
 
 /// Asks ffprobe for one stream property, e.g. `pix_fmt`.
 fn probe(file: &Path, entry: &str) -> String {
+    probe_stream(file, "v:0", entry)
+}
+
+/// Asks ffprobe for one property of a given stream, e.g. `a:0` for audio.
+fn probe_stream(file: &Path, stream: &str, entry: &str) -> String {
     let ffprobe =
         ffmpeg::locate().unwrap().with_file_name(format!("ffprobe{}", std::env::consts::EXE_SUFFIX));
     let out = Command::new(ffprobe)
-        .args(["-v", "error", "-select_streams", "v:0", "-show_entries"])
+        .args(["-v", "error", "-select_streams", stream, "-show_entries"])
         .arg(format!("stream={entry}"))
         .args(["-of", "default=noprint_wrappers=1:nokey=1"])
         .arg(file)
@@ -147,5 +153,81 @@ fn hevc_with_alpha_encodes() {
     .unwrap();
 
     assert_eq!(probe(&out, "codec_name"), "hevc");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// The sample animation plus a one-second tone as its soundtrack.
+fn doc_with_audio(dir: &Path) -> Document {
+    let tone = Clip {
+        samples: (0..SAMPLE_RATE as usize)
+            .flat_map(|i| {
+                let s = (i as f32 / SAMPLE_RATE as f32 * 440.0 * std::f32::consts::TAU).sin() * 0.5;
+                [s, s]
+            })
+            .collect(),
+    };
+    tone.write_wav(&dir.join("tone.wav")).unwrap();
+    let mut doc = sample_doc();
+    doc.add_audio(&dir.join("tone.wav"), Some(dir), 0);
+    doc
+}
+
+#[test]
+fn mp4_gets_aac_audio() {
+    if !ffmpeg_available() {
+        return;
+    }
+    let dir = scratch_dir("h264-audio");
+    let out = dir.join("out.mp4");
+    let doc = doc_with_audio(&dir);
+    let mut settings = settings(ExportFormat::H264, out.clone(), false);
+    settings.project_dir = Some(dir.clone());
+    export(&doc, &settings, |_| ControlFlow::Continue(())).unwrap();
+
+    assert_eq!(probe_stream(&out, "a:0", "codec_name"), "aac");
+    assert_eq!(probe_stream(&out, "a:0", "sample_rate"), "48000");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn prores_gets_uncompressed_audio() {
+    if !ffmpeg_available() {
+        return;
+    }
+    let dir = scratch_dir("prores-audio");
+    let out = dir.join("out.mov");
+    let doc = doc_with_audio(&dir);
+    let mut settings = settings(ExportFormat::ProRes4444, out.clone(), true);
+    settings.project_dir = Some(dir.clone());
+    export(&doc, &settings, |_| ControlFlow::Continue(())).unwrap();
+
+    assert_eq!(probe_stream(&out, "a:0", "codec_name"), "pcm_s24le");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn png_sequences_get_a_wav_alongside() {
+    let dir = scratch_dir("png-audio");
+    let doc = doc_with_audio(&dir);
+    let mut settings = settings(ExportFormat::PngSequence, dir.join("shot.png"), true);
+    settings.project_dir = Some(dir.clone());
+    export(&doc, &settings, |_| ControlFlow::Continue(())).unwrap();
+
+    // Three frames at 24 fps is an eighth of a second of sound.
+    let wav = inkframe_audio::decode(&dir.join("shot.wav")).unwrap();
+    assert_eq!(wav.frames(), SAMPLE_RATE as usize / 8);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn missing_audio_fails_the_export_clearly() {
+    let dir = scratch_dir("missing-audio");
+    let mut doc = sample_doc();
+    doc.add_audio(&dir.join("not-here.wav"), Some(&dir), 0);
+    let mut settings = settings(ExportFormat::PngSequence, dir.join("shot.png"), true);
+    settings.project_dir = Some(dir.clone());
+
+    let result = export(&doc, &settings, |_| ControlFlow::Continue(()));
+    assert!(matches!(result, Err(ExportError::Audio(ref message)) if message.contains("not-here.wav")));
     std::fs::remove_dir_all(dir).unwrap();
 }

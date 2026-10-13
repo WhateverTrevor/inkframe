@@ -1,0 +1,14 @@
+[package]
+name = "inkframe-audio"
+description = "Decodes, resamples and mixes audio for Inkframe's timeline and exports."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+inkframe-core.workspace = true
+hound.workspace = true
+rubato.workspace = true
+symphonia.workspace = true
+thiserror.workspace = true

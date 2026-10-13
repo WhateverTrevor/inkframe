@@ -9,5 +9,6 @@ rust-version.workspace = true
 [dependencies]
 inkframe-core.workspace = true
 inkframe-render.workspace = true
+inkframe-audio.workspace = true
 thiserror.workspace = true
 tiny-skia.workspace = true

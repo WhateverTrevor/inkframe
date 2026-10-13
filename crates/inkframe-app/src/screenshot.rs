@@ -73,7 +73,10 @@ impl AutoScreenshot {
     }
 
     /// Call once per UI frame.
-    pub fn update(&mut self, ctx: &egui::Context) {
+    ///
+    /// While `busy` (audio still decoding, say), capture waits, so the
+    /// screenshot shows the finished state rather than a loading message.
+    pub fn update(&mut self, ctx: &egui::Context, busy: bool) {
         let image = ctx.input(|i| {
             i.events.iter().find_map(|event| match event {
                 egui::Event::Screenshot { image, .. } => Some(image.clone()),
@@ -90,6 +93,10 @@ impl AutoScreenshot {
         }
 
         if self.requested {
+            return;
+        }
+        if busy {
+            ctx.request_repaint();
             return;
         }
         if self.frames_until_capture == 0 {

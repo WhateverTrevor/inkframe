@@ -13,8 +13,9 @@
 use std::collections::HashSet;
 
 use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2};
-use inkframe_core::{AnyChannel, Easing, Layer, LayerId, Property};
+use inkframe_core::{AnyChannel, AudioId, Easing, Layer, LayerId, Property, TimelineId};
 
+use crate::audio_engine::AudioEngine;
 use crate::editor::Editor;
 
 const NAME_WIDTH: f32 = 200.0;
@@ -33,6 +34,7 @@ const CURRENT_KEY: Color32 = Color32::from_rgb(0x2f, 0x9b, 0xff);
 /// Animate shows tweens in a violet-blue; we follow suit so they read the same.
 const TWEEN: Color32 = Color32::from_rgb(0x8a, 0x7c, 0xd8);
 const HOLD: Color32 = Color32::from_gray(150);
+const AUDIO: Color32 = Color32::from_rgb(0x4c, 0xc2, 0x8a);
 
 /// One line of the grid: a layer's summary row, or one of its properties.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +45,8 @@ struct Row {
 }
 
 enum Drag {
+    /// Dragging an audio track's waveform slides where the sound starts.
+    Audio { id: AudioId, grab: i64, original_start: u32 },
     /// Dragging along the ruler or empty cells moves the playhead.
     Scrub,
     /// Dragging a key slides it to another frame. On a summary row this
@@ -149,6 +153,8 @@ pub struct TimelineView {
     expanded: HashSet<LayerId>,
     /// The row that was right-clicked, which the context menu acts on.
     context_row: Option<Row>,
+    /// Or the audio row that was right-clicked.
+    context_audio: Option<AudioId>,
     /// Where the grid was drawn last frame. Tests use it to find cells.
     #[cfg(test)]
     grid_rect: Option<Rect>,
@@ -168,10 +174,10 @@ impl TimelineView {
         }
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) {
         transport_bar(ui, editor);
         ui.add_space(2.0);
-        self.grid(ui, editor);
+        self.grid(ui, editor, audio);
     }
 
     /// The rows to show, top to bottom. Layers run from the front-most down,
@@ -187,7 +193,7 @@ impl TimelineView {
         rows
     }
 
-    fn grid(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    fn grid(&mut self, ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) {
         let (response, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         let rect = response.rect;
         #[cfg(test)]
@@ -198,18 +204,35 @@ impl TimelineView {
         // Forget expanded layers that have since been deleted.
         self.expanded.retain(|id| editor.doc.layer(*id).is_some());
         let rows = self.rows(editor);
+        // Audio rows sit below the layers. Sound belongs to the main
+        // timeline, so they're hidden while editing inside a symbol.
+        let audio_rows: Vec<AudioId> = if editor.timeline() == TimelineId::Main {
+            editor.doc.audio.iter().map(|t| t.id).collect()
+        } else {
+            Vec::new()
+        };
 
-        self.update_scroll(ui, &response, editor, rect, rows.len());
+        self.update_scroll(ui, &response, editor, rect, rows.len() + audio_rows.len());
         let layout = Layout::new(rect, self.scroll);
 
-        self.handle_input(ui, &response, editor, &layout, &rows);
+        self.handle_input(ui, &response, editor, &layout, &rows, &audio_rows);
         self.update_cursor(ui, &response, editor, &layout, &rows);
-        context_menu(&response, editor, self.context_row);
+        context_menu(&response, editor, self.context_row, self.context_audio);
 
         painter.rect_filled(rect, 0.0, ui.visuals().extreme_bg_color);
         paint_frames(&painter.with_clip_rect(layout.frames), editor, &layout, &rows);
         paint_ruler(&painter.with_clip_rect(layout.ruler), ui, editor, &layout);
         self.paint_names(&painter.with_clip_rect(layout.names), ui, editor, &layout, &rows);
+        paint_audio_rows(
+            &painter.with_clip_rect(layout.frames),
+            &painter.with_clip_rect(layout.names),
+            ui,
+            editor,
+            audio,
+            &layout,
+            rows.len(),
+            &audio_rows,
+        );
 
         // Header for the names column, in the corner left of the ruler.
         let corner = Rect::from_min_max(rect.min, pos2(layout.names.right(), layout.ruler.bottom()));
@@ -259,10 +282,17 @@ impl TimelineView {
         editor: &mut Editor,
         layout: &Layout,
         rows: &[Row],
+        audio_rows: &[AudioId],
     ) {
         let last_frame = editor.last_frame();
         let clamp_frame = |f: i64| f.clamp(0, last_frame as i64) as u32;
         let row_under = |y: f32| layout.row_at(y).and_then(|row| rows.get(row).copied());
+        let audio_under = |y: f32| {
+            layout
+                .row_at(y)
+                .and_then(|row| row.checked_sub(rows.len()))
+                .and_then(|i| audio_rows.get(i).copied())
+        };
 
         // Right-click moves the playhead and selection to the clicked cell
         // first, so the context menu acts on what was clicked.
@@ -272,6 +302,7 @@ impl TimelineView {
         {
             editor.set_frame(clamp_frame(layout.frame_at(p.x)));
             self.context_row = row_under(p.y);
+            self.context_audio = audio_under(p.y);
             if let Some(row) = self.context_row {
                 select_row(editor, row);
             }
@@ -279,13 +310,22 @@ impl TimelineView {
 
         let pressed = response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed());
         if pressed && let Some(p) = response.interact_pointer_pos() {
-            self.drag = self.press(editor, layout, rows, p);
+            self.drag = match audio_under(p.y).filter(|_| !layout.ruler.contains(p)) {
+                Some(id) => press_audio(editor, layout, id, p),
+                None => self.press(editor, layout, rows, p),
+            };
         }
 
         if let (Some(drag), Some(p)) = (&mut self.drag, response.interact_pointer_pos()) {
             let frame = clamp_frame(layout.frame_at(p.x));
             match drag {
                 Drag::Scrub => editor.set_frame(frame),
+                Drag::Audio { id, grab, original_start } => {
+                    let moved = layout.frame_at(p.x) - *grab;
+                    if let Some(track) = editor.doc.audio_track_mut(*id) {
+                        track.start = (*original_start as i64 + moved).max(0) as u32;
+                    }
+                }
                 Drag::SpanEdge { layer, edge } => {
                     let boundary = layout.boundary_at(p.x).clamp(0, last_frame as i64 + 1) as u32;
                     if let Some(layer) = editor.doc.layer_mut(*layer) {
@@ -483,6 +523,25 @@ impl TimelineView {
     }
 }
 
+/// A press on an audio row. In the names column, the speaker icon mutes the
+/// track; on the waveform, it moves the playhead there and starts dragging
+/// the sound to a new start frame.
+fn press_audio(editor: &mut Editor, layout: &Layout, id: AudioId, p: Pos2) -> Option<Drag> {
+    let row = layout.row_at(p.y)?;
+    if layout.names.contains(p) {
+        if layout.eye_rect(row).contains(p)
+            && let Some(track) = editor.doc.audio_track_mut(id)
+        {
+            track.muted = !track.muted;
+        }
+        return None;
+    }
+    let frame = layout.frame_at(p.x);
+    editor.set_frame(frame.clamp(0, editor.last_frame() as i64) as u32);
+    let original_start = editor.doc.audio_track(id)?.start;
+    Some(Drag::Audio { id, grab: frame, original_start })
+}
+
 /// Selects a row's layer, and for a property row, points the inspector's
 /// easing graph at that property.
 fn select_row(editor: &mut Editor, row: Row) {
@@ -559,8 +618,22 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor) {
     });
 }
 
-fn context_menu(response: &egui::Response, editor: &mut Editor, row: Option<Row>) {
+fn context_menu(response: &egui::Response, editor: &mut Editor, row: Option<Row>, audio: Option<AudioId>) {
     response.context_menu(|ui| {
+        if let Some(id) = audio {
+            let Some(track) = editor.doc.audio_track_mut(id) else { return };
+            ui.weak(&track.name);
+            let mute = if track.muted { "Unmute" } else { "Mute" };
+            if ui.button(mute).clicked() {
+                track.muted = !track.muted;
+                ui.close();
+            }
+            if ui.button("Remove Audio").clicked() {
+                editor.doc.remove_audio(id);
+                ui.close();
+            }
+            return;
+        }
         let frame = editor.frame;
         let Some((row, layer)) = row.and_then(|r| Some((r, editor.doc.layer(r.layer)?))) else {
             ui.label("Right-click a layer row to edit its keyframes");
@@ -815,13 +888,97 @@ fn disclosure_triangle(painter: &egui::Painter, center: Pos2, expanded: bool, co
     painter.add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
 }
 
+/// Paints the audio rows: name and mute toggle on the left, the waveform on
+/// the right, starting at each track's start frame.
+#[allow(clippy::too_many_arguments)]
+fn paint_audio_rows(
+    frames: &egui::Painter,
+    names: &egui::Painter,
+    ui: &egui::Ui,
+    editor: &Editor,
+    audio: &mut AudioEngine,
+    layout: &Layout,
+    first_row: usize,
+    tracks: &[AudioId],
+) {
+    let project_dir = editor.project_dir();
+    let fps = editor.doc.frame_rate.fps();
+    let text = ui.visuals().text_color();
+    let faint = text.gamma_multiply(0.3);
+
+    for (i, id) in tracks.iter().enumerate() {
+        let Some(track) = editor.doc.audio_track(*id) else { continue };
+        let index = first_row + i;
+        let row = layout.row_rect(index, layout.frames);
+        let name_row = layout.row_rect(index, layout.names);
+        let color = if track.muted { AUDIO.gamma_multiply(0.35) } else { AUDIO };
+
+        // Names column: speaker (click to mute) and the track's name.
+        let speaker = if track.muted { "🔇" } else { "🔊" };
+        names.text(
+            layout.eye_rect(index).center(),
+            Align2::CENTER_CENTER,
+            speaker,
+            FontId::proportional(13.0),
+            if track.muted { faint } else { text },
+        );
+        let name_pos = pos2(layout.lock_rect(index).right() + 6.0, name_row.center().y);
+        names.text(
+            name_pos,
+            Align2::LEFT_CENTER,
+            &track.name,
+            FontId::proportional(13.0),
+            if track.muted { faint } else { text },
+        );
+        names.hline(name_row.x_range(), name_row.bottom(), (1.0, Color32::from_black_alpha(60)));
+
+        // Frames: one bar per animation frame, as tall as that frame is loud.
+        frames.rect_filled(row.shrink2(vec2(0.0, 2.0)), 0.0, color.gamma_multiply(0.12));
+        if let Some(problem) = audio.problem(track, project_dir.as_deref()) {
+            let at = pos2(layout.frame_x(track.start) + 4.0, row.center().y);
+            frames.text(
+                at,
+                Align2::LEFT_CENTER,
+                format!("Can't play: {problem}"),
+                FontId::proportional(11.0),
+                ui.visuals().error_fg_color,
+            );
+        } else if let Some(peaks) = audio.peaks(track, project_dir.as_deref(), fps) {
+            // Scale each waveform to its own loudest moment. For timing, the
+            // shape of the sound is what matters, and a quietly recorded
+            // line of dialogue would otherwise be a flat, unreadable strip.
+            let loudest = peaks.iter().copied().fold(0.0f32, f32::max).max(1e-6);
+            let visible = visible_frame_range(layout, editor.duration() + TRAILING_FRAMES);
+            for frame in visible.filter(|f| *f >= track.start) {
+                let Some(&peak) = peaks.get((frame - track.start) as usize) else { break };
+                let height = (peak / loudest * (ROW_HEIGHT - 6.0)).max(1.0);
+                let x = layout.frame_center_x(frame);
+                frames.vline(
+                    x,
+                    row.center().y - height / 2.0..=row.center().y + height / 2.0,
+                    (FRAME_WIDTH * 0.6, color),
+                );
+            }
+        } else if audio.is_loading(track, project_dir.as_deref()) {
+            let at = pos2(layout.frame_x(track.start) + 4.0, row.center().y);
+            frames.text(at, Align2::LEFT_CENTER, "Loading…", FontId::proportional(11.0), faint);
+        }
+        frames.hline(row.x_range(), row.bottom(), (1.0, Color32::from_black_alpha(60)));
+    }
+
+    // The waveforms are painted after the grid, so put the playhead back on top.
+    if !tracks.is_empty() {
+        frames.vline(layout.frame_center_x(editor.frame), layout.frames.y_range(), (1.0, PLAYHEAD));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use egui_kittest::Harness;
     use inkframe_core::{Document, Point, Transform};
 
-    type State = (TimelineView, Editor);
+    type State = (TimelineView, Editor, AudioEngine);
 
     /// A document with one layer keyed on frame 0, plus an opacity key on
     /// frame 10 and a position key on frame 20.
@@ -833,8 +990,8 @@ mod tests {
         track.position.set(20, Point::new(100.0, 0.0));
 
         let mut h = Harness::new_ui_state(
-            |ui, (timeline, editor): &mut State| timeline.show(ui, editor),
-            (TimelineView::default(), editor),
+            |ui, (timeline, editor, audio): &mut State| timeline.show(ui, editor, audio),
+            (TimelineView::default(), editor, AudioEngine::without_output()),
         );
         h.set_size(vec2(1000.0, 300.0));
         h.run();
@@ -901,10 +1058,22 @@ mod tests {
     }
 
     #[test]
+    fn dragging_audio_moves_where_it_starts() {
+        let (mut h, _) = harness();
+        let id = h.state_mut().1.doc.add_audio(std::path::Path::new("/nowhere/voice.wav"), None, 4);
+        h.run();
+        // The audio row sits below the single layer row.
+        let (from, to) = (cell(&h, 1, 6), cell(&h, 1, 16));
+        drag(&mut h, from, to);
+
+        assert_eq!(h.state().1.doc.audio_track(id).unwrap().start, 14);
+    }
+
+    #[test]
     fn expanding_a_layer_shows_its_properties() {
         let (mut h, _) = harness();
         expand(&mut h);
-        let (timeline, editor) = h.state();
+        let (timeline, editor, _) = h.state();
         let rows = timeline.rows(editor);
         assert_eq!(rows.len(), 5);
         assert_eq!(rows[4].property, Some(Property::Opacity));

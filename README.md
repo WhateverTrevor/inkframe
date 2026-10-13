@@ -28,6 +28,10 @@ planned (the code is already cross-platform and CI builds it on Windows).
   right where it sits (even rotated or scaled), with the rest of the scene
   faded around it; a breadcrumb bar shows where you are. Symbols can contain
   other symbols.
+- **Audio:** import WAV, MP3, AAC/M4A, FLAC, Ogg or AIFF files, see their
+  waveforms in the timeline, slide them to the right frame, and hear them
+  in sync while playing, or a frame at a time while scrubbing (for lip
+  sync). Exports include the mixed sound.
 - **Export** with or without transparency:
 
   | Format | Alpha | Use it for |
@@ -72,6 +76,7 @@ If ffmpeg is somewhere unusual, point Inkframe at it with the
 | Step frames | `,` and `.` (or ← →), `Home` / `End` |
 | Pan / zoom | Scroll or Space-drag to pan, pinch or ⌘-scroll to zoom, `⌘0` to fit |
 | Symbols | Select a layer and press `F8` (Modify ▸ Convert to Symbol). Use **Place** in the Library to add more instances; set each instance's playback (Loop, Play Once, Single Frame) and first frame in the properties panel. Double-click an instance (or **Edit** in the Library) to change the symbol; `Esc` or the breadcrumb bar takes you back out |
+| Audio | File › Import Audio adds a sound at the playhead. Drag its waveform to re-time it; click the speaker to mute. Volume and start frame are in the properties panel's Audio section |
 | Export | `⌘E` |
 
 Shortcuts follow Adobe Animate where possible. On Windows, use Ctrl in
@@ -83,6 +88,7 @@ place of ⌘.
 crates/
   inkframe-core/    document model, keyframes, easing, undo (no UI)
   inkframe-render/  draws documents to pixels (tiny-skia)
+  inkframe-audio/   decodes, resamples and mixes sound files
   inkframe-export/  PNG sequences and ffmpeg video encoding
   inkframe-app/     the desktop editor (egui)
 ```
@@ -95,7 +101,6 @@ development workflow.
 
 Roughly in priority order:
 
-- Audio tracks for lip-sync and timing
 - GPU stage preview for very large scenes
 - Windows installer and signed macOS app bundle
 

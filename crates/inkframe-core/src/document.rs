@@ -3,6 +3,7 @@ use std::path::Path as FsPath;
 
 use serde::{Deserialize, Serialize};
 
+use crate::audio::AudioTrack;
 use crate::color::Color;
 use crate::geometry::{Point, Rect};
 use crate::shape::{Shape, Style};
@@ -21,7 +22,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 4;
+pub const FORMAT_VERSION: u32 = 5;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -40,9 +41,14 @@ pub struct Document {
     /// The library: reusable symbols that layers can hold instances of.
     #[serde(default)]
     pub symbols: Vec<Symbol>,
+    /// Sound files laid against the main timeline.
+    #[serde(default)]
+    pub audio: Vec<AudioTrack>,
     pub(crate) next_layer_id: u64,
     #[serde(default = "first_id")]
     pub(crate) next_symbol_id: u64,
+    #[serde(default = "first_id")]
+    pub(crate) next_audio_id: u64,
 }
 
 /// A stable identifier for a layer that survives reordering and undo.
@@ -160,8 +166,10 @@ impl Default for Document {
             background: Color::WHITE,
             layers: Vec::new(),
             symbols: Vec::new(),
+            audio: Vec::new(),
             next_layer_id: 1,
             next_symbol_id: 1,
+            next_audio_id: 1,
         }
     }
 }
@@ -411,6 +419,8 @@ impl Document {
         self.next_layer_id = self.next_layer_id.max(max_layer_id + 1);
         let max_symbol_id = self.symbols.iter().map(|s| s.id.0).max().unwrap_or(0);
         self.next_symbol_id = self.next_symbol_id.max(max_symbol_id + 1);
+        let max_audio_id = self.audio.iter().map(|a| a.id.0).max().unwrap_or(0);
+        self.next_audio_id = self.next_audio_id.max(max_audio_id + 1);
 
         if self
             .symbols

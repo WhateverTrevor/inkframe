@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use egui::{Key, Modifiers};
 use inkframe_core::{Document, SymbolId, TimelineId};
 
+use crate::audio_engine::AudioEngine;
 use crate::editor::{Editor, Tool};
 use crate::export_dialog::ExportDialog;
 use crate::library::LibraryView;
@@ -19,6 +20,7 @@ use crate::{inspector, shortcuts, toolbar};
 enum Command {
     New,
     Open,
+    ImportAudio,
     Save,
     SaveAs,
     Export,
@@ -61,6 +63,7 @@ pub struct InkframeApp {
     timeline: TimelineView,
     export: ExportDialog,
     library: LibraryView,
+    audio: AudioEngine,
     /// The window title we last set, so we only send changes.
     title: String,
     /// Set once the user has confirmed quitting with unsaved changes.
@@ -86,6 +89,7 @@ impl InkframeApp {
             timeline: TimelineView::default(),
             export: ExportDialog::default(),
             library: LibraryView::default(),
+            audio: AudioEngine::default(),
             title: String::new(),
             allow_close: false,
             screenshot: AutoScreenshot::from_env(),
@@ -110,6 +114,7 @@ impl InkframeApp {
                 }
             }
             Command::Open => self.open(),
+            Command::ImportAudio => self.import_audio(),
             Command::Save => {
                 self.save();
             }
@@ -276,6 +281,7 @@ impl InkframeApp {
             ui.menu_button("File", |ui| {
                 item(ui, "New", Some(shortcuts::NEW), Command::New, true);
                 item(ui, "Open…", Some(shortcuts::OPEN), Command::Open, true);
+                item(ui, "Import Audio…", None, Command::ImportAudio, true);
                 ui.separator();
                 item(ui, "Save", Some(shortcuts::SAVE), Command::Save, true);
                 item(ui, "Save As…", Some(shortcuts::SAVE_AS), Command::SaveAs, true);
@@ -388,6 +394,17 @@ impl InkframeApp {
         }
     }
 
+    fn import_audio(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("Import audio")
+            .add_filter("Audio", &["wav", "mp3", "m4a", "aac", "flac", "ogg", "aif", "aiff", "caf"])
+            .pick_file()
+        else {
+            return;
+        };
+        self.editor.import_audio(&path);
+    }
+
     /// Saves to the current file, asking for a location if there isn't one.
     /// Returns whether the document was saved.
     fn save(&mut self) -> bool {
@@ -481,7 +498,7 @@ impl eframe::App for InkframeApp {
             .resizable(true)
             .default_size(230.0)
             .min_size(140.0)
-            .show(ui, |ui| self.timeline.show(ui, &mut self.editor));
+            .show(ui, |ui| self.timeline.show(ui, &mut self.editor, &mut self.audio));
         egui::Panel::left("tools")
             .resizable(false)
             .exact_size(60.0)
@@ -491,6 +508,12 @@ impl eframe::App for InkframeApp {
                 inspector::show(ui, &mut self.editor);
                 ui.add_space(8.0);
                 self.library.show(ui, &mut self.editor);
+                ui.add_space(8.0);
+                if let Some(inspector::AudioAction::Import) =
+                    inspector::audio_section(ui, &mut self.editor, &mut self.audio)
+                {
+                    self.import_audio();
+                }
             });
         });
         egui::CentralPanel::no_frame().show(ui, |ui| {
@@ -501,10 +524,11 @@ impl eframe::App for InkframeApp {
         });
 
         let name = self.editor.display_name();
-        self.export.show(&ctx, &self.editor.doc, &name);
+        self.export.show(&ctx, &self.editor.doc, &name, self.editor.project_dir());
 
         let dt = ctx.input(|i| i.stable_dt) as f64;
-        self.editor.advance_playback(dt);
+        let project_dir = self.editor.project_dir();
+        self.audio.sync(&ctx, &mut self.editor, project_dir.as_deref(), dt);
         if self.editor.playback.playing {
             ctx.request_repaint();
         }
@@ -522,7 +546,7 @@ impl eframe::App for InkframeApp {
         self.update_title(&ctx);
         self.handle_close_request(&ctx);
         if let Some(screenshot) = &mut self.screenshot {
-            screenshot.update(&ctx);
+            screenshot.update(&ctx, self.audio.is_busy());
         }
     }
 }

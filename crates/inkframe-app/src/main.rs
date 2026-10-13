@@ -3,6 +3,7 @@
 //! Usage: `inkframe [file.inkf]`
 
 mod app;
+mod audio_engine;
 mod convert;
 mod editor;
 mod export_dialog;

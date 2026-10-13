@@ -15,6 +15,7 @@ mod png_sequence;
 use std::ops::{ControlFlow, RangeInclusive};
 use std::path::PathBuf;
 
+use inkframe_audio::{Clip, sample_frame};
 use inkframe_core::Document;
 use inkframe_render::{RenderOptions, render_frame};
 use tiny_skia::Pixmap;
@@ -106,6 +107,9 @@ pub struct ExportSettings {
     /// Leave the background transparent. Ignored by formats without alpha,
     /// which always get the document's background color.
     pub transparent: bool,
+    /// The folder the project file is in, for finding audio files that were
+    /// saved with paths relative to it.
+    pub project_dir: Option<PathBuf>,
 }
 
 impl ExportSettings {
@@ -146,6 +150,8 @@ pub enum ExportError {
     Io(#[from] std::io::Error),
     #[error("couldn't encode PNG: {0}")]
     Png(String),
+    #[error("couldn't use an audio file: {0}")]
+    Audio(String),
     #[error("export cancelled")]
     Cancelled,
 }
@@ -167,11 +173,35 @@ pub fn export(
         return Err(ExportError::Unavailable(settings.format.label()));
     }
 
+    let audio = soundtrack(doc, settings)?;
     let renderer = FrameRenderer::new(doc, settings);
     match settings.format {
-        ExportFormat::PngSequence => png_sequence::write(&renderer, settings, on_progress),
-        _ => ffmpeg::encode(&renderer, settings, on_progress),
+        ExportFormat::PngSequence => png_sequence::write(&renderer, settings, audio.as_ref(), on_progress),
+        _ => ffmpeg::encode(&renderer, settings, audio.as_ref(), on_progress),
     }
+}
+
+/// The mixed audio for the exported frame range, or `None` if there's
+/// nothing to hear.
+///
+/// A file that can't be read fails the export rather than being skipped:
+/// a final render quietly missing its dialogue is worse than an error
+/// message.
+fn soundtrack(doc: &Document, settings: &ExportSettings) -> Result<Option<Clip>, ExportError> {
+    if doc.audio.iter().all(|t| t.muted) {
+        return Ok(None);
+    }
+    let (mix, errors) = inkframe_audio::mix_document(doc, settings.project_dir.as_deref());
+    if let Some((path, error)) = errors.into_iter().next() {
+        return Err(ExportError::Audio(format!("{}: {error}", path.display())));
+    }
+    Ok(mix.map(|clip| {
+        let fps = doc.frame_rate.fps();
+        let channels = inkframe_audio::CHANNELS as usize;
+        let start = sample_frame(*settings.frames.start(), fps) * channels;
+        let end = (sample_frame(settings.frames.end() + 1, fps) * channels).min(clip.samples.len());
+        Clip { samples: clip.samples[start.min(end)..end].to_vec() }
+    }))
 }
 
 /// Renders frames for an export with fixed settings.

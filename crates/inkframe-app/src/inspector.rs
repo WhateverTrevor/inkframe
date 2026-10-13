@@ -6,6 +6,7 @@ use inkframe_core::{
     Color, Easing, FrameRate, Layer, LayerId, Playback, Property, Shape, Stroke, Style, SymbolId, Tween,
 };
 
+use crate::audio_engine::AudioEngine;
 use crate::convert::color_button;
 use crate::editor::Editor;
 
@@ -415,4 +416,73 @@ fn document_section(ui: &mut egui::Ui, editor: &mut Editor) {
     });
     // Shortening the animation can strand the playhead past the end.
     editor.set_frame(editor.frame);
+}
+
+/// The document's audio tracks: when each starts, how loud it is, and
+/// whether it plays at all. Sound files are added with File › Import Audio.
+pub fn audio_section(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) -> Option<AudioAction> {
+    let mut action = None;
+    let header = format!("Audio ({})", editor.doc.audio.len());
+    egui::CollapsingHeader::new(header).id_salt("audio").default_open(!editor.doc.audio.is_empty()).show(
+        ui,
+        |ui| {
+            if let Some(error) = audio.output_error() {
+                ui.colored_label(ui.visuals().warn_fg_color, format!("No sound output: {error}"));
+            }
+            ui.checkbox(&mut audio.scrub, "Scrub audio")
+                .on_hover_text("Play each frame's sound as you move the playhead, for lip sync");
+
+            let last_frame = editor.doc.last_frame();
+            let mut remove = None;
+            for track in &mut editor.doc.audio {
+                ui.push_id(track.id, |ui| {
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.add(egui::TextEdit::singleline(&mut track.name).desired_width(150.0));
+                        if ui.small_button("🗑").on_hover_text("Remove this audio").clicked() {
+                            remove = Some(track.id);
+                        }
+                    });
+                    egui::Grid::new("audio_track").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+                        ui.label("Starts at");
+                        let mut shown = track.start + 1;
+                        if ui
+                            .add(DragValue::new(&mut shown).range(1..=last_frame + 1).prefix("frame "))
+                            .changed()
+                        {
+                            track.start = shown - 1;
+                        }
+                        ui.end_row();
+
+                        ui.label("Volume");
+                        let mut percent = track.volume * 100.0;
+                        if ui.add(egui::Slider::new(&mut percent, 0.0..=200.0).suffix("%")).changed() {
+                            track.volume = percent / 100.0;
+                        }
+                        ui.end_row();
+
+                        ui.label("");
+                        ui.checkbox(&mut track.muted, "Mute");
+                        ui.end_row();
+                    });
+                    ui.weak(track.path.display().to_string());
+                });
+            }
+            if let Some(id) = remove {
+                editor.doc.remove_audio(id);
+            }
+
+            ui.add_space(4.0);
+            if ui.button("Import Audio…").clicked() {
+                action = Some(AudioAction::Import);
+            }
+        },
+    );
+    action
+}
+
+/// Something the audio section asks the app to do, because it needs a
+/// file dialog.
+pub enum AudioAction {
+    Import,
 }

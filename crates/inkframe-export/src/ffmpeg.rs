@@ -19,6 +19,8 @@ use std::thread::JoinHandle;
 
 use inkframe_core::FrameRate;
 
+use inkframe_audio::Clip;
+
 use crate::{ExportError, ExportFormat, ExportSettings, FrameRenderer, Progress};
 
 /// Finds the ffmpeg executable.
@@ -53,13 +55,33 @@ pub fn locate() -> Option<PathBuf> {
 pub(crate) fn encode(
     renderer: &FrameRenderer,
     settings: &ExportSettings,
+    audio: Option<&Clip>,
     mut on_progress: impl FnMut(Progress) -> ControlFlow<()>,
 ) -> Result<(), ExportError> {
     let ffmpeg = locate().ok_or(ExportError::FfmpegNotFound)?;
     let (width, height) = renderer.size();
     let transparent = settings.transparent_output();
-    let args =
-        build_args(settings.format, width, height, renderer.doc.frame_rate, transparent, &settings.output);
+
+    // ffmpeg reads the soundtrack from a temporary WAV file alongside the
+    // frames on stdin. The guard deletes it however the export ends.
+    let soundtrack = match audio {
+        Some(clip) => {
+            let file = TempFile::new("wav");
+            clip.write_wav(&file.0).map_err(|e| ExportError::Audio(e.to_string()))?;
+            Some(file)
+        }
+        None => None,
+    };
+    let audio_path = soundtrack.as_ref().map(|f| f.0.as_path());
+    let args = build_args(
+        settings.format,
+        width,
+        height,
+        renderer.doc.frame_rate,
+        transparent,
+        audio_path,
+        &settings.output,
+    );
 
     let mut encoder = Encoder::spawn(&ffmpeg, &args)?;
     let frames_total = settings.frames.end() - settings.frames.start() + 1;
@@ -117,6 +139,7 @@ pub(crate) fn build_args(
     height: u32,
     rate: FrameRate,
     transparent: bool,
+    audio: Option<&Path>,
     output: &Path,
 ) -> Vec<OsString> {
     let mut args: Vec<OsString> = Vec::new();
@@ -130,6 +153,12 @@ pub(crate) fn build_args(
     // Passing the exact fraction keeps 23.976 as 24000/1001, not 23.976.
     push(&["-framerate", &format!("{}/{}", rate.numerator, rate.denominator)]);
     push(&["-i", "-"]);
+    if let Some(audio) = audio {
+        args.extend(["-i".into(), audio.as_os_str().to_owned()]);
+        // Video from the pipe (input 0), sound from the file (input 1).
+        args.extend(["-map", "0:v", "-map", "1:a"].map(OsString::from));
+    }
+    let mut push = |items: &[&str]| args.extend(items.iter().map(OsString::from));
 
     // RGB → YUV conversion needs to know which color matrix to use. ffmpeg's
     // default is BT.601 (standard definition), which makes colors shift
@@ -188,8 +217,41 @@ pub(crate) fn build_args(
         ExportFormat::PngSequence => unreachable!("PNG sequences don't go through ffmpeg"),
     }
 
+    if audio.is_some() {
+        match format {
+            // Uncompressed 24-bit audio is what editors expect alongside
+            // ProRes masters.
+            ExportFormat::ProRes4444 | ExportFormat::ProRes4444Xq | ExportFormat::ProRes422Hq => {
+                push(&["-c:a", "pcm_s24le"]);
+            }
+            // AAC is what MP4 players and Apple devices play.
+            _ => push(&["-c:a", "aac", "-b:a", "320k"]),
+        }
+        // Rounding can leave the audio a few samples longer than the
+        // video; end the file with the video.
+        push(&["-shortest"]);
+    }
+
     args.push(output.as_os_str().to_owned());
     args
+}
+
+/// A temporary file that's deleted when this goes out of scope.
+struct TempFile(PathBuf);
+
+impl TempFile {
+    fn new(extension: &str) -> Self {
+        let nanos =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+        let name = format!("inkframe-{}-{nanos}.{extension}", std::process::id());
+        Self(std::env::temp_dir().join(name))
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
 }
 
 /// A running ffmpeg process that we feed frames to.
@@ -261,7 +323,7 @@ mod tests {
     use super::*;
 
     fn args_for(format: ExportFormat, transparent: bool) -> Vec<String> {
-        build_args(format, 1920, 1080, FrameRate::new(24000, 1001), transparent, Path::new("out.mov"))
+        build_args(format, 1920, 1080, FrameRate::new(24000, 1001), transparent, None, Path::new("out.mov"))
             .into_iter()
             .map(|a| a.into_string().unwrap())
             .collect()

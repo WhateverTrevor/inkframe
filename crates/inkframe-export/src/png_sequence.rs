@@ -1,11 +1,14 @@
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
+use inkframe_audio::Clip;
+
 use crate::{ExportError, ExportSettings, FrameRenderer, Progress};
 
 pub(crate) fn write(
     renderer: &FrameRenderer,
     settings: &ExportSettings,
+    audio: Option<&Clip>,
     mut on_progress: impl FnMut(Progress) -> ControlFlow<()>,
 ) -> Result<(), ExportError> {
     let frames_total = settings.frames.end() - settings.frames.start() + 1;
@@ -27,6 +30,14 @@ pub(crate) fn write(
             }
             return Err(ExportError::Cancelled);
         }
+    }
+    // Image sequences can't carry sound, so it goes alongside as a WAV
+    // with the same name (`walk.png` frames get `walk.wav`), already
+    // trimmed to the exported frames so it lines up with frame 1.
+    if let Some(audio) = audio {
+        audio
+            .write_wav(&settings.output.with_extension("wav"))
+            .map_err(|e| ExportError::Audio(e.to_string()))?;
     }
     Ok(())
 }

@@ -43,6 +43,7 @@ pub struct ExportDialog {
     /// Looked up when the dialog opens rather than every frame, since it
     /// touches the file system.
     ffmpeg_found: bool,
+    project_dir: Option<PathBuf>,
 }
 
 impl Default for ExportDialog {
@@ -57,6 +58,7 @@ impl Default for ExportDialog {
             job: None,
             outcome: None,
             ffmpeg_found: false,
+            project_dir: None,
         }
     }
 }
@@ -73,8 +75,10 @@ impl ExportDialog {
         self.job.is_some()
     }
 
-    /// `name` is used for the default output file name.
-    pub fn show(&mut self, ctx: &egui::Context, doc: &Document, name: &str) {
+    /// `name` is used for the default output file name; `project_dir` is
+    /// where audio files with relative paths are looked for.
+    pub fn show(&mut self, ctx: &egui::Context, doc: &Document, name: &str, project_dir: Option<PathBuf>) {
+        self.project_dir = project_dir;
         self.poll_job();
         if !self.open {
             return;
@@ -216,6 +220,7 @@ impl ExportDialog {
             frames,
             scale: self.scale,
             transparent: self.transparent,
+            project_dir: self.project_dir.clone(),
         };
 
         let (sender, events) = mpsc::channel();

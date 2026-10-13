@@ -4,26 +4,29 @@ This guide is for people who want to change Inkframe. It explains how the
 code is organized and why, so you know where a change belongs before you
 start.
 
-## The four crates
+## The five crates
 
 ```
-            ┌──────────────────┐
-            │  inkframe-app    │  the editor window (egui / eframe)
-            └──┬─────┬──────┬──┘
-               │     │      │
-               │     ▼      ▼
-               │  ┌───────────────────┐
-               │  │ inkframe-export   │  PNG sequences, ffmpeg video
-               │  └──┬────────────────┘
-               ▼     ▼
-            ┌──────────────────┐
-            │ inkframe-render  │  document → pixels (tiny-skia)
-            └────────┬─────────┘
-                     ▼
-            ┌──────────────────┐
-            │  inkframe-core   │  the document model, no dependencies on the above
-            └──────────────────┘
+                 ┌──────────────────┐
+                 │  inkframe-app    │  the editor window (egui / eframe)
+                 └──┬──────┬─────┬──┘
+                    │      │     │
+                    │      ▼     │
+                    │  ┌──────────────────┐
+                    │  │ inkframe-export  │  PNG sequences, ffmpeg video
+                    │  └──┬────────────┬──┘
+                    ▼     ▼            ▼
+     ┌──────────────────┐        ┌──────────────────┐
+     │ inkframe-render  │        │  inkframe-audio  │  decode, resample, mix
+     │ document → pixels│        └────────┬─────────┘
+     └────────┬─────────┘                 │
+              ▼                           ▼
+            ┌───────────────────────────────┐
+            │         inkframe-core         │  the document model
+            └───────────────────────────────┘
 ```
+
+(The app also uses `inkframe-audio` directly, for playback.)
 
 Dependencies point one way only, downward. In particular, **`inkframe-core`
 knows nothing about rendering or UI**. That keeps the model easy to test
@@ -91,12 +94,12 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 4. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 5. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
-still plays back identically. Version 3 added layer spans and version 4
-added symbols; earlier files load with whole-length layers and an empty
-library.
+still plays back identically. Version 3 added layer spans, version 4
+symbols and version 5 audio tracks; earlier files load with whole-length
+layers, an empty library and no audio.
 
 **Coordinates.** Stage pixels, with y pointing down. Rotation is in degrees,
 clockwise. Frames are 0-based internally and shown 1-based in the UI.
@@ -115,10 +118,23 @@ what you get. Translucent layers render into a scratch buffer and are then
 composited, so overlapping shapes inside a layer don't show through each
 other.
 
+### inkframe-audio
+
+Turns sound files into `Clip`s: interleaved stereo `f32` at 48 kHz, whatever
+the source. `decode` uses symphonia (pure Rust: WAV, MP3, AAC, FLAC, Ogg…)
+and resamples with rubato's band-limited sinc interpolation. `mix` lays
+tracks against the timeline at their start frames; `mix_document` does that
+for a whole document, decoding each file once. Documents only *reference*
+audio files (`AudioTrack::path`), relative to the project file when
+possible; `AudioTrack::resolve` finds them.
+
 ### inkframe-export
 
 `export(doc, settings, on_progress)` renders each frame and either writes a
-PNG or streams raw RGBA to an `ffmpeg` child process. The ffmpeg arguments
+PNG or streams raw RGBA to an `ffmpeg` child process. If the document has
+audio, it's mixed, trimmed to the exported frames and passed to ffmpeg as a
+temporary WAV (AAC in MP4/HEVC, 24-bit PCM with ProRes), or written next to a
+PNG sequence. The ffmpeg arguments
 for every format are in `ffmpeg::build_args`, with comments explaining each
 choice (color matrix, pixel format, padding to even sizes). The progress
 callback returns `ControlFlow::Break` to cancel.
@@ -136,6 +152,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `timeline.rs` | Transport bar and the hand-painted layer × frame grid |
 | `inspector.rs` | The properties panel |
 | `toolbar.rs` | Tool buttons with vector-drawn icons |
+| `audio_engine.rs` | Plays the soundtrack in sync (the audio clock drives playback) and scrubs it; decodes files in the background |
 | `library.rs` | The Library panel, with cached symbol thumbnails |
 | `export_dialog.rs` | Export settings and the background export thread |
 | `shortcuts.rs` | Every keyboard shortcut in one place |

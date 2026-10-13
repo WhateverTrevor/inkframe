@@ -145,6 +145,19 @@ impl Editor {
         Ok(())
     }
 
+    /// The folder the project file is in, which audio paths are relative to.
+    pub fn project_dir(&self) -> Option<PathBuf> {
+        self.path.as_deref().and_then(Path::parent).map(Path::to_path_buf)
+    }
+
+    /// Adds a sound file to the main timeline, starting on the current frame
+    /// (or frame 1 while editing inside a symbol).
+    pub fn import_audio(&mut self, path: &Path) {
+        let start = if self.timeline() == TimelineId::Main { self.frame } else { 0 };
+        let project_dir = self.project_dir();
+        self.doc.add_audio(path, project_dir.as_deref(), start);
+    }
+
     pub fn has_unsaved_changes(&self) -> bool {
         self.doc != self.saved
     }
