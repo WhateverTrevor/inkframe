@@ -8,6 +8,7 @@
 //!
 //! The main entry point is [`Document`].
 
+mod anchor;
 mod color;
 mod document;
 mod easing;
@@ -18,6 +19,7 @@ mod shape;
 mod track;
 mod transform;
 
+pub use anchor::{Anchor, path_from_anchors};
 pub use color::{Color, ParseColorError};
 pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, Layer, LayerId};
 pub use easing::Easing;

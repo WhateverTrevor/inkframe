@@ -13,17 +13,19 @@ use inkframe_core::{Color, Document, DocumentError, History, Layer, LayerId, Str
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
     Select,
+    Pen,
     Rectangle,
     Ellipse,
     Pencil,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 4] = [Tool::Select, Tool::Rectangle, Tool::Ellipse, Tool::Pencil];
+    pub const ALL: [Tool; 5] = [Tool::Select, Tool::Pen, Tool::Rectangle, Tool::Ellipse, Tool::Pencil];
 
     pub fn name(self) -> &'static str {
         match self {
             Tool::Select => "Selection",
+            Tool::Pen => "Pen",
             Tool::Rectangle => "Rectangle",
             Tool::Ellipse => "Oval",
             Tool::Pencil => "Pencil",

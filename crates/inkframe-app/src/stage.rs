@@ -7,13 +7,14 @@
 
 use egui::{Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{
-    Document, Element, LayerId, Point, Rect as StageRect, Shape, Style, Transform, fit_freehand_path,
+    Document, Element, LayerId, Path, Point, Rect as StageRect, Shape, Style, Transform, fit_freehand_path,
 };
 use inkframe_render::{RenderOptions, output_size, render_frame_into};
 
 use crate::convert::{to_color32, to_point};
 use crate::editor::{Editor, OnionSkin, Tool};
 use crate::handles::{RotateDrag, ScaleHandle, ScaleOptions, scale_pose};
+use crate::pen::PenPath;
 
 /// Gap kept around the stage when it's zoomed to fit the window, in points.
 const FIT_MARGIN: f32 = 24.0;
@@ -31,6 +32,10 @@ const ROTATE_KNOB_DISTANCE: f32 = 24.0;
 /// Just outside each corner, within this many points, dragging rotates
 /// instead of scaling, as in Animate's Free Transform tool.
 const ROTATE_ZONE: f32 = 18.0;
+/// How close to an existing pen anchor a click must land to hit it, in screen points.
+const ANCHOR_HIT: f32 = 7.0;
+/// Pen drags shorter than this make a corner rather than a curve, in screen points.
+const MIN_HANDLE_DRAG: f32 = 2.0;
 
 const PASTEBOARD: Color32 = Color32::from_gray(48);
 const SELECTION: Color32 = Color32::from_rgb(0x2f, 0x9b, 0xff);
@@ -196,6 +201,8 @@ pub struct StageView {
     /// Offset of the stage's center from the viewport's center, in points.
     pan: Vec2,
     gesture: Option<Gesture>,
+    /// The path being drawn with the Pen tool, which lasts across many clicks.
+    pen: Option<PenPath>,
     texture: Option<egui::TextureHandle>,
     rendered: Option<RenderKey>,
     /// The viewport from the last frame, for zoom commands that come from menus.
@@ -208,6 +215,7 @@ impl Default for StageView {
             zoom: None,
             pan: Vec2::ZERO,
             gesture: None,
+            pen: None,
             texture: None,
             rendered: None,
             last_area: Rect::NOTHING,
@@ -220,6 +228,36 @@ impl StageView {
     /// recorded mid-gesture, so a drag becomes a single undoable action.
     pub fn is_busy(&self) -> bool {
         self.gesture.is_some()
+    }
+
+    pub fn is_drawing_path(&self) -> bool {
+        self.pen.is_some()
+    }
+
+    /// Turns the pen path in progress into a new layer. Paths with fewer
+    /// than two anchors are discarded.
+    pub fn finish_path(&mut self, editor: &mut Editor, closed: bool) {
+        let Some(path) = self.pen.take().and_then(|pen| pen.finish(closed)) else {
+            return;
+        };
+        // A closed shape gets the full fill-and-stroke style. An open line
+        // can't be filled, so it gets just a stroke, falling back to the
+        // pencil's stroke if the shape style has none.
+        let style = if closed {
+            editor.draw_style
+        } else {
+            Style { fill: None, stroke: editor.draw_style.stroke.or(Some(editor.pencil_stroke)) }
+        };
+        add_path_layer(editor, "Path", path, style);
+    }
+
+    /// Backspace while drawing: take back the most recent anchor.
+    pub fn remove_last_path_point(&mut self) {
+        if let Some(pen) = &mut self.pen
+            && !pen.remove_last()
+        {
+            self.pen = None;
+        }
     }
 
     pub fn zoom_to_fit(&mut self) {
@@ -264,9 +302,20 @@ impl StageView {
         }
         painter.rect_stroke(stage_rect, 0.0, (1.0, Color32::from_gray(20)), StrokeKind::Outside);
 
+        // Switching away from the pen (or anything else that changes the tool)
+        // finishes the path in progress rather than silently dropping it.
+        if editor.tool != Tool::Pen && self.pen.is_some() {
+            self.finish_path(editor, false);
+        }
+
         self.handle_tools(ui, &response, editor, view);
+        if editor.tool == Tool::Pen {
+            self.handle_pen(ui, &response, editor, view);
+        }
         let handles = Handles::for_selection(editor, view);
-        self.draw_overlays(&painter.with_clip_rect(area), editor, view, handles.as_ref());
+        let overlay = painter.with_clip_rect(area);
+        self.draw_overlays(&overlay, editor, view, handles.as_ref());
+        self.draw_pen_preview(&overlay, view, response.hover_pos());
         self.update_cursor(ui, &response, editor.tool, view, handles.as_ref());
     }
 
@@ -426,6 +475,84 @@ impl StageView {
                 Some(Gesture::DrawShape { tool, start: p, current: p })
             }
             Tool::Pencil => Some(Gesture::Pencil { points: vec![p] }),
+            // The pen handles its own presses and drags; see `handle_pen`.
+            Tool::Pen => None,
+        }
+    }
+
+    /// Pen tool input. Each press places an anchor; dragging before release
+    /// pulls out its curve handles. Pressing on the first anchor closes the
+    /// path, and pressing on the last one again ends it open.
+    fn handle_pen(&mut self, ui: &egui::Ui, response: &egui::Response, editor: &mut Editor, view: View) {
+        let (pressed, button_down, space_held, shift) = ui.input(|i| {
+            (
+                i.pointer.primary_pressed(),
+                i.pointer.primary_down(),
+                i.key_down(egui::Key::Space),
+                i.modifiers.shift,
+            )
+        });
+        let pointer = response.interact_pointer_pos().map(|p| view.to_stage(p));
+
+        if pressed
+            && response.is_pointer_button_down_on()
+            && !space_held
+            && let Some(p) = pointer
+        {
+            let tolerance = ANCHOR_HIT / view.zoom;
+            match &mut self.pen {
+                Some(pen) if pen.can_close_at(p, tolerance) => return self.finish_path(editor, true),
+                Some(pen) if pen.is_on_last(p, tolerance) => return self.finish_path(editor, false),
+                Some(pen) => pen.add_anchor(p, shift),
+                None => self.pen = Some(PenPath::new(p)),
+            }
+        }
+
+        if let Some(pen) = &mut self.pen
+            && pen.is_dragging()
+        {
+            if let Some(p) = pointer {
+                pen.drag_handle(p, MIN_HANDLE_DRAG / view.zoom);
+            }
+            if !button_down {
+                pen.release();
+            }
+        }
+    }
+
+    /// Draws the pen path in progress: the curve so far, a rubber-band line
+    /// to the pointer, the anchors, and the handles of the newest anchor.
+    fn draw_pen_preview(&self, painter: &egui::Painter, view: View, hover: Option<Pos2>) {
+        let Some(pen) = &self.pen else { return };
+        let to_screen =
+            |path: &Path| path.flatten().into_iter().map(|p| view.to_screen(p)).collect::<Vec<_>>();
+
+        if let Some(path) = pen.finish(false) {
+            painter.line(to_screen(&path), (1.5, SELECTION));
+        }
+        let hover_stage = hover.map(|p| view.to_stage(p));
+        let closing = hover_stage.is_some_and(|p| pen.can_close_at(p, ANCHOR_HIT / view.zoom));
+        if !pen.is_dragging()
+            && let Some(preview) = hover_stage.and_then(|p| pen.preview_to(p))
+        {
+            painter.line(to_screen(&preview), (1.0, SELECTION.gamma_multiply(0.6)));
+        }
+
+        let newest = pen.anchors().last().expect("never empty");
+        for handle in [newest.handle_in, newest.handle_out] {
+            if handle != newest.point {
+                let (a, h) = (view.to_screen(newest.point), view.to_screen(handle));
+                painter.line_segment([a, h], (1.0, SELECTION));
+                painter.circle_filled(h, 3.0, SELECTION);
+            }
+        }
+
+        for (i, anchor) in pen.anchors().iter().enumerate() {
+            // The first anchor fills in when hovering it would close the path.
+            let fill = if i == 0 && closing { SELECTION } else { Color32::WHITE };
+            let square = Rect::from_center_size(view.to_screen(anchor.point), Vec2::splat(7.0));
+            painter.rect_filled(square, 0.0, fill);
+            painter.rect_stroke(square, 0.0, (1.0, SELECTION), StrokeKind::Middle);
         }
     }
 
@@ -491,6 +618,13 @@ impl StageView {
                 match (hovered, tool) {
                     (Some(hit), _) => handle_cursor(hit),
                     (None, Tool::Select) => CursorIcon::Default,
+                    (None, Tool::Pen) => {
+                        let can_close =
+                            self.pen.as_ref().zip(response.hover_pos()).is_some_and(|(pen, p)| {
+                                pen.can_close_at(view.to_stage(p), ANCHOR_HIT / view.zoom)
+                            });
+                        if can_close { CursorIcon::PointingHand } else { CursorIcon::Crosshair }
+                    }
                     (None, Tool::Rectangle | Tool::Ellipse | Tool::Pencil) => CursorIcon::Crosshair,
                 }
             }
@@ -596,18 +730,11 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
             // Simplify relative to the screen, so a stroke drawn while zoomed
             // in keeps proportionally more detail.
             let tolerance = 1.5 / view.zoom;
-            let Some(mut path) = fit_freehand_path(&points, tolerance) else {
+            let Some(path) = fit_freehand_path(&points, tolerance) else {
                 return;
             };
-            // Recenter the path on its own middle, so the layer's pivot sits
-            // in the middle of the stroke rather than at the stage origin.
-            let Some(bounds) = StageRect::bounding(path.flatten()) else {
-                return;
-            };
-            let center = bounds.center();
-            path.translate(-center);
             let style = Style { fill: None, stroke: Some(editor.pencil_stroke) };
-            add_layer(editor, "Stroke", Element { shape: Shape::Path(path), style }, center);
+            add_path_layer(editor, "Stroke", path, style);
         }
         Gesture::Move { .. } | Gesture::Scale { .. } | Gesture::Rotate { .. } | Gesture::Pan => {}
     }
@@ -617,6 +744,20 @@ fn add_layer(editor: &mut Editor, prefix: &str, element: Element, position: Poin
     let name = editor.doc.next_layer_name(prefix);
     let id = editor.doc.add_layer(name, vec![element], editor.frame, Transform::at(position));
     editor.selection = Some(id);
+}
+
+/// Adds a layer for a path drawn in stage coordinates.
+///
+/// The path is recentered on its own middle first, so the layer's pivot
+/// (the point it rotates and scales around) sits in the middle of the
+/// drawing rather than at the stage's top-left corner.
+fn add_path_layer(editor: &mut Editor, prefix: &str, mut path: Path, style: Style) {
+    let Some(bounds) = StageRect::bounding(path.flatten()) else {
+        return;
+    };
+    let center = bounds.center();
+    path.translate(-center);
+    add_layer(editor, prefix, Element { shape: Shape::Path(path), style }, center);
 }
 
 /// Moves `end` so the rectangle from `start` is a square, keeping the drag direction.
@@ -834,6 +975,78 @@ mod tests {
         h.run();
 
         assert_eq!(h.state().1.selection, Some(id));
+    }
+
+    fn click(harness: &mut Harness<'_, State>, at: Pos2) {
+        harness.drag_at(at);
+        harness.step();
+        harness.drop_at(at);
+        harness.run();
+    }
+
+    fn pen_harness() -> Harness<'static, State> {
+        let mut editor = Editor::new(Document::default());
+        editor.tool = Tool::Pen;
+        harness(editor)
+    }
+
+    #[test]
+    fn pen_clicks_and_closing_make_a_filled_shape() {
+        let mut h = pen_harness();
+        let corners = [(200.0, 200.0), (600.0, 200.0), (400.0, 500.0)];
+        for (x, y) in corners {
+            let at = screen(&h, x, y);
+            click(&mut h, at);
+        }
+        assert!(h.state().0.is_drawing_path());
+        let first = screen(&h, 200.0, 200.0);
+        click(&mut h, first);
+
+        let (stage, editor) = h.state();
+        assert!(!stage.is_drawing_path());
+        let element = &editor.doc.layers[0].elements[0];
+        let Shape::Path(path) = &element.shape else { panic!("not a path") };
+        assert!(path.closed);
+        assert_eq!(path.segments.len(), 3);
+        assert!(element.style.fill.is_some(), "closed shapes are filled");
+    }
+
+    #[test]
+    fn pen_drag_makes_a_curve() {
+        let mut h = pen_harness();
+        let start = screen(&h, 200.0, 400.0);
+        click(&mut h, start);
+
+        // Press at the second point and drag out a handle before releasing.
+        let second = screen(&h, 600.0, 400.0);
+        h.drag_at(second);
+        h.step();
+        h.hover_at(second + vec2(60.0, -60.0));
+        h.step();
+        h.drop_at(second + vec2(60.0, -60.0));
+        h.run();
+
+        let (stage, editor) = h.state_mut();
+        stage.finish_path(editor, false);
+        let element = &editor.doc.layers[0].elements[0];
+        let Shape::Path(path) = &element.shape else { panic!("not a path") };
+        assert!(matches!(path.segments[0], inkframe_core::Segment::Cubic { .. }));
+        assert!(element.style.fill.is_none(), "open paths are only stroked");
+    }
+
+    #[test]
+    fn switching_tools_finishes_the_path() {
+        let mut h = pen_harness();
+        for x in [200.0, 600.0] {
+            let at = screen(&h, x, 300.0);
+            click(&mut h, at);
+        }
+        h.state_mut().1.tool = Tool::Select;
+        h.run();
+
+        let (stage, editor) = h.state();
+        assert!(!stage.is_drawing_path());
+        assert_eq!(editor.doc.layers.len(), 1);
     }
 
     #[test]

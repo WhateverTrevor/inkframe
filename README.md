@@ -8,7 +8,8 @@ planned (the code is already cross-platform and CI builds it on Windows).
 
 ## What it does today
 
-- **Draw** rectangles, ovals and freehand pencil strokes on a stage of any size.
+- **Draw** rectangles, ovals, Bézier paths with the Pen tool, and freehand
+  pencil strokes on a stage of any size.
 - **Animate with keyframes.** Go to a frame, move or change a layer, and a
   keyframe is created for you. Scale and rotate with on-stage handles, or
   type exact values in the properties panel. Inkframe tweens position,
@@ -52,6 +53,7 @@ If ffmpeg is somewhere unusual, point Inkframe at it with the
 | Scale | Drag a square handle. Shift keeps proportions, Option/Alt scales from the pivot |
 | Rotate | Drag the round knob, or just outside a corner. Shift snaps to 15° |
 | Draw | Rectangle (`R`), Oval (`O`), Pencil (`Y`). Hold Shift for squares and circles |
+| Pen (`P`) | Click for corners, drag for curves. Click the first point to close the shape; Enter, Esc or clicking the last point ends an open line. Backspace removes the last point, Shift snaps to 45° |
 | Animate | Move the playhead to a later frame, then drag the shape or edit its transform |
 | Insert / remove keyframe | `F6` / `Shift+F6`, or right-click the timeline |
 | Play / pause | `Enter` |
@@ -80,7 +82,7 @@ development workflow.
 
 Roughly in priority order:
 
-- Pen tool for precise Bézier paths, and editing existing paths
+- Subselection tool for editing anchors and handles of existing paths
 - Per-property keyframes (ease position and opacity differently)
 - Symbols: reusable, nested animations
 - Layer start/end frames, so content can appear and disappear

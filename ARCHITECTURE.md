@@ -41,6 +41,7 @@ The data model and the math behind animation.
 | `easing.rs` | Easing curves, including a CSS-style cubic-Bézier solver |
 | `shape.rs` | Rectangles, ellipses, Bézier paths, styles, and hit-testing |
 | `freehand.rs` | Turns jittery pointer samples into a smooth path |
+| `anchor.rs` | Anchor points with in/out handles (the pen tool's view of a path) and conversion to segments |
 | `history.rs` | Snapshot-based undo/redo |
 | `geometry.rs` | `Point`, `Rect`, `Affine` |
 
@@ -83,6 +84,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `editor.rs` | `Editor`: document, selection, current frame, tool, and the operations panels call |
 | `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles |
 | `handles.rs` | The math for scale and rotate handles (anchor pinning, multi-turn rotation) |
+| `pen.rs` | State of the pen path being drawn, which lasts across many clicks |
 | `timeline.rs` | Transport bar and the hand-painted layer × frame grid |
 | `inspector.rs` | The properties panel |
 | `toolbar.rs` | Tool buttons with vector-drawn icons |

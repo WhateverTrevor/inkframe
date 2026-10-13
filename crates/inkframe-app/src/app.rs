@@ -37,6 +37,10 @@ enum Command {
     ZoomFit,
     ZoomActualSize,
     UseTool(Tool),
+    /// Ends the pen path being drawn, leaving it open.
+    FinishPath,
+    /// Removes the newest point of the pen path being drawn.
+    RemovePathPoint,
 }
 
 const FILE_EXTENSION: &str = "inkf";
@@ -112,6 +116,8 @@ impl InkframeApp {
             Command::ZoomFit => self.stage.zoom_to_fit(),
             Command::ZoomActualSize => self.stage.zoom_to_actual_size(&editor.doc),
             Command::UseTool(tool) => editor.tool = tool,
+            Command::FinishPath => self.stage.finish_path(editor, false),
+            Command::RemovePathPoint => self.stage.remove_last_path_point(),
         }
     }
 
@@ -147,20 +153,38 @@ impl InkframeApp {
         // While a text field has focus, keys like ⌘Z and Delete belong to
         // the text field. File shortcuts still work everywhere.
         let typing = ctx.egui_wants_keyboard_input();
+        let drawing_path = self.stage.is_drawing_path();
         ctx.input_mut(|input| {
-            let mut check = |shortcut, command| {
+            for (shortcut, command) in file_shortcuts {
                 if input.consume_shortcut(&shortcut) {
                     commands.push(command);
                 }
-            };
-            for (shortcut, command) in file_shortcuts {
-                check(shortcut, command);
             }
             if typing {
                 return;
             }
+            // While a pen path is in progress, Enter and Escape finish it and
+            // Backspace takes back a point, instead of their usual jobs (play,
+            // and delete layer). Checked first so they win.
+            let path_keys: &[(Key, Command)] = if drawing_path {
+                &[
+                    (Key::Enter, Command::FinishPath),
+                    (Key::Escape, Command::FinishPath),
+                    (Key::Backspace, Command::RemovePathPoint),
+                    (Key::Delete, Command::RemovePathPoint),
+                ]
+            } else {
+                &[]
+            };
+            for &(key, command) in path_keys {
+                if input.consume_key(Modifiers::NONE, key) {
+                    commands.push(command);
+                }
+            }
             for (shortcut, command) in editing_shortcuts {
-                check(shortcut, command);
+                if input.consume_shortcut(&shortcut) {
+                    commands.push(command);
+                }
             }
 
             let plain_keys = [

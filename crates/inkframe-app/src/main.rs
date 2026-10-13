@@ -8,6 +8,7 @@ mod editor;
 mod export_dialog;
 mod handles;
 mod inspector;
+mod pen;
 mod screenshot;
 mod shortcuts;
 mod stage;

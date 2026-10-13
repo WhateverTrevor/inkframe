@@ -37,6 +37,7 @@ pub const REMOVE_KEYFRAME: KeyboardShortcut = KeyboardShortcut::new(Modifiers::S
 pub fn tool_key(tool: Tool) -> Key {
     match tool {
         Tool::Select => Key::V,
+        Tool::Pen => Key::P,
         Tool::Rectangle => Key::R,
         Tool::Ellipse => Key::O,
         Tool::Pencil => Key::Y,

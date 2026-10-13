@@ -86,6 +86,15 @@ fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) {
             let points: Vec<Pos2> = arrow.iter().map(|&(x, y)| at(x, y)).collect();
             painter.add(egui::Shape::closed_line(points, stroke));
         }
+        Tool::Pen => {
+            // A fountain-pen nib, point down, with its slit and breather hole.
+            let nib = [(0.5, 1.0), (0.18, 0.5), (0.32, 0.12), (0.68, 0.12), (0.82, 0.5)];
+            let points: Vec<Pos2> = nib.iter().map(|&(x, y)| at(x, y)).collect();
+            painter.add(egui::Shape::closed_line(points, stroke));
+            painter.line_segment([at(0.5, 1.0), at(0.5, 0.55)], stroke);
+            painter.circle_stroke(at(0.5, 0.48), 1.5, stroke);
+            painter.line_segment([at(0.25, 0.0), at(0.75, 0.0)], stroke);
+        }
         Tool::Rectangle => {
             painter.rect_stroke(r.shrink2(vec2(0.0, 3.0)), 1.0, stroke, StrokeKind::Middle);
         }
