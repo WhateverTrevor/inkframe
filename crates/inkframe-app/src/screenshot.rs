@@ -13,7 +13,8 @@
 //! * `INKFRAME_SCREENSHOT_ONION=1` turns on onion skinning.
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
 //! * `INKFRAME_SCREENSHOT_EXPAND=1` expands every layer's property rows in the timeline.
-//! * `INKFRAME_SCREENSHOT_EDIT=Ball` opens the named symbol for editing (before `_SELECT`).
+//! * `INKFRAME_SCREENSHOT_EDIT=Ball` opens the named symbol on its own (before `_SELECT`).
+//! * `INKFRAME_SCREENSHOT_OPEN=Ball` opens the named instance layer's symbol in place (after `_FRAME`).
 
 use std::path::PathBuf;
 
@@ -45,6 +46,12 @@ impl AutoScreenshot {
         }
         if let Some(shown) = var("INKFRAME_SCREENSHOT_FRAME").and_then(|v| v.parse::<u32>().ok()) {
             editor.set_frame(shown.saturating_sub(1));
+        }
+        if let Some(name) = var("INKFRAME_SCREENSHOT_OPEN") {
+            match editor.layers().iter().find(|l| l.name == name).map(|l| l.id) {
+                Some(layer) => editor.enter_instance(layer),
+                None => eprintln!("No layer named {name:?} for INKFRAME_SCREENSHOT_OPEN"),
+            }
         }
         if let Some(name) = var("INKFRAME_SCREENSHOT_SELECT") {
             editor.selection = editor.layers().iter().find(|l| l.name == name).map(|l| l.id);

@@ -73,10 +73,16 @@ named by a `TimelineId`. `Document` operations that add layers or hit-test
 take one; operations on an existing layer (`layer_mut`, `remove_layer`,
 `move_layer`…) find its timeline by id. The editor keeps a stack of open
 symbols: `Editor::timeline()` is the one being edited, and `editor.frame`,
-`editor.layers()` and `editor.duration()` all refer to it. On the stage, a
-symbol's registration point sits mid-stage (`Editor::timeline_origin`); the
-stage's `View::offset_by` shifts coordinates so every tool works in the
-symbol's own space without knowing it's inside one. `Document::can_place`
+`editor.layers()` and `editor.duration()` all refer to it.
+
+`Editor::timeline_transform` maps the edited timeline onto the stage. A
+symbol opened through an instance is edited in place: the transform is the
+chain of instance transforms on the way in, and `Editor::surroundings` lists
+the enclosing timelines to draw faded behind it (each skipping the instance
+being edited). A symbol opened from the library is shown on its own,
+mid-stage. The stage's `View` carries this transform, and every tool works
+in the resulting "local" coordinates (`View::to_local`), so none of them need
+to know whether, or how deeply, they're inside a symbol. `Document::can_place`
 stops a symbol from being placed inside itself.
 
 **Layer spans.** A layer appears from `start` to `end` (inclusive). An end

@@ -13,7 +13,7 @@ use inkframe_core::{
 use inkframe_render::{RenderOptions, output_size, render_timeline_into};
 
 use crate::convert::{to_color32, to_point};
-use crate::editor::{Editor, OnionSkin, Tool};
+use crate::editor::{Editor, OnionSkin, Surrounding, Tool};
 use crate::handles::{RotateDrag, ScaleHandle, ScaleOptions, scale_pose};
 use crate::pen::PenPath;
 use crate::subselect::{AnchorPart, move_part, remove_anchor, toggle_smooth};
@@ -43,30 +43,69 @@ const PASTEBOARD: Color32 = Color32::from_gray(48);
 const SELECTION: Color32 = Color32::from_rgb(0x2f, 0x9b, 0xff);
 const ONION_BEFORE: inkframe_core::Color = inkframe_core::Color::rgb(0x30, 0x60, 0xff);
 const ONION_AFTER: inkframe_core::Color = inkframe_core::Color::rgb(0x20, 0xb0, 0x40);
+/// How strongly the rest of the scene shows while a symbol is edited in place.
+const SURROUNDINGS_OPACITY: f32 = 0.3;
 
-/// Maps between stage pixels and screen points for the current zoom and pan.
+/// Maps between screen points and the "local" coordinates of the timeline
+/// being edited.
+///
+/// On the main timeline, local coordinates are stage pixels. Inside a
+/// symbol they're the symbol's own, which reach the stage through
+/// `timeline_to_stage`: a shift to mid-stage for a symbol opened on its own,
+/// or the instance's full transform (possibly rotated and scaled) when
+/// editing in place. Because every tool works in local coordinates through
+/// this one type, none of them need to know whether they're inside a symbol.
 #[derive(Debug, Clone, Copy)]
 struct View {
     /// Screen position of the stage's top-left corner.
-    origin: Pos2,
+    stage_origin: Pos2,
     /// Screen points per stage pixel.
+    stage_zoom: f32,
+    timeline_to_stage: Affine,
+    stage_to_timeline: Affine,
+    /// Screen points per local unit, for sizing hit targets and strokes.
+    /// For a scaled instance this folds in its (average) scale.
     zoom: f32,
 }
 
 impl View {
+    /// A view of the main timeline.
+    fn stage(stage_origin: Pos2, stage_zoom: f32) -> Self {
+        Self {
+            stage_origin,
+            stage_zoom,
+            timeline_to_stage: Affine::IDENTITY,
+            stage_to_timeline: Affine::IDENTITY,
+            zoom: stage_zoom,
+        }
+    }
+
+    /// The same view, for a timeline placed on the stage by `to_stage`.
+    /// A transform that can't be inverted (an instance scaled to nothing)
+    /// can't be edited through, so the plain stage view is kept instead.
+    fn with_timeline(self, to_stage: Affine) -> Self {
+        let Some(from_stage) = to_stage.inverse() else {
+            return self;
+        };
+        // The determinant is how much the transform scales area, so its
+        // square root is the average scale along each axis.
+        let scale = (to_stage.a * to_stage.d - to_stage.b * to_stage.c).abs().sqrt();
+        Self {
+            timeline_to_stage: to_stage,
+            stage_to_timeline: from_stage,
+            zoom: self.stage_zoom * scale,
+            ..self
+        }
+    }
+
     fn to_screen(self, p: Point) -> Pos2 {
-        self.origin + vec2(p.x, p.y) * self.zoom
+        let on_stage = self.timeline_to_stage.apply(p);
+        self.stage_origin + vec2(on_stage.x, on_stage.y) * self.stage_zoom
     }
 
-    fn to_stage(self, p: Pos2) -> Point {
-        to_point(Pos2::ZERO + (p - self.origin) / self.zoom)
-    }
-
-    /// The same view, but measuring from `origin` (in stage pixels) instead
-    /// of the stage's corner. While a symbol is being edited, the tools work
-    /// in the symbol's own coordinates, whose (0, 0) is mid-stage.
-    fn offset_by(self, origin: Point) -> View {
-        View { origin: self.origin + vec2(origin.x, origin.y) * self.zoom, zoom: self.zoom }
+    fn to_local(self, p: Pos2) -> Point {
+        let on_stage = to_point(Pos2::ZERO + (p - self.stage_origin) / self.stage_zoom);
+        self.stage_to_timeline.apply(on_stage)
     }
 }
 
@@ -191,7 +230,7 @@ impl Handles {
             .pose
             .to_affine()
             .inverse()
-            .is_some_and(|to_local| self.bounds.contains(to_local.apply(view.to_stage(p))));
+            .is_some_and(|to_local| self.bounds.contains(to_local.apply(view.to_local(p))));
         let near_corner = self.scale.iter().any(|(h, pos)| h.is_corner() && pos.distance(p) <= ROTATE_ZONE);
         (!inside && near_corner).then_some(HandleHit::Rotate)
     }
@@ -232,6 +271,8 @@ impl Handles {
 struct RenderKey {
     doc: Document,
     timeline: TimelineId,
+    to_stage: Affine,
+    surroundings: Vec<Surrounding>,
     frame: u32,
     size: (u32, u32),
     onion: Option<OnionSkin>,
@@ -353,12 +394,12 @@ impl StageView {
         self.handle_navigation(ui, &response, &editor.doc);
         let stage_view = self.view(area, &editor.doc);
         let stage_rect = Rect::from_min_size(
-            stage_view.origin,
-            vec2(editor.doc.width as f32, editor.doc.height as f32) * stage_view.zoom,
+            stage_view.stage_origin,
+            vec2(editor.doc.width as f32, editor.doc.height as f32) * stage_view.stage_zoom,
         );
         // Everything below works in the coordinates of the timeline being
         // edited: the stage's on the main timeline, a symbol's inside one.
-        let view = stage_view.offset_by(editor.timeline_origin());
+        let view = stage_view.with_timeline(editor.timeline_transform());
 
         painter.rect_filled(area, 0.0, PASTEBOARD);
         if !editor.doc.background.is_opaque() {
@@ -407,7 +448,7 @@ impl StageView {
             (available / stage_size).min_elem().clamp(MIN_ZOOM, MAX_ZOOM)
         });
         let center = area.center() + self.pan;
-        View { origin: center - stage_size * zoom / 2.0, zoom }
+        View::stage(center - stage_size * zoom / 2.0, zoom)
     }
 
     /// Changes zoom while keeping the stage point under `anchor` fixed on
@@ -415,7 +456,7 @@ impl StageView {
     fn set_zoom_about(&mut self, doc: &Document, anchor: Pos2, zoom: f32) {
         let before = self.view(self.last_area, doc);
         let zoom = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
-        let anchored = before.to_stage(anchor);
+        let anchored = before.to_local(anchor);
 
         // Solve for the new origin that puts `anchored` back under `anchor`,
         // then express it as a pan offset from the viewport center.
@@ -460,7 +501,7 @@ impl StageView {
         }
 
         if let Some(pointer) = response.interact_pointer_pos() {
-            let p = view.to_stage(pointer);
+            let p = view.to_local(pointer);
             match &mut self.gesture {
                 Some(Gesture::Move { layer, grab, start_position }) => {
                     let mut delta = p - *grab;
@@ -520,7 +561,7 @@ impl StageView {
         if response.double_clicked()
             && editor.tool == Tool::Select
             && let Some(pointer) = response.interact_pointer_pos()
-            && let Some(id) = editor.hit_test(view.to_stage(pointer), HIT_TOLERANCE / view.zoom)
+            && let Some(id) = editor.hit_test(view.to_local(pointer), HIT_TOLERANCE / view.zoom)
             && editor.doc.layer(id).is_some_and(|l| l.instance.is_some())
         {
             editor.enter_instance(id);
@@ -542,7 +583,7 @@ impl StageView {
                     }
                     None => {
                         let tolerance = HIT_TOLERANCE / view.zoom;
-                        editor.selection = editor.hit_test(view.to_stage(pointer), tolerance);
+                        editor.selection = editor.hit_test(view.to_local(pointer), tolerance);
                         self.anchor_selection = None;
                     }
                 }
@@ -553,7 +594,7 @@ impl StageView {
                 |pointer| Handles::for_selection(editor, view).and_then(|h| h.hit(pointer, view)).is_some();
             if let Some(pointer) = response.interact_pointer_pos().filter(|p| !on_handle(*p)) {
                 let tolerance = HIT_TOLERANCE / view.zoom;
-                editor.selection = editor.hit_test(view.to_stage(pointer), tolerance);
+                editor.selection = editor.hit_test(view.to_local(pointer), tolerance);
             }
         }
     }
@@ -568,7 +609,7 @@ impl StageView {
         if space_held {
             return Some(Gesture::Pan);
         }
-        let p = view.to_stage(press);
+        let p = view.to_local(press);
         match editor.tool {
             Tool::Select => {
                 // Handles of the current selection take priority over
@@ -631,7 +672,7 @@ impl StageView {
         }
         let layer = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !l.locked)?;
         let to_stage = layer.transform_at(editor.frame).to_affine();
-        let local = to_stage.inverse()?.apply(view.to_stage(pointer));
+        let local = to_stage.inverse()?.apply(view.to_local(pointer));
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
 
         let mut best: Option<OutlineHit> = None;
@@ -756,7 +797,7 @@ impl StageView {
                 i.modifiers.shift,
             )
         });
-        let pointer = response.interact_pointer_pos().map(|p| view.to_stage(p));
+        let pointer = response.interact_pointer_pos().map(|p| view.to_local(p));
 
         // Before starting a new path, a click on the selected shape's outline
         // adds a point to it instead, as in Animate and Illustrator.
@@ -805,7 +846,7 @@ impl StageView {
         if let Some(path) = pen.finish(false) {
             painter.line(to_screen(&path), (1.5, SELECTION));
         }
-        let hover_stage = hover.map(|p| view.to_stage(p));
+        let hover_stage = hover.map(|p| view.to_local(p));
         let closing = hover_stage.is_some_and(|p| pen.can_close_at(p, ANCHOR_HIT / view.zoom));
         if !pen.is_dragging()
             && let Some(preview) = hover_stage.and_then(|p| pen.preview_to(p))
@@ -857,12 +898,21 @@ impl StageView {
         let preview = (1.0, SELECTION);
         match &self.gesture {
             Some(Gesture::DrawShape { tool, start, current }) => {
-                let rect = Rect::from_two_pos(view.to_screen(*start), view.to_screen(*current));
-                if *tool == Tool::Ellipse {
-                    painter.add(egui::Shape::ellipse_stroke(rect.center(), rect.size() / 2.0, preview));
+                // Built from local points, so the preview turns and stretches
+                // with an instance being edited in place.
+                let rect = StageRect::from_points(*start, *current);
+                let outline: Vec<Pos2> = if *tool == Tool::Ellipse {
+                    let (center, rx, ry) = (rect.center(), rect.width() / 2.0, rect.height() / 2.0);
+                    (0..48)
+                        .map(|i| {
+                            let a = i as f32 / 48.0 * std::f32::consts::TAU;
+                            view.to_screen(center + Point::new(rx * a.cos(), ry * a.sin()))
+                        })
+                        .collect()
                 } else {
-                    painter.rect_stroke(rect, 0.0, preview, StrokeKind::Middle);
-                }
+                    rect.corners().iter().map(|c| view.to_screen(*c)).collect()
+                };
+                painter.add(egui::Shape::closed_line(outline, preview));
             }
             Some(Gesture::Pencil { points }) => {
                 let stroke = editor.pencil_stroke;
@@ -908,7 +958,7 @@ impl StageView {
                     (None, Tool::Pen) => {
                         let can_close =
                             self.pen.as_ref().zip(response.hover_pos()).is_some_and(|(pen, p)| {
-                                pen.can_close_at(view.to_stage(p), ANCHOR_HIT / view.zoom)
+                                pen.can_close_at(view.to_local(p), ANCHOR_HIT / view.zoom)
                             });
                         let on_outline =
                             response.hover_pos().is_some_and(|p| self.outline_hit(editor, view, p).is_some());
@@ -944,7 +994,17 @@ impl StageView {
         // Onion skins are hidden during playback, where they'd just be a blur.
         let onion = (editor.onion.enabled && !editor.playback.playing).then_some(editor.onion);
         let timeline = editor.timeline();
-        let key = RenderKey { doc: doc.clone(), timeline, frame: editor.frame, size, onion };
+        let to_stage = editor.timeline_transform();
+        let surroundings = editor.surroundings();
+        let key = RenderKey {
+            doc: doc.clone(),
+            timeline,
+            frame: editor.frame,
+            to_stage,
+            surroundings: surroundings.clone(),
+            size,
+            onion,
+        };
         if self.rendered.as_ref() == Some(&key) {
             return;
         }
@@ -955,11 +1015,27 @@ impl StageView {
         let bg = doc.background;
         pixmap.fill(tiny_skia::Color::from_rgba8(bg.r, bg.g, bg.b, bg.a));
 
+        // Editing in place: the scene around the symbol, faded so the
+        // symbol itself stands out, as in Animate.
+        let faded =
+            RenderOptions { scale, draw_background: false, opacity: SURROUNDINGS_OPACITY, tint: None };
+        for level in &surroundings {
+            render_timeline_into(
+                &mut pixmap,
+                doc,
+                level.timeline,
+                level.frame,
+                level.to_stage,
+                Some(level.skip),
+                &faded,
+            );
+        }
+
         if let Some(onion) = onion {
             draw_onion_skins(&mut pixmap, editor, onion, scale);
         }
         let options = RenderOptions { scale, draw_background: false, ..RenderOptions::default() };
-        render_timeline_into(&mut pixmap, doc, timeline, editor.frame, editor.timeline_origin(), &options);
+        render_timeline_into(&mut pixmap, doc, timeline, editor.frame, to_stage, None, &options);
 
         // tiny-skia and egui both use premultiplied alpha, so the bytes can be
         // handed over as they are.
@@ -977,10 +1053,10 @@ impl StageView {
 /// green for the future (the same convention as most 2D animation tools).
 /// Nearer frames are stronger so the direction of motion reads clearly.
 fn draw_onion_skins(pixmap: &mut tiny_skia::Pixmap, editor: &Editor, onion: OnionSkin, scale: f32) {
-    let (doc, frame, timeline, origin) =
-        (&editor.doc, editor.frame, editor.timeline(), editor.timeline_origin());
+    let (doc, frame, timeline, to_stage) =
+        (&editor.doc, editor.frame, editor.timeline(), editor.timeline_transform());
     let mut ghost_at = |f: u32, options: &RenderOptions| {
-        render_timeline_into(pixmap, doc, timeline, f, origin, options);
+        render_timeline_into(pixmap, doc, timeline, f, to_stage, None, options);
     };
     let ghost = |distance: u32, count: u32, tint| RenderOptions {
         scale,
@@ -1127,9 +1203,9 @@ mod tests {
 
     #[test]
     fn view_round_trips() {
-        let view = View { origin: pos2(100.0, 50.0), zoom: 0.5 };
+        let view = View::stage(pos2(100.0, 50.0), 0.5);
         let p = Point::new(300.0, 200.0);
-        assert_eq!(view.to_stage(view.to_screen(p)), p);
+        assert_eq!(view.to_local(view.to_screen(p)), p);
     }
 
     #[test]
@@ -1603,6 +1679,39 @@ mod tests {
     }
 
     #[test]
+    fn drawing_in_place_inside_a_rotated_instance() {
+        let (mut editor, id) = editor_with_selected_box();
+        let symbol = editor.convert_selected_to_symbol().unwrap();
+        // Turn the instance a quarter turn: the symbol's x axis now points
+        // down the screen.
+        let pose = Transform { rotation: 90.0, ..editor.doc.layer(id).unwrap().transform_at(0) };
+        editor.doc.layer_mut(id).unwrap().track.set_pose(0, pose);
+        editor.enter_instance(id);
+        editor.tool = Tool::Rectangle;
+        let mut h = harness(editor);
+
+        // `screen` takes stage points, which here we work out by hand: drag
+        // from the registration point (400, 400) to 30 right and 60 down.
+        let to_screen = |h: &Harness<'_, State>, x: f32, y: f32| {
+            let (stage, editor) = h.state();
+            let view = stage.view(stage.last_area, &editor.doc);
+            let on_stage = Point::new(x, y);
+            view.stage_origin + vec2(on_stage.x, on_stage.y) * view.stage_zoom
+        };
+        let (from, to) = (to_screen(&h, 400.0, 400.0), to_screen(&h, 430.0, 460.0));
+        drag(&mut h, from, &[to]);
+
+        // Undoing the quarter turn, that drag runs 60 along the symbol's x
+        // axis and 30 against its y axis: a 60×30 box centered at (30, -15).
+        let layers = h.state().1.doc.layers_of(TimelineId::Symbol(symbol));
+        let drawn = layers.last().unwrap();
+        let Shape::Rect { width, height, .. } = drawn.elements[0].shape else { panic!("not a rect") };
+        assert!((width - 60.0).abs() < 1.5 && (height - 30.0).abs() < 1.5, "{width}×{height}");
+        let center = drawn.transform_at(0).position;
+        assert!(center.distance(Point::new(30.0, -15.0)) < 1.5, "{center:?}");
+    }
+
+    #[test]
     fn zooming_keeps_the_anchor_fixed() {
         let doc = Document::default();
         let mut stage = StageView {
@@ -1610,9 +1719,9 @@ mod tests {
             ..Default::default()
         };
         let anchor = pos2(200.0, 150.0);
-        let before = stage.view(stage.last_area, &doc).to_stage(anchor);
+        let before = stage.view(stage.last_area, &doc).to_local(anchor);
         stage.set_zoom_about(&doc, anchor, 2.0);
-        let after = stage.view(stage.last_area, &doc).to_stage(anchor);
+        let after = stage.view(stage.last_area, &doc).to_local(anchor);
         assert!(before.distance(after) < 1e-3);
     }
 }

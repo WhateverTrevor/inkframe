@@ -12,7 +12,7 @@
 
 mod path;
 
-use inkframe_core::{Affine, Color, Document, Element, Layer, Point, SymbolId, TimelineId};
+use inkframe_core::{Affine, Color, Document, Element, Layer, LayerId, Point, SymbolId, TimelineId};
 use tiny_skia::{FillRule, LineCap, LineJoin, Paint, Pixmap, PixmapPaint, Transform};
 
 pub use path::build_path;
@@ -60,28 +60,34 @@ pub fn output_size(doc: &Document, scale: f32) -> (u32, u32) {
 /// Drawing on top (instead of clearing first) is what lets the editor stack
 /// onion-skin frames under the current one in a single buffer.
 pub fn render_frame_into(pixmap: &mut Pixmap, doc: &Document, frame: u32, options: &RenderOptions) {
-    render_timeline_into(pixmap, doc, TimelineId::Main, frame, Point::ZERO, options);
+    render_timeline_into(pixmap, doc, TimelineId::Main, frame, Affine::IDENTITY, None, options);
 }
 
-/// Like [`render_frame_into`], for any timeline. The editor uses this to
-/// show a symbol on its own while it's being edited: `origin` is where the
-/// timeline's (0, 0) lands, in stage pixels, and `frame` is in the
-/// timeline's own frames.
+/// Like [`render_frame_into`], for any timeline, placed anywhere.
+///
+/// The editor uses this while a symbol is open: `to_stage` maps the
+/// timeline's coordinates onto the stage (for a symbol edited in place,
+/// that's its instance's transform), and `frame` is in the timeline's own
+/// frames. `skip` leaves one layer out; the editor uses it to fade the
+/// surrounding scene without also drawing a faded copy of the instance
+/// being edited.
 pub fn render_timeline_into(
     pixmap: &mut Pixmap,
     doc: &Document,
     timeline: TimelineId,
     frame: u32,
-    origin: Point,
+    to_stage: Affine,
+    skip: Option<LayerId>,
     options: &RenderOptions,
 ) {
     if options.draw_background {
         pixmap.fill(to_skia_color(doc.background));
     }
 
-    let to_pixels = Affine::scale(options.scale, options.scale).pre_concat(Affine::translate(origin));
+    let to_pixels = Affine::scale(options.scale, options.scale).pre_concat(to_stage);
     let style = Style { tint: options.tint };
-    render_layers(pixmap, doc, doc.layers_of(timeline), frame, to_pixels, options.opacity, style, 0);
+    let layers = doc.layers_of(timeline);
+    render_layers(pixmap, doc, layers, frame, to_pixels, options.opacity, style, skip, 0);
 }
 
 /// Renders one frame of a symbol, scaled to fit a `size`×`size` square, for
@@ -109,7 +115,7 @@ pub fn render_symbol_thumbnail(doc: &Document, symbol: SymbolId, frame: u32, siz
         .pre_concat(Affine::translate(-center));
 
     let mut pixmap = Pixmap::new(size, size)?;
-    render_layers(&mut pixmap, doc, &symbol.layers, frame, fit, 1.0, Style { tint: None }, 0);
+    render_layers(&mut pixmap, doc, &symbol.layers, frame, fit, 1.0, Style { tint: None }, None, 0);
     Some(pixmap)
 }
 
@@ -135,10 +141,11 @@ fn render_layers(
     parent: Affine,
     opacity: f32,
     style: Style,
+    skip: Option<LayerId>,
     depth: usize,
 ) {
     // Layers are stored bottom-first, so a plain loop paints back to front.
-    for layer in layers.iter().filter(|l| l.is_shown_at(frame)) {
+    for layer in layers.iter().filter(|l| l.is_shown_at(frame) && Some(l.id) != skip) {
         let transform = layer.transform_at(frame);
         let opacity = (transform.opacity * opacity).clamp(0.0, 1.0);
         if opacity <= 0.0 {
@@ -181,7 +188,7 @@ fn draw_layer(
     // `instance_view` stops at the nesting limit, so a malformed file can't
     // recurse forever.
     if let Some((symbol, symbol_frame)) = doc.instance_view(layer, frame, depth) {
-        render_layers(pixmap, doc, &symbol.layers, symbol_frame, matrix, 1.0, style, depth + 1);
+        render_layers(pixmap, doc, &symbol.layers, symbol_frame, matrix, 1.0, style, None, depth + 1);
     }
 }
 

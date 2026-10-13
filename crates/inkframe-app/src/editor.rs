@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use inkframe_core::{
-    Color, Document, DocumentError, Element, History, Layer, LayerId, Point, Property, Stroke, Style,
+    Affine, Color, Document, DocumentError, Element, History, Layer, LayerId, Point, Property, Stroke, Style,
     SymbolId, TimelineId, Transform,
 };
 
@@ -61,8 +61,27 @@ pub struct Playback {
 #[derive(Debug, Clone, Copy)]
 struct OpenSymbol {
     symbol: SymbolId,
+    /// The instance layer it was opened through, for editing in place. `None`
+    /// when opened from the library, which shows the symbol on its own.
+    instance: Option<LayerId>,
+    /// The frame of the timeline outside, when the symbol was opened. That's
+    /// where we return to, and also the frame the surrounding scene is
+    /// shown at while editing in place.
     return_frame: u32,
     return_selection: Option<LayerId>,
+}
+
+/// One level of the scene around a symbol being edited in place, drawn
+/// faded behind it. See [`Editor::surroundings`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Surrounding {
+    pub timeline: TimelineId,
+    pub frame: u32,
+    /// Maps this timeline's coordinates onto the stage.
+    pub to_stage: Affine,
+    /// The instance layer that leads to the symbol being edited, which is
+    /// drawn at full strength rather than faded, so it's left out here.
+    pub skip: LayerId,
 }
 
 pub struct Editor {
@@ -198,18 +217,57 @@ impl Editor {
         self.duration().saturating_sub(1)
     }
 
-    /// Where the current timeline's (0, 0) sits on the stage. A symbol's
-    /// registration point is shown in the middle of the stage while it's
-    /// being edited, like in Animate.
-    pub fn timeline_origin(&self) -> Point {
-        match self.timeline() {
-            TimelineId::Main => Point::ZERO,
-            TimelineId::Symbol(_) => self.doc.stage_rect().center(),
+    /// Maps the coordinates of the timeline being edited onto the stage.
+    ///
+    /// On the main timeline that's the identity. A symbol opened through an
+    /// instance sits exactly where that instance does: the product of the
+    /// instance transforms on the way in, each taken at the frame its
+    /// timeline was on when we stepped inside. A symbol opened from the
+    /// library has no instance to follow, so its registration point is put
+    /// in the middle of the stage instead.
+    pub fn timeline_transform(&self) -> Affine {
+        let mut to_stage = Affine::IDENTITY;
+        for open in &self.open_symbols {
+            let instance = open.instance.and_then(|id| self.doc.layer(id));
+            to_stage = match instance {
+                Some(layer) => to_stage.pre_concat(layer.transform_at(open.return_frame).to_affine()),
+                None => Affine::translate(self.doc.stage_rect().center()),
+            };
         }
+        to_stage
     }
 
-    /// Opens `symbol` for editing, starting on `frame` of its timeline.
+    /// The scene around a symbol being edited in place, outermost first,
+    /// for drawing faded behind it. Empty on the main timeline and for a
+    /// symbol opened from the library.
+    pub fn surroundings(&self) -> Vec<Surrounding> {
+        let mut levels = Vec::new();
+        let mut timeline = TimelineId::Main;
+        let mut to_stage = Affine::IDENTITY;
+        for open in &self.open_symbols {
+            match open.instance.and_then(|id| self.doc.layer(id)) {
+                Some(layer) => {
+                    levels.push(Surrounding { timeline, frame: open.return_frame, to_stage, skip: layer.id });
+                    to_stage = to_stage.pre_concat(layer.transform_at(open.return_frame).to_affine());
+                }
+                // Opened on its own: nothing from further out is shown.
+                None => {
+                    levels.clear();
+                    to_stage = Affine::translate(self.doc.stage_rect().center());
+                }
+            }
+            timeline = TimelineId::Symbol(open.symbol);
+        }
+        levels
+    }
+
+    /// Opens `symbol` on its own for editing, starting on `frame` of its
+    /// timeline.
     pub fn enter_symbol(&mut self, symbol: SymbolId, frame: u32) {
+        self.open_symbol(symbol, frame, None);
+    }
+
+    fn open_symbol(&mut self, symbol: SymbolId, frame: u32, instance: Option<LayerId>) {
         if self.doc.symbol(symbol).is_none() {
             return;
         }
@@ -222,6 +280,7 @@ impl Editor {
         }
         self.open_symbols.push(OpenSymbol {
             symbol,
+            instance,
             return_frame: self.frame,
             return_selection: self.selection,
         });
@@ -230,15 +289,16 @@ impl Editor {
         self.set_frame(frame);
     }
 
-    /// Opens the symbol an instance layer shows, on the frame the instance
-    /// is showing right now, so the drawing doesn't jump.
-    pub fn enter_instance(&mut self, layer: LayerId) {
-        let Some(layer) = self.doc.layer(layer) else { return };
+    /// Opens the symbol an instance layer shows, in place: where the
+    /// instance sits, on the frame it's showing right now, with the rest of
+    /// the scene faded around it.
+    pub fn enter_instance(&mut self, id: LayerId) {
+        let Some(layer) = self.doc.layer(id) else { return };
         let Some((symbol, frame)) = self.doc.instance_view(layer, self.frame, 0).map(|(s, f)| (s.id, f))
         else {
             return;
         };
-        self.enter_symbol(symbol, frame);
+        self.open_symbol(symbol, frame, Some(id));
     }
 
     /// Steps out one level, back to the timeline that contains this symbol.
@@ -393,7 +453,12 @@ impl Editor {
     /// Inside a symbol, a symbol that contains it (or itself) can't be
     /// placed; see [`Editor::can_place`].
     pub fn place_symbol(&mut self, symbol: SymbolId) {
-        let center = self.doc.stage_rect().center() - self.timeline_origin();
+        // The middle of the stage, in the coordinates of the timeline being
+        // edited (which may be a rotated or scaled instance).
+        let center = self
+            .timeline_transform()
+            .inverse()
+            .map_or(Point::ZERO, |to_timeline| to_timeline.apply(self.doc.stage_rect().center()));
         if let Some(id) = self.doc.add_instance_layer(self.timeline(), symbol, self.frame, center) {
             self.selection = Some(id);
         }
@@ -499,6 +564,30 @@ mod tests {
         editor.exit_symbol();
         assert_eq!(editor.timeline(), TimelineId::Main);
         assert_eq!((editor.frame, editor.selection), (25, Some(id)));
+    }
+
+    #[test]
+    fn editing_in_place_follows_the_instance() {
+        let (mut editor, id) = editor_with_layer();
+        let symbol = editor.convert_selected_to_symbol().unwrap();
+        let instance = Transform { rotation: 90.0, ..Transform::at(Point::new(300.0, 200.0)) };
+        editor.doc.layer_mut(id).unwrap().track.set_pose(0, instance);
+
+        editor.enter_instance(id);
+        let to_stage = editor.timeline_transform();
+        // The symbol's x axis now points down the screen, from (300, 200).
+        let p = to_stage.apply(Point::new(10.0, 0.0));
+        assert!(p.distance(Point::new(300.0, 210.0)) < 1e-3, "{p:?}");
+
+        let around = editor.surroundings();
+        assert_eq!(around.len(), 1);
+        assert_eq!((around[0].timeline, around[0].skip), (TimelineId::Main, id));
+
+        // Opening from the library instead shows the symbol on its own.
+        editor.exit_symbol();
+        editor.enter_symbol(symbol, 0);
+        assert!(editor.surroundings().is_empty());
+        assert_eq!(editor.timeline_transform().apply(Point::ZERO), editor.doc.stage_rect().center());
     }
 
     #[test]

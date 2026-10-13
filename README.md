@@ -24,9 +24,10 @@ planned (the code is already cross-platform and CI builds it on Windows).
 - **Symbols:** turn any layer, animation included, into a reusable symbol
   (F8). Place it as many times as you like from the Library; each instance
   can be moved, scaled, tweened and offset in time, and changing the symbol
-  changes them all. Double-click an instance to edit the symbol itself, with
-  every tool; a breadcrumb bar shows where you are. Symbols can contain other
-  symbols.
+  changes them all. Double-click an instance to edit the symbol in place,
+  right where it sits (even rotated or scaled), with the rest of the scene
+  faded around it; a breadcrumb bar shows where you are. Symbols can contain
+  other symbols.
 - **Export** with or without transparency:
 
   | Format | Alpha | Use it for |
@@ -94,7 +95,6 @@ development workflow.
 
 Roughly in priority order:
 
-- Show the rest of the scene, dimmed, while editing a symbol (Animate's "Edit in Place")
 - Audio tracks for lip-sync and timing
 - GPU stage preview for very large scenes
 - Windows installer and signed macOS app bundle
