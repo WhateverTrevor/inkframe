@@ -157,7 +157,7 @@ mod tests {
             style: Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None },
         };
         let id = doc.add_layer("Square", vec![square], 0, Pose::at(Point::new(20.0, 50.0)));
-        doc.layer_mut(id).unwrap().track.set(10, Pose::at(Point::new(80.0, 50.0)));
+        doc.layer_mut(id).unwrap().track.set_pose(10, Pose::at(Point::new(80.0, 50.0)));
         doc
     }
 
@@ -198,7 +198,7 @@ mod tests {
     fn layer_opacity_fades_the_whole_layer() {
         let mut doc = red_square_doc();
         let layer = &mut doc.layers[0];
-        layer.track.key_at_mut(0).unwrap().transform.opacity = 0.5;
+        layer.track.opacity.set(0, 0.5);
         // A second, overlapping shape: it must not show through the first.
         layer.elements.push(layer.elements[0].clone());
 

@@ -22,7 +22,7 @@ fn sample_doc() -> Document {
         style: Style { fill: Some(Color::rgba(255, 0, 0, 128)), stroke: None },
     };
     let id = doc.add_layer("Square", vec![square], 0, Transform::at(Point::new(10.0, 18.0)));
-    doc.layer_mut(id).unwrap().track.set(2, Transform::at(Point::new(54.0, 18.0)));
+    doc.layer_mut(id).unwrap().track.set_pose(2, Transform::at(Point::new(54.0, 18.0)));
     doc
 }
 

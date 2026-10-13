@@ -9,6 +9,7 @@
 //! The main entry point is [`Document`].
 
 mod anchor;
+mod channel;
 mod color;
 mod document;
 mod easing;
@@ -22,6 +23,7 @@ mod transform;
 pub use anchor::{
     Anchor, KAPPA, PathHit, anchors_from_path, insert_anchor, nearest_on_anchors, path_from_anchors,
 };
+pub use channel::{Animatable, AnyChannel, Channel, Key, Tween};
 pub use color::{Color, ParseColorError};
 pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, Layer, LayerId};
 pub use easing::Easing;
@@ -29,5 +31,5 @@ pub use freehand::fit_freehand_path;
 pub use geometry::{Affine, Point, Rect};
 pub use history::History;
 pub use shape::{Path, Segment, Shape, Stroke, Style};
-pub use track::{Keyframe, Track};
+pub use track::{Property, Track};
 pub use transform::Transform;

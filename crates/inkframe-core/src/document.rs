@@ -12,7 +12,7 @@ use crate::transform::Transform;
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -274,11 +274,8 @@ impl Document {
         if self.frame_rate.numerator == 0 || self.frame_rate.denominator == 0 {
             return Err(DocumentError::Invalid("frame rate must be positive"));
         }
-        for layer in &mut self.layers {
-            layer.track.normalize();
-            if layer.track.is_empty() {
-                return Err(DocumentError::Invalid("every layer needs at least one keyframe"));
-            }
+        if !self.layers.iter().all(|l| l.track.has_every_property()) {
+            return Err(DocumentError::Invalid("every animated property needs at least one keyframe"));
         }
         // Never hand out an id that's already in use, even if the stored
         // counter was edited or lost.
@@ -341,7 +338,7 @@ mod tests {
     fn json_round_trip() {
         let mut doc = Document::default();
         let id = doc.add_layer("Box", vec![square_element()], 0, Transform::at(Point::new(50.0, 50.0)));
-        doc.layer_mut(id).unwrap().track.set(24, Transform::at(Point::new(500.0, 50.0)));
+        doc.layer_mut(id).unwrap().track.set_pose(24, Transform::at(Point::new(500.0, 50.0)));
 
         let loaded = Document::from_json(&doc.to_json().unwrap()).unwrap();
         assert_eq!(loaded, doc);
@@ -361,7 +358,7 @@ mod tests {
         let mut doc = Document::default();
         let bottom = doc.add_layer("A", vec![square_element()], 0, Transform::at(Point::new(100.0, 100.0)));
         let top = doc.add_layer("B", vec![square_element()], 0, Transform::at(Point::new(100.0, 100.0)));
-        doc.layer_mut(top).unwrap().track.set(10, Transform::at(Point::new(800.0, 100.0)));
+        doc.layer_mut(top).unwrap().track.set_pose(10, Transform::at(Point::new(800.0, 100.0)));
 
         // Frame 0: both overlap; the top one wins.
         assert_eq!(doc.hit_test(Point::new(100.0, 100.0), 0, 0.0), Some(top));

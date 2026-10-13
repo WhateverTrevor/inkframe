@@ -1179,11 +1179,13 @@ mod tests {
         drag(&mut h, grab, &[grab + vec2(20.0, 0.0), release]);
 
         let track = &h.state().1.doc.layer(id).unwrap().track;
-        assert_eq!(track.keys().len(), 2, "a keyframe should be added on frame 24");
-        let moved = track.key_at(24).unwrap().transform.position;
+        assert_eq!(track.key_frames(), [0, 24], "a keyframe should be added on frame 24");
+        let moved = track.position.key_at(24).unwrap().value;
         assert!(moved.distance(Point::new(1000.0, 400.0)) < 3.0, "moved to {moved:?}");
         // Frame 0 is untouched, so the layer now tweens between the two.
-        assert_eq!(track.key_at(0).unwrap().transform.position, Point::new(400.0, 400.0));
+        assert_eq!(track.position.key_at(0).unwrap().value, Point::new(400.0, 400.0));
+        // Only position changed, so only position was keyed.
+        assert!(track.rotation.key_at(24).is_none() && track.opacity.key_at(24).is_none());
     }
 
     #[test]

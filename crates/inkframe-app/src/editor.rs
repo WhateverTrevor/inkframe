@@ -7,7 +7,9 @@
 
 use std::path::{Path, PathBuf};
 
-use inkframe_core::{Color, Document, DocumentError, History, Layer, LayerId, Stroke, Style, Transform};
+use inkframe_core::{
+    Color, Document, DocumentError, History, Layer, LayerId, Property, Stroke, Style, Transform,
+};
 
 /// The tools in the toolbar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +72,8 @@ pub struct Editor {
     pub pencil_stroke: Stroke,
     pub playback: Playback,
     pub onion: OnionSkin,
+    /// The property whose easing curve the inspector is showing and editing.
+    pub focused_property: Property,
 }
 
 impl Editor {
@@ -89,6 +93,7 @@ impl Editor {
             pencil_stroke: Stroke { color: Color::rgb(0x1a, 0x1a, 0x1a), width: 4.0 },
             playback: Playback { looping: true, ..Playback::default() },
             onion: OnionSkin { enabled: false, before: 2, after: 2 },
+            focused_property: Property::Position,
         }
     }
 
@@ -211,12 +216,25 @@ impl Editor {
 
     /// Changes a layer's pose on the current frame.
     ///
-    /// This is "auto-keying": if the current frame has no keyframe, one is
-    /// created. Move to frame 24, drag a shape, and you've made a tween.
+    /// This is "auto-keying": each property that changed gets a key on this
+    /// frame. Move to frame 24, drag a shape, and you've made a position
+    /// tween, without disturbing any rotation or fade that's in progress.
     pub fn set_pose(&mut self, id: LayerId, transform: Transform) {
         let frame = self.frame;
         if let Some(layer) = self.doc.layer_mut(id) {
-            layer.track.set(frame, transform);
+            layer.track.set_pose(frame, transform);
+        }
+    }
+
+    /// Adds or removes the current frame's key for one property: the little
+    /// diamond buttons in the inspector.
+    pub fn toggle_property_key(&mut self, id: LayerId, property: Property) {
+        let frame = self.frame;
+        if let Some(layer) = self.doc.layer_mut(id) {
+            let channel = layer.track.channel_mut(property);
+            if !channel.remove_key(frame) {
+                channel.insert_key(frame);
+            }
         }
     }
 
@@ -270,7 +288,7 @@ mod tests {
         let (mut editor, id) = editor_with_layer();
         editor.set_frame(12);
         editor.set_pose(id, Transform::at(Point::new(5.0, 5.0)));
-        assert!(editor.doc.layer(id).unwrap().track.key_at(12).is_some());
+        assert!(editor.doc.layer(id).unwrap().track.position.key_at(12).is_some());
     }
 
     #[test]

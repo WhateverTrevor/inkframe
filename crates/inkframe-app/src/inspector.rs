@@ -2,7 +2,7 @@
 //! its keyframe easing and shapes, and the document settings.
 
 use egui::{Color32, DragValue, Sense, Stroke as EguiStroke, vec2};
-use inkframe_core::{Color, Easing, FrameRate, LayerId, Shape, Stroke, Style};
+use inkframe_core::{Color, Easing, FrameRate, LayerId, Property, Shape, Stroke, Style, Tween};
 
 use crate::convert::color_button;
 use crate::editor::Editor;
@@ -40,49 +40,48 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 
 fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) {
     let Some(layer) = editor.doc.layer(id) else { return };
-    let is_key = layer.track.key_at(frame).is_some();
+    let has_key = |property: Property| layer.track.channel(property).has_key(frame);
+    let keyed = Property::ALL.map(has_key);
     let mut pose = layer.transform_at(frame);
 
-    ui.horizontal(|ui| {
-        ui.strong(format!("Transform at frame {}", frame + 1));
-        let (badge, tip) = if is_key {
-            ("keyframe", "This frame has a keyframe")
-        } else {
-            ("tweened", "Changing a value here adds a keyframe on this frame")
-        };
-        ui.weak(badge).on_hover_text(tip);
-    });
+    ui.strong(format!("Transform at frame {}", frame + 1));
 
     // Scale and opacity are stored as fractions but edited as percentages,
     // which is what people expect to type.
     let mut scale_pct = [pose.scale.x * 100.0, pose.scale.y * 100.0];
     let mut opacity_pct = pose.opacity * 100.0;
     let mut changed = false;
+    let mut toggled = None;
 
-    egui::Grid::new("transform").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-        ui.label("Position");
-        ui.horizontal(|ui| {
-            changed |= ui.add(DragValue::new(&mut pose.position.x).prefix("x ").speed(1.0)).changed();
-            changed |= ui.add(DragValue::new(&mut pose.position.y).prefix("y ").speed(1.0)).changed();
-        });
-        ui.end_row();
-
-        ui.label("Rotation");
-        changed |= ui.add(DragValue::new(&mut pose.rotation).suffix("°").speed(1.0)).changed();
-        ui.end_row();
-
-        ui.label("Scale");
-        ui.horizontal(|ui| {
-            changed |=
-                ui.add(DragValue::new(&mut scale_pct[0]).prefix("x ").suffix("%").speed(1.0)).changed();
-            changed |=
-                ui.add(DragValue::new(&mut scale_pct[1]).prefix("y ").suffix("%").speed(1.0)).changed();
-        });
-        ui.end_row();
-
-        ui.label("Opacity");
-        changed |= ui.add(egui::Slider::new(&mut opacity_pct, 0.0..=100.0).suffix("%")).changed();
-        ui.end_row();
+    // Each row starts with a diamond showing whether that property has a key
+    // on this frame. Clicking it adds or removes the key. Editing a value
+    // adds one automatically.
+    egui::Grid::new("transform").num_columns(3).spacing([6.0, 4.0]).show(ui, |ui| {
+        for (property, is_key) in Property::ALL.into_iter().zip(keyed) {
+            if key_toggle(ui, property, is_key).clicked() {
+                toggled = Some(property);
+            }
+            ui.label(property.name());
+            ui.horizontal(|ui| match property {
+                Property::Position => {
+                    changed |= ui.add(DragValue::new(&mut pose.position.x).prefix("x ").speed(1.0)).changed();
+                    changed |= ui.add(DragValue::new(&mut pose.position.y).prefix("y ").speed(1.0)).changed();
+                }
+                Property::Rotation => {
+                    changed |= ui.add(DragValue::new(&mut pose.rotation).suffix("°").speed(1.0)).changed();
+                }
+                Property::Scale => {
+                    for (axis, value) in ["x ", "y "].into_iter().zip(&mut scale_pct) {
+                        changed |=
+                            ui.add(DragValue::new(value).prefix(axis).suffix("%").speed(1.0)).changed();
+                    }
+                }
+                Property::Opacity => {
+                    changed |= ui.add(egui::Slider::new(&mut opacity_pct, 0.0..=100.0).suffix("%")).changed();
+                }
+            });
+            ui.end_row();
+        }
     });
 
     if changed {
@@ -91,44 +90,103 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
         pose.opacity = opacity_pct / 100.0;
         editor.set_pose(id, pose);
     }
+    if let Some(property) = toggled {
+        editor.toggle_property_key(id, property);
+    }
+}
+
+/// A small diamond button: filled when the property has a key on this frame.
+fn key_toggle(ui: &mut egui::Ui, property: Property, is_key: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::click());
+    let accent = Color32::from_rgb(0x2f, 0x9b, 0xff);
+    let color = if response.hovered() { ui.visuals().strong_text_color() } else { accent };
+    let c = rect.center();
+    let r = 5.0;
+    let points = vec![c + vec2(0.0, -r), c + vec2(r, 0.0), c + vec2(0.0, r), c + vec2(-r, 0.0)];
+    let fill = if is_key { color } else { Color32::TRANSPARENT };
+    ui.painter().add(egui::Shape::convex_polygon(points, fill, EguiStroke::new(1.2, color)));
+
+    let tip = if is_key {
+        format!("Remove the {} keyframe on this frame", property.name().to_lowercase())
+    } else {
+        format!("Add a {} keyframe on this frame", property.name().to_lowercase())
+    };
+    response.on_hover_text(tip)
 }
 
 fn easing_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) {
-    let Some(track) = editor.doc.layer_mut(id).map(|l| &mut l.track) else { return };
-    let next_frame = track.next_key(frame).map(|k| k.frame);
-    let Some(key) = track.tween_start_mut(frame) else {
-        ui.weak("No tween here. Move to a later frame and change the layer to create one.");
+    let Some(layer) = editor.doc.layer(id) else { return };
+    let tweens: Vec<(Property, Tween)> = Property::ALL
+        .into_iter()
+        .filter_map(|p| layer.track.channel(p).tween_at(frame).map(|t| (p, t)))
+        .collect();
+    if tweens.is_empty() {
+        ui.weak("No tweens here. Move to a later frame and change a property to create one.");
         return;
-    };
+    }
+    // Keep the graph on a property that's actually tweening here.
+    if !tweens.iter().any(|(p, _)| *p == editor.focused_property) {
+        editor.focused_property = tweens[0].0;
+    }
 
-    let end = next_frame.expect("a tween always has a following key");
-    ui.strong(format!("Tween, frames {}–{}", key.frame + 1, end + 1));
-
-    ui.horizontal(|ui| {
-        ui.label("Easing");
-        egui::ComboBox::from_id_salt("easing").selected_text(key.easing.label()).show_ui(ui, |ui| {
-            for preset in Easing::PRESETS {
-                ui.selectable_value(&mut key.easing, preset, preset.label());
+    ui.strong("Easing");
+    let mut changes = Vec::new();
+    egui::Grid::new("easing").num_columns(3).spacing([8.0, 4.0]).show(ui, |ui| {
+        for (property, tween) in &tweens {
+            let focused = editor.focused_property == *property;
+            if ui.selectable_label(focused, property.name()).on_hover_text("Show this curve below").clicked()
+            {
+                editor.focused_property = *property;
             }
-            // "Custom" starts from the current curve so it's a tweak, not a reset.
-            let [x1, y1, x2, y2] = key.easing.control_points().unwrap_or([0.0, 0.0, 1.0, 1.0]);
-            let custom = Easing::CubicBezier { x1, y1, x2, y2 };
-            let is_custom = matches!(key.easing, Easing::CubicBezier { .. });
-            if ui.selectable_label(is_custom, "Custom").clicked() && !is_custom {
-                key.easing = custom;
+            ui.weak(format!("{}–{}", tween.start + 1, tween.end + 1));
+            let mut easing = tween.easing;
+            if easing_combo(ui, *property, &mut easing) {
+                changes.push((*property, easing));
             }
-        });
+            ui.end_row();
+        }
     });
 
-    if let Easing::CubicBezier { x1, y1, x2, y2 } = &mut key.easing {
+    let focused = editor.focused_property;
+    let Some(mut easing) = tweens.iter().find(|(p, _)| *p == focused).map(|(_, t)| t.easing) else { return };
+    if let Easing::CubicBezier { x1, y1, x2, y2 } = &mut easing {
+        let mut edited = false;
         ui.horizontal(|ui| {
-            ui.add(DragValue::new(x1).range(0.0..=1.0).speed(0.01).prefix("x1 "));
-            ui.add(DragValue::new(y1).speed(0.01).prefix("y1 "));
-            ui.add(DragValue::new(x2).range(0.0..=1.0).speed(0.01).prefix("x2 "));
-            ui.add(DragValue::new(y2).speed(0.01).prefix("y2 "));
+            edited |= ui.add(DragValue::new(x1).range(0.0..=1.0).speed(0.01).prefix("x1 ")).changed();
+            edited |= ui.add(DragValue::new(y1).speed(0.01).prefix("y1 ")).changed();
+            edited |= ui.add(DragValue::new(x2).range(0.0..=1.0).speed(0.01).prefix("x2 ")).changed();
+            edited |= ui.add(DragValue::new(y2).speed(0.01).prefix("y2 ")).changed();
         });
+        if edited {
+            changes.push((focused, easing));
+        }
     }
-    easing_graph(ui, key.easing);
+    easing_graph(ui, easing);
+
+    if let Some(layer) = editor.doc.layer_mut(id) {
+        for (property, easing) in changes {
+            if let Some(e) = layer.track.channel_mut(property).tween_easing_mut(frame) {
+                *e = easing;
+            }
+        }
+    }
+}
+
+/// The easing picker. Returns true when the choice changed.
+fn easing_combo(ui: &mut egui::Ui, id_salt: Property, easing: &mut Easing) -> bool {
+    let before = *easing;
+    egui::ComboBox::from_id_salt(("easing", id_salt)).selected_text(easing.label()).show_ui(ui, |ui| {
+        for preset in Easing::PRESETS {
+            ui.selectable_value(easing, preset, preset.label());
+        }
+        // "Custom" starts from the current curve so it's a tweak, not a reset.
+        let is_custom = matches!(easing, Easing::CubicBezier { .. });
+        if ui.selectable_label(is_custom, "Custom").clicked() && !is_custom {
+            let [x1, y1, x2, y2] = easing.control_points().unwrap_or([0.0, 0.0, 1.0, 1.0]);
+            *easing = Easing::CubicBezier { x1, y1, x2, y2 };
+        }
+    });
+    *easing != before
 }
 
 /// A small plot of the easing curve: time across, progress up.

@@ -4,20 +4,22 @@ An open-source 2D vector animation editor, in the spirit of Adobe Animate.
 Written in Rust. Runs natively on Apple Silicon Macs, with Windows support
 planned (the code is already cross-platform and CI builds it on Windows).
 
-![Inkframe editing a bouncing ball, with onion skinning on](docs/screenshot.png)
+![Inkframe editing a bouncing ball, with onion skinning on and per-property keyframes expanded in the timeline](docs/screenshot.png)
 
 ## What it does today
 
 - **Draw** rectangles, ovals, Bézier paths with the Pen tool, and freehand
   pencil strokes on a stage of any size.
-- **Animate with keyframes.** Go to a frame, move or change a layer, and a
-  keyframe is created for you. Scale and rotate with on-stage handles, or
-  type exact values in the properties panel. Inkframe tweens position,
-  rotation, scale and opacity between keyframes.
-- **Ease** each tween with Linear, Ease In/Out/In-Out, Hold, or a custom
-  cubic-Bézier curve, previewed live in the properties panel.
-- **Timeline** with layers, visibility and lock toggles, draggable keyframes,
-  scrubbing, looped playback and onion skinning.
+- **Animate with per-property keyframes.** Go to a frame, move or change a
+  layer, and a key is created for just the properties you changed. Position,
+  rotation, scale and opacity each have their own keys and timing, so a
+  layer can ease its movement while fading at a steady rate. Scale and
+  rotate with on-stage handles, or type exact values in the properties panel.
+- **Ease** each property's tweens separately with Linear, Ease In/Out/In-Out,
+  Hold, or a custom cubic-Bézier curve, previewed live in the properties panel.
+- **Timeline** with layers that expand into one row per property, visibility
+  and lock toggles, draggable keys, scrubbing, looped playback and onion
+  skinning.
 - **Export** with or without transparency:
 
   | Format | Alpha | Use it for |
@@ -56,7 +58,7 @@ If ffmpeg is somewhere unusual, point Inkframe at it with the
 | Reshape | Subselection tool (`A`): drag a shape's points, or a selected point's handles. Alt/Option moves one handle alone for a sharp corner; Alt/Option-click a point to switch it between corner and smooth; Delete removes the point. Rectangles and ovals become editable paths on the first edit |
 | Pen (`P`) | Click for corners, drag for curves. Click the first point to close the shape; Enter, Esc or clicking the last point ends an open line. Backspace removes the last point, Shift snaps to 45°. Click a selected shape's outline to add a point without changing its curve |
 | Animate | Move the playhead to a later frame, then drag the shape or edit its transform |
-| Insert / remove keyframe | `F6` / `Shift+F6`, or right-click the timeline |
+| Insert / remove keyframe | `F6` / `Shift+F6` keys every property; right-click a property row in the timeline, or click the ◇ next to a property in the properties panel, to key just that one |
 | Play / pause | `Enter` |
 | Step frames | `,` and `.` (or ← →), `Home` / `End` |
 | Pan / zoom | Scroll or Space-drag to pan, pinch or ⌘-scroll to zoom, `⌘0` to fit |
@@ -83,7 +85,6 @@ development workflow.
 
 Roughly in priority order:
 
-- Per-property keyframes (ease position and opacity differently)
 - Symbols: reusable, nested animations
 - Layer start/end frames, so content can appear and disappear
 - Audio tracks for lip-sync and timing

@@ -82,6 +82,11 @@ impl InkframeApp {
         };
         if app.screenshot.is_some() {
             AutoScreenshot::set_up_scene(&mut app.editor);
+            if AutoScreenshot::expand_timeline() {
+                for layer in &app.editor.doc.layers {
+                    app.timeline.set_expanded(layer.id, true);
+                }
+            }
         }
         app
     }

@@ -36,7 +36,8 @@ The data model and the math behind animation.
 | File | What's in it |
 |---|---|
 | `document.rs` | `Document` (stage settings plus layers), `Layer`, `Element`, loading and saving |
-| `track.rs` | `Track`, a layer's sorted list of `Keyframe`s, and `sample()`, which tweens between them |
+| `channel.rs` | `Channel<T>`, one property's sorted keys, and `sample()`, which tweens between them; `AnyChannel` for type-independent editing |
+| `track.rs` | `Track`: a layer's four channels, auto-keying (`set_pose`), and loading older file formats |
 | `transform.rs` | `Transform`, the animatable properties: position, rotation, scale, opacity |
 | `easing.rs` | Easing curves, including a CSS-style cubic-Bézier solver |
 | `shape.rs` | Rectangles, ellipses, Bézier paths, styles, and hit-testing |
@@ -46,10 +47,19 @@ The data model and the math behind animation.
 | `geometry.rs` | `Point`, `Rect`, `Affine` |
 
 **The animation model.** A layer is a group of shapes that animate together,
-like a tween layer holding one symbol in Animate. Each layer has one `Track`.
-A keyframe stores a full `Transform` plus the easing used to travel to the
-*next* keyframe. Shapes are defined around the layer's local origin, which is
-also the pivot for rotation and scaling.
+like a tween layer holding one symbol in Animate. Each layer has a `Track`
+made of one `Channel` per property (position, rotation, scale, opacity). A
+key stores one value plus the easing used to travel to that channel's *next*
+key, so every property has independent timing. `Track::sample` combines the
+channels into a `Transform` for rendering. `Track::set_pose` is auto-keying:
+it only adds keys for properties whose value changed. Shapes are defined
+around the layer's local origin, which is also the pivot for rotation and
+scaling.
+
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 2. Version 1
+stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
+on load, and `tests/format_migration.rs` checks an original version-1 file
+still plays back identically.
 
 **Coordinates.** Stage pixels, with y pointing down. Rotation is in degrees,
 clockwise. Frames are 0-based internally and shown 1-based in the UI.
@@ -100,9 +110,12 @@ callbacks or retained widget trees. Panels read and change `Editor` directly.
 ## Common changes
 
 **Add an animatable property** (for example, skew): add the field to
-`Transform`, interpolate it in `Transform::lerp`, apply it in
-`Transform::to_affine`, then add a control in `inspector::transform_section`.
-Old files keep loading because `Transform` uses `#[serde(default)]`.
+`Transform` and apply it in `Transform::to_affine`; add a `Property` variant
+and a `Channel` field to `Track`, and wire it into `Track::new`, `sample`,
+`set_pose`, `channel` and `channel_mut`; then add a row in
+`inspector::transform_section`. Files saved before the property existed
+won't have its channel, so give it a default in `TrackFormat::Current`
+(a single key holding the identity value).
 
 **Add a shape type:** add a variant to `Shape` with `bounds()` and
 `hit_test()`, a case in `inkframe-render/src/path.rs`, and a tool in

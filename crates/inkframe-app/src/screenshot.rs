@@ -12,6 +12,7 @@
 //! * `INKFRAME_SCREENSHOT_SELECT=Ball` selects the layer with that name.
 //! * `INKFRAME_SCREENSHOT_ONION=1` turns on onion skinning.
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
+//! * `INKFRAME_SCREENSHOT_EXPAND=1` expands every layer's property rows in the timeline.
 
 use std::path::PathBuf;
 
@@ -50,6 +51,11 @@ impl AutoScreenshot {
                 None => eprintln!("Unknown tool {name:?} in INKFRAME_SCREENSHOT_TOOL"),
             }
         }
+    }
+
+    /// Whether the timeline should start with every layer expanded.
+    pub fn expand_timeline() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_EXPAND").is_some()
     }
 
     /// Call once per UI frame.
