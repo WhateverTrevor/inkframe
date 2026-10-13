@@ -46,7 +46,7 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
     ui.horizontal(|ui| {
         ui.strong(format!("Transform at frame {}", frame + 1));
         let (badge, tip) = if is_key {
-            ("◆ keyframe", "This frame has a keyframe")
+            ("keyframe", "This frame has a keyframe")
         } else {
             ("tweened", "Changing a value here adds a keyframe on this frame")
         };

@@ -41,6 +41,8 @@ enum Command {
     FinishPath,
     /// Removes the newest point of the pen path being drawn.
     RemovePathPoint,
+    /// Deletes the anchor point picked with the Subselection tool.
+    DeleteAnchor,
 }
 
 const FILE_EXTENSION: &str = "inkf";
@@ -118,6 +120,7 @@ impl InkframeApp {
             Command::UseTool(tool) => editor.tool = tool,
             Command::FinishPath => self.stage.finish_path(editor, false),
             Command::RemovePathPoint => self.stage.remove_last_path_point(),
+            Command::DeleteAnchor => self.stage.delete_selected_anchor(editor),
         }
     }
 
@@ -154,6 +157,7 @@ impl InkframeApp {
         // the text field. File shortcuts still work everywhere.
         let typing = ctx.egui_wants_keyboard_input();
         let drawing_path = self.stage.is_drawing_path();
+        let anchor_selected = self.stage.has_anchor_selection();
         ctx.input_mut(|input| {
             for (shortcut, command) in file_shortcuts {
                 if input.consume_shortcut(&shortcut) {
@@ -163,20 +167,24 @@ impl InkframeApp {
             if typing {
                 return;
             }
-            // While a pen path is in progress, Enter and Escape finish it and
-            // Backspace takes back a point, instead of their usual jobs (play,
-            // and delete layer). Checked first so they win.
-            let path_keys: &[(Key, Command)] = if drawing_path {
+            // Some keys mean something different while the stage is busy:
+            // with a pen path in progress, Enter and Escape finish it and
+            // Backspace takes back a point; with an anchor picked, Backspace
+            // deletes that point rather than the whole layer. Checked first
+            // so they win over the usual meanings (play, delete layer).
+            let stage_keys: &[(Key, Command)] = if drawing_path {
                 &[
                     (Key::Enter, Command::FinishPath),
                     (Key::Escape, Command::FinishPath),
                     (Key::Backspace, Command::RemovePathPoint),
                     (Key::Delete, Command::RemovePathPoint),
                 ]
+            } else if anchor_selected {
+                &[(Key::Backspace, Command::DeleteAnchor), (Key::Delete, Command::DeleteAnchor)]
             } else {
                 &[]
             };
-            for &(key, command) in path_keys {
+            for &(key, command) in stage_keys {
                 if input.consume_key(Modifiers::NONE, key) {
                     commands.push(command);
                 }

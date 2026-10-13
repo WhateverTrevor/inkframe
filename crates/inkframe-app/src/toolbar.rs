@@ -75,16 +75,35 @@ fn tool_button(ui: &mut egui::Ui, tool: Tool, selected: bool) -> egui::Response 
     response
 }
 
+/// The pointer-arrow shape shared by the two selection tools.
+fn arrow_outline(at: impl Fn(f32, f32) -> Pos2) -> Vec<Pos2> {
+    [(0.2, 0.0), (0.2, 0.85), (0.42, 0.65), (0.58, 1.0), (0.72, 0.93), (0.56, 0.6), (0.85, 0.6)]
+        .iter()
+        .map(|&(x, y)| at(x, y))
+        .collect()
+}
+
 fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) {
     // Map from a 0–1 unit square into the icon's rectangle.
     let at = |x: f32, y: f32| pos2(r.left() + x * r.width(), r.top() + y * r.height());
     match tool {
         Tool::Select => {
-            // A classic pointer arrow.
-            let arrow =
-                [(0.2, 0.0), (0.2, 0.85), (0.42, 0.65), (0.58, 1.0), (0.72, 0.93), (0.56, 0.6), (0.85, 0.6)];
-            let points: Vec<Pos2> = arrow.iter().map(|&(x, y)| at(x, y)).collect();
-            painter.add(egui::Shape::closed_line(points, stroke));
+            // A solid arrow, like Animate's black Selection tool. egui only
+            // fills convex polygons, so the arrow is filled as two convex
+            // pieces (head and tail) and then outlined as one.
+            let head = [(0.2, 0.0), (0.2, 0.85), (0.85, 0.6)];
+            let tail = [(0.42, 0.65), (0.58, 1.0), (0.72, 0.93), (0.56, 0.6)];
+            for piece in [&head[..], &tail[..]] {
+                let points = piece.iter().map(|&(x, y)| at(x, y)).collect();
+                painter.add(egui::Shape::convex_polygon(points, stroke.color, Stroke::NONE));
+            }
+            painter.add(egui::Shape::closed_line(arrow_outline(at), stroke));
+        }
+        Tool::Subselect => {
+            // A hollow arrow with an anchor square: Animate's white arrow.
+            painter.add(egui::Shape::closed_line(arrow_outline(at), stroke));
+            let anchor = Rect::from_center_size(at(0.9, 0.9), Vec2::splat(5.0));
+            painter.rect_filled(anchor, 0.0, stroke.color);
         }
         Tool::Pen => {
             // A fountain-pen nib, point down, with its slit and breather hole.

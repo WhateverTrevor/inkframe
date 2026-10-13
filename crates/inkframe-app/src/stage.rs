@@ -7,7 +7,8 @@
 
 use egui::{Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{
-    Document, Element, LayerId, Path, Point, Rect as StageRect, Shape, Style, Transform, fit_freehand_path,
+    Affine, Anchor, Document, Element, LayerId, Path, Point, Rect as StageRect, Shape, Style, Transform,
+    fit_freehand_path, path_from_anchors,
 };
 use inkframe_render::{RenderOptions, output_size, render_frame_into};
 
@@ -15,6 +16,7 @@ use crate::convert::{to_color32, to_point};
 use crate::editor::{Editor, OnionSkin, Tool};
 use crate::handles::{RotateDrag, ScaleHandle, ScaleOptions, scale_pose};
 use crate::pen::PenPath;
+use crate::subselect::{AnchorPart, move_part, remove_anchor};
 
 /// Gap kept around the stage when it's zoomed to fit the window, in points.
 const FIT_MARGIN: f32 = 24.0;
@@ -74,8 +76,28 @@ enum Gesture {
     Scale { layer: LayerId, handle: ScaleHandle, start: Transform, bounds: StageRect },
     /// Dragging the rotation knob or a corner's rotate zone.
     Rotate { layer: LayerId, drag: RotateDrag },
+    /// Dragging an anchor point or one of its handles with the Subselection
+    /// tool. `start` holds the shape's anchors from when the drag began, and
+    /// the pointer is converted into the layer's local space with `to_local`.
+    EditAnchor {
+        target: AnchorRef,
+        part: AnchorPart,
+        start: Vec<Anchor>,
+        closed: bool,
+        /// Where the pointer grabbed, in local coordinates.
+        grab: Point,
+        to_local: Affine,
+    },
     /// Space + drag scrolls the view, like the hand tool in Animate.
     Pan,
+}
+
+/// One anchor of one shape in a layer, as picked with the Subselection tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnchorRef {
+    layer: LayerId,
+    element: usize,
+    index: usize,
 }
 
 /// Which transform handle the pointer is over.
@@ -203,6 +225,8 @@ pub struct StageView {
     gesture: Option<Gesture>,
     /// The path being drawn with the Pen tool, which lasts across many clicks.
     pen: Option<PenPath>,
+    /// The anchor picked with the Subselection tool, whose handles are shown.
+    anchor_selection: Option<AnchorRef>,
     texture: Option<egui::TextureHandle>,
     rendered: Option<RenderKey>,
     /// The viewport from the last frame, for zoom commands that come from menus.
@@ -216,6 +240,7 @@ impl Default for StageView {
             pan: Vec2::ZERO,
             gesture: None,
             pen: None,
+            anchor_selection: None,
             texture: None,
             rendered: None,
             last_area: Rect::NOTHING,
@@ -257,6 +282,27 @@ impl StageView {
             && !pen.remove_last()
         {
             self.pen = None;
+        }
+    }
+
+    pub fn has_anchor_selection(&self) -> bool {
+        self.anchor_selection.is_some()
+    }
+
+    /// Deletes the anchor picked with the Subselection tool, if the shape
+    /// would still have enough points left.
+    pub fn delete_selected_anchor(&mut self, editor: &mut Editor) {
+        let Some(target) = self.anchor_selection.take() else { return };
+        let Some(element) =
+            editor.doc.layer_mut(target.layer).and_then(|l| l.elements.get_mut(target.element))
+        else {
+            return;
+        };
+        let (anchors, closed) = element.shape.to_anchors();
+        if let Some(path) =
+            remove_anchor(&anchors, target.index, closed).and_then(|a| path_from_anchors(&a, closed))
+        {
+            element.shape = Shape::Path(path);
         }
     }
 
@@ -307,6 +353,7 @@ impl StageView {
         if editor.tool != Tool::Pen && self.pen.is_some() {
             self.finish_path(editor, false);
         }
+        self.validate_anchor_selection(editor);
 
         self.handle_tools(ui, &response, editor, view);
         if editor.tool == Tool::Pen {
@@ -316,7 +363,7 @@ impl StageView {
         let overlay = painter.with_clip_rect(area);
         self.draw_overlays(&overlay, editor, view, handles.as_ref());
         self.draw_pen_preview(&overlay, view, response.hover_pos());
-        self.update_cursor(ui, &response, editor.tool, view, handles.as_ref());
+        self.update_cursor(ui, &response, editor, view, handles.as_ref());
     }
 
     fn view(&self, area: Rect, doc: &Document) -> View {
@@ -401,6 +448,20 @@ impl StageView {
                 Some(Gesture::Rotate { layer, drag }) => {
                     editor.set_pose(*layer, drag.update(p, shift));
                 }
+                Some(Gesture::EditAnchor { target, part, start, closed, grab, to_local }) => {
+                    // Move the part by however far the pointer has moved, so
+                    // grabbing slightly off-center doesn't make it jump.
+                    let local = to_local.apply(p);
+                    let goal = part.position(&start[target.index]) + (local - *grab);
+                    let anchors = move_part(start, target.index, *part, goal, alt);
+                    let element =
+                        editor.doc.layer_mut(target.layer).and_then(|l| l.elements.get_mut(target.element));
+                    if let (Some(element), Some(path)) = (element, path_from_anchors(&anchors, *closed)) {
+                        // Rectangles and ovals become paths here, on the first
+                        // real edit, rather than as soon as they're clicked.
+                        element.shape = Shape::Path(path);
+                    }
+                }
                 Some(Gesture::DrawShape { start, current, .. }) => {
                     *current = if shift { constrain_square(*start, p) } else { p };
                 }
@@ -423,6 +484,19 @@ impl StageView {
 
         // A click without dragging selects whatever is under the pointer.
         // Clicks on a handle (which may be outside the shape) keep the selection.
+        if response.clicked() && editor.tool == Tool::Subselect {
+            if let Some(pointer) = response.interact_pointer_pos() {
+                match self.anchor_hit(editor, view, pointer) {
+                    Some((target, _)) => self.anchor_selection = Some(target),
+                    None => {
+                        let tolerance = HIT_TOLERANCE / view.zoom;
+                        editor.selection =
+                            editor.doc.hit_test(view.to_stage(pointer), editor.frame, tolerance);
+                        self.anchor_selection = None;
+                    }
+                }
+            }
+        }
         if response.clicked() && editor.tool == Tool::Select {
             let on_handle =
                 |pointer| Handles::for_selection(editor, view).and_then(|h| h.hit(pointer, view)).is_some();
@@ -434,7 +508,7 @@ impl StageView {
     }
 
     fn begin_gesture(
-        &self,
+        &mut self,
         editor: &mut Editor,
         press: Pos2,
         view: View,
@@ -477,6 +551,107 @@ impl StageView {
             Tool::Pencil => Some(Gesture::Pencil { points: vec![p] }),
             // The pen handles its own presses and drags; see `handle_pen`.
             Tool::Pen => None,
+            Tool::Subselect => {
+                let Some((target, part)) = self.anchor_hit(editor, view, press) else {
+                    // Dragging off the anchors selects a layer, but doesn't move it.
+                    let tolerance = HIT_TOLERANCE / view.zoom;
+                    editor.selection = editor.doc.hit_test(p, editor.frame, tolerance);
+                    self.anchor_selection = None;
+                    return None;
+                };
+                self.anchor_selection = Some(target);
+                let layer = editor.doc.layer(target.layer)?;
+                let to_local = layer.transform_at(editor.frame).to_affine().inverse()?;
+                let (start, closed) = layer.elements.get(target.element)?.shape.to_anchors();
+                Some(Gesture::EditAnchor { target, part, start, closed, grab: to_local.apply(p), to_local })
+            }
+        }
+    }
+
+    /// Drops the anchor selection if it no longer points at something that
+    /// exists (after undo, deleting points, or selecting another layer), or
+    /// if the Subselection tool isn't active.
+    fn validate_anchor_selection(&mut self, editor: &Editor) {
+        let Some(target) = self.anchor_selection else { return };
+        let still_valid = editor.tool == Tool::Subselect
+            && editor.selection == Some(target.layer)
+            && editor
+                .doc
+                .layer(target.layer)
+                .and_then(|l| l.elements.get(target.element))
+                .is_some_and(|e| target.index < e.shape.to_anchors().0.len());
+        if !still_valid {
+            self.anchor_selection = None;
+        }
+    }
+
+    /// The selected layer's anchors and handles as they appear on screen:
+    /// `(target, part, screen position)` for everything that can be dragged.
+    ///
+    /// Every anchor point is listed, but handles only for the selected
+    /// anchor, matching what's drawn. Handles come first, so when one sits
+    /// on top of an anchor, the handle wins.
+    fn anchor_targets(&self, editor: &Editor, view: View) -> Vec<(AnchorRef, AnchorPart, Pos2)> {
+        let Some(layer) = editor.selected_layer().filter(|l| l.visible && !l.locked) else {
+            return Vec::new();
+        };
+        let to_stage = layer.transform_at(editor.frame).to_affine();
+        let screen = |p: Point| view.to_screen(to_stage.apply(p));
+
+        let mut handles = Vec::new();
+        let mut points = Vec::new();
+        for (element, e) in layer.elements.iter().enumerate() {
+            for (index, anchor) in e.shape.to_anchors().0.iter().enumerate() {
+                let target = AnchorRef { layer: layer.id, element, index };
+                points.push((target, AnchorPart::Point, screen(anchor.point)));
+                if self.anchor_selection == Some(target) {
+                    for part in [AnchorPart::HandleIn, AnchorPart::HandleOut] {
+                        if part.position(anchor) != anchor.point {
+                            handles.push((target, part, screen(part.position(anchor))));
+                        }
+                    }
+                }
+            }
+        }
+        handles.extend(points);
+        handles
+    }
+
+    fn anchor_hit(&self, editor: &Editor, view: View, pointer: Pos2) -> Option<(AnchorRef, AnchorPart)> {
+        self.anchor_targets(editor, view)
+            .into_iter()
+            .find(|(_, _, pos)| pos.distance(pointer) <= ANCHOR_HIT)
+            .map(|(target, part, _)| (target, part))
+    }
+
+    /// Draws the selected layer's outlines, anchor squares, and the handles
+    /// of the selected anchor.
+    fn draw_anchor_overlay(&self, painter: &egui::Painter, editor: &Editor, view: View) {
+        let Some(layer) = editor.selected_layer().filter(|l| l.visible) else { return };
+        let to_stage = layer.transform_at(editor.frame).to_affine();
+        let screen = |p: Point| view.to_screen(to_stage.apply(p));
+
+        for (element, e) in layer.elements.iter().enumerate() {
+            let (anchors, closed) = e.shape.to_anchors();
+            if let Some(path) = path_from_anchors(&anchors, closed) {
+                painter.line(path.flatten().into_iter().map(screen).collect(), (1.0, SELECTION));
+            }
+            for (index, anchor) in anchors.iter().enumerate() {
+                let selected = self.anchor_selection == Some(AnchorRef { layer: layer.id, element, index });
+                let point = screen(anchor.point);
+                if selected {
+                    // Handles: a line back to the anchor and a round knob.
+                    for handle in [anchor.handle_in, anchor.handle_out] {
+                        if handle != anchor.point {
+                            painter.line_segment([point, screen(handle)], (1.0, SELECTION));
+                            painter.circle_filled(screen(handle), 3.5, SELECTION);
+                        }
+                    }
+                }
+                let square = Rect::from_center_size(point, Vec2::splat(7.0));
+                painter.rect_filled(square, 0.0, if selected { SELECTION } else { Color32::WHITE });
+                painter.rect_stroke(square, 0.0, (1.0, SELECTION), StrokeKind::Middle);
+            }
         }
     }
 
@@ -557,8 +732,12 @@ impl StageView {
     }
 
     fn draw_overlays(&self, painter: &egui::Painter, editor: &Editor, view: View, handles: Option<&Handles>) {
+        if editor.tool == Tool::Subselect {
+            self.draw_anchor_overlay(painter, editor, view);
+        }
         // Outline the selected layer's bounds, following its rotation and scale.
-        if let Some(layer) = editor.selected_layer().filter(|l| l.visible) {
+        // The Subselection tool shows the shape's own outline instead.
+        if let Some(layer) = editor.selected_layer().filter(|l| l.visible && editor.tool != Tool::Subselect) {
             if let Some(bounds) = layer.local_bounds() {
                 let pose = layer.transform_at(editor.frame);
                 let to_stage = pose.to_affine();
@@ -596,7 +775,7 @@ impl StageView {
         &self,
         ui: &egui::Ui,
         response: &egui::Response,
-        tool: Tool,
+        editor: &Editor,
         view: View,
         handles: Option<&Handles>,
     ) {
@@ -611,13 +790,19 @@ impl StageView {
             _ if space_held => CursorIcon::Grab,
             Some(Gesture::Move { .. }) => CursorIcon::Move,
             Some(Gesture::Rotate { .. }) => CursorIcon::Grabbing,
+            Some(Gesture::EditAnchor { .. }) => CursorIcon::Move,
             Some(Gesture::Scale { handle, .. }) => handle_cursor(HandleHit::Scale(*handle)),
             Some(Gesture::DrawShape { .. } | Gesture::Pencil { .. }) => CursorIcon::Crosshair,
             None => {
                 let hovered = handles.zip(response.hover_pos()).and_then(|(h, p)| h.hit(p, view));
-                match (hovered, tool) {
+                match (hovered, editor.tool) {
                     (Some(hit), _) => handle_cursor(hit),
                     (None, Tool::Select) => CursorIcon::Default,
+                    (None, Tool::Subselect) => {
+                        let on_anchor =
+                            response.hover_pos().is_some_and(|p| self.anchor_hit(editor, view, p).is_some());
+                        if on_anchor { CursorIcon::PointingHand } else { CursorIcon::Default }
+                    }
                     (None, Tool::Pen) => {
                         let can_close =
                             self.pen.as_ref().zip(response.hover_pos()).is_some_and(|(pen, p)| {
@@ -736,7 +921,11 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
             let style = Style { fill: None, stroke: Some(editor.pencil_stroke) };
             add_path_layer(editor, "Stroke", path, style);
         }
-        Gesture::Move { .. } | Gesture::Scale { .. } | Gesture::Rotate { .. } | Gesture::Pan => {}
+        Gesture::Move { .. }
+        | Gesture::Scale { .. }
+        | Gesture::Rotate { .. }
+        | Gesture::EditAnchor { .. }
+        | Gesture::Pan => {}
     }
 }
 
@@ -1047,6 +1236,81 @@ mod tests {
         let (stage, editor) = h.state();
         assert!(!stage.is_drawing_path());
         assert_eq!(editor.doc.layers.len(), 1);
+    }
+
+    /// The selected box from `editor_with_selected_box`, with the
+    /// Subselection tool active.
+    fn subselect_harness() -> (Harness<'static, State>, LayerId) {
+        let (mut editor, id) = editor_with_selected_box();
+        editor.tool = Tool::Subselect;
+        (harness(editor), id)
+    }
+
+    fn shape(harness: &Harness<'_, State>, id: LayerId) -> Shape {
+        harness.state().1.doc.layer(id).unwrap().elements[0].shape.clone()
+    }
+
+    #[test]
+    fn clicking_an_anchor_selects_it_without_changing_the_shape() {
+        let (mut h, id) = subselect_harness();
+        let corner = screen(&h, 500.0, 500.0);
+        click(&mut h, corner);
+
+        assert!(h.state().0.has_anchor_selection());
+        assert!(matches!(shape(&h, id), Shape::Rect { .. }), "a click must not convert the rectangle");
+    }
+
+    #[test]
+    fn dragging_a_rect_corner_turns_it_into_a_path() {
+        let (mut h, id) = subselect_harness();
+        let corner = screen(&h, 500.0, 500.0);
+        let target = screen(&h, 560.0, 530.0);
+        drag(&mut h, corner, &[corner + vec2(5.0, 5.0), target]);
+
+        let Shape::Path(path) = shape(&h, id) else { panic!("rectangle should now be a path") };
+        let (anchors, closed) = Shape::Path(path).to_anchors();
+        assert!(closed);
+        assert_eq!(anchors.len(), 4);
+        // The box is centered on (400, 400), so the corner's local position
+        // moved from (100, 100) to about (160, 130). The others stay put.
+        assert!(anchors[2].point.distance(Point::new(160.0, 130.0)) < 3.0, "{:?}", anchors[2].point);
+        assert_eq!(anchors[0].point, Point::new(-100.0, -100.0));
+    }
+
+    #[test]
+    fn dragging_a_handle_reshapes_the_curve_smoothly() {
+        let (mut editor, id) = editor_with_selected_box();
+        editor.doc.layer_mut(id).unwrap().elements[0].shape =
+            Shape::Ellipse { radius_x: 100.0, radius_y: 100.0 };
+        editor.tool = Tool::Subselect;
+        let mut h = harness(editor);
+
+        // Select the top anchor so its handles appear, then drag the
+        // outgoing handle (which starts at local (55.2, -100)) further right.
+        let top = screen(&h, 400.0, 300.0);
+        click(&mut h, top);
+        let handle = screen(&h, 400.0 + 100.0 * inkframe_core::KAPPA, 300.0);
+        let target = screen(&h, 520.0, 260.0);
+        drag(&mut h, handle, &[handle + vec2(5.0, 0.0), target]);
+
+        let (anchors, _) = shape(&h, id).to_anchors();
+        let top = anchors[0];
+        assert!(top.handle_out.distance(Point::new(120.0, -140.0)) < 3.0, "{:?}", top.handle_out);
+        // The incoming handle swung round to stay opposite.
+        let (into, out) = (top.handle_in - top.point, top.handle_out - top.point);
+        assert!(into.dot(out) / (into.length() * out.length()) < -0.999);
+    }
+
+    #[test]
+    fn delete_removes_the_selected_anchor() {
+        let (mut h, id) = subselect_harness();
+        let corner = screen(&h, 500.0, 500.0);
+        click(&mut h, corner);
+        let (stage, editor) = h.state_mut();
+        stage.delete_selected_anchor(editor);
+
+        assert_eq!(shape(&h, id).to_anchors().0.len(), 3);
+        assert!(!h.state().0.has_anchor_selection());
     }
 
     #[test]

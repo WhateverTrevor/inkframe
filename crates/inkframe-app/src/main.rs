@@ -12,6 +12,7 @@ mod pen;
 mod screenshot;
 mod shortcuts;
 mod stage;
+mod subselect;
 mod timeline;
 mod toolbar;
 

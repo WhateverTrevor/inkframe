@@ -11,10 +11,11 @@
 //! * `INKFRAME_SCREENSHOT_FRAME=12` moves the playhead (1-based, like the timeline).
 //! * `INKFRAME_SCREENSHOT_SELECT=Ball` selects the layer with that name.
 //! * `INKFRAME_SCREENSHOT_ONION=1` turns on onion skinning.
+//! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
 
 use std::path::PathBuf;
 
-use crate::editor::Editor;
+use crate::editor::{Editor, Tool};
 
 /// UI frames to wait before capturing, so layout and textures have settled.
 const SETTLE_FRAMES: u32 = 10;
@@ -42,6 +43,12 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_ONION").is_some() {
             editor.onion.enabled = true;
+        }
+        if let Some(name) = var("INKFRAME_SCREENSHOT_TOOL") {
+            match Tool::ALL.into_iter().find(|t| t.name().eq_ignore_ascii_case(&name)) {
+                Some(tool) => editor.tool = tool,
+                None => eprintln!("Unknown tool {name:?} in INKFRAME_SCREENSHOT_TOOL"),
+            }
         }
     }
 

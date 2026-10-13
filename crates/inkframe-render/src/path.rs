@@ -1,10 +1,5 @@
-use inkframe_core::{Segment, Shape};
+use inkframe_core::{KAPPA, Segment, Shape};
 use tiny_skia::{Path, PathBuilder, Rect};
-
-/// How far along each side a quarter-circle's Bézier handles reach, as a
-/// fraction of the radius. 4/3·(√2 − 1) ≈ 0.5523 is the standard constant
-/// that makes a cubic Bézier hug a circular arc to within 0.03%.
-const KAPPA: f32 = 0.552_284_8;
 
 /// Converts an Inkframe shape into a tiny-skia path in local coordinates.
 ///
