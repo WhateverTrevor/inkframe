@@ -1,0 +1,23 @@
+[package]
+name = "inkframe-app"
+description = "The Inkframe desktop editor."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "inkframe"
+path = "src/main.rs"
+
+[dependencies]
+inkframe-core.workspace = true
+inkframe-render.workspace = true
+inkframe-export.workspace = true
+eframe.workspace = true
+egui.workspace = true
+rfd.workspace = true
+tiny-skia.workspace = true
+
+[dev-dependencies]
+egui_kittest = "0.36"
