@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "width": 1920,
   "height": 1080,
   "frame_rate": {
@@ -242,5 +242,7 @@
       }
     }
   ],
-  "next_layer_id": 3
+  "symbols": [],
+  "next_layer_id": 3,
+  "next_symbol_id": 1
 }

@@ -112,6 +112,13 @@ impl<T: Animatable> Channel<T> {
         }
     }
 
+    /// Rewrites every key's value, keeping frames and easing.
+    pub fn map_values(&mut self, f: impl Fn(T) -> T) {
+        for key in &mut self.keys {
+            key.value = f(key.value);
+        }
+    }
+
     fn normalize(&mut self) {
         // Sort, then keep the *last* of any keys sharing a frame, since in a
         // hand-edited file the later entry is most likely the intended one.

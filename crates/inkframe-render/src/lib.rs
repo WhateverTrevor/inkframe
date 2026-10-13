@@ -12,7 +12,7 @@
 
 mod path;
 
-use inkframe_core::{Affine, Color, Document, Element, Layer};
+use inkframe_core::{Affine, Color, Document, Element, Layer, Point, SymbolId};
 use tiny_skia::{FillRule, LineCap, LineJoin, Paint, Pixmap, PixmapPaint, Transform};
 
 pub use path::build_path;
@@ -65,20 +65,74 @@ pub fn render_frame_into(pixmap: &mut Pixmap, doc: &Document, frame: u32, option
     }
 
     let stage_to_pixels = Affine::scale(options.scale, options.scale);
+    let style = Style { tint: options.tint };
+    render_layers(pixmap, doc, &doc.layers, frame, stage_to_pixels, options.opacity, style, 0);
+}
 
+/// Renders one frame of a symbol, scaled to fit a `size`×`size` square, for
+/// library thumbnails. Returns `None` for symbols with nothing to draw.
+pub fn render_symbol_thumbnail(doc: &Document, symbol: SymbolId, frame: u32, size: u32) -> Option<Pixmap> {
+    let symbol = doc.symbol(symbol)?;
+    let bounds = symbol
+        .layers
+        .iter()
+        .filter(|l| l.is_shown_at(frame))
+        .filter_map(|l| {
+            let local = doc.layer_bounds(l, frame)?;
+            let to_symbol = l.transform_at(frame).to_affine();
+            inkframe_core::Rect::bounding(local.corners().map(|c| to_symbol.apply(c)))
+        })
+        .reduce(inkframe_core::Rect::union)?;
+
+    // Fit the drawing into the square with a little margin, centered.
+    let padding = 0.9;
+    let scale = padding * size as f32 / bounds.width().max(bounds.height()).max(1e-3);
+    let center = bounds.center();
+    let half = size as f32 / 2.0;
+    let fit = Affine::translate(Point::new(half, half))
+        .pre_concat(Affine::scale(scale, scale))
+        .pre_concat(Affine::translate(-center));
+
+    let mut pixmap = Pixmap::new(size, size)?;
+    render_layers(&mut pixmap, doc, &symbol.layers, frame, fit, 1.0, Style { tint: None }, 0);
+    Some(pixmap)
+}
+
+/// Settings that apply to everything drawn in one pass, however deeply
+/// nested inside symbols.
+#[derive(Clone, Copy)]
+struct Style {
+    tint: Option<Color>,
+}
+
+/// Draws a stack of layers (the document's, or a symbol's) at `frame`.
+///
+/// `parent` maps the layers' coordinate space to pixels: the stage scale at
+/// the top level, and the instance's full transform inside a symbol. Each
+/// nested symbol calls back in here with its own frame and transform, so
+/// symbols can contain symbols to any depth (up to a safety limit).
+#[allow(clippy::too_many_arguments)]
+fn render_layers(
+    pixmap: &mut Pixmap,
+    doc: &Document,
+    layers: &[Layer],
+    frame: u32,
+    parent: Affine,
+    opacity: f32,
+    style: Style,
+    depth: usize,
+) {
     // Layers are stored bottom-first, so a plain loop paints back to front.
-    // Reuse one scratch buffer across layers instead of allocating per layer.
-    let mut scratch: Option<Pixmap> = None;
-    for layer in doc.layers.iter().filter(|l| l.is_shown_at(frame)) {
+    for layer in layers.iter().filter(|l| l.is_shown_at(frame)) {
         let transform = layer.transform_at(frame);
-        let opacity = (transform.opacity * options.opacity).clamp(0.0, 1.0);
+        let opacity = (transform.opacity * opacity).clamp(0.0, 1.0);
         if opacity <= 0.0 {
             continue;
         }
-        let matrix = to_skia_transform(stage_to_pixels.pre_concat(transform.to_affine()));
+        let matrix = parent.pre_concat(transform.to_affine());
 
         if opacity >= 1.0 {
-            draw_layer(pixmap, layer, matrix, options.tint);
+            draw_layer(pixmap, doc, layer, frame, matrix, style, depth);
             continue;
         }
 
@@ -86,24 +140,33 @@ pub fn render_frame_into(pixmap: &mut Pixmap, doc: &Document, frame: u32, option
         // each shape at reduced opacity, overlapping shapes inside the layer
         // would show through each other. So we draw the layer fully opaque
         // into a scratch buffer, then blend that buffer down in one go.
-        let buffer = match &mut scratch {
-            Some(buffer) => {
-                buffer.fill(tiny_skia::Color::TRANSPARENT);
-                buffer
-            }
-            None => scratch.insert(
-                Pixmap::new(pixmap.width(), pixmap.height()).expect("same size as an existing pixmap"),
-            ),
-        };
-        draw_layer(buffer, layer, matrix, options.tint);
+        // Symbols nest, so each translucent layer needs a buffer of its own.
+        let mut scratch =
+            Pixmap::new(pixmap.width(), pixmap.height()).expect("same size as an existing pixmap");
+        draw_layer(&mut scratch, doc, layer, frame, matrix, style, depth);
         let paint = PixmapPaint { opacity, ..PixmapPaint::default() };
-        pixmap.draw_pixmap(0, 0, buffer.as_ref(), &paint, Transform::identity(), None);
+        pixmap.draw_pixmap(0, 0, scratch.as_ref(), &paint, Transform::identity(), None);
     }
 }
 
-fn draw_layer(pixmap: &mut Pixmap, layer: &Layer, matrix: Transform, tint: Option<Color>) {
+/// Draws a layer's own shapes, then its symbol instance if it has one.
+fn draw_layer(
+    pixmap: &mut Pixmap,
+    doc: &Document,
+    layer: &Layer,
+    frame: u32,
+    matrix: Affine,
+    style: Style,
+    depth: usize,
+) {
+    let skia_matrix = to_skia_transform(matrix);
     for element in &layer.elements {
-        draw_element(pixmap, element, matrix, tint);
+        draw_element(pixmap, element, skia_matrix, style.tint);
+    }
+    // `instance_view` stops at the nesting limit, so a malformed file can't
+    // recurse forever.
+    if let Some((symbol, symbol_frame)) = doc.instance_view(layer, frame, depth) {
+        render_layers(pixmap, doc, &symbol.layers, symbol_frame, matrix, 1.0, style, depth + 1);
     }
 }
 
@@ -192,6 +255,36 @@ mod tests {
         let pixmap = render_frame(&doc, 0, &options).unwrap();
         assert_eq!((pixmap.width(), pixmap.height()), (200, 200));
         assert_eq!(pixel(&pixmap, 40, 100), [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn converting_to_a_symbol_renders_identically() {
+        let mut doc = red_square_doc();
+        let id = doc.layers[0].id;
+        // Some rotation and a fade, to exercise the full transform chain.
+        doc.layer_mut(id).unwrap().track.rotation.set(10, 45.0);
+        doc.layer_mut(id).unwrap().track.opacity.set(10, 0.5);
+        let before: Vec<Vec<u8>> =
+            (0..=10).map(|f| render_frame(&doc, f, &RenderOptions::default()).unwrap().take()).collect();
+
+        doc.convert_layer_to_symbol(id, 5).unwrap();
+        for (frame, expected) in before.iter().enumerate() {
+            let actual = render_frame(&doc, frame as u32, &RenderOptions::default()).unwrap().take();
+            // Allow off-by-one rounding from the extra matrix multiply.
+            let worst = expected.iter().zip(&actual).map(|(a, b)| a.abs_diff(*b)).max().unwrap();
+            assert!(worst <= 2, "frame {frame} differs by up to {worst}");
+        }
+    }
+
+    #[test]
+    fn thumbnails_fit_the_symbol() {
+        let mut doc = red_square_doc();
+        let id = doc.layers[0].id;
+        let symbol = doc.convert_layer_to_symbol(id, 0).unwrap();
+        let thumb = render_symbol_thumbnail(&doc, symbol, 0, 64).unwrap();
+        // The red square fills the middle of the thumbnail.
+        assert_eq!(pixel(&thumb, 32, 32), [255, 0, 0, 255]);
+        assert_eq!(pixel(&thumb, 0, 0)[3], 0);
     }
 
     #[test]

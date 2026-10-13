@@ -81,9 +81,7 @@ mod tests {
     use super::*;
 
     fn doc_with_width(width: u32) -> Document {
-        let mut doc = Document::default();
-        doc.width = width;
-        doc
+        Document { width, ..Document::default() }
     }
 
     #[test]

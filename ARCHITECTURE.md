@@ -43,6 +43,7 @@ The data model and the math behind animation.
 | `shape.rs` | Rectangles, ellipses, Bézier paths, styles, and hit-testing |
 | `freehand.rs` | Turns jittery pointer samples into a smooth path |
 | `anchor.rs` | Anchor points with in/out handles; conversion between anchors, paths and shapes; nearest-point search and curve-preserving point insertion |
+| `symbol.rs` | `Symbol` (library entry), `Instance` (a symbol placed on a layer) and its timing, Convert to Symbol, and symbol-aware bounds and hit-testing |
 | `history.rs` | Snapshot-based undo/redo |
 | `geometry.rs` | `Point`, `Rect`, `Affine` |
 
@@ -56,17 +57,29 @@ it only adds keys for properties whose value changed. Shapes are defined
 around the layer's local origin, which is also the pivot for rotation and
 scaling.
 
+**Symbols.** The document has a library of `Symbol`s, each with its own
+layers and length. A layer whose `instance` is set draws that symbol through
+the layer's transform (instance layers normally have no elements). Timing
+follows Animate's *graphic* symbols: `Instance::local_frame` derives the
+symbol's frame from the main timeline, so scrubbing and export are exact.
+Rendering, bounds and hit-testing recurse into symbols; use
+`Document::layer_bounds` and `Document::layer_hit` rather than looking at a
+layer's elements alone. Layer ids are unique across the whole document,
+symbols included. Loading rejects a symbol that contains itself, and
+`MAX_SYMBOL_DEPTH` is a backstop against runaway nesting.
+
 **Layer spans.** A layer appears from `start` to `end` (inclusive). An end
 of `None` means "until the animation ends". Outside its span a layer isn't
 drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 3. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 4. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
-still plays back identically. Version 3 added layer spans; earlier files
-load with every layer spanning the whole animation.
+still plays back identically. Version 3 added layer spans and version 4
+added symbols; earlier files load with whole-length layers and an empty
+library.
 
 **Coordinates.** Stage pixels, with y pointing down. Rotation is in degrees,
 clockwise. Frames are 0-based internally and shown 1-based in the UI.
@@ -106,6 +119,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `timeline.rs` | Transport bar and the hand-painted layer × frame grid |
 | `inspector.rs` | The properties panel |
 | `toolbar.rs` | Tool buttons with vector-drawn icons |
+| `library.rs` | The Library panel, with cached symbol thumbnails |
 | `export_dialog.rs` | Export settings and the background export thread |
 | `shortcuts.rs` | Every keyboard shortcut in one place |
 | `screenshot.rs` | `INKFRAME_SCREENSHOT=out.png` captures the window and quits |

@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use inkframe_core::{
-    Color, Document, DocumentError, History, Layer, LayerId, Property, Stroke, Style, Transform,
+    Color, Document, DocumentError, History, Layer, LayerId, Property, Stroke, Style, SymbolId, Transform,
 };
 
 /// The tools in the toolbar.
@@ -254,6 +254,20 @@ impl Editor {
         }
     }
 
+    /// Turns the selected layer into a symbol in the library, leaving an
+    /// instance of it in the layer's place. Like F8 in Animate.
+    pub fn convert_selected_to_symbol(&mut self) -> Option<SymbolId> {
+        let id = self.selection?;
+        self.doc.convert_layer_to_symbol(id, self.frame)
+    }
+
+    /// Adds a new layer with an instance of `symbol` in the middle of the
+    /// stage, starting on the current frame, and selects it.
+    pub fn place_symbol(&mut self, symbol: SymbolId) {
+        let center = self.doc.stage_rect().center();
+        self.selection = self.doc.add_instance_layer(symbol, self.frame, center);
+    }
+
     pub fn insert_keyframe(&mut self) {
         let frame = self.frame;
         if let Some(layer) = self.selected_layer_mut() {
@@ -316,6 +330,20 @@ mod tests {
         editor.set_layer_start_here();
         let layer = editor.doc.layer(id).unwrap();
         assert_eq!((layer.start, layer.end), (10, Some(30)));
+    }
+
+    #[test]
+    fn convert_and_place_symbols() {
+        let (mut editor, id) = editor_with_layer();
+        let symbol = editor.convert_selected_to_symbol().unwrap();
+        assert!(editor.doc.layer(id).unwrap().instance.is_some());
+
+        editor.set_frame(6);
+        editor.place_symbol(symbol);
+        let placed = editor.selected_layer().unwrap();
+        assert_ne!(placed.id, id);
+        assert_eq!(placed.start, 6);
+        assert_eq!(editor.doc.symbol_use_count(symbol), 2);
     }
 
     #[test]

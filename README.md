@@ -21,6 +21,10 @@ planned (the code is already cross-platform and CI builds it on Windows).
   and lock toggles, draggable keys, scrubbing, looped playback and onion
   skinning. Each layer's bar shows the frames it appears on; drag its ends
   to make it appear or disappear partway through.
+- **Symbols:** turn any layer, animation included, into a reusable symbol
+  (F8). Place it as many times as you like from the Library; each instance
+  can be moved, scaled, tweened and offset in time, and changing the symbol
+  changes them all. Symbols can contain other symbols.
 - **Export** with or without transparency:
 
   | Format | Alpha | Use it for |
@@ -64,6 +68,7 @@ If ffmpeg is somewhere unusual, point Inkframe at it with the
 | Play / pause | `Enter` |
 | Step frames | `,` and `.` (or ← →), `Home` / `End` |
 | Pan / zoom | Scroll or Space-drag to pan, pinch or ⌘-scroll to zoom, `⌘0` to fit |
+| Symbols | Select a layer and press `F8` (Modify ▸ Convert to Symbol). Use **Place** in the Library to add more instances; set each instance's playback (Loop, Play Once, Single Frame) and first frame in the properties panel |
 | Export | `⌘E` |
 
 Shortcuts follow Adobe Animate where possible. On Windows, use Ctrl in
@@ -87,7 +92,7 @@ development workflow.
 
 Roughly in priority order:
 
-- Symbols: reusable, nested animations
+- Editing a symbol's contents in place (double-click an instance)
 - Audio tracks for lip-sync and timing
 - GPU stage preview for very large scenes
 - Windows installer and signed macOS app bundle

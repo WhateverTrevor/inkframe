@@ -6,13 +6,14 @@ use serde::{Deserialize, Serialize};
 use crate::color::Color;
 use crate::geometry::{Point, Rect};
 use crate::shape::{Shape, Style};
+use crate::symbol::{Instance, Symbol};
 use crate::track::Track;
 use crate::transform::Transform;
 
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 3;
+pub const FORMAT_VERSION: u32 = 4;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -28,7 +29,12 @@ pub struct Document {
     /// Bottom-most layer first, so iterating in order paints back to front.
     /// (The timeline shows them the other way up, like every other editor.)
     pub layers: Vec<Layer>,
-    next_layer_id: u64,
+    /// The library: reusable symbols that layers can hold instances of.
+    #[serde(default)]
+    pub symbols: Vec<Symbol>,
+    pub(crate) next_layer_id: u64,
+    #[serde(default = "first_id")]
+    pub(crate) next_symbol_id: u64,
 }
 
 /// A stable identifier for a layer that survives reordering and undo.
@@ -64,6 +70,10 @@ pub struct Layer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end: Option<u32>,
     pub elements: Vec<Element>,
+    /// A symbol drawn by this layer, through the layer's transform. Instance
+    /// layers normally have no elements of their own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<Instance>,
     pub track: Track,
 }
 
@@ -141,7 +151,9 @@ impl Default for Document {
             duration: 48,
             background: Color::WHITE,
             layers: Vec::new(),
+            symbols: Vec::new(),
             next_layer_id: 1,
+            next_symbol_id: 1,
         }
     }
 }
@@ -166,8 +178,7 @@ impl Document {
         frame: u32,
         transform: Transform,
     ) -> LayerId {
-        let id = LayerId(self.next_layer_id);
-        self.next_layer_id += 1;
+        let id = self.allocate_layer_id();
         self.layers.push(Layer {
             id,
             name: name.into(),
@@ -176,6 +187,7 @@ impl Document {
             start: 0,
             end: None,
             elements,
+            instance: None,
             track: Track::new(frame, transform),
         });
         id
@@ -185,8 +197,7 @@ impl Document {
     pub fn duplicate_layer(&mut self, id: LayerId) -> Option<LayerId> {
         let index = self.layer_index(id)?;
         let mut copy = self.layers[index].clone();
-        copy.id = LayerId(self.next_layer_id);
-        self.next_layer_id += 1;
+        copy.id = self.allocate_layer_id();
         copy.name = format!("{} copy", copy.name);
         let new_id = copy.id;
         self.layers.insert(index + 1, copy);
@@ -224,7 +235,7 @@ impl Document {
             .iter()
             .rev()
             .filter(|l| l.is_shown_at(frame) && !l.locked)
-            .find(|l| l.hit_test(point, frame, tolerance))
+            .find(|l| self.layer_hit(l, point, frame, tolerance))
             .map(|l| l.id)
     }
 
@@ -264,6 +275,12 @@ impl Document {
         Self::from_json(&std::fs::read_to_string(path)?)
     }
 
+    pub(crate) fn allocate_layer_id(&mut self) -> LayerId {
+        let id = LayerId(self.next_layer_id);
+        self.next_layer_id += 1;
+        id
+    }
+
     /// Saves atomically: write to a temporary file next to the target, then
     /// rename over it. A crash halfway through can't leave a corrupt file.
     pub fn save(&self, path: impl AsRef<FsPath>) -> Result<(), DocumentError> {
@@ -296,8 +313,22 @@ impl Document {
         }
         // Never hand out an id that's already in use, even if the stored
         // counter was edited or lost.
-        let max_id = self.layers.iter().map(|l| l.id.0).max().unwrap_or(0);
-        self.next_layer_id = self.next_layer_id.max(max_id + 1);
+        // Never hand out an id that's already in use, even if the stored
+        // counters were edited or lost. Layer ids are unique across the
+        // whole document, symbols included.
+        let all_layers = self.layers.iter().chain(self.symbols.iter().flat_map(|s| s.layers.iter()));
+        let max_layer_id = all_layers.map(|l| l.id.0).max().unwrap_or(0);
+        self.next_layer_id = self.next_layer_id.max(max_layer_id + 1);
+        let max_symbol_id = self.symbols.iter().map(|s| s.id.0).max().unwrap_or(0);
+        self.next_symbol_id = self.next_symbol_id.max(max_symbol_id + 1);
+
+        if self
+            .symbols
+            .iter()
+            .any(|s| s.layers.iter().filter_map(|l| l.instance).any(|i| self.symbol_contains(i.symbol, s.id)))
+        {
+            return Err(DocumentError::Invalid("a symbol can't contain an instance of itself"));
+        }
         self.version = FORMAT_VERSION;
         Ok(())
     }
@@ -342,32 +373,19 @@ impl Layer {
         self.track.sample(frame as f32)
     }
 
-    /// Bounds of all elements in the layer's local coordinates.
-    pub fn local_bounds(&self) -> Option<Rect> {
+    /// Bounds of the layer's own shapes in its local coordinates. For the
+    /// full bounds, including a symbol instance, use [`Document::layer_bounds`].
+    pub fn shape_bounds(&self) -> Option<Rect> {
         self.elements.iter().map(|e| e.shape.bounds()).reduce(Rect::union)
-    }
-
-    /// Whether `point` (stage pixels) hits any element at `frame`.
-    ///
-    /// The point is mapped into the layer's local space with the inverse
-    /// transform, so each shape can do its hit test in its own simple,
-    /// unrotated coordinates.
-    pub fn hit_test(&self, point: Point, frame: u32, tolerance: f32) -> bool {
-        let transform = self.transform_at(frame);
-        let Some(to_local) = transform.to_affine().inverse() else {
-            return false; // Scaled to nothing: there's nothing to click on.
-        };
-        let local = to_local.apply(point);
-        // Tolerance is given in stage pixels; convert it to local units so a
-        // layer scaled up 4× doesn't get a 4× bigger click target.
-        let scale = transform.scale.x.abs().max(transform.scale.y.abs()).max(1e-6);
-        let local_tolerance = tolerance / scale;
-        self.elements.iter().any(|e| e.shape.hit_test(local, &e.style, local_tolerance))
     }
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn first_id() -> u64 {
+    1
 }
 
 #[cfg(test)]

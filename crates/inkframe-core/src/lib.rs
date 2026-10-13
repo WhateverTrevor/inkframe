@@ -17,6 +17,7 @@ mod freehand;
 mod geometry;
 mod history;
 mod shape;
+mod symbol;
 mod track;
 mod transform;
 
@@ -31,5 +32,6 @@ pub use freehand::fit_freehand_path;
 pub use geometry::{Affine, Point, Rect};
 pub use history::History;
 pub use shape::{Path, Segment, Shape, Stroke, Style};
+pub use symbol::{Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId};
 pub use track::{Property, Track};
 pub use transform::Transform;

@@ -2,21 +2,23 @@
 //! its keyframe easing and shapes, and the document settings.
 
 use egui::{Color32, DragValue, Sense, Stroke as EguiStroke, vec2};
-use inkframe_core::{Color, Easing, FrameRate, Layer, LayerId, Property, Shape, Stroke, Style, Tween};
+use inkframe_core::{
+    Color, Easing, FrameRate, Layer, LayerId, Playback, Property, Shape, Stroke, Style, SymbolId, Tween,
+};
 
 use crate::convert::color_button;
 use crate::editor::Editor;
 
+/// Shows the panel's contents. The caller provides the scroll area, so the
+/// library can share it.
 pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        if let Some(id) = editor.selection {
-            layer_section(ui, editor, id);
-            ui.add_space(8.0);
-        }
-        egui::CollapsingHeader::new("Document")
-            .default_open(editor.selection.is_none())
-            .show(ui, |ui| document_section(ui, editor));
-    });
+    if let Some(id) = editor.selection {
+        layer_section(ui, editor, id);
+        ui.add_space(8.0);
+    }
+    egui::CollapsingHeader::new("Document")
+        .default_open(editor.selection.is_none())
+        .show(ui, |ui| document_section(ui, editor));
 }
 
 fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
@@ -37,7 +39,63 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     ui.add_space(8.0);
     easing_section(ui, editor, id, frame);
     ui.add_space(8.0);
+    instance_section(ui, editor, id);
     shapes_section(ui, editor, id);
+}
+
+/// Settings for a layer holding a symbol instance: which symbol, and how its
+/// own timeline plays as the main one advances.
+fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    let Some(mut instance) = editor.doc.layer(id).and_then(|l| l.instance) else { return };
+    let symbols: Vec<(SymbolId, String)> =
+        editor.doc.symbols.iter().map(|s| (s.id, s.name.clone())).collect();
+    let Some(duration) = editor.doc.symbol(instance.symbol).map(|s| s.duration) else {
+        ui.colored_label(ui.visuals().error_fg_color, "This instance's symbol is missing.");
+        return;
+    };
+
+    ui.strong("Symbol instance");
+    egui::Grid::new("instance").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        ui.label("Symbol");
+        let current = symbols.iter().find(|(s, _)| *s == instance.symbol).map_or("", |(_, n)| n.as_str());
+        egui::ComboBox::from_id_salt("instance_symbol").selected_text(current).show_ui(ui, |ui| {
+            for (symbol, name) in &symbols {
+                ui.selectable_value(&mut instance.symbol, *symbol, name);
+            }
+        });
+        ui.end_row();
+
+        ui.label("Playback");
+        egui::ComboBox::from_id_salt("instance_playback").selected_text(instance.playback.label()).show_ui(
+            ui,
+            |ui| {
+                for playback in Playback::ALL {
+                    ui.selectable_value(&mut instance.playback, playback, playback.label());
+                }
+            },
+        );
+        ui.end_row();
+
+        // Shown 1-based, like every other frame number in the interface.
+        ui.label("First frame");
+        let mut shown = instance.first_frame + 1;
+        if ui.add(DragValue::new(&mut shown).range(1..=duration)).changed() {
+            instance.first_frame = shown - 1;
+        }
+        ui.end_row();
+    });
+
+    if let Some(layer) = editor.doc.layer_mut(id) {
+        layer.instance = Some(instance);
+    }
+    if let Some(symbol) = editor.doc.symbol_mut(instance.symbol) {
+        ui.horizontal(|ui| {
+            ui.label("Symbol length");
+            ui.add(DragValue::new(&mut symbol.duration).range(1..=100_000).suffix(" frames"))
+                .on_hover_text("Changes the symbol everywhere it's used");
+        });
+    }
+    ui.add_space(8.0);
 }
 
 /// The frames a layer appears on, shown 1-based like the timeline. The end

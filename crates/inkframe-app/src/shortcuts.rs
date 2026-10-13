@@ -21,6 +21,8 @@ pub const REDO: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::Z);
 /// Windows users expect Ctrl+Y for redo, so accept it everywhere.
 pub const REDO_ALT: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::Y);
 pub const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::D);
+/// F8, as in Animate.
+pub const CONVERT_TO_SYMBOL: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F8);
 
 pub const ZOOM_FIT: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::Num0);
 pub const ZOOM_100: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::Num1);

@@ -141,7 +141,7 @@ impl Handles {
             return None;
         }
         let layer = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !l.locked)?;
-        let bounds = layer.local_bounds()?;
+        let bounds = editor.doc.layer_bounds(layer, editor.frame)?;
         let pose = layer.transform_at(editor.frame);
         let to_stage = pose.to_affine();
         let screen = |local: Point| view.to_screen(to_stage.apply(local));
@@ -816,7 +816,7 @@ impl StageView {
         }
         if let Some(layer) = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !shows_points)
         {
-            if let Some(bounds) = layer.local_bounds() {
+            if let Some(bounds) = editor.doc.layer_bounds(layer, editor.frame) {
                 let pose = layer.transform_at(editor.frame);
                 let to_stage = pose.to_affine();
                 let corners = bounds.corners().map(|c| view.to_screen(to_stage.apply(c))).to_vec();
@@ -1228,7 +1228,7 @@ mod tests {
         let Shape::Path(stroke) = &layer.elements[0].shape else { panic!("not a path") };
         assert!(stroke.segments.len() >= 2, "a wavy stroke should keep several segments");
         // The path was recentered, so its local bounds straddle the origin.
-        let bounds = layer.local_bounds().unwrap();
+        let bounds = h.state().1.doc.layer_bounds(layer, 0).unwrap();
         assert!(bounds.center().distance(Point::ZERO) < 30.0);
     }
 

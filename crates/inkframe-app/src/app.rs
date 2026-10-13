@@ -7,6 +7,7 @@ use inkframe_core::Document;
 
 use crate::editor::{Editor, Tool};
 use crate::export_dialog::ExportDialog;
+use crate::library::LibraryView;
 use crate::screenshot::AutoScreenshot;
 use crate::stage::StageView;
 use crate::timeline::TimelineView;
@@ -25,6 +26,7 @@ enum Command {
     Redo,
     DuplicateLayer,
     DeleteLayer,
+    ConvertToSymbol,
     InsertKeyframe,
     RemoveKeyframe,
     LayerStartHere,
@@ -54,6 +56,7 @@ pub struct InkframeApp {
     stage: StageView,
     timeline: TimelineView,
     export: ExportDialog,
+    library: LibraryView,
     /// The window title we last set, so we only send changes.
     title: String,
     /// Set once the user has confirmed quitting with unsaved changes.
@@ -78,6 +81,7 @@ impl InkframeApp {
             stage: StageView::default(),
             timeline: TimelineView::default(),
             export: ExportDialog::default(),
+            library: LibraryView::default(),
             title: String::new(),
             allow_close: false,
             screenshot: AutoScreenshot::from_env(),
@@ -113,6 +117,9 @@ impl InkframeApp {
             Command::Redo => editor.redo(),
             Command::DuplicateLayer => editor.duplicate_selected_layer(),
             Command::DeleteLayer => editor.delete_selected_layer(),
+            Command::ConvertToSymbol => {
+                editor.convert_selected_to_symbol();
+            }
             Command::InsertKeyframe => editor.insert_keyframe(),
             Command::RemoveKeyframe => editor.remove_keyframe(),
             Command::LayerStartHere => editor.set_layer_start_here(),
@@ -152,6 +159,7 @@ impl InkframeApp {
             (UNDO, Command::Undo),
             (REDO_ALT, Command::Redo),
             (DUPLICATE, Command::DuplicateLayer),
+            (CONVERT_TO_SYMBOL, Command::ConvertToSymbol),
             (ZOOM_FIT, Command::ZoomFit),
             (ZOOM_100, Command::ZoomActualSize),
             (ZOOM_IN, Command::ZoomIn),
@@ -272,6 +280,15 @@ impl InkframeApp {
                     has_selection,
                 );
                 item(ui, "Delete Layer", None, Command::DeleteLayer, has_selection);
+            });
+            ui.menu_button("Modify", |ui| {
+                item(
+                    ui,
+                    "Convert to Symbol",
+                    Some(shortcuts::CONVERT_TO_SYMBOL),
+                    Command::ConvertToSymbol,
+                    has_selection,
+                );
             });
             ui.menu_button("Timeline", |ui| {
                 let play = if self.editor.playback.playing { "Pause" } else { "Play" };
@@ -451,10 +468,13 @@ impl eframe::App for InkframeApp {
             .resizable(false)
             .exact_size(60.0)
             .show(ui, |ui| toolbar::show(ui, &mut self.editor));
-        egui::Panel::right("inspector")
-            .resizable(true)
-            .default_size(290.0)
-            .show(ui, |ui| inspector::show(ui, &mut self.editor));
+        egui::Panel::right("inspector").resizable(true).default_size(290.0).show(ui, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                inspector::show(ui, &mut self.editor);
+                ui.add_space(8.0);
+                self.library.show(ui, &mut self.editor);
+            });
+        });
         egui::CentralPanel::no_frame().show(ui, |ui| self.stage.show(ui, &mut self.editor));
 
         let name = self.editor.display_name();
