@@ -6,6 +6,7 @@ mod app;
 mod convert;
 mod editor;
 mod export_dialog;
+mod handles;
 mod inspector;
 mod screenshot;
 mod shortcuts;

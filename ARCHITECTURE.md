@@ -81,7 +81,8 @@ callback returns `ControlFlow::Break` to cancel.
 |---|---|
 | `app.rs` | Window layout, menus, the `Command` enum, file open/save |
 | `editor.rs` | `Editor`: document, selection, current frame, tool, and the operations panels call |
-| `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay |
+| `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles |
+| `handles.rs` | The math for scale and rotate handles (anchor pinning, multi-turn rotation) |
 | `timeline.rs` | Transport bar and the hand-painted layer × frame grid |
 | `inspector.rs` | The properties panel |
 | `toolbar.rs` | Tool buttons with vector-drawn icons |

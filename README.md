@@ -10,8 +10,9 @@ planned (the code is already cross-platform and CI builds it on Windows).
 
 - **Draw** rectangles, ovals and freehand pencil strokes on a stage of any size.
 - **Animate with keyframes.** Go to a frame, move or change a layer, and a
-  keyframe is created for you. Inkframe tweens position, rotation, scale and
-  opacity between keyframes.
+  keyframe is created for you. Scale and rotate with on-stage handles, or
+  type exact values in the properties panel. Inkframe tweens position,
+  rotation, scale and opacity between keyframes.
 - **Ease** each tween with Linear, Ease In/Out/In-Out, Hold, or a custom
   cubic-Bézier curve, previewed live in the properties panel.
 - **Timeline** with layers, visibility and lock toggles, draggable keyframes,
@@ -48,6 +49,8 @@ If ffmpeg is somewhere unusual, point Inkframe at it with the
 | Action | How |
 |---|---|
 | Select / move | Selection tool (`V`), click or drag a shape. Hold Shift to lock to one axis |
+| Scale | Drag a square handle. Shift keeps proportions, Option/Alt scales from the pivot |
+| Rotate | Drag the round knob, or just outside a corner. Shift snaps to 15° |
 | Draw | Rectangle (`R`), Oval (`O`), Pencil (`Y`). Hold Shift for squares and circles |
 | Animate | Move the playhead to a later frame, then drag the shape or edit its transform |
 | Insert / remove keyframe | `F6` / `Shift+F6`, or right-click the timeline |
@@ -77,7 +80,6 @@ development workflow.
 
 Roughly in priority order:
 
-- Transform handles on the stage (scale and rotate by dragging)
 - Pen tool for precise Bézier paths, and editing existing paths
 - Per-property keyframes (ease position and opacity differently)
 - Symbols: reusable, nested animations

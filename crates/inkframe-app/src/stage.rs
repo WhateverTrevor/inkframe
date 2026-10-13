@@ -13,6 +13,7 @@ use inkframe_render::{RenderOptions, output_size, render_frame_into};
 
 use crate::convert::{to_color32, to_point};
 use crate::editor::{Editor, OnionSkin, Tool};
+use crate::handles::{RotateDrag, ScaleHandle, ScaleOptions, scale_pose};
 
 /// Gap kept around the stage when it's zoomed to fit the window, in points.
 const FIT_MARGIN: f32 = 24.0;
@@ -23,6 +24,13 @@ const MIN_ZOOM: f32 = 0.02;
 const MAX_ZOOM: f32 = 64.0;
 /// How far from a shape a click still counts as hitting it, in screen points.
 const HIT_TOLERANCE: f32 = 4.0;
+/// Side length of the square scale handles, in screen points.
+const HANDLE_SIZE: f32 = 8.0;
+/// How far the rotation knob sits above the top edge, in screen points.
+const ROTATE_KNOB_DISTANCE: f32 = 24.0;
+/// Just outside each corner, within this many points, dragging rotates
+/// instead of scaling, as in Animate's Free Transform tool.
+const ROTATE_ZONE: f32 = 18.0;
 
 const PASTEBOARD: Color32 = Color32::from_gray(48);
 const SELECTION: Color32 = Color32::from_rgb(0x2f, 0x9b, 0xff);
@@ -56,8 +64,120 @@ enum Gesture {
     DrawShape { tool: Tool, start: Point, current: Point },
     /// Drawing a freehand stroke.
     Pencil { points: Vec<Point> },
+    /// Dragging a scale handle. `start` is the pose when the drag began;
+    /// every update is computed from it, so errors never accumulate.
+    Scale { layer: LayerId, handle: ScaleHandle, start: Transform, bounds: StageRect },
+    /// Dragging the rotation knob or a corner's rotate zone.
+    Rotate { layer: LayerId, drag: RotateDrag },
     /// Space + drag scrolls the view, like the hand tool in Animate.
     Pan,
+}
+
+/// Which transform handle the pointer is over.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum HandleHit {
+    Scale(ScaleHandle),
+    Rotate,
+}
+
+/// Screen positions of the transform handles around the selected layer.
+///
+/// Rebuilt every UI frame from the layer's current pose, so the handles
+/// follow the layer through tweens, undo and edits in the inspector.
+struct Handles {
+    layer: LayerId,
+    pose: Transform,
+    /// The layer's bounds in its own local coordinates.
+    bounds: StageRect,
+    scale: [(ScaleHandle, Pos2); 8],
+    center: Pos2,
+    top: Pos2,
+    knob: Pos2,
+}
+
+impl Handles {
+    /// Handles for the current selection, if it can be transformed.
+    fn for_selection(editor: &Editor, view: View) -> Option<Self> {
+        if editor.tool != Tool::Select {
+            return None;
+        }
+        let layer = editor.selected_layer().filter(|l| l.visible && !l.locked)?;
+        let bounds = layer.local_bounds()?;
+        let pose = layer.transform_at(editor.frame);
+        let to_stage = pose.to_affine();
+        let screen = |local: Point| view.to_screen(to_stage.apply(local));
+
+        let center = screen(bounds.center());
+        let top = screen(ScaleHandle::TOP.local_position(bounds));
+        // The knob points "up" from the layer's own point of view, so it
+        // turns with the layer. A layer with no height has no up direction
+        // between center and top edge, so fall back to its rotation.
+        let up = match (top - center).normalized() {
+            v if v != Vec2::ZERO => v,
+            _ => {
+                let (sin, cos) = pose.rotation.to_radians().sin_cos();
+                vec2(sin, -cos)
+            }
+        };
+
+        Some(Self {
+            layer: layer.id,
+            pose,
+            bounds,
+            scale: ScaleHandle::ALL.map(|h| (h, screen(h.local_position(bounds)))),
+            center,
+            top,
+            knob: top + up * ROTATE_KNOB_DISTANCE,
+        })
+    }
+
+    fn hit(&self, p: Pos2, view: View) -> Option<HandleHit> {
+        if p.distance(self.knob) <= HANDLE_SIZE {
+            return Some(HandleHit::Rotate);
+        }
+        // Handles get a slightly bigger target than they look, so they're
+        // easy to grab.
+        let near = |pos: &Pos2| (*pos - p).abs().max_elem() <= HANDLE_SIZE * 0.75;
+        if let Some((handle, _)) = self.scale.iter().find(|(_, pos)| near(pos)) {
+            return Some(HandleHit::Scale(*handle));
+        }
+        let inside = self
+            .pose
+            .to_affine()
+            .inverse()
+            .is_some_and(|to_local| self.bounds.contains(to_local.apply(view.to_stage(p))));
+        let near_corner = self.scale.iter().any(|(h, pos)| h.is_corner() && pos.distance(p) <= ROTATE_ZONE);
+        (!inside && near_corner).then_some(HandleHit::Rotate)
+    }
+
+    fn cursor(&self, hit: HandleHit) -> CursorIcon {
+        let HandleHit::Scale(handle) = hit else {
+            return CursorIcon::Grab;
+        };
+        let Some((_, pos)) = self.scale.iter().find(|(h, _)| *h == handle) else {
+            return CursorIcon::Default;
+        };
+        // Pick the resize arrow closest to the handle's direction from the
+        // center *on screen*, so the arrows stay right on rotated layers.
+        let direction = *pos - self.center;
+        let degrees = direction.y.atan2(direction.x).to_degrees().rem_euclid(180.0);
+        match degrees {
+            d if !(22.5..157.5).contains(&d) => CursorIcon::ResizeHorizontal,
+            d if d < 67.5 => CursorIcon::ResizeNwSe,
+            d if d < 112.5 => CursorIcon::ResizeVertical,
+            _ => CursorIcon::ResizeNeSw,
+        }
+    }
+
+    fn draw(&self, painter: &egui::Painter) {
+        painter.line_segment([self.top, self.knob], (1.0, SELECTION));
+        painter.circle(self.knob, 4.5, Color32::WHITE, (1.5, SELECTION));
+        for (_, pos) in &self.scale {
+            let square = Rect::from_center_size(*pos, Vec2::splat(HANDLE_SIZE));
+            painter.rect_filled(square, 0.0, Color32::WHITE);
+            painter.rect_stroke(square, 0.0, (1.0, SELECTION), StrokeKind::Middle);
+        }
+    }
 }
 
 /// Everything that affects the rendered stage image. If none of it changed
@@ -145,8 +265,9 @@ impl StageView {
         painter.rect_stroke(stage_rect, 0.0, (1.0, Color32::from_gray(20)), StrokeKind::Outside);
 
         self.handle_tools(ui, &response, editor, view);
-        self.draw_overlays(&painter.with_clip_rect(area), editor, view);
-        self.update_cursor(ui, &response, editor.tool);
+        let handles = Handles::for_selection(editor, view);
+        self.draw_overlays(&painter.with_clip_rect(area), editor, view, handles.as_ref());
+        self.update_cursor(ui, &response, editor.tool, view, handles.as_ref());
     }
 
     fn view(&self, area: Rect, doc: &Document) -> View {
@@ -195,7 +316,7 @@ impl StageView {
     }
 
     fn handle_tools(&mut self, ui: &egui::Ui, response: &egui::Response, editor: &mut Editor, view: View) {
-        let shift = ui.input(|i| i.modifiers.shift);
+        let (shift, alt) = ui.input(|i| (i.modifiers.shift, i.modifiers.alt));
 
         if response.drag_started_by(PointerButton::Primary) {
             // Use where the button went *down*, not where the pointer is now:
@@ -204,7 +325,7 @@ impl StageView {
             let press = ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos());
             let space_held = ui.input(|i| i.key_down(egui::Key::Space));
             if let Some(press) = press {
-                self.gesture = self.begin_gesture(editor, view.to_stage(press), view, space_held);
+                self.gesture = self.begin_gesture(editor, press, view, space_held);
             }
         }
 
@@ -223,6 +344,13 @@ impl StageView {
                         let pose = Transform { position, ..layer.transform_at(editor.frame) };
                         editor.set_pose(id, pose);
                     }
+                }
+                Some(Gesture::Scale { layer, handle, start, bounds }) => {
+                    let options = ScaleOptions { proportional: shift, from_pivot: alt };
+                    editor.set_pose(*layer, scale_pose(start, *bounds, *handle, p, options));
+                }
+                Some(Gesture::Rotate { layer, drag }) => {
+                    editor.set_pose(*layer, drag.update(p, shift));
                 }
                 Some(Gesture::DrawShape { start, current, .. }) => {
                     *current = if shift { constrain_square(*start, p) } else { p };
@@ -245,20 +373,45 @@ impl StageView {
         }
 
         // A click without dragging selects whatever is under the pointer.
+        // Clicks on a handle (which may be outside the shape) keep the selection.
         if response.clicked() && editor.tool == Tool::Select {
-            if let Some(pointer) = response.interact_pointer_pos() {
+            let on_handle =
+                |pointer| Handles::for_selection(editor, view).and_then(|h| h.hit(pointer, view)).is_some();
+            if let Some(pointer) = response.interact_pointer_pos().filter(|p| !on_handle(*p)) {
                 let tolerance = HIT_TOLERANCE / view.zoom;
                 editor.selection = editor.doc.hit_test(view.to_stage(pointer), editor.frame, tolerance);
             }
         }
     }
 
-    fn begin_gesture(&self, editor: &mut Editor, p: Point, view: View, space_held: bool) -> Option<Gesture> {
+    fn begin_gesture(
+        &self,
+        editor: &mut Editor,
+        press: Pos2,
+        view: View,
+        space_held: bool,
+    ) -> Option<Gesture> {
         if space_held {
             return Some(Gesture::Pan);
         }
+        let p = view.to_stage(press);
         match editor.tool {
             Tool::Select => {
+                // Handles of the current selection take priority over
+                // whatever shape happens to be underneath them.
+                if let Some(handles) = Handles::for_selection(editor, view) {
+                    let layer = handles.layer;
+                    match handles.hit(press, view) {
+                        Some(HandleHit::Scale(handle)) => {
+                            let (start, bounds) = (handles.pose, handles.bounds);
+                            return Some(Gesture::Scale { layer, handle, start, bounds });
+                        }
+                        Some(HandleHit::Rotate) => {
+                            return Some(Gesture::Rotate { layer, drag: RotateDrag::new(handles.pose, p) });
+                        }
+                        None => {}
+                    }
+                }
                 let tolerance = HIT_TOLERANCE / view.zoom;
                 let hit = editor.doc.hit_test(p, editor.frame, tolerance);
                 editor.selection = hit;
@@ -276,7 +429,7 @@ impl StageView {
         }
     }
 
-    fn draw_overlays(&self, painter: &egui::Painter, editor: &Editor, view: View) {
+    fn draw_overlays(&self, painter: &egui::Painter, editor: &Editor, view: View, handles: Option<&Handles>) {
         // Outline the selected layer's bounds, following its rotation and scale.
         if let Some(layer) = editor.selected_layer().filter(|l| l.visible) {
             if let Some(bounds) = layer.local_bounds() {
@@ -288,6 +441,9 @@ impl StageView {
                 let pivot = view.to_screen(pose.position);
                 painter.circle(pivot, 3.5, Color32::WHITE, (1.5, SELECTION));
             }
+        }
+        if let Some(handles) = handles {
+            handles.draw(painter);
         }
 
         let preview = (1.0, SELECTION);
@@ -309,17 +465,35 @@ impl StageView {
         }
     }
 
-    fn update_cursor(&self, ui: &egui::Ui, response: &egui::Response, tool: Tool) {
+    fn update_cursor(
+        &self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        tool: Tool,
+        view: View,
+        handles: Option<&Handles>,
+    ) {
         if !response.hovered() && self.gesture.is_none() {
             return;
         }
         let space_held = ui.input(|i| i.key_down(egui::Key::Space));
-        let icon = match (&self.gesture, tool) {
-            (Some(Gesture::Pan), _) => CursorIcon::Grabbing,
+        let handle_cursor = |hit| handles.map_or(CursorIcon::Default, |h| h.cursor(hit));
+
+        let icon = match &self.gesture {
+            Some(Gesture::Pan) => CursorIcon::Grabbing,
             _ if space_held => CursorIcon::Grab,
-            (Some(Gesture::Move { .. }), _) => CursorIcon::Move,
-            (_, Tool::Select) => CursorIcon::Default,
-            (_, Tool::Rectangle | Tool::Ellipse | Tool::Pencil) => CursorIcon::Crosshair,
+            Some(Gesture::Move { .. }) => CursorIcon::Move,
+            Some(Gesture::Rotate { .. }) => CursorIcon::Grabbing,
+            Some(Gesture::Scale { handle, .. }) => handle_cursor(HandleHit::Scale(*handle)),
+            Some(Gesture::DrawShape { .. } | Gesture::Pencil { .. }) => CursorIcon::Crosshair,
+            None => {
+                let hovered = handles.zip(response.hover_pos()).and_then(|(h, p)| h.hit(p, view));
+                match (hovered, tool) {
+                    (Some(hit), _) => handle_cursor(hit),
+                    (None, Tool::Select) => CursorIcon::Default,
+                    (None, Tool::Rectangle | Tool::Ellipse | Tool::Pencil) => CursorIcon::Crosshair,
+                }
+            }
         };
         ui.ctx().set_cursor_icon(icon);
     }
@@ -435,7 +609,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
             let style = Style { fill: None, stroke: Some(editor.pencil_stroke) };
             add_layer(editor, "Stroke", Element { shape: Shape::Path(path), style }, center);
         }
-        Gesture::Move { .. } | Gesture::Pan => {}
+        Gesture::Move { .. } | Gesture::Scale { .. } | Gesture::Rotate { .. } | Gesture::Pan => {}
     }
 }
 
@@ -591,6 +765,75 @@ mod tests {
         // The path was recentered, so its local bounds straddle the origin.
         let bounds = layer.local_bounds().unwrap();
         assert!(bounds.center().distance(Point::ZERO) < 30.0);
+    }
+
+    /// An editor with a selected 200×200 box centered at (400, 400).
+    fn editor_with_selected_box() -> (Editor, LayerId) {
+        let mut editor = Editor::new(Document::default());
+        let square = Element {
+            shape: Shape::Rect { width: 200.0, height: 200.0, corner_radius: 0.0 },
+            style: editor.draw_style,
+        };
+        let id = editor.doc.add_layer("Box", vec![square], 0, Transform::at(Point::new(400.0, 400.0)));
+        editor.selection = Some(id);
+        (editor, id)
+    }
+
+    fn pose(harness: &Harness<'_, State>, id: LayerId) -> Transform {
+        let editor = &harness.state().1;
+        editor.doc.layer(id).unwrap().transform_at(editor.frame)
+    }
+
+    #[test]
+    fn corner_handle_scales_with_the_opposite_corner_pinned() {
+        let (editor, id) = editor_with_selected_box();
+        let mut h = harness(editor);
+
+        let corner = screen(&h, 500.0, 500.0);
+        let target = screen(&h, 700.0, 700.0);
+        drag(&mut h, corner, &[corner + vec2(10.0, 10.0), target]);
+
+        let pose = pose(&h, id);
+        assert!(pose.scale.distance(Point::new(2.0, 2.0)) < 0.02, "scale {:?}", pose.scale);
+        // The top-left corner stayed at (300, 300), so the center moved to (500, 500).
+        assert!(pose.position.distance(Point::new(500.0, 500.0)) < 3.0, "position {:?}", pose.position);
+    }
+
+    #[test]
+    fn rotation_knob_turns_the_layer() {
+        let (editor, id) = editor_with_selected_box();
+        let mut h = harness(editor);
+
+        let knob = {
+            let (stage, editor) = h.state();
+            let view = stage.view(stage.last_area, &editor.doc);
+            Handles::for_selection(editor, view).unwrap().knob
+        };
+        // Swing the knob from straight above the pivot round to its right:
+        // a quarter turn clockwise.
+        let pivot = screen(&h, 400.0, 400.0);
+        let radius = pivot.distance(knob);
+        let path = [pivot + vec2(radius, -radius).normalized() * radius, pivot + vec2(radius, 0.0)];
+        drag(&mut h, knob, &path);
+
+        let rotation = pose(&h, id).rotation;
+        assert!((rotation - 90.0).abs() < 1.0, "rotation {rotation}");
+    }
+
+    #[test]
+    fn clicking_a_handle_keeps_the_selection() {
+        let (editor, id) = editor_with_selected_box();
+        let mut h = harness(editor);
+
+        // The edge handle sits on the outline; clicking slightly outside the
+        // shape would normally deselect.
+        let handle = screen(&h, 500.0, 400.0) + vec2(3.0, 0.0);
+        h.drag_at(handle);
+        h.step();
+        h.drop_at(handle);
+        h.run();
+
+        assert_eq!(h.state().1.selection, Some(id));
     }
 
     #[test]
