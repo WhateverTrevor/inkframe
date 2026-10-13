@@ -25,6 +25,8 @@ const FRAME_WIDTH: f32 = 12.0;
 const PROPERTY_INDENT: f32 = 44.0;
 /// Columns drawn past the end of the animation, so the end is visible.
 const TRAILING_FRAMES: u32 = 20;
+/// How close to the end of a layer's bar a press must land to grab it, in points.
+const EDGE_GRAB: f32 = 3.0;
 
 const PLAYHEAD: Color32 = Color32::from_rgb(0xe8, 0x3a, 0x3a);
 const CURRENT_KEY: Color32 = Color32::from_rgb(0x2f, 0x9b, 0xff);
@@ -46,6 +48,15 @@ enum Drag {
     /// Dragging a key slides it to another frame. On a summary row this
     /// moves every property's key on that frame together.
     Key { row: Row, frame: u32 },
+    /// Dragging the left or right end of a layer's bar changes the frames
+    /// the layer appears on.
+    SpanEdge { layer: LayerId, edge: Edge },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Edge {
+    Start,
+    End,
 }
 
 /// Screen geometry of the grid for one frame of UI.
@@ -79,6 +90,26 @@ impl Layout {
 
     fn frame_at(&self, x: f32) -> i64 {
         ((x - self.frames.left() + self.scroll.x) / FRAME_WIDTH).floor() as i64
+    }
+
+    /// The column boundary nearest to `x`: boundary `n` is the left edge of
+    /// frame `n`. Used when dragging the ends of a layer's bar, which sit
+    /// between frames rather than on them.
+    fn boundary_at(&self, x: f32) -> i64 {
+        ((x - self.frames.left() + self.scroll.x) / FRAME_WIDTH).round() as i64
+    }
+
+    /// Which end of `layer`'s bar is under `x`, if either.
+    fn span_edge_at(&self, layer: &Layer, doc_last_frame: u32, x: f32) -> Option<Edge> {
+        let start = self.frame_x(layer.start);
+        let end = self.frame_x(layer.last_frame(doc_last_frame) + 1);
+        if (x - start).abs() <= EDGE_GRAB {
+            Some(Edge::Start)
+        } else if (x - end).abs() <= EDGE_GRAB {
+            Some(Edge::End)
+        } else {
+            None
+        }
     }
 
     fn row_top(&self, row: usize) -> f32 {
@@ -172,6 +203,7 @@ impl TimelineView {
         let layout = Layout::new(rect, self.scroll);
 
         self.handle_input(ui, &response, editor, &layout, &rows);
+        self.update_cursor(ui, &response, editor, &layout, &rows);
         context_menu(&response, editor, self.context_row);
 
         painter.rect_filled(rect, 0.0, ui.visuals().extreme_bg_color);
@@ -254,6 +286,21 @@ impl TimelineView {
             let frame = clamp_frame(layout.frame_at(p.x));
             match drag {
                 Drag::Scrub => editor.set_frame(frame),
+                Drag::SpanEdge { layer, edge } => {
+                    let boundary = layout.boundary_at(p.x).clamp(0, last_frame as i64 + 1) as u32;
+                    if let Some(layer) = editor.doc.layer_mut(*layer) {
+                        match edge {
+                            Edge::Start => layer.set_start(boundary.min(last_frame)),
+                            // The end boundary sits after the last frame shown.
+                            // Dragging it all the way out makes the layer
+                            // open-ended again.
+                            Edge::End => {
+                                let end = boundary.saturating_sub(1);
+                                layer.set_end((end < last_frame).then_some(end));
+                            }
+                        }
+                    }
+                }
                 Drag::Key { row, frame: from } => {
                     let moved = editor.doc.layer_mut(row.layer).is_some_and(|l| match row.property {
                         None => l.track.move_key(*from, frame),
@@ -269,6 +316,31 @@ impl TimelineView {
 
         if !ui.input(|i| i.pointer.primary_down()) {
             self.drag = None;
+        }
+    }
+
+    /// Shows a resize cursor over (or while dragging) the ends of a layer's bar.
+    fn update_cursor(
+        &self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        editor: &Editor,
+        layout: &Layout,
+        rows: &[Row],
+    ) {
+        let over_edge = response.hover_pos().is_some_and(|p| {
+            layout.frames.contains(p)
+                && layout
+                    .row_at(p.y)
+                    .and_then(|i| rows.get(i))
+                    .filter(|row| row.property.is_none())
+                    .and_then(|row| editor.doc.layer(row.layer))
+                    .is_some_and(|layer| {
+                        !layer.locked && layout.span_edge_at(layer, editor.doc.last_frame(), p.x).is_some()
+                    })
+        });
+        if over_edge || matches!(self.drag, Some(Drag::SpanEdge { .. })) {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
     }
 
@@ -308,8 +380,15 @@ impl TimelineView {
                 return Some(Drag::Scrub);
             };
             select_row(editor, row);
+            let doc_last_frame = editor.doc.last_frame();
+            let layer = editor.doc.layer(row.layer)?;
+            if row.property.is_none()
+                && !layer.locked
+                && let Some(edge) = layout.span_edge_at(layer, doc_last_frame, p.x)
+            {
+                return Some(Drag::SpanEdge { layer: row.layer, edge });
+            }
             if let Ok(frame) = u32::try_from(layout.frame_at(p.x)) {
-                let layer = editor.doc.layer(row.layer)?;
                 let has_key = match row.property {
                     None => layer.track.has_key(frame),
                     Some(property) => layer.track.channel(property).has_key(frame),
@@ -532,6 +611,15 @@ fn context_menu(response: &egui::Response, editor: &mut Editor, row: Option<Row>
             });
         });
         ui.separator();
+        if ui.add(egui::Button::new("Start Layer Here").shortcut_text("⌥[")).clicked() {
+            editor.set_layer_start_here();
+            ui.close();
+        }
+        if ui.add(egui::Button::new("End Layer Here").shortcut_text("⌥]")).clicked() {
+            editor.set_layer_end_here();
+            ui.close();
+        }
+        ui.separator();
         if ui.button("Duplicate Layer").clicked() {
             editor.duplicate_selected_layer();
             ui.close();
@@ -595,9 +683,14 @@ fn paint_summary_row(painter: &egui::Painter, editor: &Editor, layout: &Layout, 
     let span = row.shrink2(vec2(0.0, 4.0));
     let dim = |c: Color32| if layer.visible { c } else { c.gamma_multiply(0.4) };
 
-    // The layer's content exists on every frame; show that as a faint bar.
-    let all = Rect::from_x_y_ranges(layout.frame_x(0)..=layout.frame_x(editor.doc.duration), span.y_range());
-    painter.rect_filled(all, 2.0, dim(Color32::from_white_alpha(10)));
+    // A bar across the frames the layer appears on, with brighter ends to
+    // show they can be dragged.
+    let (start, end) = (layer.start, layer.last_frame(editor.doc.last_frame()));
+    let bar = Rect::from_x_y_ranges(layout.frame_x(start)..=layout.frame_x(end + 1), span.y_range());
+    painter.rect_filled(bar, 2.0, dim(Color32::from_white_alpha(18)));
+    for x in [bar.left(), bar.right()] {
+        painter.vline(x, bar.y_range(), (2.0, dim(Color32::from_white_alpha(90))));
+    }
 
     let frames = layer.track.key_frames();
     if let (Some(&first), Some(&last)) = (frames.first(), frames.last())
@@ -772,6 +865,38 @@ mod tests {
         h.step();
         h.drop_at(expander);
         h.run();
+    }
+
+    /// Screen position of a column boundary (the left edge of `frame`) in a row.
+    fn boundary(h: &Harness<'_, State>, row: usize, frame: u32) -> Pos2 {
+        let timeline = &h.state().0;
+        let layout = Layout::new(timeline.grid_rect.unwrap(), timeline.scroll);
+        pos2(layout.frame_x(frame), layout.row_rect(row, layout.frames).center().y)
+    }
+
+    #[test]
+    fn dragging_the_bar_ends_sets_the_layer_span() {
+        let (mut h, id) = harness();
+        // Grab just inside each end, as a user would.
+        let (from, to) = (boundary(&h, 0, 0) + vec2(2.0, 0.0), boundary(&h, 0, 5));
+        drag(&mut h, from, to);
+        // The animation is 48 frames, so the open end sits after frame 47.
+        let (from, to) = (boundary(&h, 0, 48) - vec2(2.0, 0.0), boundary(&h, 0, 30));
+        drag(&mut h, from, to);
+
+        let layer = h.state().1.doc.layer(id).unwrap();
+        assert_eq!((layer.start, layer.end), (5, Some(29)));
+    }
+
+    #[test]
+    fn dragging_the_end_back_out_makes_the_layer_open_ended() {
+        let (mut h, id) = harness();
+        h.state_mut().1.doc.layer_mut(id).unwrap().set_end(Some(20));
+        h.run();
+        let (from, to) = (boundary(&h, 0, 21) - vec2(2.0, 0.0), boundary(&h, 0, 60));
+        drag(&mut h, from, to);
+
+        assert_eq!(h.state().1.doc.layer(id).unwrap().end, None);
     }
 
     #[test]

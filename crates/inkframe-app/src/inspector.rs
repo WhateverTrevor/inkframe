@@ -2,7 +2,7 @@
 //! its keyframe easing and shapes, and the document settings.
 
 use egui::{Color32, DragValue, Sense, Stroke as EguiStroke, vec2};
-use inkframe_core::{Color, Easing, FrameRate, LayerId, Property, Shape, Stroke, Style, Tween};
+use inkframe_core::{Color, Easing, FrameRate, Layer, LayerId, Property, Shape, Stroke, Style, Tween};
 
 use crate::convert::color_button;
 use crate::editor::Editor;
@@ -21,6 +21,7 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
 
 fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
+    let last_frame = editor.doc.last_frame();
     let Some(layer) = editor.doc.layer_mut(id) else { return };
 
     ui.heading("Layer");
@@ -29,6 +30,7 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         ui.checkbox(&mut layer.visible, "Visible");
         ui.checkbox(&mut layer.locked, "Locked");
     });
+    span_editor(ui, layer, last_frame);
 
     ui.add_space(8.0);
     transform_section(ui, editor, id, frame);
@@ -36,6 +38,34 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     easing_section(ui, editor, id, frame);
     ui.add_space(8.0);
     shapes_section(ui, editor, id);
+}
+
+/// The frames a layer appears on, shown 1-based like the timeline. The end
+/// can be a fixed frame or "end", which follows the animation's length.
+fn span_editor(ui: &mut egui::Ui, layer: &mut Layer, last_frame: u32) {
+    ui.horizontal(|ui| {
+        ui.label("Frames");
+        let mut start = layer.start + 1;
+        if ui.add(DragValue::new(&mut start).range(1..=last_frame + 1)).changed() {
+            layer.set_start(start - 1);
+        }
+        ui.label("to");
+
+        let mut open_ended = layer.end.is_none();
+        if let Some(end) = layer.end {
+            let mut shown = end + 1;
+            if ui.add(DragValue::new(&mut shown).range(layer.start + 1..=last_frame + 1)).changed() {
+                layer.set_end(Some(shown - 1));
+            }
+        }
+        if ui
+            .checkbox(&mut open_ended, "end")
+            .on_hover_text("Stay until the animation ends, even if it gets longer")
+            .changed()
+        {
+            layer.set_end(if open_ended { None } else { Some(last_frame) });
+        }
+    });
 }
 
 fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) {

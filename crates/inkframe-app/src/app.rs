@@ -27,6 +27,8 @@ enum Command {
     DeleteLayer,
     InsertKeyframe,
     RemoveKeyframe,
+    LayerStartHere,
+    LayerEndHere,
     PlayPause,
     StepBackward,
     StepForward,
@@ -113,6 +115,8 @@ impl InkframeApp {
             Command::DeleteLayer => editor.delete_selected_layer(),
             Command::InsertKeyframe => editor.insert_keyframe(),
             Command::RemoveKeyframe => editor.remove_keyframe(),
+            Command::LayerStartHere => editor.set_layer_start_here(),
+            Command::LayerEndHere => editor.set_layer_end_here(),
             Command::PlayPause => editor.toggle_playback(),
             Command::StepBackward => editor.step(-1),
             Command::StepForward => editor.step(1),
@@ -153,6 +157,8 @@ impl InkframeApp {
             (ZOOM_IN, Command::ZoomIn),
             (ZOOM_OUT, Command::ZoomOut),
             (REMOVE_KEYFRAME, Command::RemoveKeyframe),
+            (LAYER_START_HERE, Command::LayerStartHere),
+            (LAYER_END_HERE, Command::LayerEndHere),
             (INSERT_KEYFRAME, Command::InsertKeyframe),
             (PLAY, Command::PlayPause),
         ];
@@ -283,6 +289,21 @@ impl InkframeApp {
                     "Remove Keyframe",
                     Some(shortcuts::REMOVE_KEYFRAME),
                     Command::RemoveKeyframe,
+                    has_selection,
+                );
+                ui.separator();
+                item(
+                    ui,
+                    "Start Layer Here",
+                    Some(shortcuts::LAYER_START_HERE),
+                    Command::LayerStartHere,
+                    has_selection,
+                );
+                item(
+                    ui,
+                    "End Layer Here",
+                    Some(shortcuts::LAYER_END_HERE),
+                    Command::LayerEndHere,
                     has_selection,
                 );
                 ui.separator();

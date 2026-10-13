@@ -33,6 +33,11 @@ pub const PLAY: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::E
 pub const INSERT_KEYFRAME: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F6);
 pub const REMOVE_KEYFRAME: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::F6);
 
+// Trimming a layer to the playhead uses After Effects' shortcuts, since
+// Animate has no direct equivalent: Alt/Option + [ and ].
+pub const LAYER_START_HERE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::OpenBracket);
+pub const LAYER_END_HERE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::CloseBracket);
+
 /// Single-key tool shortcuts, matching Animate so muscle memory carries over.
 pub fn tool_key(tool: Tool) -> Key {
     match tool {

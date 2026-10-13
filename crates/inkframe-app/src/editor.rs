@@ -238,6 +238,22 @@ impl Editor {
         }
     }
 
+    /// Makes the selected layer appear from the current frame on.
+    pub fn set_layer_start_here(&mut self) {
+        let frame = self.frame;
+        if let Some(layer) = self.selected_layer_mut() {
+            layer.set_start(frame);
+        }
+    }
+
+    /// Makes the selected layer disappear after the current frame.
+    pub fn set_layer_end_here(&mut self) {
+        let frame = self.frame;
+        if let Some(layer) = self.selected_layer_mut() {
+            layer.set_end(Some(frame));
+        }
+    }
+
     pub fn insert_keyframe(&mut self) {
         let frame = self.frame;
         if let Some(layer) = self.selected_layer_mut() {
@@ -289,6 +305,17 @@ mod tests {
         editor.set_frame(12);
         editor.set_pose(id, Transform::at(Point::new(5.0, 5.0)));
         assert!(editor.doc.layer(id).unwrap().track.position.key_at(12).is_some());
+    }
+
+    #[test]
+    fn layer_span_commands_use_the_current_frame() {
+        let (mut editor, id) = editor_with_layer();
+        editor.set_frame(30);
+        editor.set_layer_end_here();
+        editor.set_frame(10);
+        editor.set_layer_start_here();
+        let layer = editor.doc.layer(id).unwrap();
+        assert_eq!((layer.start, layer.end), (10, Some(30)));
     }
 
     #[test]

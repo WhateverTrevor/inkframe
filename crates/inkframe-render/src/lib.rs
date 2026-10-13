@@ -69,7 +69,7 @@ pub fn render_frame_into(pixmap: &mut Pixmap, doc: &Document, frame: u32, option
     // Layers are stored bottom-first, so a plain loop paints back to front.
     // Reuse one scratch buffer across layers instead of allocating per layer.
     let mut scratch: Option<Pixmap> = None;
-    for layer in doc.layers.iter().filter(|l| l.visible) {
+    for layer in doc.layers.iter().filter(|l| l.is_shown_at(frame)) {
         let transform = layer.transform_at(frame);
         let opacity = (transform.opacity * options.opacity).clamp(0.0, 1.0);
         if opacity <= 0.0 {
@@ -192,6 +192,14 @@ mod tests {
         let pixmap = render_frame(&doc, 0, &options).unwrap();
         assert_eq!((pixmap.width(), pixmap.height()), (200, 200));
         assert_eq!(pixel(&pixmap, 40, 100), [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn layers_are_hidden_outside_their_span() {
+        let mut doc = red_square_doc();
+        doc.layers[0].set_start(5);
+        let before = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        assert_eq!(pixel(&before, 20, 50), [255, 255, 255, 255]);
     }
 
     #[test]

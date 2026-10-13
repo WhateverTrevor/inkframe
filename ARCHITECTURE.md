@@ -56,10 +56,17 @@ it only adds keys for properties whose value changed. Shapes are defined
 around the layer's local origin, which is also the pivot for rotation and
 scaling.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 2. Version 1
+**Layer spans.** A layer appears from `start` to `end` (inclusive). An end
+of `None` means "until the animation ends". Outside its span a layer isn't
+drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
+checking `visible` alone. Keys outside the span are allowed; they still
+shape the tween leading into the span.
+
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 3. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
-still plays back identically.
+still plays back identically. Version 3 added layer spans; earlier files
+load with every layer spanning the whole animation.
 
 **Coordinates.** Stage pixels, with y pointing down. Rotation is in degrees,
 clockwise. Frames are 0-based internally and shown 1-based in the UI.

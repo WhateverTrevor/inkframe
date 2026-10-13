@@ -140,7 +140,7 @@ impl Handles {
         if editor.tool != Tool::Select {
             return None;
         }
-        let layer = editor.selected_layer().filter(|l| l.visible && !l.locked)?;
+        let layer = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !l.locked)?;
         let bounds = layer.local_bounds()?;
         let pose = layer.transform_at(editor.frame);
         let to_stage = pose.to_affine();
@@ -605,7 +605,7 @@ impl StageView {
         if editor.tool != Tool::Pen || self.pen.is_some() {
             return None;
         }
-        let layer = editor.selected_layer().filter(|l| l.visible && !l.locked)?;
+        let layer = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !l.locked)?;
         let to_stage = layer.transform_at(editor.frame).to_affine();
         let local = to_stage.inverse()?.apply(view.to_stage(pointer));
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
@@ -657,7 +657,7 @@ impl StageView {
     /// anchor, matching what's drawn. Handles come first, so when one sits
     /// on top of an anchor, the handle wins.
     fn anchor_targets(&self, editor: &Editor, view: View) -> Vec<(AnchorRef, AnchorPart, Pos2)> {
-        let Some(layer) = editor.selected_layer().filter(|l| l.visible && !l.locked) else {
+        let Some(layer) = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !l.locked) else {
             return Vec::new();
         };
         let to_stage = layer.transform_at(editor.frame).to_affine();
@@ -692,7 +692,7 @@ impl StageView {
     /// Draws the selected layer's outlines, anchor squares, and the handles
     /// of the selected anchor.
     fn draw_anchor_overlay(&self, painter: &egui::Painter, editor: &Editor, view: View) {
-        let Some(layer) = editor.selected_layer().filter(|l| l.visible) else { return };
+        let Some(layer) = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame)) else { return };
         let to_stage = layer.transform_at(editor.frame).to_affine();
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
 
@@ -814,7 +814,8 @@ impl StageView {
         if shows_points {
             self.draw_anchor_overlay(painter, editor, view);
         }
-        if let Some(layer) = editor.selected_layer().filter(|l| l.visible && !shows_points) {
+        if let Some(layer) = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !shows_points)
+        {
             if let Some(bounds) = layer.local_bounds() {
                 let pose = layer.transform_at(editor.frame);
                 let to_stage = pose.to_affine();
@@ -1016,9 +1017,14 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
     }
 }
 
+/// Adds a layer for something just drawn. Like Animate, the drawing
+/// appears from the current frame onward, not on earlier frames.
 fn add_layer(editor: &mut Editor, prefix: &str, element: Element, position: Point) {
     let name = editor.doc.next_layer_name(prefix);
     let id = editor.doc.add_layer(name, vec![element], editor.frame, Transform::at(position));
+    if let Some(layer) = editor.doc.layer_mut(id) {
+        layer.start = editor.frame;
+    }
     editor.selection = Some(id);
 }
 
@@ -1161,6 +1167,20 @@ mod tests {
         assert!((width - 400.0).abs() < 3.0 && (height - 200.0).abs() < 3.0, "{width}×{height}");
         assert!(layer.transform_at(0).position.distance(Point::new(300.0, 200.0)) < 3.0);
         assert_eq!(editor.selection, Some(layer.id));
+    }
+
+    #[test]
+    fn new_drawings_start_on_the_current_frame() {
+        let mut editor = Editor::new(Document::default());
+        editor.tool = Tool::Rectangle;
+        editor.set_frame(10);
+        let mut h = harness(editor);
+        let (from, to) = (screen(&h, 100.0, 100.0), screen(&h, 300.0, 300.0));
+        drag(&mut h, from, &[to]);
+
+        let layer = &h.state().1.doc.layers[0];
+        assert_eq!(layer.start, 10);
+        assert!(!layer.is_on(9) && layer.is_on(10));
     }
 
     #[test]

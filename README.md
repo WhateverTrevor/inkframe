@@ -19,7 +19,8 @@ planned (the code is already cross-platform and CI builds it on Windows).
   Hold, or a custom cubic-Bézier curve, previewed live in the properties panel.
 - **Timeline** with layers that expand into one row per property, visibility
   and lock toggles, draggable keys, scrubbing, looped playback and onion
-  skinning.
+  skinning. Each layer's bar shows the frames it appears on; drag its ends
+  to make it appear or disappear partway through.
 - **Export** with or without transparency:
 
   | Format | Alpha | Use it for |
@@ -58,6 +59,7 @@ If ffmpeg is somewhere unusual, point Inkframe at it with the
 | Reshape | Subselection tool (`A`): drag a shape's points, or a selected point's handles. Alt/Option moves one handle alone for a sharp corner; Alt/Option-click a point to switch it between corner and smooth; Delete removes the point. Rectangles and ovals become editable paths on the first edit |
 | Pen (`P`) | Click for corners, drag for curves. Click the first point to close the shape; Enter, Esc or clicking the last point ends an open line. Backspace removes the last point, Shift snaps to 45°. Click a selected shape's outline to add a point without changing its curve |
 | Animate | Move the playhead to a later frame, then drag the shape or edit its transform |
+| Layer start / end | Drag either end of a layer's bar in the timeline, press `⌥[` / `⌥]` to start or end it at the playhead, or type frames in the properties panel. New drawings start on the current frame |
 | Insert / remove keyframe | `F6` / `Shift+F6` keys every property; right-click a property row in the timeline, or click the ◇ next to a property in the properties panel, to key just that one |
 | Play / pause | `Enter` |
 | Step frames | `,` and `.` (or ← →), `Home` / `End` |
@@ -86,7 +88,6 @@ development workflow.
 Roughly in priority order:
 
 - Symbols: reusable, nested animations
-- Layer start/end frames, so content can appear and disappear
 - Audio tracks for lip-sync and timing
 - GPU stage preview for very large scenes
 - Windows installer and signed macOS app bundle

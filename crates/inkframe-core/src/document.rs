@@ -12,7 +12,7 @@ use crate::transform::Transform;
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 2;
+pub const FORMAT_VERSION: u32 = 3;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -55,6 +55,14 @@ pub struct Layer {
     /// Locked layers are drawn but can't be selected or edited on the stage.
     #[serde(default)]
     pub locked: bool,
+    /// The first frame the layer appears on.
+    #[serde(default)]
+    pub start: u32,
+    /// The last frame it appears on, inclusive. `None` means "until the
+    /// animation ends", so making the animation longer makes the layer
+    /// longer too, which is nearly always what's wanted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<u32>,
     pub elements: Vec<Element>,
     pub track: Track,
 }
@@ -165,6 +173,8 @@ impl Document {
             name: name.into(),
             visible: true,
             locked: false,
+            start: 0,
+            end: None,
             elements,
             track: Track::new(frame, transform),
         });
@@ -213,7 +223,7 @@ impl Document {
         self.layers
             .iter()
             .rev()
-            .filter(|l| l.visible && !l.locked)
+            .filter(|l| l.is_shown_at(frame) && !l.locked)
             .find(|l| l.hit_test(point, frame, tolerance))
             .map(|l| l.id)
     }
@@ -277,6 +287,13 @@ impl Document {
         if !self.layers.iter().all(|l| l.track.has_every_property()) {
             return Err(DocumentError::Invalid("every animated property needs at least one keyframe"));
         }
+        // A hand-edited file could end a layer before it starts. Rather than
+        // refuse the whole file, shrink the layer to a single frame.
+        for layer in &mut self.layers {
+            if layer.end.is_some_and(|end| end < layer.start) {
+                layer.end = Some(layer.start);
+            }
+        }
         // Never hand out an id that's already in use, even if the stored
         // counter was edited or lost.
         let max_id = self.layers.iter().map(|l| l.id.0).max().unwrap_or(0);
@@ -287,6 +304,40 @@ impl Document {
 }
 
 impl Layer {
+    /// Whether the layer exists on `frame`, i.e. it falls within its start and end.
+    pub fn is_on(&self, frame: u32) -> bool {
+        frame >= self.start && self.end.is_none_or(|end| frame <= end)
+    }
+
+    /// Whether the layer is drawn on `frame`: switched on and within its span.
+    pub fn is_shown_at(&self, frame: u32) -> bool {
+        self.visible && self.is_on(frame)
+    }
+
+    /// The last frame the layer is on, given the document's last frame.
+    pub fn last_frame(&self, doc_last_frame: u32) -> u32 {
+        self.end.unwrap_or(doc_last_frame).max(self.start)
+    }
+
+    /// Moves the start, pushing the end along if it would come first.
+    pub fn set_start(&mut self, frame: u32) {
+        self.start = frame;
+        if let Some(end) = self.end
+            && end < frame
+        {
+            self.end = Some(frame);
+        }
+    }
+
+    /// Moves the end (`None` for "until the animation ends"), pulling the
+    /// start back if it would come after.
+    pub fn set_end(&mut self, end: Option<u32>) {
+        self.end = end;
+        if let Some(end) = end {
+            self.start = self.start.min(end);
+        }
+    }
+
     pub fn transform_at(&self, frame: u32) -> Transform {
         self.track.sample(frame as f32)
     }
@@ -373,6 +424,50 @@ mod tests {
         let id = doc.add_layer("A", vec![square_element()], 0, Transform::at(Point::new(100.0, 100.0)));
         doc.layer_mut(id).unwrap().locked = true;
         assert_eq!(doc.hit_test(Point::new(100.0, 100.0), 0, 0.0), None);
+    }
+
+    #[test]
+    fn layers_only_exist_within_their_span() {
+        let mut doc = Document::default();
+        let id = doc.add_layer("A", vec![square_element()], 0, Transform::at(Point::new(100.0, 100.0)));
+        let layer = doc.layer_mut(id).unwrap();
+        layer.set_start(10);
+        layer.set_end(Some(20));
+
+        assert!(!layer.is_on(9) && layer.is_on(10) && layer.is_on(20) && !layer.is_on(21));
+        // Off-span layers can't be clicked either.
+        assert_eq!(doc.hit_test(Point::new(100.0, 100.0), 5, 0.0), None);
+        assert_eq!(doc.hit_test(Point::new(100.0, 100.0), 15, 0.0), Some(id));
+    }
+
+    #[test]
+    fn span_edits_keep_start_before_end() {
+        let mut doc = Document::default();
+        let id = doc.add_layer("A", vec![], 0, Transform::default());
+        let layer = doc.layer_mut(id).unwrap();
+        layer.set_end(Some(5));
+        layer.set_start(8);
+        assert_eq!((layer.start, layer.end), (8, Some(8)));
+        layer.set_end(Some(3));
+        assert_eq!((layer.start, layer.end), (3, Some(3)));
+    }
+
+    #[test]
+    fn open_ended_layers_follow_the_duration() {
+        let mut doc = Document::default();
+        let id = doc.add_layer("A", vec![], 0, Transform::default());
+        assert_eq!(doc.layer(id).unwrap().last_frame(doc.last_frame()), 47);
+        doc.duration = 100;
+        assert_eq!(doc.layer(id).unwrap().last_frame(doc.last_frame()), 99);
+    }
+
+    #[test]
+    fn inverted_spans_are_repaired_on_load() {
+        let mut doc = Document::default();
+        doc.add_layer("A", vec![], 0, Transform::default());
+        let json = doc.to_json().unwrap().replace("\"start\": 0", "\"start\": 9, \"end\": 4");
+        let loaded = Document::from_json(&json).unwrap();
+        assert_eq!((loaded.layers[0].start, loaded.layers[0].end), (9, Some(9)));
     }
 
     #[test]
