@@ -70,6 +70,57 @@ pub fn move_part(
     anchors
 }
 
+/// Switches an anchor between corner and smooth.
+///
+/// - An anchor with any handle sticking out becomes a **corner**: both handles
+///   collapse onto the point, so the curve meets it at a sharp angle.
+/// - An anchor without handles becomes **smooth**. The new handles point
+///   along the line from the previous anchor to the next one, the same
+///   tangent a Catmull-Rom spline would use, so the curve flows through
+///   naturally. Each handle reaches a third of the way to its neighbour,
+///   which gives gentle curves that don't overshoot the neighbours.
+///
+/// The first and last anchors of an open path have only one neighbour, so
+/// they aim straight at it.
+pub fn toggle_smooth(anchors: &[Anchor], index: usize, closed: bool) -> Vec<Anchor> {
+    let mut anchors = anchors.to_vec();
+    let a = anchors[index];
+    if a.handle_in != a.point || a.handle_out != a.point {
+        anchors[index] = Anchor::corner(a.point);
+        return anchors;
+    }
+
+    let neighbour = |offset: isize| -> Option<Point> {
+        let i = index as isize + offset;
+        let n = anchors.len() as isize;
+        if closed {
+            Some(anchors[i.rem_euclid(n) as usize].point)
+        } else {
+            (0..n).contains(&i).then(|| anchors[i as usize].point)
+        }
+    };
+    let (prev, next) = (neighbour(-1), neighbour(1));
+    let direction = match (prev, next) {
+        (Some(prev), Some(next)) => next - prev,
+        (None, Some(next)) => next - a.point,
+        (Some(prev), None) => a.point - prev,
+        (None, None) => return anchors, // A lone point has no curve to smooth.
+    };
+    let length = direction.length();
+    if length < 1e-6 {
+        return anchors;
+    }
+    let unit = direction * (1.0 / length);
+    // A missing neighbour (an open path's end) gets no handle on that side.
+    let reach = |other: Option<Point>| other.map_or(0.0, |o| o.distance(a.point) / 3.0);
+    anchors[index] = Anchor {
+        point: a.point,
+        handle_in: a.point - unit * reach(prev),
+        handle_out: a.point + unit * reach(next),
+    };
+    anchors
+}
+
 /// Removes an anchor, unless that would leave too little to be a shape:
 /// open paths need two anchors and closed paths need three.
 pub fn remove_anchor(anchors: &[Anchor], index: usize, closed: bool) -> Option<Vec<Anchor>> {
@@ -149,6 +200,49 @@ mod tests {
         let anchor = Anchor { point: p(0.0, 0.0), handle_in: p(0.0, -10.0), handle_out: p(10.0, 0.0) };
         let moved = move_part(&[anchor], 0, AnchorPart::HandleOut, p(20.0, 5.0), false);
         assert_eq!(moved[0].handle_in, p(0.0, -10.0));
+    }
+
+    #[test]
+    fn corner_becomes_smooth_along_its_neighbours() {
+        let anchors = [p(0.0, 0.0), p(50.0, 50.0), p(100.0, 0.0)].map(Anchor::corner);
+        let a = toggle_smooth(&anchors, 1, false)[1];
+        // The tangent runs parallel to the line from the first to the last point.
+        assert!((a.handle_out.y - a.point.y).abs() < 1e-4 && a.handle_out.x > a.point.x);
+        assert!((a.handle_in.y - a.point.y).abs() < 1e-4 && a.handle_in.x < a.point.x);
+        // Each handle reaches a third of the way to its neighbour (√5000 / 3).
+        let third = 5000f32.sqrt() / 3.0;
+        assert!((a.handle_out.distance(a.point) - third).abs() < 1e-3);
+    }
+
+    #[test]
+    fn smooth_becomes_corner() {
+        let anchors = [Anchor::smooth(p(0.0, 0.0), p(10.0, 5.0))];
+        assert_eq!(toggle_smooth(&anchors, 0, false)[0], Anchor::corner(p(0.0, 0.0)));
+    }
+
+    #[test]
+    fn toggling_twice_from_corner_round_trips() {
+        let anchors = [p(0.0, 0.0), p(50.0, 50.0), p(100.0, 0.0)].map(Anchor::corner);
+        let back = toggle_smooth(&toggle_smooth(&anchors, 1, false), 1, false);
+        assert_eq!(back, anchors);
+    }
+
+    #[test]
+    fn open_endpoints_aim_at_their_only_neighbour() {
+        let anchors = [p(0.0, 0.0), p(90.0, 0.0)].map(Anchor::corner);
+        let a = toggle_smooth(&anchors, 0, false)[0];
+        assert_eq!(a.handle_out, p(30.0, 0.0));
+        assert_eq!(a.handle_in, a.point, "no neighbour before the first point");
+    }
+
+    #[test]
+    fn closed_paths_wrap_around_for_neighbours() {
+        let square = [p(0.0, 0.0), p(10.0, 0.0), p(10.0, 10.0), p(0.0, 10.0)].map(Anchor::corner);
+        // The first anchor's neighbours are the last and second anchors.
+        let a = toggle_smooth(&square, 0, true)[0];
+        assert!(a.handle_in != a.point && a.handle_out != a.point);
+        let (into, out) = (a.handle_in - a.point, a.handle_out - a.point);
+        assert!(into.dot(out) < 0.0, "handles should point opposite ways");
     }
 
     #[test]

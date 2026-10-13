@@ -85,7 +85,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles |
 | `handles.rs` | The math for scale and rotate handles (anchor pinning, multi-turn rotation) |
 | `pen.rs` | State of the pen path being drawn, which lasts across many clicks |
-| `subselect.rs` | The math for moving anchors and handles with the Subselection tool |
+| `subselect.rs` | The math for moving, deleting and converting anchors with the Subselection tool |
 | `timeline.rs` | Transport bar and the hand-painted layer × frame grid |
 | `inspector.rs` | The properties panel |
 | `toolbar.rs` | Tool buttons with vector-drawn icons |

@@ -16,7 +16,7 @@ use crate::convert::{to_color32, to_point};
 use crate::editor::{Editor, OnionSkin, Tool};
 use crate::handles::{RotateDrag, ScaleHandle, ScaleOptions, scale_pose};
 use crate::pen::PenPath;
-use crate::subselect::{AnchorPart, move_part, remove_anchor};
+use crate::subselect::{AnchorPart, move_part, remove_anchor, toggle_smooth};
 
 /// Gap kept around the stage when it's zoomed to fit the window, in points.
 const FIT_MARGIN: f32 = 24.0;
@@ -507,7 +507,14 @@ impl StageView {
         if response.clicked() && editor.tool == Tool::Subselect {
             if let Some(pointer) = response.interact_pointer_pos() {
                 match self.anchor_hit(editor, view, pointer) {
-                    Some((target, _)) => self.anchor_selection = Some(target),
+                    Some((target, part)) => {
+                        // Alt/Option-click converts between corner and smooth,
+                        // as in Animate.
+                        if alt && part == AnchorPart::Point {
+                            convert_point(editor, target);
+                        }
+                        self.anchor_selection = Some(target);
+                    }
                     None => {
                         let tolerance = HIT_TOLERANCE / view.zoom;
                         editor.selection =
@@ -1015,6 +1022,20 @@ fn add_layer(editor: &mut Editor, prefix: &str, element: Element, position: Poin
     editor.selection = Some(id);
 }
 
+/// Switches an anchor between corner and smooth. Rectangles and ovals
+/// become paths.
+fn convert_point(editor: &mut Editor, target: AnchorRef) {
+    let Some(element) = editor.doc.layer_mut(target.layer).and_then(|l| l.elements.get_mut(target.element))
+    else {
+        return;
+    };
+    let (anchors, closed) = element.shape.to_anchors();
+    let anchors = toggle_smooth(&anchors, target.index, closed);
+    if let Some(path) = path_from_anchors(&anchors, closed) {
+        element.shape = Shape::Path(path);
+    }
+}
+
 /// Adds a point to a shape's outline. Rectangles and ovals become paths.
 fn insert_point(editor: &mut Editor, hit: OutlineHit) {
     let Some(element) = editor.doc.layer_mut(hit.layer).and_then(|l| l.elements.get_mut(hit.element)) else {
@@ -1445,6 +1466,37 @@ mod tests {
         click(&mut h, corner);
 
         assert!(matches!(shape(&h, id), Shape::Rect { .. }), "no point should be added on top of a corner");
+    }
+
+    /// Clicks with Alt/Option held for the whole click.
+    fn alt_click(harness: &mut Harness<'_, State>, at: Pos2) {
+        harness.event(egui::Event::ModifiersChanged(egui::Modifiers::ALT));
+        click(harness, at);
+        harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+        harness.run();
+    }
+
+    #[test]
+    fn alt_click_toggles_a_point_between_corner_and_smooth() {
+        let (mut h, id) = subselect_harness();
+        let corner = screen(&h, 500.0, 500.0);
+
+        alt_click(&mut h, corner);
+        let (anchors, _) = shape(&h, id).to_anchors();
+        let a = anchors[2];
+        assert!(a.handle_in != a.point && a.handle_out != a.point, "should now be smooth: {a:?}");
+
+        alt_click(&mut h, corner);
+        let (anchors, _) = shape(&h, id).to_anchors();
+        assert_eq!(anchors[2], Anchor::corner(Point::new(100.0, 100.0)));
+    }
+
+    #[test]
+    fn plain_click_does_not_convert() {
+        let (mut h, id) = subselect_harness();
+        let corner = screen(&h, 500.0, 500.0);
+        click(&mut h, corner);
+        assert!(matches!(shape(&h, id), Shape::Rect { .. }));
     }
 
     #[test]
