@@ -12,7 +12,7 @@
 
 mod path;
 
-use inkframe_core::{Affine, Color, Document, Element, Layer, Point, SymbolId};
+use inkframe_core::{Affine, Color, Document, Element, Layer, Point, SymbolId, TimelineId};
 use tiny_skia::{FillRule, LineCap, LineJoin, Paint, Pixmap, PixmapPaint, Transform};
 
 pub use path::build_path;
@@ -60,13 +60,28 @@ pub fn output_size(doc: &Document, scale: f32) -> (u32, u32) {
 /// Drawing on top (instead of clearing first) is what lets the editor stack
 /// onion-skin frames under the current one in a single buffer.
 pub fn render_frame_into(pixmap: &mut Pixmap, doc: &Document, frame: u32, options: &RenderOptions) {
+    render_timeline_into(pixmap, doc, TimelineId::Main, frame, Point::ZERO, options);
+}
+
+/// Like [`render_frame_into`], for any timeline. The editor uses this to
+/// show a symbol on its own while it's being edited: `origin` is where the
+/// timeline's (0, 0) lands, in stage pixels, and `frame` is in the
+/// timeline's own frames.
+pub fn render_timeline_into(
+    pixmap: &mut Pixmap,
+    doc: &Document,
+    timeline: TimelineId,
+    frame: u32,
+    origin: Point,
+    options: &RenderOptions,
+) {
     if options.draw_background {
         pixmap.fill(to_skia_color(doc.background));
     }
 
-    let stage_to_pixels = Affine::scale(options.scale, options.scale);
+    let to_pixels = Affine::scale(options.scale, options.scale).pre_concat(Affine::translate(origin));
     let style = Style { tint: options.tint };
-    render_layers(pixmap, doc, &doc.layers, frame, stage_to_pixels, options.opacity, style, 0);
+    render_layers(pixmap, doc, doc.layers_of(timeline), frame, to_pixels, options.opacity, style, 0);
 }
 
 /// Renders one frame of a symbol, scaled to fit a `size`×`size` square, for

@@ -178,7 +178,7 @@ impl TimelineView {
     /// the reverse of the document's back-to-front storage order.
     fn rows(&self, editor: &Editor) -> Vec<Row> {
         let mut rows = Vec::new();
-        for layer in editor.doc.layers.iter().rev() {
+        for layer in editor.layers().iter().rev() {
             rows.push(Row { layer: layer.id, property: None });
             if self.expanded.contains(&layer.id) {
                 rows.extend(Property::ALL.map(|p| Row { layer: layer.id, property: Some(p) }));
@@ -247,7 +247,7 @@ impl TimelineView {
             }
         }
         let content =
-            vec2((editor.doc.duration + TRAILING_FRAMES) as f32 * FRAME_WIDTH, rows as f32 * ROW_HEIGHT);
+            vec2((editor.duration() + TRAILING_FRAMES) as f32 * FRAME_WIDTH, rows as f32 * ROW_HEIGHT);
         let max = (content - layout.frames.size()).max(Vec2::ZERO);
         self.scroll = self.scroll.clamp(Vec2::ZERO, max);
     }
@@ -260,7 +260,7 @@ impl TimelineView {
         layout: &Layout,
         rows: &[Row],
     ) {
-        let last_frame = editor.doc.last_frame();
+        let last_frame = editor.last_frame();
         let clamp_frame = |f: i64| f.clamp(0, last_frame as i64) as u32;
         let row_under = |y: f32| layout.row_at(y).and_then(|row| rows.get(row).copied());
 
@@ -336,7 +336,7 @@ impl TimelineView {
                     .filter(|row| row.property.is_none())
                     .and_then(|row| editor.doc.layer(row.layer))
                     .is_some_and(|layer| {
-                        !layer.locked && layout.span_edge_at(layer, editor.doc.last_frame(), p.x).is_some()
+                        !layer.locked && layout.span_edge_at(layer, editor.last_frame(), p.x).is_some()
                     })
         });
         if over_edge || matches!(self.drag, Some(Drag::SpanEdge { .. })) {
@@ -380,7 +380,7 @@ impl TimelineView {
                 return Some(Drag::Scrub);
             };
             select_row(editor, row);
-            let doc_last_frame = editor.doc.last_frame();
+            let doc_last_frame = editor.last_frame();
             let layer = editor.doc.layer(row.layer)?;
             if row.property.is_none()
                 && !layer.locked
@@ -494,7 +494,7 @@ fn select_row(editor: &mut Editor, row: Row) {
 
 fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor) {
     ui.horizontal(|ui| {
-        let last = editor.doc.last_frame();
+        let last = editor.last_frame();
         if ui.button("⏮").on_hover_text("First frame (Home)").clicked() {
             editor.set_frame(0);
         }
@@ -522,7 +522,7 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor) {
             editor.set_frame(shown - 1);
         }
         let seconds = editor.frame as f64 / editor.doc.frame_rate.fps();
-        ui.label(format!("of {}   {seconds:.2}s", editor.doc.duration));
+        ui.label(format!("of {}   {seconds:.2}s", editor.duration()));
 
         ui.separator();
 
@@ -641,10 +641,11 @@ fn for_each_channel(editor: &mut Editor, row: Row, mut f: impl FnMut(&mut dyn An
 
 fn paint_frames(painter: &egui::Painter, editor: &Editor, layout: &Layout, rows: &[Row]) {
     let doc = &editor.doc;
-    let visible_frames = visible_frame_range(layout, doc.duration + TRAILING_FRAMES);
+    let duration = editor.duration();
+    let visible_frames = visible_frame_range(layout, duration + TRAILING_FRAMES);
 
     // Darken the columns past the end of the animation.
-    let end_x = layout.frame_x(doc.duration);
+    let end_x = layout.frame_x(duration);
     if end_x < layout.frames.right() {
         let past_end = Rect::from_min_max(pos2(end_x, layout.frames.top()), layout.frames.max);
         painter.rect_filled(past_end, 0.0, Color32::from_black_alpha(60));
@@ -685,7 +686,7 @@ fn paint_summary_row(painter: &egui::Painter, editor: &Editor, layout: &Layout, 
 
     // A bar across the frames the layer appears on, with brighter ends to
     // show they can be dragged.
-    let (start, end) = (layer.start, layer.last_frame(editor.doc.last_frame()));
+    let (start, end) = (layer.start, layer.last_frame(editor.last_frame()));
     let bar = Rect::from_x_y_ranges(layout.frame_x(start)..=layout.frame_x(end + 1), span.y_range());
     painter.rect_filled(bar, 2.0, dim(Color32::from_white_alpha(18)));
     for x in [bar.left(), bar.right()] {
@@ -755,7 +756,7 @@ fn paint_ruler(painter: &egui::Painter, ui: &egui::Ui, editor: &Editor, layout: 
     painter.rect_filled(ruler, 0.0, ui.visuals().panel_fill);
     let text = ui.visuals().text_color();
 
-    for frame in visible_frame_range(layout, editor.doc.duration + TRAILING_FRAMES) {
+    for frame in visible_frame_range(layout, editor.duration() + TRAILING_FRAMES) {
         let x = layout.frame_x(frame);
         // Frame numbers are shown 1-based at 1, 5, 10, 15… like Animate.
         let number = frame + 1;

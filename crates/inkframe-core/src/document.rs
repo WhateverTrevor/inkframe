@@ -6,9 +6,17 @@ use serde::{Deserialize, Serialize};
 use crate::color::Color;
 use crate::geometry::{Point, Rect};
 use crate::shape::{Shape, Style};
-use crate::symbol::{Instance, Symbol};
+use crate::symbol::{Instance, Symbol, SymbolId};
 use crate::track::Track;
 use crate::transform::Transform;
+
+/// Where a layer lives: on the main timeline, or inside a symbol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum TimelineId {
+    #[default]
+    Main,
+    Symbol(SymbolId),
+}
 
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
@@ -168,7 +176,39 @@ impl Document {
         self.duration.saturating_sub(1)
     }
 
-    /// Adds a layer on top of the stack and returns its id.
+    /// The layers of a timeline, bottom-most first. Empty for a symbol that
+    /// doesn't exist.
+    pub fn layers_of(&self, timeline: TimelineId) -> &[Layer] {
+        match timeline {
+            TimelineId::Main => &self.layers,
+            TimelineId::Symbol(id) => self.symbol(id).map_or(&[], |s| &s.layers),
+        }
+    }
+
+    fn layers_of_mut(&mut self, timeline: TimelineId) -> Option<&mut Vec<Layer>> {
+        match timeline {
+            TimelineId::Main => Some(&mut self.layers),
+            TimelineId::Symbol(id) => self.symbol_mut(id).map(|s| &mut s.layers),
+        }
+    }
+
+    /// A timeline's length in frames: the document's, or a symbol's own.
+    pub fn duration_of(&self, timeline: TimelineId) -> u32 {
+        match timeline {
+            TimelineId::Main => self.duration,
+            TimelineId::Symbol(id) => self.symbol(id).map_or(1, |s| s.duration),
+        }
+    }
+
+    /// Which timeline a layer lives in.
+    pub fn timeline_of(&self, id: LayerId) -> Option<TimelineId> {
+        if self.layers.iter().any(|l| l.id == id) {
+            return Some(TimelineId::Main);
+        }
+        self.symbols.iter().find(|s| s.layers.iter().any(|l| l.id == id)).map(|s| TimelineId::Symbol(s.id))
+    }
+
+    /// Adds a layer on top of the main timeline's stack and returns its id.
     ///
     /// The layer gets a single keyframe at `frame`, so it starts out still.
     pub fn add_layer(
@@ -178,8 +218,22 @@ impl Document {
         frame: u32,
         transform: Transform,
     ) -> LayerId {
+        self.add_layer_to(TimelineId::Main, name, elements, frame, transform)
+            .expect("the main timeline always exists")
+    }
+
+    /// Adds a layer on top of any timeline's stack. Returns `None` if the
+    /// timeline is a symbol that doesn't exist.
+    pub fn add_layer_to(
+        &mut self,
+        timeline: TimelineId,
+        name: impl Into<String>,
+        elements: Vec<Element>,
+        frame: u32,
+        transform: Transform,
+    ) -> Option<LayerId> {
         let id = self.allocate_layer_id();
-        self.layers.push(Layer {
+        self.layers_of_mut(timeline)?.push(Layer {
             id,
             name: name.into(),
             visible: true,
@@ -190,48 +244,79 @@ impl Document {
             instance: None,
             track: Track::new(frame, transform),
         });
-        id
+        Some(id)
     }
 
-    /// Copies a layer and places the copy directly above the original.
+    /// Copies a layer and places the copy directly above the original, in
+    /// whichever timeline it lives in.
     pub fn duplicate_layer(&mut self, id: LayerId) -> Option<LayerId> {
-        let index = self.layer_index(id)?;
-        let mut copy = self.layers[index].clone();
-        copy.id = self.allocate_layer_id();
+        let (timeline, index) = self.locate(id)?;
+        let new_id = self.allocate_layer_id();
+        let layers = self.layers_of_mut(timeline)?;
+        let mut copy = layers[index].clone();
+        copy.id = new_id;
         copy.name = format!("{} copy", copy.name);
-        let new_id = copy.id;
-        self.layers.insert(index + 1, copy);
+        layers.insert(index + 1, copy);
         Some(new_id)
     }
 
     pub fn remove_layer(&mut self, id: LayerId) -> Option<Layer> {
-        let index = self.layer_index(id)?;
-        Some(self.layers.remove(index))
+        let (timeline, index) = self.locate(id)?;
+        Some(self.layers_of_mut(timeline)?.remove(index))
     }
 
-    /// Moves a layer up (`delta > 0`, toward the front) or down the stack.
+    /// Moves a layer up (`delta > 0`, toward the front) or down its stack.
     pub fn move_layer(&mut self, id: LayerId, delta: isize) {
-        let Some(from) = self.layer_index(id) else { return };
-        let to = from.saturating_add_signed(delta).min(self.layers.len() - 1);
-        let layer = self.layers.remove(from);
-        self.layers.insert(to, layer);
+        let Some((timeline, from)) = self.locate(id) else { return };
+        let Some(layers) = self.layers_of_mut(timeline) else { return };
+        let to = from.saturating_add_signed(delta).min(layers.len() - 1);
+        let layer = layers.remove(from);
+        layers.insert(to, layer);
     }
 
+    /// A layer's position in its own timeline's stack.
     pub fn layer_index(&self, id: LayerId) -> Option<usize> {
-        self.layers.iter().position(|l| l.id == id)
+        self.locate(id).map(|(_, index)| index)
     }
 
+    fn locate(&self, id: LayerId) -> Option<(TimelineId, usize)> {
+        let timeline = self.timeline_of(id)?;
+        let index = self.layers_of(timeline).iter().position(|l| l.id == id)?;
+        Some((timeline, index))
+    }
+
+    /// Finds a layer anywhere in the document. Layer ids are unique across
+    /// every timeline, so there's no need to say which one to look in.
     pub fn layer(&self, id: LayerId) -> Option<&Layer> {
-        self.layers.iter().find(|l| l.id == id)
+        self.all_layers().find(|l| l.id == id)
     }
 
     pub fn layer_mut(&mut self, id: LayerId) -> Option<&mut Layer> {
-        self.layers.iter_mut().find(|l| l.id == id)
+        let nested = self.symbols.iter_mut().flat_map(|s| s.layers.iter_mut());
+        self.layers.iter_mut().chain(nested).find(|l| l.id == id)
     }
 
-    /// The front-most visible, unlocked layer under `point` (stage pixels).
+    /// Every layer in the document: the main timeline's, then each symbol's.
+    pub fn all_layers(&self) -> impl Iterator<Item = &Layer> {
+        self.layers.iter().chain(self.symbols.iter().flat_map(|s| s.layers.iter()))
+    }
+
+    /// The front-most visible, unlocked layer of the main timeline under
+    /// `point` (stage pixels).
     pub fn hit_test(&self, point: Point, frame: u32, tolerance: f32) -> Option<LayerId> {
-        self.layers
+        self.hit_test_in(TimelineId::Main, point, frame, tolerance)
+    }
+
+    /// Like [`Document::hit_test`], for any timeline. For a symbol, `point`
+    /// is in the symbol's own coordinates and `frame` is a symbol frame.
+    pub fn hit_test_in(
+        &self,
+        timeline: TimelineId,
+        point: Point,
+        frame: u32,
+        tolerance: f32,
+    ) -> Option<LayerId> {
+        self.layers_of(timeline)
             .iter()
             .rev()
             .filter(|l| l.is_shown_at(frame) && !l.locked)
@@ -239,11 +324,17 @@ impl Document {
             .map(|l| l.id)
     }
 
-    /// A name like "Layer 3" that isn't already taken.
+    /// A name like "Layer 3" that isn't already taken on the main timeline.
     pub fn next_layer_name(&self, prefix: &str) -> String {
+        self.next_layer_name_in(TimelineId::Main, prefix)
+    }
+
+    /// A name like "Layer 3" that isn't already taken in `timeline`.
+    pub fn next_layer_name_in(&self, timeline: TimelineId, prefix: &str) -> String {
+        let layers = self.layers_of(timeline);
         (1..)
             .map(|n| format!("{prefix} {n}"))
-            .find(|name| !self.layers.iter().any(|l| &l.name == name))
+            .find(|name| !layers.iter().any(|l| &l.name == name))
             .expect("there is always an unused number")
     }
 
@@ -316,8 +407,7 @@ impl Document {
         // Never hand out an id that's already in use, even if the stored
         // counters were edited or lost. Layer ids are unique across the
         // whole document, symbols included.
-        let all_layers = self.layers.iter().chain(self.symbols.iter().flat_map(|s| s.layers.iter()));
-        let max_layer_id = all_layers.map(|l| l.id.0).max().unwrap_or(0);
+        let max_layer_id = self.all_layers().map(|l| l.id.0).max().unwrap_or(0);
         self.next_layer_id = self.next_layer_id.max(max_layer_id + 1);
         let max_symbol_id = self.symbols.iter().map(|s| s.id.0).max().unwrap_or(0);
         self.next_symbol_id = self.next_symbol_id.max(max_symbol_id + 1);

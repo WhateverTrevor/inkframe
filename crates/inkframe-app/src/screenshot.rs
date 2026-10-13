@@ -13,6 +13,7 @@
 //! * `INKFRAME_SCREENSHOT_ONION=1` turns on onion skinning.
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
 //! * `INKFRAME_SCREENSHOT_EXPAND=1` expands every layer's property rows in the timeline.
+//! * `INKFRAME_SCREENSHOT_EDIT=Ball` opens the named symbol for editing (before `_SELECT`).
 
 use std::path::PathBuf;
 
@@ -36,11 +37,17 @@ impl AutoScreenshot {
     /// Applies the optional scene-setup variables to the editor.
     pub fn set_up_scene(editor: &mut Editor) {
         let var = |name| std::env::var(name).ok();
+        if let Some(name) = var("INKFRAME_SCREENSHOT_EDIT") {
+            match editor.doc.symbols.iter().find(|s| s.name == name).map(|s| s.id) {
+                Some(symbol) => editor.enter_symbol(symbol, 0),
+                None => eprintln!("No symbol named {name:?} for INKFRAME_SCREENSHOT_EDIT"),
+            }
+        }
         if let Some(shown) = var("INKFRAME_SCREENSHOT_FRAME").and_then(|v| v.parse::<u32>().ok()) {
             editor.set_frame(shown.saturating_sub(1));
         }
         if let Some(name) = var("INKFRAME_SCREENSHOT_SELECT") {
-            editor.selection = editor.doc.layers.iter().find(|l| l.name == name).map(|l| l.id);
+            editor.selection = editor.layers().iter().find(|l| l.name == name).map(|l| l.id);
         }
         if var("INKFRAME_SCREENSHOT_ONION").is_some() {
             editor.onion.enabled = true;

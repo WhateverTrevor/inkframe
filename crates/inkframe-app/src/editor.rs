@@ -8,7 +8,8 @@
 use std::path::{Path, PathBuf};
 
 use inkframe_core::{
-    Color, Document, DocumentError, History, Layer, LayerId, Property, Stroke, Style, SymbolId, Transform,
+    Color, Document, DocumentError, Element, History, Layer, LayerId, Point, Property, Stroke, Style,
+    SymbolId, TimelineId, Transform,
 };
 
 /// The tools in the toolbar.
@@ -55,6 +56,15 @@ pub struct Playback {
     elapsed: f64,
 }
 
+/// One level of "editing inside a symbol", remembered so that leaving it
+/// puts the playhead and selection back where they were.
+#[derive(Debug, Clone, Copy)]
+struct OpenSymbol {
+    symbol: SymbolId,
+    return_frame: u32,
+    return_selection: Option<LayerId>,
+}
+
 pub struct Editor {
     pub doc: Document,
     pub history: History,
@@ -74,6 +84,9 @@ pub struct Editor {
     pub onion: OnionSkin,
     /// The property whose easing curve the inspector is showing and editing.
     pub focused_property: Property,
+    /// The symbols being edited, outermost first. Empty while editing the
+    /// main timeline. `frame` and `selection` always refer to the innermost.
+    open_symbols: Vec<OpenSymbol>,
 }
 
 impl Editor {
@@ -94,6 +107,7 @@ impl Editor {
             playback: Playback { looping: true, ..Playback::default() },
             onion: OnionSkin { enabled: false, before: 2, after: 2 },
             focused_property: Property::Position,
+            open_symbols: Vec::new(),
         }
     }
 
@@ -147,20 +161,132 @@ impl Editor {
     /// Undo can remove layers or shorten the animation; make sure the editor
     /// isn't left pointing at things that no longer exist.
     fn after_document_replaced(&mut self) {
-        if self.selection.is_some_and(|id| self.doc.layer(id).is_none()) {
+        // Leave any symbol that no longer exists (undoing its creation, say).
+        if let Some(gone) = self.open_symbols.iter().position(|o| self.doc.symbol(o.symbol).is_none()) {
+            self.exit_to(gone);
+        }
+        let timeline = self.timeline();
+        if self.selection.is_some_and(|id| self.doc.timeline_of(id) != Some(timeline)) {
             self.selection = None;
         }
-        self.frame = self.frame.min(self.doc.last_frame());
+        self.frame = self.frame.min(self.last_frame());
+    }
+
+    // ------------------------------------------------------- symbol editing
+
+    /// The timeline being edited: the main one, or the innermost open symbol.
+    pub fn timeline(&self) -> TimelineId {
+        self.open_symbols.last().map_or(TimelineId::Main, |o| TimelineId::Symbol(o.symbol))
+    }
+
+    /// The symbols being edited, outermost first, for the breadcrumb bar.
+    pub fn open_symbols(&self) -> impl Iterator<Item = SymbolId> + '_ {
+        self.open_symbols.iter().map(|o| o.symbol)
+    }
+
+    /// The layers of the timeline being edited.
+    pub fn layers(&self) -> &[Layer] {
+        self.doc.layers_of(self.timeline())
+    }
+
+    /// The length of the timeline being edited.
+    pub fn duration(&self) -> u32 {
+        self.doc.duration_of(self.timeline())
+    }
+
+    pub fn last_frame(&self) -> u32 {
+        self.duration().saturating_sub(1)
+    }
+
+    /// Where the current timeline's (0, 0) sits on the stage. A symbol's
+    /// registration point is shown in the middle of the stage while it's
+    /// being edited, like in Animate.
+    pub fn timeline_origin(&self) -> Point {
+        match self.timeline() {
+            TimelineId::Main => Point::ZERO,
+            TimelineId::Symbol(_) => self.doc.stage_rect().center(),
+        }
+    }
+
+    /// Opens `symbol` for editing, starting on `frame` of its timeline.
+    pub fn enter_symbol(&mut self, symbol: SymbolId, frame: u32) {
+        if self.doc.symbol(symbol).is_none() {
+            return;
+        }
+        // Already open further out? Go back to that level rather than
+        // stacking the same symbol twice.
+        if let Some(depth) = self.open_symbols.iter().position(|o| o.symbol == symbol) {
+            self.exit_to(depth + 1);
+            self.set_frame(frame);
+            return;
+        }
+        self.open_symbols.push(OpenSymbol {
+            symbol,
+            return_frame: self.frame,
+            return_selection: self.selection,
+        });
+        self.selection = None;
+        self.playback.playing = false;
+        self.set_frame(frame);
+    }
+
+    /// Opens the symbol an instance layer shows, on the frame the instance
+    /// is showing right now, so the drawing doesn't jump.
+    pub fn enter_instance(&mut self, layer: LayerId) {
+        let Some(layer) = self.doc.layer(layer) else { return };
+        let Some((symbol, frame)) = self.doc.instance_view(layer, self.frame, 0).map(|(s, f)| (s.id, f))
+        else {
+            return;
+        };
+        self.enter_symbol(symbol, frame);
+    }
+
+    /// Steps out one level, back to the timeline that contains this symbol.
+    pub fn exit_symbol(&mut self) {
+        if !self.open_symbols.is_empty() {
+            self.exit_to(self.open_symbols.len() - 1);
+        }
+    }
+
+    /// Leaves symbols until only the first `depth` remain open (0 returns to
+    /// the main timeline), restoring the frame and selection from back then.
+    pub fn exit_to(&mut self, depth: usize) {
+        if depth >= self.open_symbols.len() {
+            return;
+        }
+        let restored = self.open_symbols[depth];
+        self.open_symbols.truncate(depth);
+        self.playback.playing = false;
+        self.selection = restored.return_selection.filter(|id| self.doc.layer(*id).is_some());
+        self.set_frame(restored.return_frame);
+    }
+
+    /// The front-most layer of the current timeline under `point`, which is
+    /// in the timeline's own coordinates.
+    pub fn hit_test(&self, point: Point, tolerance: f32) -> Option<LayerId> {
+        self.doc.hit_test_in(self.timeline(), point, self.frame, tolerance)
+    }
+
+    /// Adds a layer for something just drawn, to the timeline being edited.
+    /// Like Animate, the drawing appears from the current frame onward.
+    pub fn add_drawn_layer(&mut self, prefix: &str, element: Element, position: Point) {
+        let timeline = self.timeline();
+        let name = self.doc.next_layer_name_in(timeline, prefix);
+        let id = self.doc.add_layer_to(timeline, name, vec![element], self.frame, Transform::at(position));
+        if let Some(layer) = id.and_then(|id| self.doc.layer_mut(id)) {
+            layer.start = self.frame;
+        }
+        self.selection = id;
     }
 
     // ------------------------------------------------------------- timeline
 
     pub fn set_frame(&mut self, frame: u32) {
-        self.frame = frame.min(self.doc.last_frame());
+        self.frame = frame.min(self.last_frame());
     }
 
     pub fn step(&mut self, delta: i64) {
-        let frame = (self.frame as i64 + delta).clamp(0, self.doc.last_frame() as i64);
+        let frame = (self.frame as i64 + delta).clamp(0, self.last_frame() as i64);
         self.frame = frame as u32;
     }
 
@@ -169,7 +295,7 @@ impl Editor {
         self.playback.elapsed = 0.0;
         // Pressing play on the last frame restarts from the top rather than
         // doing nothing, which is what every video player does.
-        if self.playback.playing && self.frame == self.doc.last_frame() {
+        if self.playback.playing && self.frame == self.last_frame() {
             self.frame = 0;
         }
     }
@@ -193,7 +319,7 @@ impl Editor {
         let frames = (self.playback.elapsed * fps + 1e-9).floor();
         self.playback.elapsed = (self.playback.elapsed - frames / fps).max(0.0);
         for _ in 0..frames as u64 {
-            if self.frame < self.doc.last_frame() {
+            if self.frame < self.last_frame() {
                 self.frame += 1;
             } else if self.playback.looping {
                 self.frame = 0;
@@ -263,9 +389,18 @@ impl Editor {
 
     /// Adds a new layer with an instance of `symbol` in the middle of the
     /// stage, starting on the current frame, and selects it.
+    ///
+    /// Inside a symbol, a symbol that contains it (or itself) can't be
+    /// placed; see [`Editor::can_place`].
     pub fn place_symbol(&mut self, symbol: SymbolId) {
-        let center = self.doc.stage_rect().center();
-        self.selection = self.doc.add_instance_layer(symbol, self.frame, center);
+        let center = self.doc.stage_rect().center() - self.timeline_origin();
+        if let Some(id) = self.doc.add_instance_layer(self.timeline(), symbol, self.frame, center) {
+            self.selection = Some(id);
+        }
+    }
+
+    pub fn can_place(&self, symbol: SymbolId) -> bool {
+        self.doc.can_place(self.timeline(), symbol)
     }
 
     pub fn insert_keyframe(&mut self) {
@@ -344,6 +479,53 @@ mod tests {
         assert_ne!(placed.id, id);
         assert_eq!(placed.start, 6);
         assert_eq!(editor.doc.symbol_use_count(symbol), 2);
+    }
+
+    #[test]
+    fn entering_and_leaving_a_symbol_restores_frame_and_selection() {
+        let (mut editor, id) = editor_with_layer();
+        let symbol = editor.convert_selected_to_symbol().unwrap();
+        editor.doc.symbol_mut(symbol).unwrap().duration = 10;
+        editor.set_frame(25);
+
+        editor.enter_instance(id);
+        assert_eq!(editor.timeline(), TimelineId::Symbol(symbol));
+        assert_eq!(editor.duration(), 10);
+        // The instance loops a 10-frame symbol, so main frame 25 shows frame 5.
+        assert_eq!(editor.frame, 5);
+        assert_eq!(editor.selection, None);
+        assert_eq!(editor.layers().len(), 1);
+
+        editor.exit_symbol();
+        assert_eq!(editor.timeline(), TimelineId::Main);
+        assert_eq!((editor.frame, editor.selection), (25, Some(id)));
+    }
+
+    #[test]
+    fn drawing_inside_a_symbol_adds_to_the_symbol() {
+        let (mut editor, _) = editor_with_layer();
+        let symbol = editor.convert_selected_to_symbol().unwrap();
+        editor.enter_symbol(symbol, 0);
+        let shape = Element {
+            shape: inkframe_core::Shape::Ellipse { radius_x: 5.0, radius_y: 5.0 },
+            style: editor.draw_style,
+        };
+        editor.add_drawn_layer("Oval", shape, Point::ZERO);
+
+        assert_eq!(editor.doc.layers_of(TimelineId::Symbol(symbol)).len(), 2);
+        assert_eq!(editor.doc.layers.len(), 1);
+    }
+
+    #[test]
+    fn undo_out_of_a_deleted_symbol() {
+        let (mut editor, _) = editor_with_layer();
+        editor.commit_history();
+        let symbol = editor.convert_selected_to_symbol().unwrap();
+        editor.commit_history();
+        editor.enter_symbol(symbol, 0);
+        // Undoing the conversion removes the symbol we're inside.
+        editor.undo();
+        assert_eq!(editor.timeline(), TimelineId::Main);
     }
 
     #[test]

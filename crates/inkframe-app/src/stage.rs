@@ -7,10 +7,10 @@
 
 use egui::{Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{
-    Affine, Anchor, Document, Element, LayerId, Path, Point, Rect as StageRect, Shape, Style, Transform,
-    fit_freehand_path, insert_anchor, nearest_on_anchors, path_from_anchors,
+    Affine, Anchor, Document, Element, LayerId, Path, Point, Rect as StageRect, Shape, Style, TimelineId,
+    Transform, fit_freehand_path, insert_anchor, nearest_on_anchors, path_from_anchors,
 };
-use inkframe_render::{RenderOptions, output_size, render_frame_into};
+use inkframe_render::{RenderOptions, output_size, render_timeline_into};
 
 use crate::convert::{to_color32, to_point};
 use crate::editor::{Editor, OnionSkin, Tool};
@@ -60,6 +60,13 @@ impl View {
 
     fn to_stage(self, p: Pos2) -> Point {
         to_point(Pos2::ZERO + (p - self.origin) / self.zoom)
+    }
+
+    /// The same view, but measuring from `origin` (in stage pixels) instead
+    /// of the stage's corner. While a symbol is being edited, the tools work
+    /// in the symbol's own coordinates, whose (0, 0) is mid-stage.
+    fn offset_by(self, origin: Point) -> View {
+        View { origin: self.origin + vec2(origin.x, origin.y) * self.zoom, zoom: self.zoom }
     }
 }
 
@@ -224,6 +231,7 @@ impl Handles {
 #[derive(PartialEq)]
 struct RenderKey {
     doc: Document,
+    timeline: TimelineId,
     frame: u32,
     size: (u32, u32),
     onion: Option<OnionSkin>,
@@ -343,11 +351,14 @@ impl StageView {
         self.last_area = area;
 
         self.handle_navigation(ui, &response, &editor.doc);
-        let view = self.view(area, &editor.doc);
+        let stage_view = self.view(area, &editor.doc);
         let stage_rect = Rect::from_min_size(
-            view.origin,
-            vec2(editor.doc.width as f32, editor.doc.height as f32) * view.zoom,
+            stage_view.origin,
+            vec2(editor.doc.width as f32, editor.doc.height as f32) * stage_view.zoom,
         );
+        // Everything below works in the coordinates of the timeline being
+        // edited: the stage's on the main timeline, a symbol's inside one.
+        let view = stage_view.offset_by(editor.timeline_origin());
 
         painter.rect_filled(area, 0.0, PASTEBOARD);
         if !editor.doc.background.is_opaque() {
@@ -373,6 +384,9 @@ impl StageView {
         }
         let handles = Handles::for_selection(editor, view);
         let overlay = painter.with_clip_rect(area);
+        if editor.timeline() != TimelineId::Main {
+            draw_registration_point(&overlay, view.to_screen(Point::ZERO));
+        }
         self.draw_overlays(&overlay, editor, view, handles.as_ref());
         self.draw_pen_preview(&overlay, view, response.hover_pos());
         if let Some(hit) = response.hover_pos().and_then(|p| self.outline_hit(editor, view, p)) {
@@ -502,6 +516,17 @@ impl StageView {
             }
         }
 
+        // Double-clicking a symbol instance opens the symbol for editing.
+        if response.double_clicked()
+            && editor.tool == Tool::Select
+            && let Some(pointer) = response.interact_pointer_pos()
+            && let Some(id) = editor.hit_test(view.to_stage(pointer), HIT_TOLERANCE / view.zoom)
+            && editor.doc.layer(id).is_some_and(|l| l.instance.is_some())
+        {
+            editor.enter_instance(id);
+            return;
+        }
+
         // A click without dragging selects whatever is under the pointer.
         // Clicks on a handle (which may be outside the shape) keep the selection.
         if response.clicked() && editor.tool == Tool::Subselect {
@@ -517,8 +542,7 @@ impl StageView {
                     }
                     None => {
                         let tolerance = HIT_TOLERANCE / view.zoom;
-                        editor.selection =
-                            editor.doc.hit_test(view.to_stage(pointer), editor.frame, tolerance);
+                        editor.selection = editor.hit_test(view.to_stage(pointer), tolerance);
                         self.anchor_selection = None;
                     }
                 }
@@ -529,7 +553,7 @@ impl StageView {
                 |pointer| Handles::for_selection(editor, view).and_then(|h| h.hit(pointer, view)).is_some();
             if let Some(pointer) = response.interact_pointer_pos().filter(|p| !on_handle(*p)) {
                 let tolerance = HIT_TOLERANCE / view.zoom;
-                editor.selection = editor.doc.hit_test(view.to_stage(pointer), editor.frame, tolerance);
+                editor.selection = editor.hit_test(view.to_stage(pointer), tolerance);
             }
         }
     }
@@ -563,7 +587,7 @@ impl StageView {
                     }
                 }
                 let tolerance = HIT_TOLERANCE / view.zoom;
-                let hit = editor.doc.hit_test(p, editor.frame, tolerance);
+                let hit = editor.hit_test(p, tolerance);
                 editor.selection = hit;
                 let layer = editor.doc.layer(hit?)?;
                 Some(Gesture::Move {
@@ -582,7 +606,7 @@ impl StageView {
                 let Some((target, part)) = self.anchor_hit(editor, view, press) else {
                     // Dragging off the anchors selects a layer, but doesn't move it.
                     let tolerance = HIT_TOLERANCE / view.zoom;
-                    editor.selection = editor.doc.hit_test(p, editor.frame, tolerance);
+                    editor.selection = editor.hit_test(p, tolerance);
                     self.anchor_selection = None;
                     return None;
                 };
@@ -919,7 +943,8 @@ impl StageView {
 
         // Onion skins are hidden during playback, where they'd just be a blur.
         let onion = (editor.onion.enabled && !editor.playback.playing).then_some(editor.onion);
-        let key = RenderKey { doc: doc.clone(), frame: editor.frame, size, onion };
+        let timeline = editor.timeline();
+        let key = RenderKey { doc: doc.clone(), timeline, frame: editor.frame, size, onion };
         if self.rendered.as_ref() == Some(&key) {
             return;
         }
@@ -931,10 +956,10 @@ impl StageView {
         pixmap.fill(tiny_skia::Color::from_rgba8(bg.r, bg.g, bg.b, bg.a));
 
         if let Some(onion) = onion {
-            draw_onion_skins(&mut pixmap, doc, editor.frame, onion, scale);
+            draw_onion_skins(&mut pixmap, editor, onion, scale);
         }
         let options = RenderOptions { scale, draw_background: false, ..RenderOptions::default() };
-        render_frame_into(&mut pixmap, doc, editor.frame, &options);
+        render_timeline_into(&mut pixmap, doc, timeline, editor.frame, editor.timeline_origin(), &options);
 
         // tiny-skia and egui both use premultiplied alpha, so the bytes can be
         // handed over as they are.
@@ -951,13 +976,12 @@ impl StageView {
 /// Draws faint, tinted copies of neighbouring frames: blue for the past,
 /// green for the future (the same convention as most 2D animation tools).
 /// Nearer frames are stronger so the direction of motion reads clearly.
-fn draw_onion_skins(
-    pixmap: &mut tiny_skia::Pixmap,
-    doc: &Document,
-    frame: u32,
-    onion: OnionSkin,
-    scale: f32,
-) {
+fn draw_onion_skins(pixmap: &mut tiny_skia::Pixmap, editor: &Editor, onion: OnionSkin, scale: f32) {
+    let (doc, frame, timeline, origin) =
+        (&editor.doc, editor.frame, editor.timeline(), editor.timeline_origin());
+    let mut ghost_at = |f: u32, options: &RenderOptions| {
+        render_timeline_into(pixmap, doc, timeline, f, origin, options);
+    };
     let ghost = |distance: u32, count: u32, tint| RenderOptions {
         scale,
         draw_background: false,
@@ -967,13 +991,13 @@ fn draw_onion_skins(
     // Farthest first, so nearer ghosts paint on top.
     for distance in (1..=onion.before).rev() {
         if let Some(f) = frame.checked_sub(distance) {
-            render_frame_into(pixmap, doc, f, &ghost(distance, onion.before, ONION_BEFORE));
+            ghost_at(f, &ghost(distance, onion.before, ONION_BEFORE));
         }
     }
     for distance in (1..=onion.after).rev() {
         let f = frame + distance;
-        if f <= doc.last_frame() {
-            render_frame_into(pixmap, doc, f, &ghost(distance, onion.after, ONION_AFTER));
+        if f <= editor.last_frame() {
+            ghost_at(f, &ghost(distance, onion.after, ONION_AFTER));
         }
     }
 }
@@ -997,7 +1021,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
                 ),
             };
             let element = Element { shape, style: editor.draw_style };
-            add_layer(editor, name, element, rect.center());
+            editor.add_drawn_layer(name, element, rect.center());
         }
         Gesture::Pencil { points } => {
             // Simplify relative to the screen, so a stroke drawn while zoomed
@@ -1017,15 +1041,13 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
     }
 }
 
-/// Adds a layer for something just drawn. Like Animate, the drawing
-/// appears from the current frame onward, not on earlier frames.
-fn add_layer(editor: &mut Editor, prefix: &str, element: Element, position: Point) {
-    let name = editor.doc.next_layer_name(prefix);
-    let id = editor.doc.add_layer(name, vec![element], editor.frame, Transform::at(position));
-    if let Some(layer) = editor.doc.layer_mut(id) {
-        layer.start = editor.frame;
-    }
-    editor.selection = Some(id);
+/// A small crosshair marking a symbol's registration point: the origin its
+/// instances rotate and scale around.
+fn draw_registration_point(painter: &egui::Painter, at: Pos2) {
+    let stroke = (1.5, Color32::from_gray(40));
+    painter.line_segment([at - vec2(8.0, 0.0), at + vec2(8.0, 0.0)], stroke);
+    painter.line_segment([at - vec2(0.0, 8.0), at + vec2(0.0, 8.0)], stroke);
+    painter.circle_stroke(at, 4.0, stroke);
 }
 
 /// Switches an anchor between corner and smooth. Rectangles and ovals
@@ -1065,7 +1087,7 @@ fn add_path_layer(editor: &mut Editor, prefix: &str, mut path: Path, style: Styl
     };
     let center = bounds.center();
     path.translate(-center);
-    add_layer(editor, prefix, Element { shape: Shape::Path(path), style }, center);
+    editor.add_drawn_layer(prefix, Element { shape: Shape::Path(path), style }, center);
 }
 
 /// Moves `end` so the rectangle from `start` is a square, keeping the drag direction.
@@ -1123,11 +1145,13 @@ mod tests {
     type State = (StageView, Editor);
 
     fn harness(editor: Editor) -> Harness<'static, State> {
-        let mut harness = Harness::new_ui_state(
-            |ui, (stage, editor): &mut State| stage.show(ui, editor),
-            (StageView::default(), editor),
-        );
-        harness.set_size(vec2(800.0, 600.0));
+        // Step at 60 fps rather than the harness's default quarter-second, so
+        // timing-based input like double-clicks behaves as it does for real.
+        let mut harness =
+            Harness::builder().with_size(vec2(800.0, 600.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+                |ui, (stage, editor): &mut State| stage.show(ui, editor),
+                (StageView::default(), editor),
+            );
         harness.run();
         harness
     }
@@ -1519,6 +1543,63 @@ mod tests {
         let corner = screen(&h, 500.0, 500.0);
         click(&mut h, corner);
         assert!(matches!(shape(&h, id), Shape::Rect { .. }));
+    }
+
+    /// Two quick clicks in place. Unlike `click`, the pointer stays over the
+    /// stage in between, as it does for a real double-click.
+    fn double_click(harness: &mut Harness<'_, State>, at: Pos2) {
+        harness.hover_at(at);
+        harness.step();
+        for pressed in [true, false, true, false] {
+            harness.event(egui::Event::PointerButton {
+                pos: at,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+            harness.step();
+        }
+        harness.run();
+    }
+
+    #[test]
+    fn double_clicking_an_instance_opens_its_symbol() {
+        let (mut editor, id) = editor_with_selected_box();
+        let symbol = editor.convert_selected_to_symbol().unwrap();
+        let mut h = harness(editor);
+
+        let on_box = screen(&h, 400.0, 400.0);
+        double_click(&mut h, on_box);
+
+        let editor = &h.state().1;
+        assert_eq!(editor.timeline(), TimelineId::Symbol(symbol));
+        assert_ne!(editor.selection, Some(id), "selection moves into the symbol");
+    }
+
+    #[test]
+    fn drawing_inside_a_symbol_uses_its_coordinates() {
+        let (mut editor, _) = editor_with_selected_box();
+        let symbol = editor.convert_selected_to_symbol().unwrap();
+        editor.enter_symbol(symbol, 0);
+        editor.tool = Tool::Rectangle;
+        let mut h = harness(editor);
+
+        // `screen` maps stage points, but while editing a symbol the tools
+        // work in symbol coordinates, with (0, 0) at the stage's center.
+        let center = Document::default().stage_rect().center();
+        let (from, to) =
+            (screen(&h, center.x - 50.0, center.y - 30.0), screen(&h, center.x + 50.0, center.y + 30.0));
+        drag(&mut h, from, &[to]);
+
+        let editor = &h.state().1;
+        let layers = editor.doc.layers_of(TimelineId::Symbol(symbol));
+        assert_eq!(layers.len(), 2, "the rectangle lands in the symbol");
+        let drawn = layers.last().unwrap();
+        assert!(
+            drawn.transform_at(0).position.distance(Point::ZERO) < 2.0,
+            "{:?}",
+            drawn.transform_at(0).position
+        );
     }
 
     #[test]

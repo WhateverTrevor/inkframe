@@ -26,7 +26,7 @@ pub use anchor::{
 };
 pub use channel::{Animatable, AnyChannel, Channel, Key, Tween};
 pub use color::{Color, ParseColorError};
-pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, Layer, LayerId};
+pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, Layer, LayerId, TimelineId};
 pub use easing::Easing;
 pub use freehand::fit_freehand_path;
 pub use geometry::{Affine, Point, Rect};

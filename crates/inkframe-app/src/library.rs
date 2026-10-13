@@ -1,6 +1,6 @@
 //! The Library panel: the document's symbols, with a thumbnail of each.
 //!
-//! Symbols are made with Modify ▸ Convert to Symbol (F8). From here they can
+//! Symbols are made with Modify › Convert to Symbol (F8). From here they can
 //! be renamed, placed on the stage again, or deleted once nothing uses them.
 
 use std::collections::HashMap;
@@ -32,12 +32,14 @@ impl LibraryView {
         let header = format!("Library ({})", editor.doc.symbols.len());
         egui::CollapsingHeader::new(header).id_salt("library").default_open(true).show(ui, |ui| {
             if editor.doc.symbols.is_empty() {
-                ui.weak("No symbols yet. Select a layer and choose Modify ▸ Convert to Symbol (F8).");
+                ui.weak("No symbols yet. Select a layer and choose Modify › Convert to Symbol (F8).");
                 return;
             }
 
             let ids: Vec<SymbolId> = editor.doc.symbols.iter().map(|s| s.id).collect();
+            let can_place: Vec<SymbolId> = ids.iter().copied().filter(|id| editor.can_place(*id)).collect();
             let mut place = None;
+            let mut edit = None;
             let mut delete = None;
             for id in ids {
                 ui.push_id(id, |ui| {
@@ -51,8 +53,17 @@ impl LibraryView {
                                 let plural = if uses == 1 { "" } else { "s" };
                                 ui.weak(format!("{} frames · {uses} use{plural}", symbol.duration));
                                 if ui
-                                    .small_button("Place")
+                                    .small_button("Edit")
+                                    .on_hover_text("Open this symbol to change it")
+                                    .clicked()
+                                {
+                                    edit = Some(id);
+                                }
+                                let placeable = can_place.contains(&id);
+                                if ui
+                                    .add_enabled(placeable, egui::Button::new("Place").small())
                                     .on_hover_text("Add an instance to the stage")
+                                    .on_disabled_hover_text("A symbol can't be placed inside itself")
                                     .clicked()
                                 {
                                     place = Some(id);
@@ -75,6 +86,9 @@ impl LibraryView {
 
             if let Some(id) = place {
                 editor.place_symbol(id);
+            }
+            if let Some(id) = edit {
+                editor.enter_symbol(id, 0);
             }
             if let Some(id) = delete {
                 editor.doc.remove_symbol(id);

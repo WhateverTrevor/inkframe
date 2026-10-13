@@ -68,6 +68,17 @@ layer's elements alone. Layer ids are unique across the whole document,
 symbols included. Loading rejects a symbol that contains itself, and
 `MAX_SYMBOL_DEPTH` is a backstop against runaway nesting.
 
+**Editing inside symbols.** Every timeline, the main one or a symbol's, is
+named by a `TimelineId`. `Document` operations that add layers or hit-test
+take one; operations on an existing layer (`layer_mut`, `remove_layer`,
+`move_layer`…) find its timeline by id. The editor keeps a stack of open
+symbols: `Editor::timeline()` is the one being edited, and `editor.frame`,
+`editor.layers()` and `editor.duration()` all refer to it. On the stage, a
+symbol's registration point sits mid-stage (`Editor::timeline_origin`); the
+stage's `View::offset_by` shifts coordinates so every tool works in the
+symbol's own space without knowing it's inside one. `Document::can_place`
+stops a symbol from being placed inside itself.
+
 **Layer spans.** A layer appears from `start` to `end` (inclusive). An end
 of `None` means "until the animation ends". Outside its span a layer isn't
 drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than

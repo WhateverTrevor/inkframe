@@ -11,7 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::document::{Document, Layer, LayerId};
+use crate::document::{Document, Layer, LayerId, TimelineId};
 use crate::geometry::{Point, Rect};
 use crate::transform::Transform;
 
@@ -106,9 +106,7 @@ impl Document {
 
     /// How many layers, anywhere in the document, hold an instance of `id`.
     pub fn symbol_use_count(&self, id: SymbolId) -> usize {
-        let root = self.layers.iter();
-        let nested = self.symbols.iter().flat_map(|s| s.layers.iter());
-        root.chain(nested).filter(|l| l.instance.is_some_and(|i| i.symbol == id)).count()
+        self.all_layers().filter(|l| l.instance.is_some_and(|i| i.symbol == id)).count()
     }
 
     /// Removes a symbol from the library. Refuses (returns `false`) while
@@ -131,15 +129,18 @@ impl Document {
     /// `frame`. To keep everything in place, the layer's animation moves
     /// into the symbol shifted by that offset, and the instance sits at the
     /// offset, so the two cancel out.
+    ///
+    /// This works for layers inside symbols too (`frame` is then a symbol
+    /// frame); the new symbol is as long as the timeline the layer was in.
     pub fn convert_layer_to_symbol(&mut self, id: LayerId, frame: u32) -> Option<SymbolId> {
-        let index = self.layer_index(id)?;
+        let timeline = self.timeline_of(id)?;
+        let duration = self.duration_of(timeline);
         let inner_id = self.allocate_layer_id();
         let symbol_id = SymbolId(self.next_symbol_id);
         self.next_symbol_id += 1;
         let name = self.next_symbol_name();
-        let duration = self.duration;
 
-        let layer = &mut self.layers[index];
+        let layer = self.layer_mut(id)?;
         let pivot = layer.transform_at(frame).position;
 
         let mut inner = layer.clone();
@@ -157,11 +158,30 @@ impl Document {
         Some(symbol_id)
     }
 
-    /// Adds a layer holding an instance of `symbol`, starting at `frame`
-    /// with the symbol's registration point at `position`.
-    pub fn add_instance_layer(&mut self, symbol: SymbolId, frame: u32, position: Point) -> Option<LayerId> {
+    /// Whether an instance of `symbol` may be placed in `timeline`: not if
+    /// that would put a symbol inside itself, directly or through others.
+    pub fn can_place(&self, timeline: TimelineId, symbol: SymbolId) -> bool {
+        match timeline {
+            TimelineId::Main => true,
+            TimelineId::Symbol(host) => !self.symbol_contains(symbol, host),
+        }
+    }
+
+    /// Adds a layer to `timeline` holding an instance of `symbol`, starting
+    /// at `frame` with the symbol's registration point at `position`.
+    /// Returns `None` if the placement isn't allowed (see [`Document::can_place`]).
+    pub fn add_instance_layer(
+        &mut self,
+        timeline: TimelineId,
+        symbol: SymbolId,
+        frame: u32,
+        position: Point,
+    ) -> Option<LayerId> {
+        if !self.can_place(timeline, symbol) {
+            return None;
+        }
         let name = self.symbol(symbol)?.name.clone();
-        let id = self.add_layer(name, Vec::new(), frame, Transform::at(position));
+        let id = self.add_layer_to(timeline, name, Vec::new(), frame, Transform::at(position))?;
         let layer = self.layer_mut(id)?;
         layer.start = frame;
         layer.instance = Some(Instance { symbol, playback: Playback::Loop, first_frame: 0 });
@@ -321,7 +341,7 @@ mod tests {
         let mut doc = Document::default();
         let id = doc.add_layer("Box", vec![square()], 0, Transform::at(Point::new(100.0, 100.0)));
         let symbol = doc.convert_layer_to_symbol(id, 0).unwrap();
-        let copy = doc.add_instance_layer(symbol, 5, Point::new(500.0, 100.0)).unwrap();
+        let copy = doc.add_instance_layer(TimelineId::Main, symbol, 5, Point::new(500.0, 100.0)).unwrap();
 
         assert_eq!(doc.symbol_use_count(symbol), 2);
         assert_eq!(doc.layer(copy).unwrap().start, 5);
@@ -355,6 +375,37 @@ mod tests {
 
         let json = doc.to_json().unwrap();
         assert!(matches!(Document::from_json(&json), Err(crate::DocumentError::Invalid(_))));
+    }
+
+    #[test]
+    fn symbols_cannot_be_placed_inside_themselves() {
+        let mut doc = Document::default();
+        let id = doc.add_layer("Box", vec![square()], 0, Transform::default());
+        let inner = doc.convert_layer_to_symbol(id, 0).unwrap();
+        let outer = doc.convert_layer_to_symbol(id, 0).unwrap();
+
+        // Directly, and through the symbol nested inside it.
+        assert!(doc.add_instance_layer(TimelineId::Symbol(outer), outer, 0, Point::ZERO).is_none());
+        assert!(doc.add_instance_layer(TimelineId::Symbol(inner), outer, 0, Point::ZERO).is_none());
+        // The other way round is fine.
+        assert!(doc.add_instance_layer(TimelineId::Symbol(outer), inner, 0, Point::ZERO).is_some());
+    }
+
+    #[test]
+    fn layers_inside_symbols_can_be_edited_and_converted() {
+        let mut doc = Document::default();
+        let id = doc.add_layer("Box", vec![square()], 0, Transform::default());
+        let symbol = doc.convert_layer_to_symbol(id, 0).unwrap();
+        let inner = doc.symbol(symbol).unwrap().layers[0].id;
+
+        assert_eq!(doc.timeline_of(inner), Some(TimelineId::Symbol(symbol)));
+        let copy = doc.duplicate_layer(inner).unwrap();
+        assert_eq!(doc.layers_of(TimelineId::Symbol(symbol)).len(), 2);
+        // Converting a layer that lives in a symbol nests a new symbol there.
+        let nested = doc.convert_layer_to_symbol(copy, 0).unwrap();
+        assert!(doc.symbol_contains(symbol, nested));
+        assert!(doc.remove_layer(copy).is_some());
+        assert_eq!(doc.layers_of(TimelineId::Symbol(symbol)).len(), 1);
     }
 
     #[test]

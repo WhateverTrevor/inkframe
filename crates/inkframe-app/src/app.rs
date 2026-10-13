@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use egui::{Key, Modifiers};
-use inkframe_core::Document;
+use inkframe_core::{Document, SymbolId, TimelineId};
 
 use crate::editor::{Editor, Tool};
 use crate::export_dialog::ExportDialog;
@@ -27,6 +27,10 @@ enum Command {
     DuplicateLayer,
     DeleteLayer,
     ConvertToSymbol,
+    /// Opens the selected instance's symbol for editing.
+    EditSymbol,
+    /// Steps out of the symbol being edited.
+    ExitSymbol,
     InsertKeyframe,
     RemoveKeyframe,
     LayerStartHere,
@@ -89,7 +93,7 @@ impl InkframeApp {
         if app.screenshot.is_some() {
             AutoScreenshot::set_up_scene(&mut app.editor);
             if AutoScreenshot::expand_timeline() {
-                for layer in &app.editor.doc.layers {
+                for layer in app.editor.doc.all_layers() {
                     app.timeline.set_expanded(layer.id, true);
                 }
             }
@@ -120,6 +124,12 @@ impl InkframeApp {
             Command::ConvertToSymbol => {
                 editor.convert_selected_to_symbol();
             }
+            Command::EditSymbol => {
+                if let Some(id) = editor.selection {
+                    editor.enter_instance(id);
+                }
+            }
+            Command::ExitSymbol => editor.exit_symbol(),
             Command::InsertKeyframe => editor.insert_keyframe(),
             Command::RemoveKeyframe => editor.remove_keyframe(),
             Command::LayerStartHere => editor.set_layer_start_here(),
@@ -128,7 +138,7 @@ impl InkframeApp {
             Command::StepBackward => editor.step(-1),
             Command::StepForward => editor.step(1),
             Command::FirstFrame => editor.set_frame(0),
-            Command::LastFrame => editor.set_frame(editor.doc.last_frame()),
+            Command::LastFrame => editor.set_frame(editor.last_frame()),
             Command::ZoomIn => self.stage.zoom_by(&editor.doc, 1.25),
             Command::ZoomOut => self.stage.zoom_by(&editor.doc, 0.8),
             Command::ZoomFit => self.stage.zoom_to_fit(),
@@ -177,6 +187,7 @@ impl InkframeApp {
         let typing = ctx.egui_wants_keyboard_input();
         let drawing_path = self.stage.is_drawing_path();
         let anchor_selected = self.stage.has_anchor_selection();
+        let in_symbol = self.editor.timeline() != TimelineId::Main;
         ctx.input_mut(|input| {
             for (shortcut, command) in file_shortcuts {
                 if input.consume_shortcut(&shortcut) {
@@ -200,6 +211,9 @@ impl InkframeApp {
                 ]
             } else if anchor_selected {
                 &[(Key::Backspace, Command::DeleteAnchor), (Key::Delete, Command::DeleteAnchor)]
+            } else if in_symbol {
+                // Escape steps back out of a symbol, as in Animate.
+                &[(Key::Escape, Command::ExitSymbol)]
             } else {
                 &[]
             };
@@ -289,6 +303,10 @@ impl InkframeApp {
                     Command::ConvertToSymbol,
                     has_selection,
                 );
+                let instance_selected = self.editor.selected_layer().is_some_and(|l| l.instance.is_some());
+                item(ui, "Edit Symbol", None, Command::EditSymbol, instance_selected);
+                let in_symbol = self.editor.timeline() != TimelineId::Main;
+                item(ui, "Exit Symbol", None, Command::ExitSymbol, in_symbol);
             });
             ui.menu_button("Timeline", |ui| {
                 let play = if self.editor.playback.playing { "Pause" } else { "Play" };
@@ -475,7 +493,12 @@ impl eframe::App for InkframeApp {
                 self.library.show(ui, &mut self.editor);
             });
         });
-        egui::CentralPanel::no_frame().show(ui, |ui| self.stage.show(ui, &mut self.editor));
+        egui::CentralPanel::no_frame().show(ui, |ui| {
+            if self.editor.timeline() != TimelineId::Main {
+                breadcrumbs(ui, &mut self.editor);
+            }
+            self.stage.show(ui, &mut self.editor);
+        });
 
         let name = self.editor.display_name();
         self.export.show(&ctx, &self.editor.doc, &name);
@@ -501,6 +524,43 @@ impl eframe::App for InkframeApp {
         if let Some(screenshot) = &mut self.screenshot {
             screenshot.update(&ctx);
         }
+    }
+}
+
+/// The "Scene ▸ Symbol ▸ …" bar shown while editing a symbol. Clicking an
+/// earlier step goes back out to it.
+fn breadcrumbs(ui: &mut egui::Ui, editor: &mut Editor) {
+    let path: Vec<(SymbolId, String)> = editor
+        .open_symbols()
+        .map(|id| (id, editor.doc.symbol(id).map_or_else(|| "?".to_owned(), |s| s.name.clone())))
+        .collect();
+    let mut exit_to = None;
+    egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 4)).fill(ui.visuals().panel_fill).show(
+        ui,
+        |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                if ui
+                    .link("Scene")
+                    .on_hover_text("Back to the main timeline (Esc steps out one level)")
+                    .clicked()
+                {
+                    exit_to = Some(0);
+                }
+                for (depth, (_, name)) in path.iter().enumerate() {
+                    ui.weak("›");
+                    // The last step is where we are, so it isn't a link.
+                    if depth + 1 == path.len() {
+                        ui.strong(name);
+                    } else if ui.link(name).clicked() {
+                        exit_to = Some(depth + 1);
+                    }
+                }
+            });
+        },
+    );
+    if let Some(depth) = exit_to {
+        editor.exit_to(depth);
     }
 }
 

@@ -23,7 +23,7 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
 
 fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
-    let last_frame = editor.doc.last_frame();
+    let last_frame = editor.last_frame();
     let Some(layer) = editor.doc.layer_mut(id) else { return };
 
     ui.heading("Layer");
@@ -59,7 +59,9 @@ fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         ui.label("Symbol");
         let current = symbols.iter().find(|(s, _)| *s == instance.symbol).map_or("", |(_, n)| n.as_str());
         egui::ComboBox::from_id_salt("instance_symbol").selected_text(current).show_ui(ui, |ui| {
-            for (symbol, name) in &symbols {
+            // Inside a symbol, leave out anything that would end up
+            // containing itself.
+            for (symbol, name) in symbols.iter().filter(|(s, _)| editor.can_place(*s)) {
                 ui.selectable_value(&mut instance.symbol, *symbol, name);
             }
         });
