@@ -41,7 +41,7 @@ The data model and the math behind animation.
 | `easing.rs` | Easing curves, including a CSS-style cubic-Bézier solver |
 | `shape.rs` | Rectangles, ellipses, Bézier paths, styles, and hit-testing |
 | `freehand.rs` | Turns jittery pointer samples into a smooth path |
-| `anchor.rs` | Anchor points with in/out handles, and conversion between anchors, paths and shapes |
+| `anchor.rs` | Anchor points with in/out handles; conversion between anchors, paths and shapes; nearest-point search and curve-preserving point insertion |
 | `history.rs` | Snapshot-based undo/redo |
 | `geometry.rs` | `Point`, `Rect`, `Affine` |
 

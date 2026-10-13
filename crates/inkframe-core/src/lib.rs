@@ -19,7 +19,9 @@ mod shape;
 mod track;
 mod transform;
 
-pub use anchor::{Anchor, KAPPA, anchors_from_path, path_from_anchors};
+pub use anchor::{
+    Anchor, KAPPA, PathHit, anchors_from_path, insert_anchor, nearest_on_anchors, path_from_anchors,
+};
 pub use color::{Color, ParseColorError};
 pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, Layer, LayerId};
 pub use easing::Easing;

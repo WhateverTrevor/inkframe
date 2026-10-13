@@ -8,7 +8,7 @@
 use egui::{Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{
     Affine, Anchor, Document, Element, LayerId, Path, Point, Rect as StageRect, Shape, Style, Transform,
-    fit_freehand_path, path_from_anchors,
+    fit_freehand_path, insert_anchor, nearest_on_anchors, path_from_anchors,
 };
 use inkframe_render::{RenderOptions, output_size, render_frame_into};
 
@@ -98,6 +98,18 @@ pub struct AnchorRef {
     layer: LayerId,
     element: usize,
     index: usize,
+}
+
+/// A spot on the selected shape's outline where the Pen tool would add a point.
+#[derive(Debug, Clone, Copy)]
+struct OutlineHit {
+    layer: LayerId,
+    element: usize,
+    segment: usize,
+    /// How far along the segment, 0–1.
+    t: f32,
+    /// Where on screen the new point would go.
+    screen: Pos2,
 }
 
 /// Which transform handle the pointer is over.
@@ -363,6 +375,14 @@ impl StageView {
         let overlay = painter.with_clip_rect(area);
         self.draw_overlays(&overlay, editor, view, handles.as_ref());
         self.draw_pen_preview(&overlay, view, response.hover_pos());
+        if let Some(hit) = response.hover_pos().and_then(|p| self.outline_hit(editor, view, p)) {
+            // Show where the new point would land: a hollow anchor with a plus.
+            overlay.circle(hit.screen, 5.0, Color32::WHITE, (1.0, SELECTION));
+            overlay
+                .line_segment([hit.screen - vec2(3.0, 0.0), hit.screen + vec2(3.0, 0.0)], (1.0, SELECTION));
+            overlay
+                .line_segment([hit.screen - vec2(0.0, 3.0), hit.screen + vec2(0.0, 3.0)], (1.0, SELECTION));
+        }
         self.update_cursor(ui, &response, editor, view, handles.as_ref());
     }
 
@@ -568,6 +588,44 @@ impl StageView {
         }
     }
 
+    /// Where a Pen click at `pointer` would add a point to the selected
+    /// shape, if it's on the outline.
+    ///
+    /// Only applies when no new path is being drawn, and never right on an
+    /// existing anchor: clicking there should do what clicking an anchor
+    /// does, not stack a second point on top of it.
+    fn outline_hit(&self, editor: &Editor, view: View, pointer: Pos2) -> Option<OutlineHit> {
+        if editor.tool != Tool::Pen || self.pen.is_some() {
+            return None;
+        }
+        let layer = editor.selected_layer().filter(|l| l.visible && !l.locked)?;
+        let to_stage = layer.transform_at(editor.frame).to_affine();
+        let local = to_stage.inverse()?.apply(view.to_stage(pointer));
+        let screen = |p: Point| view.to_screen(to_stage.apply(p));
+
+        let mut best: Option<OutlineHit> = None;
+        for (element, e) in layer.elements.iter().enumerate() {
+            let (anchors, closed) = e.shape.to_anchors();
+            let Some(hit) = nearest_on_anchors(&anchors, closed, local) else { continue };
+            // Measure on screen, so the target is the same size at any zoom
+            // and on layers that are scaled up or down.
+            let on_screen = screen(hit.point);
+            let distance = on_screen.distance(pointer);
+            let on_anchor = anchors.iter().any(|a| screen(a.point).distance(pointer) <= ANCHOR_HIT);
+            let closer = best.is_none_or(|b| distance < b.screen.distance(pointer));
+            if distance <= ANCHOR_HIT && !on_anchor && closer {
+                best = Some(OutlineHit {
+                    layer: layer.id,
+                    element,
+                    segment: hit.segment,
+                    t: hit.t,
+                    screen: on_screen,
+                });
+            }
+        }
+        best
+    }
+
     /// Drops the anchor selection if it no longer points at something that
     /// exists (after undo, deleting points, or selecting another layer), or
     /// if the Subselection tool isn't active.
@@ -669,6 +727,17 @@ impl StageView {
         });
         let pointer = response.interact_pointer_pos().map(|p| view.to_stage(p));
 
+        // Before starting a new path, a click on the selected shape's outline
+        // adds a point to it instead, as in Animate and Illustrator.
+        if pressed
+            && response.is_pointer_button_down_on()
+            && !space_held
+            && let Some(hit) = response.interact_pointer_pos().and_then(|p| self.outline_hit(editor, view, p))
+        {
+            insert_point(editor, hit);
+            return;
+        }
+
         if pressed
             && response.is_pointer_button_down_on()
             && !space_held
@@ -732,12 +801,13 @@ impl StageView {
     }
 
     fn draw_overlays(&self, painter: &egui::Painter, editor: &Editor, view: View, handles: Option<&Handles>) {
-        if editor.tool == Tool::Subselect {
+        // The path tools show the selected shape's own outline and points;
+        // the others outline the layer's bounds, following its rotation and scale.
+        let shows_points = matches!(editor.tool, Tool::Subselect | Tool::Pen);
+        if shows_points {
             self.draw_anchor_overlay(painter, editor, view);
         }
-        // Outline the selected layer's bounds, following its rotation and scale.
-        // The Subselection tool shows the shape's own outline instead.
-        if let Some(layer) = editor.selected_layer().filter(|l| l.visible && editor.tool != Tool::Subselect) {
+        if let Some(layer) = editor.selected_layer().filter(|l| l.visible && !shows_points) {
             if let Some(bounds) = layer.local_bounds() {
                 let pose = layer.transform_at(editor.frame);
                 let to_stage = pose.to_affine();
@@ -808,7 +878,17 @@ impl StageView {
                             self.pen.as_ref().zip(response.hover_pos()).is_some_and(|(pen, p)| {
                                 pen.can_close_at(view.to_stage(p), ANCHOR_HIT / view.zoom)
                             });
-                        if can_close { CursorIcon::PointingHand } else { CursorIcon::Crosshair }
+                        let on_outline =
+                            response.hover_pos().is_some_and(|p| self.outline_hit(editor, view, p).is_some());
+                        if can_close {
+                            CursorIcon::PointingHand
+                        } else if on_outline {
+                            // The "copy" cursor shows a plus on every
+                            // platform, the closest standard match for "add point".
+                            CursorIcon::Copy
+                        } else {
+                            CursorIcon::Crosshair
+                        }
                     }
                     (None, Tool::Rectangle | Tool::Ellipse | Tool::Pencil) => CursorIcon::Crosshair,
                 }
@@ -933,6 +1013,18 @@ fn add_layer(editor: &mut Editor, prefix: &str, element: Element, position: Poin
     let name = editor.doc.next_layer_name(prefix);
     let id = editor.doc.add_layer(name, vec![element], editor.frame, Transform::at(position));
     editor.selection = Some(id);
+}
+
+/// Adds a point to a shape's outline. Rectangles and ovals become paths.
+fn insert_point(editor: &mut Editor, hit: OutlineHit) {
+    let Some(element) = editor.doc.layer_mut(hit.layer).and_then(|l| l.elements.get_mut(hit.element)) else {
+        return;
+    };
+    let (anchors, closed) = element.shape.to_anchors();
+    let anchors = insert_anchor(&anchors, closed, hit.segment, hit.t);
+    if let Some(path) = path_from_anchors(&anchors, closed) {
+        element.shape = Shape::Path(path);
+    }
 }
 
 /// Adds a layer for a path drawn in stage coordinates.
@@ -1311,6 +1403,48 @@ mod tests {
 
         assert_eq!(shape(&h, id).to_anchors().0.len(), 3);
         assert!(!h.state().0.has_anchor_selection());
+    }
+
+    /// The selected box from `editor_with_selected_box`, with the Pen tool.
+    fn pen_on_box_harness() -> (Harness<'static, State>, LayerId) {
+        let (mut editor, id) = editor_with_selected_box();
+        editor.tool = Tool::Pen;
+        (harness(editor), id)
+    }
+
+    #[test]
+    fn pen_click_on_the_outline_adds_a_point() {
+        let (mut h, id) = pen_on_box_harness();
+        // Middle of the top edge: on the outline, away from the corners.
+        let edge = screen(&h, 400.0, 300.0);
+        click(&mut h, edge);
+
+        let (stage, editor) = h.state();
+        assert!(!stage.is_drawing_path(), "the click shouldn't start a new path");
+        assert_eq!(editor.doc.layers.len(), 1);
+        let (anchors, closed) = shape(&h, id).to_anchors();
+        assert!(closed);
+        assert_eq!(anchors.len(), 5);
+        assert!(anchors[1].point.distance(Point::new(0.0, -100.0)) < 2.0, "{:?}", anchors[1].point);
+    }
+
+    #[test]
+    fn pen_click_away_from_the_outline_starts_a_new_path() {
+        let (mut h, id) = pen_on_box_harness();
+        let elsewhere = screen(&h, 1200.0, 700.0);
+        click(&mut h, elsewhere);
+
+        assert!(h.state().0.is_drawing_path());
+        assert!(matches!(shape(&h, id), Shape::Rect { .. }));
+    }
+
+    #[test]
+    fn pen_click_on_an_existing_point_does_not_add_another() {
+        let (mut h, id) = pen_on_box_harness();
+        let corner = screen(&h, 300.0, 300.0);
+        click(&mut h, corner);
+
+        assert!(matches!(shape(&h, id), Shape::Rect { .. }), "no point should be added on top of a corner");
     }
 
     #[test]

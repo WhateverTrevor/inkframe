@@ -54,7 +54,7 @@ If ffmpeg is somewhere unusual, point Inkframe at it with the
 | Rotate | Drag the round knob, or just outside a corner. Shift snaps to 15° |
 | Draw | Rectangle (`R`), Oval (`O`), Pencil (`Y`). Hold Shift for squares and circles |
 | Reshape | Subselection tool (`A`): drag a shape's points, or a selected point's handles. Alt/Option moves one handle alone for a sharp corner; Delete removes the point. Rectangles and ovals become editable paths on the first edit |
-| Pen (`P`) | Click for corners, drag for curves. Click the first point to close the shape; Enter, Esc or clicking the last point ends an open line. Backspace removes the last point, Shift snaps to 45° |
+| Pen (`P`) | Click for corners, drag for curves. Click the first point to close the shape; Enter, Esc or clicking the last point ends an open line. Backspace removes the last point, Shift snaps to 45°. Click a selected shape's outline to add a point without changing its curve |
 | Animate | Move the playhead to a later frame, then drag the shape or edit its transform |
 | Insert / remove keyframe | `F6` / `Shift+F6`, or right-click the timeline |
 | Play / pause | `Enter` |
@@ -83,7 +83,7 @@ development workflow.
 
 Roughly in priority order:
 
-- Add points to a path, and convert points between corner and smooth
+- Convert points between corner and smooth
 - Per-property keyframes (ease position and opacity differently)
 - Symbols: reusable, nested animations
 - Layer start/end frames, so content can appear and disappear

@@ -19,7 +19,7 @@
 //! [`Shape::to_anchors`]), which is how the Subselection tool edits shapes.
 
 use crate::geometry::{Point, Rect};
-use crate::shape::{Path, Segment, Shape};
+use crate::shape::{Path, Segment, Shape, cubic_point};
 
 /// How far along each side a quarter-circle's Bézier handles reach, as a
 /// fraction of the radius. 4/3·(√2 − 1) ≈ 0.5523 is the standard constant
@@ -151,8 +151,124 @@ pub fn path_from_anchors(anchors: &[Anchor], closed: bool) -> Option<Path> {
     Some(Path { start: anchors[0].point, segments, closed })
 }
 
+/// The closest point on a path to `target`, for adding anchors where the
+/// user clicks.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PathHit {
+    /// Which segment: segment `i` runs from anchor `i` to anchor `i + 1`
+    /// (and, in a closed path, the last one runs back to anchor 0).
+    pub segment: usize,
+    /// How far along the segment, from 0 (its start) to 1 (its end).
+    pub t: f32,
+    pub point: Point,
+    pub distance: f32,
+}
+
+/// Finds the point on the path through `anchors` nearest to `target`.
+///
+/// There's no closed-form answer for a cubic Bézier, so this works in two
+/// passes: sample each segment coarsely to find roughly where the closest
+/// point is, then home in on it by repeatedly narrowing the interval around
+/// the best sample. Accurate to far below a pixel, and cheap enough to run
+/// on every mouse move.
+pub fn nearest_on_anchors(anchors: &[Anchor], closed: bool, target: Point) -> Option<PathHit> {
+    const SAMPLES: usize = 32;
+    const REFINE_STEPS: usize = 12;
+
+    let mut best: Option<PathHit> = None;
+    for (segment, (a, b)) in segment_pairs(anchors, closed).enumerate() {
+        let at = |t: f32| point_on_segment(a, b, t);
+        let distance_at = |t: f32| at(t).distance(target);
+
+        let mut t = (0..=SAMPLES)
+            .map(|i| i as f32 / SAMPLES as f32)
+            .min_by(|x, y| distance_at(*x).total_cmp(&distance_at(*y)))
+            .expect("samples are never empty");
+
+        // Each step tries a nudge either side of the current best and keeps
+        // whichever is closer, halving the nudge every time.
+        let mut step = 1.0 / SAMPLES as f32;
+        for _ in 0..REFINE_STEPS {
+            step /= 2.0;
+            let candidates = [t, (t - step).max(0.0), (t + step).min(1.0)];
+            t = candidates.into_iter().min_by(|x, y| distance_at(*x).total_cmp(&distance_at(*y))).unwrap();
+        }
+
+        let hit = PathHit { segment, t, point: at(t), distance: distance_at(t) };
+        if best.is_none_or(|b| hit.distance < b.distance) {
+            best = Some(hit);
+        }
+    }
+    best
+}
+
+/// Inserts a new anchor `t` of the way along `segment`, without changing the
+/// shape of the path.
+///
+/// Curves are split with de Casteljau's construction. A cubic's four control
+/// points are blended pairwise at `t`, then the results blended again, then
+/// once more; the final point lies on the curve, and the in-between points
+/// are exactly the handles that make the two halves trace the original
+/// curve:
+///
+/// ```text
+///  p0 ──── p01 ──── p1 ──── p12 ──── p2 ──── p23 ──── p3
+///            ╲              │               ╱
+///             p012 ──────── new ──────── p123
+/// ```
+///
+/// Straight segments get a corner anchor instead, so lines stay lines.
+pub fn insert_anchor(anchors: &[Anchor], closed: bool, segment: usize, t: f32) -> Vec<Anchor> {
+    let mut anchors = anchors.to_vec();
+    let start = segment;
+    let end = (segment + 1) % anchors.len();
+    assert!(closed || segment + 1 < anchors.len(), "segment {segment} is past the end of an open path");
+
+    let (a, b) = (anchors[start], anchors[end]);
+    let new_anchor = if is_straight(&a, &b) {
+        Anchor::corner(point_on_segment(&a, &b, t))
+    } else {
+        let (p0, p1, p2, p3) = (a.point, a.handle_out, b.handle_in, b.point);
+        let (p01, p12, p23) = (p0.lerp(p1, t), p1.lerp(p2, t), p2.lerp(p3, t));
+        let (p012, p123) = (p01.lerp(p12, t), p12.lerp(p23, t));
+        anchors[start].handle_out = p01;
+        anchors[end].handle_in = p23;
+        Anchor { point: p012.lerp(p123, t), handle_in: p012, handle_out: p123 }
+    };
+    anchors.insert(segment + 1, new_anchor);
+    anchors
+}
+
+/// A segment is straight when neither end has a handle sticking out.
+fn is_straight(from: &Anchor, to: &Anchor) -> bool {
+    from.handle_out == from.point && to.handle_in == to.point
+}
+
+/// The point `t` of the way along the segment from `from` to `to`.
+///
+/// Straight segments use plain linear interpolation. Evaluating them as a
+/// cubic would give the right line but the wrong *speed*: with both handles
+/// sitting on the endpoints the curve eases in and out, so `t = 0.3` would
+/// land only about 22% of the way along. Using one formula for both the
+/// nearest-point search and insertion keeps a new point exactly where the
+/// user clicked.
+fn point_on_segment(from: &Anchor, to: &Anchor, t: f32) -> Point {
+    if is_straight(from, to) {
+        from.point.lerp(to.point, t)
+    } else {
+        cubic_point(from.point, from.handle_out, to.handle_in, to.point, t)
+    }
+}
+
+/// Each segment's start and end anchor, in order, including the closing
+/// segment of a closed path.
+fn segment_pairs(anchors: &[Anchor], closed: bool) -> impl Iterator<Item = (&Anchor, &Anchor)> {
+    let closing = (closed && anchors.len() > 1).then(|| (&anchors[anchors.len() - 1], &anchors[0]));
+    anchors.windows(2).map(|w| (&w[0], &w[1])).chain(closing)
+}
+
 fn segment_between(from: &Anchor, to: &Anchor) -> Segment {
-    if from.handle_out == from.point && to.handle_in == to.point {
+    if is_straight(from, to) {
         Segment::Line { to: to.point }
     } else {
         Segment::Cubic { ctrl1: from.handle_out, ctrl2: to.handle_in, to: to.point }
@@ -247,6 +363,56 @@ mod tests {
         let path = path_from_anchors(&anchors, closed).unwrap();
         let bounds = Rect::bounding(path.flatten()).unwrap();
         assert!((bounds.width() - 100.0).abs() < 1e-3 && (bounds.height() - 60.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn nearest_point_on_a_line() {
+        let anchors = [p(0.0, 0.0), p(100.0, 0.0)].map(Anchor::corner);
+        let hit = nearest_on_anchors(&anchors, false, p(30.0, 8.0)).unwrap();
+        assert_eq!(hit.segment, 0);
+        assert!((hit.t - 0.3).abs() < 1e-3);
+        assert!((hit.distance - 8.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn nearest_point_finds_the_closing_segment() {
+        let square = [p(0.0, 0.0), p(10.0, 0.0), p(10.0, 10.0), p(0.0, 10.0)].map(Anchor::corner);
+        // Only a closed square has a left edge.
+        assert_eq!(nearest_on_anchors(&square, true, p(-1.0, 5.0)).unwrap().segment, 3);
+    }
+
+    #[test]
+    fn inserting_on_a_line_keeps_it_straight() {
+        let anchors = [p(0.0, 0.0), p(100.0, 0.0)].map(Anchor::corner);
+        let inserted = insert_anchor(&anchors, false, 0, 0.25);
+        assert_eq!(inserted.len(), 3);
+        assert_eq!(inserted[1], Anchor::corner(p(25.0, 0.0)));
+        let path = path_from_anchors(&inserted, false).unwrap();
+        assert!(path.segments.iter().all(|s| matches!(s, Segment::Line { .. })));
+    }
+
+    #[test]
+    fn inserting_on_a_curve_preserves_its_shape() {
+        let anchors =
+            [Anchor::smooth(p(0.0, 0.0), p(30.0, -60.0)), Anchor::smooth(p(100.0, 0.0), p(130.0, 60.0))];
+        let before = path_from_anchors(&anchors, false).unwrap().flatten();
+        let inserted = insert_anchor(&anchors, false, 0, 0.4);
+        let after = path_from_anchors(&inserted, false).unwrap();
+
+        // Every point of the original curve should still lie on the new one.
+        let after_anchors = anchors_from_path(&after);
+        for point in before {
+            let hit = nearest_on_anchors(&after_anchors, false, point).unwrap();
+            assert!(hit.distance < 0.05, "drifted {} at {point:?}", hit.distance);
+        }
+    }
+
+    #[test]
+    fn inserting_on_the_closing_segment_appends() {
+        let triangle = [p(0.0, 0.0), p(10.0, 0.0), p(0.0, 10.0)].map(Anchor::corner);
+        let inserted = insert_anchor(&triangle, true, 2, 0.5);
+        assert_eq!(inserted.len(), 4);
+        assert_eq!(inserted[3].point, p(0.0, 5.0));
     }
 
     #[test]
