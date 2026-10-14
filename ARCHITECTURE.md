@@ -48,6 +48,7 @@ The data model and the math behind animation.
 | `anchor.rs` | Anchor points with in/out handles; conversion between anchors, paths and shapes; nearest-point search and curve-preserving point insertion |
 | `symbol.rs` | `Symbol` (library entry), `Instance` (a symbol placed on a layer) and its timing, Convert to Symbol, and symbol-aware bounds and hit-testing |
 | `text.rs` | `Text`: content, `Font`, size, alignment; its measured extent, which the editor keeps up to date |
+| `font_file.rs` | `FontFile`: a font file linked to the project, and the families it provides |
 | `image.rs` | `ImageAsset`: an image file the document links to, and its size in pixels |
 | `audio.rs` | `AudioTrack`: a sound file laid against the timeline; how linked files are found |
 | `history.rs` | Snapshot-based undo/redo |
@@ -97,11 +98,12 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 7. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 8. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
-symbols, version 5 audio tracks, version 6 images and version 7 text;
+symbols, version 5 audio tracks, version 6 images, version 7 text and
+version 8 project font files;
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 
@@ -129,7 +131,9 @@ before their outlines are built.
 Text is laid out in `text.rs`: fontdb finds the font, harfrust shapes the
 string into positioned glyphs (kerning, ligatures, complex scripts) and
 skrifa supplies each glyph's outline, which is then filled and stroked like
-any path. Layouts are cached. `inkframe-core` can't lay out text, so the
+any path. Layouts are cached. Fonts live in one store shared by the whole
+program: installed fonts, plus project font files (`sync_project_fonts`),
+which are searched first so a project's copy of a font wins. `inkframe-core` can't lay out text, so the
 editor stores each text's measured extent in `Text::measured`
 (`Editor::remeasure_text`) for selection and hit-testing.
 

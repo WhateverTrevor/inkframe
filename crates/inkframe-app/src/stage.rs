@@ -278,6 +278,8 @@ struct RenderKey {
     onion: Option<OnionSkin>,
     /// Changes whenever an image finishes loading, so it gets drawn.
     images: u64,
+    /// Changes when fonts are added, which can change how text looks.
+    fonts: u64,
 }
 
 pub struct StageView {
@@ -1046,6 +1048,7 @@ impl StageView {
             size,
             onion,
             images: editor.images.generation(),
+            fonts: inkframe_render::fonts_generation(),
         };
         if self.rendered.as_ref() == Some(&key) {
             return;

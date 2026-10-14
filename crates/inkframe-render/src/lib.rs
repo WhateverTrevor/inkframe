@@ -22,7 +22,10 @@ use tiny_skia::{
 
 pub use images::{IMAGE_EXTENSIONS, ImageLibrary, image_size};
 pub use path::build_path;
-pub use text::{TextLayout, font_families, layout as layout_text, load_fonts};
+pub use text::{
+    FontFamilies, TextLayout, add_font_file, font_families, fonts_generation, layout as layout_text,
+    load_fonts, refresh_installed_fonts, sync_project_fonts,
+};
 
 use images::Mipmaps;
 

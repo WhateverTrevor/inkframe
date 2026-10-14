@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::audio::AudioTrack;
 use crate::color::Color;
+use crate::font_file::FontFile;
 use crate::geometry::{Point, Rect};
 use crate::image::ImageAsset;
 use crate::shape::{Shape, Style};
@@ -23,7 +24,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 7;
+pub const FORMAT_VERSION: u32 = 8;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -48,6 +49,9 @@ pub struct Document {
     /// Image files that layers place on the stage.
     #[serde(default)]
     pub images: Vec<ImageAsset>,
+    /// Font files that go with the project (see `font_file.rs`).
+    #[serde(default)]
+    pub fonts: Vec<FontFile>,
     pub(crate) next_layer_id: u64,
     #[serde(default = "first_id")]
     pub(crate) next_symbol_id: u64,
@@ -55,6 +59,8 @@ pub struct Document {
     pub(crate) next_audio_id: u64,
     #[serde(default = "first_id")]
     pub(crate) next_image_id: u64,
+    #[serde(default = "first_id")]
+    pub(crate) next_font_id: u64,
 }
 
 /// A stable identifier for a layer that survives reordering and undo.
@@ -187,10 +193,12 @@ impl Default for Document {
             symbols: Vec::new(),
             audio: Vec::new(),
             images: Vec::new(),
+            fonts: Vec::new(),
             next_layer_id: 1,
             next_symbol_id: 1,
             next_audio_id: 1,
             next_image_id: 1,
+            next_font_id: 1,
         }
     }
 }
@@ -444,6 +452,8 @@ impl Document {
         self.next_audio_id = self.next_audio_id.max(max_audio_id + 1);
         let max_image_id = self.images.iter().map(|i| i.id.0).max().unwrap_or(0);
         self.next_image_id = self.next_image_id.max(max_image_id + 1);
+        let max_font_id = self.fonts.iter().map(|f| f.id.0).max().unwrap_or(0);
+        self.next_font_id = self.next_font_id.max(max_font_id + 1);
 
         if self
             .symbols

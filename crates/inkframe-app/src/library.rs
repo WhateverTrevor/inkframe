@@ -16,9 +16,9 @@ const THUMBNAIL_SIZE: f32 = 40.0;
 /// it's out of date.
 struct Thumbnail {
     source: Symbol,
-    /// The image library's generation when rendered, so a thumbnail
-    /// redraws once a picture inside the symbol has loaded.
-    images: u64,
+    /// The image library's and fonts' generations when rendered, so a
+    /// thumbnail redraws once a picture or font inside the symbol has loaded.
+    images: (u64, u64),
     texture: Option<egui::TextureHandle>,
 }
 
@@ -106,7 +106,8 @@ impl LibraryView {
         ui.painter().rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
         let Some(symbol) = editor.doc.symbol(id) else { return };
 
-        let images = editor.images.generation();
+        // Either changing means a picture or some text inside may look different.
+        let images = (editor.images.generation(), inkframe_render::fonts_generation());
         let stale = self.thumbnails.get(&id).is_none_or(|t| t.source != *symbol || t.images != images);
         if stale {
             // Render at the display's pixel density so thumbnails are sharp.

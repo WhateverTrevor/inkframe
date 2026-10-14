@@ -20,11 +20,12 @@
 //! [skrifa]: https://docs.rs/skrifa
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use fontdb::{Database, Family, Query, Stretch, Weight};
 use harfrust::{ShapeOptions, ShaperData, UnicodeBuffer};
-use inkframe_core::{Font, Point, Rect, Text, TextAlign};
+use inkframe_core::{Document, Font, FontFileId, Point, Rect, Text, TextAlign};
 use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::{DrawSettings, OutlinePen};
 use skrifa::{GlyphId, MetadataProvider};
@@ -39,13 +40,13 @@ pub struct TextLayout {
     /// of the first line to the bottom of the last.
     pub bounds: Rect,
     /// The family actually used. Differs from the one asked for when that
-    /// font isn't installed.
+    /// font isn't available.
     pub family: String,
 }
 
 /// Lays out `text`, reusing an earlier layout when nothing has changed.
 pub fn layout(text: &Text) -> Arc<TextLayout> {
-    let key = LayoutKey::of(text);
+    let key = LayoutKey::of(text, read_fonts().generation);
     if let Some(layout) = cache().lock().expect("text cache lock").get(&key) {
         return layout.clone();
     }
@@ -60,17 +61,16 @@ pub fn layout(text: &Text) -> Arc<TextLayout> {
     layout
 }
 
-/// The families of every installed font (plus the bundled fallback),
-/// sorted, for a font menu.
-pub fn font_families() -> Vec<String> {
-    let mut families: Vec<String> = fonts()
-        .database
-        .faces()
-        .filter_map(|face| face.families.first().map(|(name, _)| name.clone()))
-        .collect();
-    families.sort_by_key(|name| name.to_lowercase());
-    families.dedup();
-    families
+/// The font families to offer in a menu: the project's own first, then
+/// everything installed (plus the bundled fallback), each sorted.
+#[derive(Debug, Default)]
+pub struct FontFamilies {
+    pub project: Vec<String>,
+    pub installed: Vec<String>,
+}
+
+pub fn font_families() -> Arc<FontFamilies> {
+    read_fonts().families.clone()
 }
 
 /// Indexes the installed fonts now rather than on the first text drawn.
@@ -78,6 +78,57 @@ pub fn font_families() -> Vec<String> {
 /// background thread at startup.
 pub fn load_fonts() {
     fonts();
+}
+
+/// Scans the installed fonts again, so fonts installed while Inkframe is
+/// running become available. Project font files that couldn't be read are
+/// tried again too.
+pub fn refresh_installed_fonts() {
+    let mut fonts = write_fonts();
+    fonts.files.retain(|_, result| result.is_ok());
+    let (installed, fallback) = installed_fonts();
+    fonts.installed = installed;
+    fonts.fallback = fallback;
+    fonts.changed();
+}
+
+/// Loads a project's font file so its families can be used, returning their
+/// names. A file already loaded isn't read again.
+pub fn add_font_file(path: &std::path::Path) -> Result<Vec<String>, String> {
+    if let Some(result) = read_fonts().files.get(path) {
+        return result.clone();
+    }
+    let mut fonts = write_fonts();
+    let result = fonts.load_file(path);
+    fonts.files.insert(path.to_path_buf(), result.clone());
+    fonts.changed();
+    result
+}
+
+/// Loads every font file `doc` links to that hasn't been loaded yet, and
+/// returns the ones that couldn't be read, with the reason. Cheap when
+/// nothing is new, so the editor calls it every frame.
+///
+/// A file that couldn't be read isn't retried until
+/// [`refresh_installed_fonts`]; checking the disk every frame for a missing
+/// file would be wasteful.
+pub fn sync_project_fonts(
+    doc: &Document,
+    project_dir: Option<&std::path::Path>,
+) -> Vec<(FontFileId, String)> {
+    let mut problems = Vec::new();
+    for file in &doc.fonts {
+        if let Err(problem) = add_font_file(&file.resolve(project_dir)) {
+            problems.push((file.id, problem));
+        }
+    }
+    problems
+}
+
+/// Bumped whenever the available fonts change, so cached drawings that
+/// contain text know to redraw.
+pub fn fonts_generation() -> u64 {
+    read_fonts().generation
 }
 
 /// Everything that changes a layout. Fill, stroke and the layer's
@@ -89,10 +140,13 @@ struct LayoutKey {
     size: u32,
     align: TextAlign,
     line_spacing: u32,
+    /// Which set of fonts the layout was made with. A font added since
+    /// may now provide a family that was missing.
+    fonts: u64,
 }
 
 impl LayoutKey {
-    fn of(text: &Text) -> Self {
+    fn of(text: &Text, fonts: u64) -> Self {
         // f32 can't be hashed directly; its bit pattern can.
         Self {
             content: text.content.clone(),
@@ -100,6 +154,7 @@ impl LayoutKey {
             size: text.size.to_bits(),
             align: text.align,
             line_spacing: text.line_spacing.to_bits(),
+            fonts,
         }
     }
 }
@@ -109,48 +164,129 @@ fn cache() -> &'static Mutex<HashMap<LayoutKey, Arc<TextLayout>>> {
     CACHE.get_or_init(Default::default)
 }
 
+/// Every font Inkframe can draw with.
+///
+/// It's shared by the whole program, because laying out text happens deep
+/// inside rendering, on several threads at once. Project fonts are kept in a
+/// database of their own so they can be searched first: a project's copy of
+/// a font wins over a different version installed on the system.
 struct Fonts {
-    database: Database,
+    /// The installed fonts, plus the bundled fallback.
+    installed: Database,
     /// The font bundled with Inkframe, used when no installed font matches.
     fallback: fontdb::ID,
+    /// Fonts from projects' font files.
+    project: Database,
+    /// Each font file asked for, and what loading it gave.
+    files: HashMap<PathBuf, Result<Vec<String>, String>>,
+    families: Arc<FontFamilies>,
+    generation: u64,
 }
 
-fn fonts() -> &'static Fonts {
-    static FONTS: OnceLock<Fonts> = OnceLock::new();
+impl Fonts {
+    fn load_file(&mut self, path: &std::path::Path) -> Result<Vec<String>, String> {
+        let name =
+            path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
+        let bytes = std::fs::read(path).map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => format!("{name} is missing"),
+            _ => format!("couldn't read {name}: {e}"),
+        })?;
+        // Check it's a font before adding it: fontdb quietly skips files it
+        // can't parse, which would otherwise look like a successful import.
+        let mut probe = Database::new();
+        probe.load_font_data(bytes.clone());
+        let families = family_names(&probe);
+        if families.is_empty() {
+            return Err(format!("{name} isn't a font file Inkframe can read"));
+        }
+        self.project.load_font_data(bytes);
+        Ok(families)
+    }
+
+    /// Call after any change to the fonts.
+    fn changed(&mut self) {
+        self.families = Arc::new(FontFamilies {
+            project: family_names(&self.project),
+            installed: family_names(&self.installed),
+        });
+        self.generation += 1;
+    }
+
+    /// The face closest to `font`: the family by name among the project's
+    /// fonts, then the installed fonts, then the system's sans-serif family,
+    /// then the bundled font. Bold and italic pick the nearest weight and
+    /// slant the family has.
+    fn find_face(&self, font: &Font) -> (&Database, fontdb::ID) {
+        let query = |families| Query {
+            families,
+            weight: if font.bold { Weight::BOLD } else { Weight::NORMAL },
+            stretch: Stretch::Normal,
+            style: if font.italic { fontdb::Style::Italic } else { fontdb::Style::Normal },
+        };
+        let by_name = [Family::Name(&font.family)];
+        if let Some(id) = self.project.query(&query(&by_name)) {
+            return (&self.project, id);
+        }
+        let or_sans_serif = [Family::Name(&font.family), Family::SansSerif];
+        let id = self.installed.query(&query(&or_sans_serif));
+        (&self.installed, id.unwrap_or(self.fallback))
+    }
+}
+
+/// Each family name in a database, sorted case-insensitively.
+fn family_names(database: &Database) -> Vec<String> {
+    let mut families: Vec<String> =
+        database.faces().filter_map(|face| face.families.first().map(|(name, _)| name.clone())).collect();
+    families.sort_by_key(|name| name.to_lowercase());
+    families.dedup();
+    families
+}
+
+fn installed_fonts() -> (Database, fontdb::ID) {
+    let mut database = Database::new();
+    database.load_system_fonts();
+    database.load_font_data(epaint_default_fonts::UBUNTU_LIGHT.to_vec());
+    // Fonts are added in order, so the bundled one is the last face.
+    let fallback = database.faces().last().expect("the bundled font was just added").id;
+    (database, fallback)
+}
+
+fn fonts() -> &'static RwLock<Fonts> {
+    static FONTS: OnceLock<RwLock<Fonts>> = OnceLock::new();
     FONTS.get_or_init(|| {
-        let mut database = Database::new();
-        database.load_system_fonts();
-        database.load_font_data(epaint_default_fonts::UBUNTU_LIGHT.to_vec());
-        // Fonts are added in order, so the bundled one is the last face.
-        let fallback = database.faces().last().expect("the bundled font was just added").id;
-        Fonts { database, fallback }
+        let (installed, fallback) = installed_fonts();
+        let mut fonts = Fonts {
+            installed,
+            fallback,
+            project: Database::new(),
+            files: HashMap::new(),
+            families: Arc::default(),
+            generation: 0,
+        };
+        fonts.changed();
+        RwLock::new(fonts)
     })
 }
 
-/// The installed face closest to `font`: the family by name, then the
-/// system's sans-serif family, then the bundled font. Bold and italic pick
-/// the nearest weight and slant the family has.
-fn find_face(font: &Font) -> fontdb::ID {
-    let fonts = fonts();
-    let query = Query {
-        families: &[Family::Name(&font.family), Family::SansSerif],
-        weight: if font.bold { Weight::BOLD } else { Weight::NORMAL },
-        stretch: Stretch::Normal,
-        style: if font.italic { fontdb::Style::Italic } else { fontdb::Style::Normal },
-    };
-    fonts.database.query(&query).unwrap_or(fonts.fallback)
+// A panic while the lock is held can't leave the fonts half-updated in a
+// way that matters (each change is a whole value), so carry on regardless.
+fn read_fonts() -> RwLockReadGuard<'static, Fonts> {
+    fonts().read().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn write_fonts() -> RwLockWriteGuard<'static, Fonts> {
+    fonts().write().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn lay_out(text: &Text) -> TextLayout {
-    let fonts = fonts();
-    let face = find_face(&text.font);
-    let family = fonts.database.face(face).and_then(|f| f.families.first()).map(|(name, _)| name.clone());
+    let fonts = read_fonts();
+    let (database, face) = fonts.find_face(&text.font);
+    let family = database.face(face).and_then(|f| f.families.first()).map(|(name, _)| name.clone());
     let family = family.unwrap_or_default();
     // A font file that can't be parsed draws nothing rather than failing.
     let blank =
         |family| TextLayout { path: None, bounds: Rect::from_points(Point::ZERO, Point::ZERO), family };
-    fonts
-        .database
+    database
         .with_face_data(face, |data, index| match skrifa::FontRef::from_index(data, index) {
             Ok(font) => lay_out_with(text, &font, family.clone()),
             Err(_) => blank(family.clone()),
@@ -309,6 +445,36 @@ mod tests {
         let pair = layout(&text("AV")).bounds.width();
         let apart = layout(&text("A")).bounds.width() + layout(&text("V")).bounds.width();
         assert!(pair <= apart, "{pair} vs {apart}");
+    }
+
+    #[test]
+    fn project_font_files_provide_their_families() {
+        // egui's bundled "Hack" stands in for a font someone downloaded.
+        let dir = std::env::temp_dir().join(format!("inkframe-fonts-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Hack-Regular.ttf");
+        std::fs::write(&path, epaint_default_fonts::HACK_REGULAR).unwrap();
+
+        let mut doc = Document::default();
+        doc.add_font_file(&path, None, vec!["Hack".into()]);
+        assert!(sync_project_fonts(&doc, None).is_empty());
+        assert!(font_families().project.contains(&"Hack".to_owned()));
+
+        let mut hack = text("Hi");
+        hack.font.family = "Hack".into();
+        assert_eq!(layout(&hack).family, "Hack");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unreadable_font_files_say_why() {
+        let dir = std::env::temp_dir().join(format!("inkframe-bad-fonts-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let notes = dir.join("notes.ttf");
+        std::fs::write(&notes, "definitely not a font").unwrap();
+        assert!(add_font_file(&notes).unwrap_err().contains("isn't a font"));
+        assert!(add_font_file(&dir.join("gone.otf")).unwrap_err().contains("missing"));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

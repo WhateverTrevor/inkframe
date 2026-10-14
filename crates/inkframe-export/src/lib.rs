@@ -154,6 +154,8 @@ pub enum ExportError {
     Audio(String),
     #[error("couldn't use an image: {0}")]
     Image(String),
+    #[error("couldn't use a font: {0}")]
+    Font(String),
     #[error("export cancelled")]
     Cancelled,
 }
@@ -181,6 +183,13 @@ pub fn export(
     let images = ImageLibrary::load(doc, settings.project_dir.as_deref());
     if let Some((name, problem)) = images.problems(doc).next() {
         return Err(ExportError::Image(format!("{name}: {problem}")));
+    }
+    // A font file that's gone would make its text fall back to another
+    // font, quietly changing the look of the final render.
+    let fonts = inkframe_render::sync_project_fonts(doc, settings.project_dir.as_deref());
+    let in_use = |id| doc.fonts.iter().any(|f| f.id == id && f.in_use(doc));
+    if let Some((_, problem)) = fonts.into_iter().find(|(id, _)| in_use(*id)) {
+        return Err(ExportError::Font(problem));
     }
     let renderer = FrameRenderer::new(doc, &images, settings);
     match settings.format {

@@ -23,6 +23,7 @@ enum Command {
     Open,
     ImportImage,
     ImportAudio,
+    ImportFont,
     Save,
     SaveAs,
     Export,
@@ -58,6 +59,8 @@ enum Command {
 }
 
 const FILE_EXTENSION: &str = "inkf";
+/// Font files Inkframe can import.
+const FONT_EXTENSIONS: [&str; 3] = ["ttf", "otf", "ttc"];
 /// Sound files Inkframe can import (see `inkframe-audio`).
 const AUDIO_EXTENSIONS: [&str; 9] = ["wav", "mp3", "m4a", "aac", "flac", "ogg", "aif", "aiff", "caf"];
 
@@ -123,6 +126,7 @@ impl InkframeApp {
             Command::Open => self.open(),
             Command::ImportImage => self.import_image(),
             Command::ImportAudio => self.import_audio(),
+            Command::ImportFont => self.import_fonts(),
             Command::Save => {
                 self.save();
             }
@@ -292,6 +296,7 @@ impl InkframeApp {
                 item(ui, "Open…", Some(shortcuts::OPEN), Command::Open, true);
                 item(ui, "Import to Stage…", Some(shortcuts::IMPORT), Command::ImportImage, true);
                 item(ui, "Import Audio…", None, Command::ImportAudio, true);
+                item(ui, "Import Font…", None, Command::ImportFont, true);
                 ui.separator();
                 item(ui, "Save", Some(shortcuts::SAVE), Command::Save, true);
                 item(ui, "Save As…", Some(shortcuts::SAVE_AS), Command::SaveAs, true);
@@ -437,12 +442,35 @@ impl InkframeApp {
                 }
             } else if AUDIO_EXTENSIONS.contains(&extension.as_str()) {
                 self.editor.import_audio(&path);
+            } else if FONT_EXTENSIONS.contains(&extension.as_str()) {
+                self.import_font(&path);
             } else {
                 show_error(
                     "Can't import that file",
-                    &format!("{} isn't an image or a sound file Inkframe can read.", file_name(&path)),
+                    &format!("{} isn't an image, sound or font file Inkframe can read.", file_name(&path)),
                 );
             }
+        }
+    }
+
+    /// Several at once, since a family often comes as separate files for
+    /// regular, bold and italic.
+    fn import_fonts(&mut self) {
+        let Some(paths) = rfd::FileDialog::new()
+            .set_title("Import fonts")
+            .add_filter("Fonts", &FONT_EXTENSIONS)
+            .pick_files()
+        else {
+            return;
+        };
+        for path in paths {
+            self.import_font(&path);
+        }
+    }
+
+    fn import_font(&mut self, path: &Path) {
+        if let Err(message) = self.editor.import_font(path) {
+            show_error("Couldn't import the font", &message);
         }
     }
 
@@ -547,6 +575,8 @@ impl eframe::App for InkframeApp {
         // undo) before the stage draws.
         let project_dir = self.editor.project_dir();
         self.editor.images.sync(&self.editor.doc, project_dir.as_deref());
+        self.editor.font_problems =
+            inkframe_render::sync_project_fonts(&self.editor.doc, project_dir.as_deref());
         self.editor.remeasure_text();
 
         // Panel order decides who owns the corners: the timeline is added
@@ -657,7 +687,7 @@ fn drop_hint(ui: &egui::Ui) {
     painter.text(
         area.center(),
         egui::Align2::CENTER_CENTER,
-        "Drop images or sounds to import them",
+        "Drop images, sounds or fonts to import them",
         egui::FontId::proportional(20.0),
         egui::Color32::WHITE,
     );

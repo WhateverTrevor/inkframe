@@ -258,3 +258,28 @@ fn missing_images_fail_the_export_clearly() {
     );
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn missing_fonts_fail_the_export_clearly() {
+    let dir = scratch_dir("missing-font");
+    let mut doc = sample_doc();
+    doc.add_font_file(&dir.join("Brand.otf"), Some(&dir), vec!["Brand".into()]);
+    let mut text = inkframe_core::Text::new("Logo", 20.0);
+    text.font.family = "Brand".into();
+    let style = Style { fill: Some(Color::BLACK), stroke: None };
+    doc.add_layer(
+        "Logo",
+        vec![Element { shape: Shape::Text(text), style }],
+        0,
+        Transform::at(Point::new(4.0, 20.0)),
+    );
+    let mut settings = settings(ExportFormat::PngSequence, dir.join("shot.png"), true);
+    settings.project_dir = Some(dir.clone());
+
+    let result = export(&doc, &settings, |_| ControlFlow::Continue(()));
+    assert!(
+        matches!(result, Err(ExportError::Font(ref message)) if message.contains("Brand.otf")),
+        "{result:?}"
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}

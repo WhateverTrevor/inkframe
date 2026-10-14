@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+use inkframe_core::FontFileId;
 use inkframe_core::{
     Affine, Color, Document, DocumentError, Element, History, Layer, LayerId, Point, Property, Shape, Stroke,
     Style, SymbolId, Text, TimelineId, Transform,
@@ -109,6 +110,9 @@ pub struct Editor {
     /// The document's image files, decoded. Not part of the document (and so
     /// not part of undo): it's a cache, rebuilt from the files on disk.
     pub images: ImageLibrary,
+    /// Linked font files that couldn't be loaded, with the reason. Updated
+    /// every frame, for the properties panel to explain a substituted font.
+    pub font_problems: Vec<(FontFileId, String)>,
     /// Set when the selected text layer should be edited: the properties
     /// panel puts the cursor in its text box, then clears this.
     pub edit_text: bool,
@@ -137,6 +141,7 @@ impl Editor {
             focused_property: Property::Position,
             images: ImageLibrary::default(),
             edit_text: false,
+            font_problems: Vec::new(),
             open_symbols: Vec::new(),
         }
     }
@@ -193,6 +198,23 @@ impl Editor {
         let name = if taken { self.doc.next_layer_name_in(self.timeline(), &name) } else { name };
         self.add_named_layer(name, element, center);
         Ok(())
+    }
+
+    /// Links a font file to the project so its families can be used, and
+    /// sets the selected text in it, since that's usually why it was
+    /// imported. Returns the families the file provides.
+    pub fn import_font(&mut self, path: &Path) -> Result<Vec<String>, String> {
+        let families = inkframe_render::add_font_file(path)?;
+        let project_dir = self.project_dir();
+        self.doc.add_font_file(path, project_dir.as_deref(), families.clone());
+        if let Some(layer) = self.selection.and_then(|id| self.doc.layer_mut(id)) {
+            for element in &mut layer.elements {
+                if let Shape::Text(text) = &mut element.shape {
+                    text.font.family = families[0].clone();
+                }
+            }
+        }
+        Ok(families)
     }
 
     /// Starts a new text layer with its first line's baseline at `at`, and
@@ -633,6 +655,28 @@ mod tests {
         let mut editor = Editor::new(Document::default());
         assert!(editor.import_image(&path).is_err());
         assert!(editor.doc.layers.is_empty() && editor.doc.images.is_empty());
+    }
+
+    #[test]
+    fn importing_a_font_sets_the_selected_text_in_it() {
+        let dir = std::env::temp_dir().join(format!("inkframe-editor-fonts-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Hack-Regular.ttf");
+        std::fs::write(&path, epaint_default_fonts::HACK_REGULAR).unwrap();
+
+        let mut editor = Editor::new(Document::default());
+        editor.add_text(Point::new(100.0, 100.0));
+        assert_eq!(editor.import_font(&path).unwrap(), ["Hack"]);
+        assert_eq!(editor.doc.fonts.len(), 1);
+        let Shape::Text(text) = &editor.selected_layer().unwrap().elements[0].shape else {
+            panic!("not text")
+        };
+        assert_eq!(text.font.family, "Hack");
+
+        // Importing it again doesn't add a second copy.
+        editor.import_font(&path).unwrap();
+        assert_eq!(editor.doc.fonts.len(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     fn editor_with_layer() -> (Editor, LayerId) {

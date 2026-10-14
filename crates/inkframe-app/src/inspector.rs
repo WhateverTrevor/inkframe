@@ -303,6 +303,15 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         })
         .collect();
 
+    // Why each family from a project font file is unavailable, if it is.
+    let font_problems: Vec<(String, String)> = editor
+        .font_problems
+        .iter()
+        .filter_map(|(id, problem)| {
+            editor.doc.fonts.iter().find(|f| f.id == *id).map(|f| (&f.families, problem))
+        })
+        .flat_map(|(families, problem)| families.iter().map(move |family| (family.clone(), problem.clone())))
+        .collect();
     let edit_text = std::mem::take(&mut editor.edit_text);
     let Some(layer) = editor.doc.layer_mut(id) else { return };
     let count = layer.elements.len();
@@ -322,7 +331,9 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                     image_editor(ui, info, width, height);
                 }
             } else if let Shape::Text(text) = &mut element.shape {
-                text_editor(ui, text, edit_text);
+                let problem =
+                    font_problems.iter().find(|(f, _)| *f == text.font.family).map(|(_, p)| p.as_str());
+                text_editor(ui, text, edit_text, problem);
                 style_editor(ui, &mut element.style);
             } else {
                 shape_size_editor(ui, &mut element.shape);
@@ -369,7 +380,9 @@ fn image_editor(ui: &mut egui::Ui, info: &ImageInfo, width: &mut f32, height: &m
 
 /// The text itself and its font settings. `focus` puts the cursor in the
 /// text box with everything selected, so typing replaces the placeholder.
-fn text_editor(ui: &mut egui::Ui, text: &mut Text, focus: bool) {
+/// `font_problem` explains why the project's own font file for this family
+/// couldn't be used, if that's the case.
+fn text_editor(ui: &mut egui::Ui, text: &mut Text, focus: bool, font_problem: Option<&str>) {
     let output =
         egui::TextEdit::multiline(&mut text.content).desired_rows(2).desired_width(f32::INFINITY).show(ui);
     if focus {
@@ -382,21 +395,42 @@ fn text_editor(ui: &mut egui::Ui, text: &mut Text, focus: bool) {
 
     egui::Grid::new("text").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
         ui.label("Font");
-        egui::ComboBox::from_id_salt("font").selected_text(&text.font.family).width(160.0).show_ui(
-            ui,
-            |ui| {
-                for family in installed_families() {
-                    ui.selectable_value(&mut text.font.family, family.clone(), family);
-                }
-            },
-        );
+        ui.horizontal(|ui| {
+            let families = inkframe_render::font_families();
+            egui::ComboBox::from_id_salt("font").selected_text(&text.font.family).width(160.0).show_ui(
+                ui,
+                |ui| {
+                    // The project's own fonts first, where they're easy to find
+                    // among hundreds of installed ones.
+                    if !families.project.is_empty() {
+                        ui.weak("This project");
+                        for family in &families.project {
+                            ui.selectable_value(&mut text.font.family, family.clone(), family);
+                        }
+                        ui.separator();
+                        ui.weak("Installed");
+                    }
+                    for family in &families.installed {
+                        ui.selectable_value(&mut text.font.family, family.clone(), family);
+                    }
+                },
+            );
+            if ui
+                .small_button("Refresh")
+                .on_hover_text("Look again for fonts installed since Inkframe started")
+                .clicked()
+            {
+                inkframe_render::refresh_installed_fonts();
+            }
+        });
         ui.end_row();
-        // Name the stand-in when the chosen font isn't on this machine
-        // (a project from someone else's computer, say).
+        // Name the stand-in when the chosen font isn't available (a project
+        // from someone else's computer, say), and why, if it's known.
         let used = inkframe_render::layout_text(text).family.clone();
         if used != text.font.family {
+            let reason = font_problem.unwrap_or("Not installed");
             ui.label("");
-            ui.colored_label(ui.visuals().warn_fg_color, format!("Not installed; showing {used}"));
+            ui.colored_label(ui.visuals().warn_fg_color, format!("{reason}; showing {used}"));
             ui.end_row();
         }
 
@@ -420,13 +454,6 @@ fn text_editor(ui: &mut egui::Ui, text: &mut Text, focus: bool) {
         ui.add(DragValue::new(&mut text.line_spacing).range(0.5..=5.0).speed(0.01).suffix("×"));
         ui.end_row();
     });
-}
-
-/// The installed font families, found once: scanning the system's fonts
-/// every frame would make the panel crawl.
-fn installed_families() -> &'static [String] {
-    static FAMILIES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
-    FAMILIES.get_or_init(inkframe_render::font_families)
 }
 
 fn shape_size_editor(ui: &mut egui::Ui, shape: &mut Shape) {

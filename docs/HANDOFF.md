@@ -10,7 +10,7 @@ after the macOS app bundle.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
   --all-targets -- -D warnings` and `cargo test --workspace` (183 tests)
   all pass.
-- **File format:** version 7. Older versions load and upgrade automatically
+- **File format:** version 8. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -47,6 +47,9 @@ after the macOS app bundle.
     drop; linked files like audio, decoded once with mipmaps
 19. Text (format v7): Text tool (T), edited in the properties panel;
     fontdb + harfrust + skrifa outlines, filled and stroked like shapes
+20. Project fonts (format v8): File › Import Font… links font files,
+    searched before installed fonts; a Refresh button rescans installed
+    fonts; exports fail if a font file in use is missing
 
 ## Not yet verified by hand
 
