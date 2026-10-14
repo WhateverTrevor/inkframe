@@ -7,8 +7,8 @@
 
 use egui::{Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{
-    Affine, Anchor, Document, Element, LayerId, Path, Point, Rect as StageRect, Shape, Style, TimelineId,
-    Transform, fit_freehand_path, insert_anchor, nearest_on_anchors, path_from_anchors,
+    Affine, Anchor, Document, Element, LayerId, Path, Point, Rect as StageRect, Shape, Style, Text,
+    TimelineId, Transform, fit_freehand_path, insert_anchor, nearest_on_anchors, path_from_anchors,
 };
 use inkframe_render::{RenderOptions, output_size, render_timeline_into};
 
@@ -17,6 +17,7 @@ use crate::editor::{Editor, OnionSkin, Surrounding, Tool};
 use crate::handles::{RotateDrag, ScaleHandle, ScaleOptions, scale_pose};
 use crate::pen::PenPath;
 use crate::subselect::{AnchorPart, move_part, remove_anchor, toggle_smooth};
+use crate::text_edit::{TextCursor, caret_position, position_at, selection_boxes, word_at};
 
 /// Gap kept around the stage when it's zoomed to fit the window, in points.
 const FIT_MARGIN: f32 = 24.0;
@@ -292,6 +293,8 @@ pub struct StageView {
     pen: Option<PenPath>,
     /// The anchor picked with the Subselection tool, whose handles are shown.
     anchor_selection: Option<AnchorRef>,
+    /// Text being typed into on the stage.
+    text_editing: Option<TextEditing>,
     texture: Option<egui::TextureHandle>,
     rendered: Option<RenderKey>,
     /// The viewport from the last frame, for zoom commands that come from menus.
@@ -306,6 +309,7 @@ impl Default for StageView {
             gesture: None,
             pen: None,
             anchor_selection: None,
+            text_editing: None,
             texture: None,
             rendered: None,
             last_area: Rect::NOTHING,
@@ -423,16 +427,24 @@ impl StageView {
         }
         self.validate_anchor_selection(editor);
 
-        self.handle_tools(ui, &response, editor, view);
+        // Typing into text takes the keyboard, and the mouse when it's on
+        // the text; the tools get everything else.
+        let pointer_on_text = self.handle_text_editing(ui, &response, editor, view);
+        if !pointer_on_text {
+            self.handle_tools(ui, &response, editor, view);
+        }
         if editor.tool == Tool::Pen {
             self.handle_pen(ui, &response, editor, view);
         }
-        let handles = Handles::for_selection(editor, view);
+        // No transform handles on text being typed into: dragging would
+        // fight with selecting.
+        let handles = if self.text_editing.is_some() { None } else { Handles::for_selection(editor, view) };
         let overlay = painter.with_clip_rect(area);
         if editor.timeline() != TimelineId::Main {
             draw_registration_point(&overlay, view.to_screen(Point::ZERO));
         }
         self.draw_overlays(&overlay, editor, view, handles.as_ref());
+        self.draw_text_editing(ui, &overlay, editor, view);
         self.draw_pen_preview(&overlay, view, response.hover_pos());
         if let Some(hit) = response.hover_pos().and_then(|p| self.outline_hit(editor, view, p)) {
             // Show where the new point would land: a hollow anchor with a plus.
@@ -571,18 +583,14 @@ impl StageView {
             editor.enter_instance(id);
             return;
         }
-        // Double-clicking text edits it, as in Animate.
+        // Double-clicking text types into it, as in Animate.
         if response.double_clicked()
             && editor.tool == Tool::Select
             && let Some(pointer) = response.interact_pointer_pos()
             && let Some(id) = editor.hit_test(view.to_local(pointer), HIT_TOLERANCE / view.zoom)
-            && editor
-                .doc
-                .layer(id)
-                .is_some_and(|l| l.elements.iter().any(|e| matches!(e.shape, Shape::Text(_))))
+            && let Some(element) = text_element(editor, id)
         {
-            editor.selection = Some(id);
-            editor.edit_text = true;
+            self.begin_text_editing(editor, view, id, element, Some(pointer));
             return;
         }
 
@@ -593,18 +601,14 @@ impl StageView {
             && let Some(pointer) = response.interact_pointer_pos()
         {
             let p = view.to_local(pointer);
-            let text_layer = editor.hit_test(p, HIT_TOLERANCE / view.zoom).filter(|id| {
-                editor
-                    .doc
-                    .layer(*id)
-                    .is_some_and(|l| l.elements.iter().any(|e| matches!(e.shape, Shape::Text(_))))
-            });
-            match text_layer {
-                Some(id) => {
-                    editor.selection = Some(id);
-                    editor.edit_text = true;
+            let hit = editor.hit_test(p, HIT_TOLERANCE / view.zoom);
+            match hit.and_then(|id| text_element(editor, id).map(|element| (id, element))) {
+                Some((id, element)) => self.begin_text_editing(editor, view, id, element, Some(pointer)),
+                None => {
+                    if let Some(id) = editor.add_text(p) {
+                        self.begin_text_editing(editor, view, id, 0, None);
+                    }
                 }
-                None => editor.add_text(p),
             }
             return;
         }
@@ -638,6 +642,178 @@ impl StageView {
                 editor.selection = editor.hit_test(view.to_local(pointer), tolerance);
             }
         }
+    }
+
+    /// Starts typing into the named text layer with all its text selected.
+    /// For the screenshot hook; people start typing by clicking.
+    pub fn type_into(&mut self, editor: &mut Editor, name: &str) {
+        let layer = editor.layers().iter().find(|l| l.name == name).map(|l| l.id);
+        let Some((layer, element)) = layer.and_then(|id| text_element(editor, id).map(|e| (id, e))) else {
+            eprintln!("No text layer named {name:?} for INKFRAME_SCREENSHOT_TYPE");
+            return;
+        };
+        let length = text_of(editor, layer, element).map_or(0, |t| t.content.len());
+        editor.tool = Tool::Text;
+        editor.selection = Some(layer);
+        let cursor = TextCursor { anchor: 0, cursor: length };
+        self.text_editing = Some(TextEditing { layer, element, cursor, selecting: false });
+    }
+
+    /// Starts typing into a text layer's `element`, with the cursor where
+    /// `pointer` is, or at the end of the text.
+    fn begin_text_editing(
+        &mut self,
+        editor: &mut Editor,
+        view: View,
+        layer: LayerId,
+        element: usize,
+        pointer: Option<Pos2>,
+    ) {
+        editor.selection = Some(layer);
+        let Some(text) = text_of(editor, layer, element) else { return };
+        let layout = inkframe_render::layout_text(text);
+        let position = match (pointer, layer_to_local(editor, layer)) {
+            (Some(pointer), Some(to_local)) => position_at(&layout, to_local.apply(view.to_local(pointer))),
+            _ => text.content.len(),
+        };
+        self.text_editing =
+            Some(TextEditing { layer, element, cursor: TextCursor::at(position), selecting: false });
+    }
+
+    /// Stops typing. Text left empty is removed, as in Animate: clicking
+    /// with the Text tool and then clicking away shouldn't leave an
+    /// invisible layer behind.
+    fn finish_text_editing(&mut self, ui: &egui::Ui, id: egui::Id, editor: &mut Editor) {
+        let Some(editing) = self.text_editing.take() else { return };
+        ui.memory_mut(|m| m.surrender_focus(id));
+        let empty =
+            text_of(editor, editing.layer, editing.element).is_some_and(|t| t.content.trim().is_empty());
+        editor.selection = Some(editing.layer);
+        if empty {
+            editor.delete_selected_layer();
+        }
+    }
+
+    /// Keyboard and mouse input while typing into text. Returns whether the
+    /// mouse was used to place the cursor or select, in which case the tools
+    /// shouldn't also act on it.
+    fn handle_text_editing(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        editor: &mut Editor,
+        view: View,
+    ) -> bool {
+        let Some(mut editing) = self.text_editing else { return false };
+        // Stop if the text went away (undo, say), another tool was picked,
+        // or the keyboard went to another widget, like the properties panel.
+        let focus_elsewhere = ui.memory(|m| m.focused().is_some_and(|focused| focused != response.id));
+        let to_local = layer_to_local(editor, editing.layer);
+        if text_of(editor, editing.layer, editing.element).is_none()
+            || !matches!(editor.tool, Tool::Select | Tool::Text)
+            || focus_elsewhere
+            || to_local.is_none()
+        {
+            self.finish_text_editing(ui, response.id, editor);
+            return false;
+        }
+        let to_local = to_local.expect("checked above");
+        let local = |screen: Pos2| to_local.apply(view.to_local(screen));
+
+        // Keep the keyboard, including the keys egui would otherwise use to
+        // move between widgets (Tab, arrows, Escape).
+        response.request_focus();
+        let filter =
+            egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true };
+        ui.memory_mut(|m| m.set_focus_lock_filter(response.id, filter));
+
+        // Mouse: a press on the text places the cursor (Shift extends the
+        // selection) and dragging selects. A press anywhere else stops
+        // editing, and the tools handle it as usual.
+        let (pressed, down, shift) =
+            ui.input(|i| (i.pointer.primary_pressed(), i.pointer.primary_down(), i.modifiers.shift));
+        let layout = text_of(editor, editing.layer, editing.element).map(inkframe_render::layout_text);
+        let layout = layout.expect("checked above");
+        let mut pointer_used = false;
+        if pressed && let Some(pointer) = response.hover_pos() {
+            let slack = HIT_TOLERANCE / view.zoom;
+            if layout.bounds.expand(slack.max(layout.ascent * 0.25)).contains(local(pointer)) {
+                editing.cursor.move_to(position_at(&layout, local(pointer)), shift);
+                editing.selecting = true;
+                pointer_used = true;
+            } else {
+                self.finish_text_editing(ui, response.id, editor);
+                return false;
+            }
+        }
+        if editing.selecting {
+            pointer_used = true;
+            if let Some(pointer) = response.hover_pos().or(response.interact_pointer_pos()) {
+                editing.cursor.cursor = position_at(&layout, local(pointer));
+            }
+            editing.selecting = down;
+        }
+        if response.double_clicked() {
+            let text = text_of(editor, editing.layer, editing.element).expect("checked above");
+            let word = word_at(&text.content, editing.cursor.cursor);
+            editing.cursor = TextCursor { anchor: word.start, cursor: word.end };
+            pointer_used = true;
+        }
+
+        // Keyboard. The layout is redone for each event, since arrow keys
+        // need to know where the text is after the previous keystroke.
+        if response.has_focus() {
+            let events = ui.input(|i| i.events.clone());
+            for event in &events {
+                let Some(text) = text_of_mut(editor, editing.layer, editing.element) else { break };
+                let layout = inkframe_render::layout_text(text);
+                let outcome = editing.cursor.handle(&mut text.content, &layout, event);
+                if let Some(copied) = outcome.copy {
+                    ui.ctx().copy_text(copied);
+                }
+                if outcome.finish {
+                    self.text_editing = Some(editing);
+                    self.finish_text_editing(ui, response.id, editor);
+                    return pointer_used;
+                }
+            }
+        }
+        self.text_editing = Some(editing);
+        pointer_used
+    }
+
+    /// The cursor and selection of text being typed into.
+    fn draw_text_editing(&self, ui: &egui::Ui, painter: &egui::Painter, editor: &Editor, view: View) {
+        let Some(editing) = &self.text_editing else { return };
+        let (Some(text), Some(layer)) =
+            (text_of(editor, editing.layer, editing.element), editor.doc.layer(editing.layer))
+        else {
+            return;
+        };
+        let to_stage = layer.transform_at(editor.frame).to_affine();
+        let screen = |p: Point| view.to_screen(to_stage.apply(p));
+        let layout = inkframe_render::layout_text(text);
+
+        // Each box is drawn as four transformed corners, so the highlight
+        // follows the text when it's rotated or scaled.
+        for selected in selection_boxes(&layout, editing.cursor.selection()) {
+            let corners = selected.corners().map(screen).to_vec();
+            painter.add(egui::Shape::convex_polygon(
+                corners,
+                SELECTION.gamma_multiply(0.35),
+                egui::Stroke::NONE,
+            ));
+        }
+        // The cursor blinks, as text cursors do, but stays solid while
+        // selecting so it's easy to follow.
+        let time = ui.input(|i| i.time);
+        if editing.selecting || (time * 2.0) as i64 % 2 == 0 {
+            let (x, baseline) = caret_position(&layout, editing.cursor.cursor);
+            let top = screen(Point::new(x, baseline - layout.ascent));
+            let bottom = screen(Point::new(x, baseline + layout.descent));
+            painter.line_segment([top, bottom], (1.5, SELECTION));
+        }
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
     }
 
     fn begin_gesture(
@@ -976,6 +1152,16 @@ impl StageView {
         if !response.hovered() && self.gesture.is_none() {
             return;
         }
+        // An I-beam over text being typed into, where clicking places the cursor.
+        if let Some(editing) = &self.text_editing
+            && let (Some(pointer), Some(to_local)) =
+                (response.hover_pos(), layer_to_local(editor, editing.layer))
+            && let Some(text) = text_of(editor, editing.layer, editing.element)
+            && inkframe_render::layout_text(text).bounds.contains(to_local.apply(view.to_local(pointer)))
+        {
+            ui.ctx().set_cursor_icon(CursorIcon::Text);
+            return;
+        }
         let space_held = ui.input(|i| i.key_down(egui::Key::Space));
         let handle_cursor = |hit| handles.map_or(CursorIcon::Default, |h| h.cursor(hit));
 
@@ -1218,6 +1404,41 @@ fn add_path_layer(editor: &mut Editor, prefix: &str, mut path: Path, style: Styl
     editor.add_drawn_layer(prefix, Element { shape: Shape::Path(path), style }, center);
 }
 
+/// Text being typed into on the stage.
+#[derive(Clone, Copy)]
+struct TextEditing {
+    layer: LayerId,
+    /// Which of the layer's elements is the text.
+    element: usize,
+    cursor: TextCursor,
+    /// While the mouse button that placed the cursor is held, dragging selects.
+    selecting: bool,
+}
+
+/// The index of the first text element on a layer.
+fn text_element(editor: &Editor, layer: LayerId) -> Option<usize> {
+    editor.doc.layer(layer)?.elements.iter().position(|e| matches!(e.shape, Shape::Text(_)))
+}
+
+fn text_of(editor: &Editor, layer: LayerId, element: usize) -> Option<&Text> {
+    match &editor.doc.layer(layer)?.elements.get(element)?.shape {
+        Shape::Text(text) => Some(text),
+        _ => None,
+    }
+}
+
+fn text_of_mut(editor: &mut Editor, layer: LayerId, element: usize) -> Option<&mut Text> {
+    match &mut editor.doc.layer_mut(layer)?.elements.get_mut(element)?.shape {
+        Shape::Text(text) => Some(text),
+        _ => None,
+    }
+}
+
+/// Maps the timeline's coordinates into a layer's own, where its shapes are.
+fn layer_to_local(editor: &Editor, layer: LayerId) -> Option<Affine> {
+    editor.doc.layer(layer)?.transform_at(editor.frame).to_affine().inverse()
+}
+
 /// Moves `end` so the rectangle from `start` is a square, keeping the drag direction.
 fn constrain_square(start: Point, end: Point) -> Point {
     let d = end - start;
@@ -1322,40 +1543,87 @@ mod tests {
         assert_eq!(editor.selection, Some(layer.id));
     }
 
+    fn text_content(h: &Harness<'_, State>, id: LayerId) -> String {
+        match &h.state().1.doc.layer(id).unwrap().elements[0].shape {
+            Shape::Text(text) => text.content.clone(),
+            _ => panic!("not text"),
+        }
+    }
+
     #[test]
-    fn text_tool_places_text_where_clicked_and_edits_it() {
+    fn text_tool_types_straight_onto_the_stage() {
         let mut editor = Editor::new(Document::default());
         editor.tool = Tool::Text;
         let mut h = harness(editor);
 
         let at = screen(&h, 300.0, 400.0);
-        h.drag_at(at);
-        h.step();
-        h.drop_at(at);
-        h.run();
-
-        let editor = &h.state().1;
-        let layer = editor.selected_layer().expect("the new text is selected");
-        let Shape::Text(text) = &layer.elements[0].shape else { panic!("not text") };
-        assert_eq!(text.content, "Text");
-        assert!(text.measured.width() > 0.0, "it was measured, so it can be selected");
+        click(&mut h, at);
+        let id = h.state().1.selection.expect("the new text is selected");
         // The first line's baseline starts where the click was.
-        assert!(layer.transform_at(0).position.distance(Point::new(300.0, 400.0)) < 3.0);
-        assert!(editor.edit_text, "the properties panel should put the cursor in the text");
+        let position = h.state().1.doc.layer(id).unwrap().transform_at(0).position;
+        assert!(position.distance(Point::new(300.0, 400.0)) < 3.0);
 
-        // Clicking the text again with the Text tool edits it rather than
-        // starting another.
-        let id = layer.id;
-        let on_text = screen(&h, 320.0, 390.0);
-        h.state_mut().1.edit_text = false;
-        h.drag_at(on_text);
-        h.step();
-        h.drop_at(on_text);
+        h.event(egui::Event::Text("Hello".into()));
         h.run();
-        let editor = &h.state().1;
-        assert_eq!(editor.doc.layers.len(), 1);
-        assert_eq!(editor.selection, Some(id));
-        assert!(editor.edit_text);
+        h.key_press(egui::Key::Backspace);
+        h.run();
+        h.key_press(egui::Key::Enter);
+        h.event(egui::Event::Text("there".into()));
+        h.run();
+        assert_eq!(text_content(&h, id), "Hell\nthere");
+        // The app does this every frame; the stage alone doesn't.
+        h.state_mut().1.remeasure_text();
+        let Shape::Text(text) = &h.state().1.doc.layer(id).unwrap().elements[0].shape else { unreachable!() };
+        assert!(text.measured.width() > 0.0, "it was measured, so it can be selected");
+
+        // Typing keys that are also shortcuts (V is the Selection tool)
+        // types them instead of switching tools.
+        h.event(egui::Event::Text("v".into()));
+        h.run();
+        assert_eq!(h.state().1.tool, Tool::Text);
+        assert!(text_content(&h, id).ends_with('v'));
+
+        // Escape stops editing; the text stays.
+        h.key_press(egui::Key::Escape);
+        h.run();
+        assert_eq!(h.state().1.doc.layers.len(), 1);
+    }
+
+    #[test]
+    fn empty_text_is_removed_when_editing_stops() {
+        let mut editor = Editor::new(Document::default());
+        editor.tool = Tool::Text;
+        let mut h = harness(editor);
+        let at = screen(&h, 300.0, 400.0);
+        click(&mut h, at);
+        assert_eq!(h.state().1.doc.layers.len(), 1);
+        h.key_press(egui::Key::Escape);
+        h.run();
+        assert!(h.state().1.doc.layers.is_empty(), "nothing was typed, so nothing is left behind");
+    }
+
+    #[test]
+    fn clicking_inside_text_moves_the_cursor_there() {
+        let mut editor = Editor::new(Document::default());
+        editor.tool = Tool::Text;
+        let mut h = harness(editor);
+        let at = screen(&h, 300.0, 400.0);
+        click(&mut h, at);
+        let id = h.state().1.selection.unwrap();
+        h.event(egui::Event::Text("ab".into()));
+        h.run();
+
+        // Wait out the double-click window (a quick second click would
+        // select the whole word), then click just inside the text's start,
+        // which puts the cursor before the "a", and type.
+        for _ in 0..40 {
+            h.step();
+        }
+        let at = screen(&h, 301.0, 390.0);
+        click(&mut h, at);
+        h.event(egui::Event::Text("X".into()));
+        h.run();
+        assert_eq!(text_content(&h, id), "Xab");
     }
 
     #[test]

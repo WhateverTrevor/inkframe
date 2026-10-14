@@ -19,7 +19,8 @@
 //! [harfrust]: https://docs.rs/harfrust
 //! [skrifa]: https://docs.rs/skrifa
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -42,6 +43,22 @@ pub struct TextLayout {
     /// The family actually used. Differs from the one asked for when that
     /// font isn't available.
     pub family: String,
+    /// Where each line is, for placing a text cursor.
+    pub lines: Vec<LineLayout>,
+    /// How far letters reach above and below each baseline.
+    pub ascent: f32,
+    pub descent: f32,
+}
+
+/// One line of laid-out text.
+pub struct LineLayout {
+    /// The line's characters, as byte positions in the text's content (not
+    /// counting the newline that ends it).
+    pub range: Range<usize>,
+    pub baseline: f32,
+    /// Where a text cursor goes at each character boundary in the line,
+    /// from `range.start` to `range.end`: (byte position, x).
+    pub carets: Vec<(usize, f32)>,
 }
 
 /// Lays out `text`, reusing an earlier layout when nothing has changed.
@@ -284,8 +301,14 @@ fn lay_out(text: &Text) -> TextLayout {
     let family = database.face(face).and_then(|f| f.families.first()).map(|(name, _)| name.clone());
     let family = family.unwrap_or_default();
     // A font file that can't be parsed draws nothing rather than failing.
-    let blank =
-        |family| TextLayout { path: None, bounds: Rect::from_points(Point::ZERO, Point::ZERO), family };
+    let blank = |family| TextLayout {
+        path: None,
+        bounds: Rect::from_points(Point::ZERO, Point::ZERO),
+        family,
+        lines: Vec::new(),
+        ascent: 0.0,
+        descent: 0.0,
+    };
     database
         .with_face_data(face, |data, index| match skrifa::FontRef::from_index(data, index) {
             Ok(font) => lay_out_with(text, &font, family.clone()),
@@ -309,6 +332,8 @@ fn lay_out_with(text: &Text, font: &skrifa::FontRef, family: String) -> TextLayo
 
     let mut path = PathBuilder::new();
     let (mut left, mut right) = (0.0f32, 0.0f32);
+    let mut line_layouts = Vec::new();
+    let mut line_start = 0;
     let lines: Vec<&str> = text.content.split('\n').collect();
     for (number, line) in lines.iter().enumerate() {
         let mut buffer = UnicodeBuffer::new();
@@ -329,7 +354,14 @@ fn lay_out_with(text: &Text, font: &skrifa::FontRef, family: String) -> TextLayo
 
         let baseline = number as f32 * line_height;
         let mut pen_x = start;
+        // Where each cluster (the glyphs made from a run of characters)
+        // starts and how wide it is, for placing the text cursor.
+        let mut clusters: BTreeMap<usize, (f32, f32)> = BTreeMap::new();
         for (info, position) in glyphs.glyph_infos().iter().zip(glyphs.glyph_positions()) {
+            let advance = position.x_advance as f32 * scale;
+            let cluster = clusters.entry(info.cluster as usize).or_insert((pen_x, 0.0));
+            cluster.0 = cluster.0.min(pen_x);
+            cluster.1 += advance;
             let origin = Point::new(
                 pen_x + position.x_offset as f32 * scale,
                 baseline - position.y_offset as f32 * scale,
@@ -341,8 +373,16 @@ fn lay_out_with(text: &Text, font: &skrifa::FontRef, family: String) -> TextLayo
                 let _ =
                     glyph.draw(DrawSettings::unhinted(Size::unscaled(), LocationRef::default()), &mut pen);
             }
-            pen_x += position.x_advance as f32 * scale;
+            pen_x += advance;
         }
+        let carets = caret_positions(line, &clusters, start);
+        let range = line_start..line_start + line.len();
+        line_layouts.push(LineLayout {
+            carets: carets.into_iter().map(|(byte, x)| (range.start + byte, x)).collect(),
+            range,
+            baseline,
+        });
+        line_start += line.len() + 1; // the newline
     }
 
     let bottom = (lines.len() - 1) as f32 * line_height + descent;
@@ -350,7 +390,47 @@ fn lay_out_with(text: &Text, font: &skrifa::FontRef, family: String) -> TextLayo
         path: path.finish(),
         bounds: Rect::from_points(Point::new(left, -ascent), Point::new(right, bottom)),
         family,
+        lines: line_layouts,
+        ascent,
+        descent,
     }
+}
+
+/// The x position for a text cursor at every character boundary of `line`.
+///
+/// Shaping reports which characters each glyph came from as a "cluster":
+/// the byte where its run of characters starts. Usually that's one glyph
+/// per character, but a ligature like "fi" is one glyph for two, and
+/// accented letters can be two glyphs for one character. A boundary at a
+/// cluster's start goes at the cluster's edge; one inside a cluster (between
+/// the "f" and "i" of a ligature) goes the matching fraction of the way
+/// across it.
+///
+/// In right-to-left scripts the first character is drawn rightmost, so
+/// clusters further into the text sit further left, and a cursor before a
+/// cluster goes on its right edge.
+fn caret_positions(line: &str, clusters: &BTreeMap<usize, (f32, f32)>, start: f32) -> Vec<(usize, f32)> {
+    if clusters.is_empty() {
+        return vec![(0, start)];
+    }
+    let first = clusters.values().next().map_or(0.0, |c| c.0);
+    let last = clusters.values().next_back().map_or(0.0, |c| c.0);
+    let right_to_left = last < first;
+
+    let boundaries = line.char_indices().map(|(i, _)| i).chain(std::iter::once(line.len()));
+    boundaries
+        .map(|byte| {
+            let (&cluster, &(x, width)) = clusters
+                .range(..=byte)
+                .next_back()
+                .unwrap_or_else(|| clusters.iter().next().expect("not empty"));
+            let next = clusters.range(cluster + 1..).next().map_or(line.len(), |(&next, _)| next);
+            let chars = line[cluster..next].chars().count().max(1) as f32;
+            let into = line[cluster..byte.min(next)].chars().count() as f32 / chars;
+            let along = if right_to_left { 1.0 - into } else { into };
+            (byte, x + width * along)
+        })
+        .collect()
 }
 
 /// Adds a glyph's outline to a path, placed at `origin` and scaled from
@@ -475,6 +555,31 @@ mod tests {
         assert!(add_font_file(&notes).unwrap_err().contains("isn't a font"));
         assert!(add_font_file(&dir.join("gone.otf")).unwrap_err().contains("missing"));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn carets_sit_between_letters_on_each_line() {
+        let layout = layout(&text("ab\nc"));
+        assert_eq!(layout.lines.len(), 2);
+        let first = &layout.lines[0];
+        assert_eq!(first.range, 0..2);
+        let bytes: Vec<usize> = first.carets.iter().map(|c| c.0).collect();
+        assert_eq!(bytes, [0, 1, 2]);
+        // Each caret is further right than the one before, and the last is
+        // at the end of the line.
+        assert!(first.carets.windows(2).all(|w| w[1].1 > w[0].1));
+        assert_eq!(first.carets[0].1, 0.0);
+        // The second line starts after the newline, one line spacing down.
+        let second = &layout.lines[1];
+        assert_eq!(second.range, 3..4);
+        assert!((second.baseline - 120.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn empty_lines_still_have_a_caret() {
+        let layout = layout(&text(""));
+        assert_eq!(layout.lines.len(), 1);
+        assert_eq!(layout.lines[0].carets, [(0, 0.0)]);
     }
 
     #[test]

@@ -113,9 +113,6 @@ pub struct Editor {
     /// Linked font files that couldn't be loaded, with the reason. Updated
     /// every frame, for the properties panel to explain a substituted font.
     pub font_problems: Vec<(FontFileId, String)>,
-    /// Set when the selected text layer should be edited: the properties
-    /// panel puts the cursor in its text box, then clears this.
-    pub edit_text: bool,
     /// The symbols being edited, outermost first. Empty while editing the
     /// main timeline. `frame` and `selection` always refer to the innermost.
     open_symbols: Vec<OpenSymbol>,
@@ -140,7 +137,6 @@ impl Editor {
             onion: OnionSkin { enabled: false, before: 2, after: 2 },
             focused_property: Property::Position,
             images: ImageLibrary::default(),
-            edit_text: false,
             font_problems: Vec::new(),
             open_symbols: Vec::new(),
         }
@@ -217,17 +213,17 @@ impl Editor {
         Ok(families)
     }
 
-    /// Starts a new text layer with its first line's baseline at `at`, and
-    /// asks for its text box to be edited.
-    pub fn add_text(&mut self, at: Point) {
+    /// Starts a new, empty text layer with its first line's baseline at
+    /// `at`, ready to be typed into, and returns it.
+    pub fn add_text(&mut self, at: Point) -> Option<LayerId> {
         let element = Element {
-            shape: Shape::Text(Text::new("Text", 48.0)),
+            shape: Shape::Text(Text::new("", 48.0)),
             style: Style { fill: Some(Color::BLACK), stroke: None },
         };
         let name = self.doc.next_layer_name_in(self.timeline(), "Text");
         self.add_named_layer(name, element, at);
         self.remeasure_text();
-        self.edit_text = true;
+        self.selection
     }
 
     /// Brings every text shape's stored size up to date with its layout.

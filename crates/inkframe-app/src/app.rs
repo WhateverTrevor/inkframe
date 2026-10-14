@@ -106,6 +106,9 @@ impl InkframeApp {
         };
         if app.screenshot.is_some() {
             AutoScreenshot::set_up_scene(&mut app.editor);
+            if let Some(name) = AutoScreenshot::type_into() {
+                app.stage.type_into(&mut app.editor, &name);
+            }
             if AutoScreenshot::expand_timeline() {
                 for layer in app.editor.doc.all_layers() {
                     app.timeline.set_expanded(layer.id, true);

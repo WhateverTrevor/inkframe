@@ -50,6 +50,8 @@ after the macOS app bundle.
 20. Project fonts (format v8): File › Import Font… links font files,
     searched before installed fonts; a Refresh button rescans installed
     fonts; exports fail if a font file in use is missing
+21. On-stage text editing: type directly on the stage with a cursor and
+    selection that follow rotated/scaled text (`text_edit.rs`)
 
 ## Not yet verified by hand
 
@@ -76,11 +78,12 @@ after the macOS app bundle.
 
 Smaller ideas noted along the way:
 
-- Text is edited in the properties panel, not on the stage. On-stage
-  editing (a caret drawn in the transformed text) would be the natural
-  next step. Characters missing from the chosen font (emoji, CJK in a
-  Latin font) show as the font's empty box; there's no per-character
-  font fallback yet.
+- Characters missing from the chosen font (emoji, CJK in a Latin font)
+  show as the font's empty box; there's no per-character font fallback
+  yet. On-stage typing doesn't support input methods (IME) for Chinese,
+  Japanese or Korean yet; the properties panel's Text box does. ⌘Z while
+  typing on the stage does nothing; the whole typing session undoes as one
+  step afterwards.
 - Audio decoding is whole-file in memory (~23 MB per minute). Fine for
   dialogue and music, but long files might want streaming.
 - A value graph (Animate's Motion Editor: each property's value plotted
@@ -98,7 +101,9 @@ Smaller ideas noted along the way:
 - macOS screen capture is blocked from the agent's shell. Use the built-in
   hook instead:
   `INKFRAME_SCREENSHOT=out.png` plus optional `_FRAME`, `_SELECT`, `_ONION`,
-  `_TOOL`, `_EXPAND`, `_EDIT` (symbol on its own), `_OPEN` (instance in place).
+  `_TOOL`, `_EXPAND`, `_EDIT` (symbol on its own), `_OPEN` (instance in place),
+  `_TYPE` (start typing into a text layer). Launching it from a background
+  shell sometimes never draws a frame; retry, it's not the app.
   It waits for audio to finish decoding before capturing.
 - egui's default font lacks some glyphs (▸, ◆, ∅): check screenshots for
   empty boxes after adding symbols to UI text.

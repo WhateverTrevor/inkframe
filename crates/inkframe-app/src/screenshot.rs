@@ -15,6 +15,7 @@
 //! * `INKFRAME_SCREENSHOT_EXPAND=1` expands every layer's property rows in the timeline.
 //! * `INKFRAME_SCREENSHOT_EDIT=Ball` opens the named symbol on its own (before `_SELECT`).
 //! * `INKFRAME_SCREENSHOT_OPEN=Ball` opens the named instance layer's symbol in place (after `_FRAME`).
+//! * `INKFRAME_SCREENSHOT_TYPE=Title` starts typing into the named text layer, with its text selected.
 
 use std::path::PathBuf;
 
@@ -65,6 +66,11 @@ impl AutoScreenshot {
                 None => eprintln!("Unknown tool {name:?} in INKFRAME_SCREENSHOT_TOOL"),
             }
         }
+    }
+
+    /// The text layer to start typing into, if any.
+    pub fn type_into() -> Option<String> {
+        std::env::var("INKFRAME_SCREENSHOT_TYPE").ok()
     }
 
     /// Whether the timeline should start with every layer expanded.

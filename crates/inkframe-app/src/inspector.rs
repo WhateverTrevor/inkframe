@@ -1,7 +1,6 @@
 //! The properties panel on the right: numeric editing of the selected layer,
 //! its keyframe easing and shapes, and the document settings.
 
-use egui::text::{CCursor, CCursorRange};
 use egui::{Color32, DragValue, Sense, Stroke as EguiStroke, vec2};
 use inkframe_core::{
     Color, Easing, FrameRate, ImageId, Layer, LayerId, Playback, Property, Shape, Stroke, Style, SymbolId,
@@ -312,7 +311,6 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         })
         .flat_map(|(families, problem)| families.iter().map(move |family| (family.clone(), problem.clone())))
         .collect();
-    let edit_text = std::mem::take(&mut editor.edit_text);
     let Some(layer) = editor.doc.layer_mut(id) else { return };
     let count = layer.elements.len();
     for (i, element) in layer.elements.iter_mut().enumerate() {
@@ -333,7 +331,7 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
             } else if let Shape::Text(text) = &mut element.shape {
                 let problem =
                     font_problems.iter().find(|(f, _)| *f == text.font.family).map(|(_, p)| p.as_str());
-                text_editor(ui, text, edit_text, problem);
+                text_editor(ui, text, problem);
                 style_editor(ui, &mut element.style);
             } else {
                 shape_size_editor(ui, &mut element.shape);
@@ -378,20 +376,11 @@ fn image_editor(ui: &mut egui::Ui, info: &ImageInfo, width: &mut f32, height: &m
     });
 }
 
-/// The text itself and its font settings. `focus` puts the cursor in the
-/// text box with everything selected, so typing replaces the placeholder.
-/// `font_problem` explains why the project's own font file for this family
-/// couldn't be used, if that's the case.
-fn text_editor(ui: &mut egui::Ui, text: &mut Text, focus: bool, font_problem: Option<&str>) {
-    let output =
-        egui::TextEdit::multiline(&mut text.content).desired_rows(2).desired_width(f32::INFINITY).show(ui);
-    if focus {
-        output.response.request_focus();
-        let mut state = output.state;
-        let everything = CCursorRange::two(CCursor::new(0), CCursor::new(text.content.chars().count()));
-        state.cursor.set_char_range(Some(everything));
-        state.store(ui.ctx(), output.response.id);
-    }
+/// The text itself and its font settings. (Text can also be typed straight
+/// onto the stage; see `text_edit.rs`.) `font_problem` explains why the
+/// project's own font file for this family couldn't be used, if that's the case.
+fn text_editor(ui: &mut egui::Ui, text: &mut Text, font_problem: Option<&str>) {
+    egui::TextEdit::multiline(&mut text.content).desired_rows(2).desired_width(f32::INFINITY).show(ui);
 
     egui::Grid::new("text").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
         ui.label("Font");

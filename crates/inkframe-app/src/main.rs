@@ -20,6 +20,7 @@ mod screenshot;
 mod shortcuts;
 mod stage;
 mod subselect;
+mod text_edit;
 mod timeline;
 mod toolbar;
 

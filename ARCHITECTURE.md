@@ -183,6 +183,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `library.rs` | The Library panel, with cached symbol thumbnails |
 | `export_dialog.rs` | Export settings and the background export thread |
 | `shortcuts.rs` | Every keyboard shortcut in one place |
+| `text_edit.rs` | Typing into text on the stage: the text cursor, selection and keys, kept separate from drawing so it can be tested |
 | `screenshot.rs` | `INKFRAME_SCREENSHOT=out.png` captures the window and quits |
 
 egui is an *immediate-mode* UI: each panel's `show()` function runs every
