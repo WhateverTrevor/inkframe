@@ -12,7 +12,7 @@
 
 use std::ops::Range;
 
-use egui::{Event, Key, Modifiers};
+use egui::{Event, ImeEvent, Key, Modifiers};
 use inkframe_core::{Point, Rect};
 use inkframe_render::TextLayout;
 
@@ -23,6 +23,11 @@ pub struct TextCursor {
     pub cursor: usize,
     /// Where the selection started. Equal to `cursor` when nothing's selected.
     pub anchor: usize,
+    /// Text being composed with an input method (typing Chinese, Japanese
+    /// or Korean, or accents with dead keys): its start and end. It's
+    /// already in the content, shown underlined, and replaced as the
+    /// composition changes until it's committed.
+    pub composing: Option<(usize, usize)>,
 }
 
 /// What a key or other input asks of whoever is editing.
@@ -36,7 +41,12 @@ pub struct Outcome {
 
 impl TextCursor {
     pub fn at(position: usize) -> Self {
-        Self { cursor: position, anchor: position }
+        Self { cursor: position, anchor: position, composing: None }
+    }
+
+    /// A selection from `anchor` to `cursor`.
+    pub fn select(anchor: usize, cursor: usize) -> Self {
+        Self { cursor, anchor, composing: None }
     }
 
     pub fn selection(&self) -> Range<usize> {
@@ -88,9 +98,53 @@ impl TextCursor {
             Event::Key { key, pressed: true, modifiers, .. } => {
                 outcome.finish = self.handle_key(content, layout, *key, *modifiers);
             }
+            Event::Ime(ime) => self.handle_ime(content, ime),
             _ => {}
         }
         outcome
+    }
+
+    /// Input-method events. While composing, the text so far sits in the
+    /// content where the cursor was (replacing any selection), and each
+    /// update replaces it. Committing replaces it for good with the final
+    /// characters, which may be different (the composed "nihao" becomes 你好).
+    fn handle_ime(&mut self, content: &mut String, ime: &ImeEvent) {
+        // Where the composition goes: over the previous composition if
+        // there is one, otherwise over the selection.
+        let replacing = self.composing.map_or(self.selection(), |(start, end)| start..end);
+        match ime {
+            ImeEvent::Preedit { text, .. } => {
+                // A stray empty update with nothing being composed would
+                // otherwise delete the selection.
+                if text.is_empty() && self.composing.is_none() {
+                    return;
+                }
+                content.replace_range(replacing.clone(), text);
+                let end = replacing.start + text.len();
+                *self = Self::at(end);
+                self.composing = (!text.is_empty()).then_some((replacing.start, end));
+            }
+            ImeEvent::Commit(text) => {
+                if text.is_empty() && self.composing.is_none() {
+                    return;
+                }
+                // Enter commits the composition; it isn't a new line.
+                let text = if text == "\n" || text == "\r" { "" } else { text.as_str() };
+                content.replace_range(replacing.clone(), text);
+                *self = Self::at(replacing.start + text.len());
+            }
+            // Some input methods correct what was typed just before.
+            ImeEvent::DeleteSurrounding { before_chars, after_chars } => {
+                let before = content[..self.cursor].char_indices().rev().take(*before_chars).last();
+                let start = before.map_or(self.cursor, |(i, _)| i);
+                let after = content[self.cursor..].char_indices().nth(*after_chars);
+                let end = after.map_or(content.len(), |(i, _)| self.cursor + i);
+                content.replace_range(start..end, "");
+                *self = Self::at(start);
+            }
+            #[allow(deprecated)]
+            ImeEvent::Enabled | ImeEvent::Disabled => {}
+        }
     }
 
     /// Returns whether the key ends editing.
@@ -110,7 +164,7 @@ impl TextCursor {
         match key {
             Key::Escape => return true,
             Key::Enter => self.replace(content, "\n"),
-            Key::A if modifiers.command => *self = Self { anchor: 0, cursor: content.len() },
+            Key::A if modifiers.command => *self = Self::select(0, content.len()),
             Key::Backspace => {
                 if selection.is_empty() {
                     let start = if by_word {
@@ -311,7 +365,7 @@ mod tests {
         let (content, cursor) = type_into("Hllo", TextCursor::at(1), &[Event::Text("e".into())]);
         assert_eq!((content.as_str(), cursor), ("Hello", TextCursor::at(2)));
 
-        let selected = TextCursor { anchor: 0, cursor: 5 };
+        let selected = TextCursor::select(0, 5);
         let (content, _) = type_into("Hello world", selected, &[Event::Text("Goodbye".into())]);
         assert_eq!(content, "Goodbye world");
     }
@@ -324,7 +378,7 @@ mod tests {
         let (content, _) = type_into("Hello", TextCursor::at(0), &[key(Key::Delete, Modifiers::NONE)]);
         assert_eq!(content, "ello");
         let (content, _) =
-            type_into("Hello", TextCursor { anchor: 1, cursor: 4 }, &[key(Key::Backspace, Modifiers::NONE)]);
+            type_into("Hello", TextCursor::select(1, 4), &[key(Key::Backspace, Modifiers::NONE)]);
         assert_eq!(content, "Ho");
         // At the very start there's nothing to delete.
         let (content, _) = type_into("Hi", TextCursor::at(0), &[key(Key::Backspace, Modifiers::NONE)]);
@@ -374,10 +428,51 @@ mod tests {
         assert_eq!(cursor.cursor, 0);
     }
 
+    fn preedit(text: &str) -> Event {
+        Event::Ime(ImeEvent::Preedit { text: text.into(), active_range_chars: None })
+    }
+
+    #[test]
+    fn composed_text_shows_while_typing_and_commits_as_the_final_characters() {
+        // Typing "nihao" with a Chinese input method after "Say ": the
+        // letters show (underlined) as they're typed, then become 你好.
+        let (content, cursor) =
+            type_into("Say ", TextCursor::at(4), &[preedit("n"), preedit("ni"), preedit("nihao")]);
+        assert_eq!(content, "Say nihao");
+        assert_eq!(cursor.composing, Some((4, 9)));
+
+        let (content, cursor) = type_into(&content, cursor, &[Event::Ime(ImeEvent::Commit("你好".into()))]);
+        assert_eq!(content, "Say 你好");
+        assert_eq!((cursor.cursor, cursor.composing), (content.len(), None));
+    }
+
+    #[test]
+    fn cancelling_a_composition_removes_it() {
+        let (content, cursor) = type_into("ab", TextCursor::at(1), &[preedit("ka"), preedit("")]);
+        assert_eq!((content.as_str(), cursor), ("ab", TextCursor::at(1)));
+    }
+
+    #[test]
+    fn composing_replaces_the_selection() {
+        let (content, _) = type_into(
+            "hello world",
+            TextCursor::select(6, 11),
+            &[preedit("せかい"), Event::Ime(ImeEvent::Commit("世界".into()))],
+        );
+        assert_eq!(content, "hello 世界");
+    }
+
+    #[test]
+    fn input_methods_can_correct_text_before_the_cursor() {
+        let delete = Event::Ime(ImeEvent::DeleteSurrounding { before_chars: 2, after_chars: 0 });
+        let (content, cursor) = type_into("abcd", TextCursor::at(3), &[delete]);
+        assert_eq!((content.as_str(), cursor.cursor), ("ad", 1));
+    }
+
     #[test]
     fn copy_and_cut_hand_back_the_selection() {
         let mut content = "Hello world".to_owned();
-        let mut cursor = TextCursor { anchor: 6, cursor: 11 };
+        let mut cursor = TextCursor::select(6, 11);
         let layout = layout(&content);
         assert_eq!(cursor.handle(&mut content, &layout, &Event::Copy).copy.as_deref(), Some("world"));
         assert_eq!(content, "Hello world");

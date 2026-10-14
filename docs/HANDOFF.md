@@ -78,6 +78,9 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     frame) and easing handles in real values.
 29. Font fallback: characters the chosen font lacks come from another
     font (preferred emoji/CJK/symbol fonts, then any installed face).
+30. Input methods when typing on the stage: the stage reports its caret
+    (`PlatformOutput::ime`), composing text is shown underlined and
+    replaced on commit (`TextCursor::composing`).
 
 ## Not yet verified by hand
 
@@ -105,10 +108,8 @@ more features, since real use will show what matters. Open items:
    `stage_benchmark` example before deciding the GPU path is still needed.
    The user chose to skip the GPU preview for now; revisit only if a real
    project feels slow.
-3. **Text extras:** IME input when typing on the stage. (Per-character
-   font fallback is done: emoji come out black and white, from the
-   bundled Noto Emoji, since color emoji fonts store pictures rather than
-   outlines.)
+3. **Color emoji** would need bitmap glyph support in the text renderer;
+   emoji are black and white (bundled Noto Emoji) for now.
 4. **Skew** on the layer transform, which would also make uneven group
    scaling of rotated layers exact.
 5. **Verify by hand:** the Windows installer has never been run on a real
@@ -119,10 +120,9 @@ Smaller ideas noted along the way:
 - With several layers selected, the properties panel edits only the
   last-picked layer. Stretching a group unevenly stretches rotated layers
   along their own axes (layers have no skew), so it's close, not exact.
-- On-stage typing doesn't support input methods (IME) for Chinese,
-  Japanese or Korean yet; the properties panel's Text box does. ⌘Z while
-  typing on the stage does nothing; the whole typing session undoes as one
-  step afterwards.
+- ⌘Z while typing on the stage does nothing; the whole typing session
+  undoes as one step afterwards. Input methods have only been tested with
+  simulated events, not with a real Chinese/Japanese/Korean keyboard.
 - Audio decoding is whole-file in memory (~23 MB per minute). Fine for
   dialogue and music, but long files might want streaming.
 

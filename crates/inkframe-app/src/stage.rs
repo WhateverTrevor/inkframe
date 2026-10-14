@@ -855,7 +855,7 @@ impl StageView {
         let length = text_of(editor, layer, element).map_or(0, |t| t.content.len());
         editor.tool = Tool::Text;
         editor.selection = Some(layer);
-        let cursor = TextCursor { anchor: 0, cursor: length };
+        let cursor = TextCursor::select(0, length);
         self.text_editing = Some(TextEditing { layer, element, cursor, selecting: false });
     }
 
@@ -956,7 +956,7 @@ impl StageView {
         if response.double_clicked() {
             let text = text_of(editor, editing.layer, editing.element).expect("checked above");
             let word = word_at(&text.content, editing.cursor.cursor);
-            editing.cursor = TextCursor { anchor: word.start, cursor: word.end };
+            editing.cursor = TextCursor::select(word.start, word.end);
             pointer_used = true;
         }
 
@@ -977,6 +977,27 @@ impl StageView {
                     return pointer_used;
                 }
             }
+        }
+        // Tell the system where the cursor is. That's what lets input
+        // methods work here (egui only enables them for a widget that asks),
+        // and their candidate window then opens beside the cursor.
+        if let Some(text) = text_of(editor, editing.layer, editing.element)
+            && let Some(layer) = editor.doc.layer(editing.layer)
+        {
+            let layout = inkframe_render::layout_text(text);
+            let to_stage = editor.doc.pose(layer, editor.frame).to_affine();
+            let (x, baseline) = caret_position(&layout, editing.cursor.cursor);
+            let top = view.to_screen(to_stage.apply(Point::new(x, baseline - layout.ascent)));
+            let bottom = view.to_screen(to_stage.apply(Point::new(x, baseline + layout.descent)));
+            let caret = Rect::from_two_pos(top, bottom).expand(1.0);
+            ui.ctx().output_mut(|o| {
+                o.ime = Some(egui::output::IMEOutput {
+                    purpose: egui::IMEPurpose::Normal,
+                    rect: caret,
+                    cursor_rect: caret,
+                    should_interrupt_composition: false,
+                });
+            });
         }
         self.text_editing = Some(editing);
         pointer_used
@@ -1003,6 +1024,15 @@ impl StageView {
                 SELECTION.gamma_multiply(0.35),
                 egui::Stroke::NONE,
             ));
+        }
+        // Text being composed with an input method is underlined until
+        // it's committed, as in every text field.
+        if let Some((start, end)) = editing.cursor.composing {
+            for composing in selection_boxes(&layout, start..end) {
+                let y = composing.max.y - layout.descent * 0.5;
+                let line = [screen(Point::new(composing.min.x, y)), screen(Point::new(composing.max.x, y))];
+                painter.line_segment(line, (1.5, SELECTION));
+            }
         }
         // The cursor blinks, as text cursors do, but stays solid while
         // selecting so it's easy to follow.
@@ -1932,6 +1962,28 @@ mod tests {
         h.key_press(egui::Key::Escape);
         h.run();
         assert_eq!(h.state().1.doc.layers.len(), 1);
+    }
+
+    #[test]
+    fn typing_on_the_stage_accepts_input_methods() {
+        let mut editor = Editor::new(Document::default());
+        editor.tool = Tool::Text;
+        let mut h = harness(editor);
+        let at = screen(&h, 300.0, 400.0);
+        click(&mut h, at);
+        h.run();
+        // The stage tells the system where the cursor is, which turns input
+        // methods on and puts their candidate window there.
+        let ime = h.output().platform_output.ime.expect("input methods enabled while typing");
+        assert!(ime.rect.center().distance(at) < 40.0, "near the click: {:?}", ime.rect);
+
+        let id = h.state().1.selection.unwrap();
+        h.event(egui::Event::Ime(egui::ImeEvent::Preedit { text: "nihao".into(), active_range_chars: None }));
+        h.run();
+        assert_eq!(text_content(&h, id), "nihao");
+        h.event(egui::Event::Ime(egui::ImeEvent::Commit("你好".into())));
+        h.run();
+        assert_eq!(text_content(&h, id), "你好");
     }
 
     #[test]
