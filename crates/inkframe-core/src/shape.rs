@@ -100,12 +100,29 @@ impl Path {
         points
     }
 
-    /// Every point that defines the path, including Bézier control points.
-    fn control_hull(&self) -> impl Iterator<Item = Point> + '_ {
-        std::iter::once(self.start).chain(self.segments.iter().flat_map(|s| match *s {
-            Segment::Line { to } => vec![to],
-            Segment::Cubic { ctrl1, ctrl2, to } => vec![ctrl1, ctrl2, to],
-        }))
+    /// The smallest rectangle containing the path's outline.
+    ///
+    /// The control points of a curve can sit far outside the curve itself
+    /// (think of a gentle arc with long handles), so boxing those would leave
+    /// a visible gap around the shape. Instead, each curve contributes its
+    /// endpoints plus the points where it turns around horizontally or
+    /// vertically: its extremes, see [`cubic_extremes`].
+    fn tight_bounds(&self) -> Rect {
+        let mut bounds = Rect::from_points(self.start, self.start);
+        let mut from = self.start;
+        for segment in &self.segments {
+            match *segment {
+                Segment::Line { to } => bounds = bounds.including(to),
+                Segment::Cubic { ctrl1, ctrl2, to } => {
+                    for t in cubic_extremes(from, ctrl1, ctrl2, to) {
+                        bounds = bounds.including(cubic_point(from, ctrl1, ctrl2, to, t));
+                    }
+                    bounds = bounds.including(to);
+                }
+            }
+            from = segment.end();
+        }
+        bounds
     }
 
     /// Moves every point by `offset`.
@@ -125,19 +142,17 @@ impl Path {
 }
 
 impl Shape {
-    /// A rectangle containing the whole shape (not including stroke width).
+    /// The smallest rectangle containing the shape's outline, not counting
+    /// stroke width. For what's actually painted, use [`Element::bounds`].
     ///
-    /// For paths this uses the Bézier control points, which always enclose
-    /// the curve but may be a little looser than the true bounds.
+    /// [`Element::bounds`]: crate::Element::bounds
     pub fn bounds(&self) -> Rect {
         match self {
             Shape::Rect { width, height, .. } => Rect::from_center_size(Point::ZERO, *width, *height),
             Shape::Ellipse { radius_x, radius_y } => {
                 Rect::from_center_size(Point::ZERO, radius_x * 2.0, radius_y * 2.0)
             }
-            Shape::Path(path) => {
-                Rect::bounding(path.control_hull()).unwrap_or(Rect::from_points(Point::ZERO, Point::ZERO))
-            }
+            Shape::Path(path) => path.tight_bounds(),
         }
     }
 
@@ -176,6 +191,46 @@ impl Shape {
 pub(crate) fn cubic_point(p0: Point, p1: Point, p2: Point, p3: Point, t: f32) -> Point {
     let inv = 1.0 - t;
     p0 * (inv * inv * inv) + p1 * (3.0 * inv * inv * t) + p2 * (3.0 * inv * t * t) + p3 * (t * t * t)
+}
+
+/// The parameters (strictly between 0 and 1) where a cubic Bézier stops
+/// moving in x or in y and turns back, which is where it reaches past its
+/// endpoints. At most two per axis.
+///
+/// These are where the curve's derivative is zero. The derivative of a cubic
+/// Bézier is a quadratic Bézier on the differences of its points:
+///
+/// ```text
+/// B'(t) / 3 = (1-t)² a + 2(1-t)t b + t² c,   a = p1-p0, b = p2-p1, c = p3-p2
+///           = (a - 2b + c) t² + 2(b - a) t + a
+/// ```
+///
+/// so each axis is a quadratic equation, solved with the usual formula.
+fn cubic_extremes(p0: Point, p1: Point, p2: Point, p3: Point) -> impl Iterator<Item = f32> {
+    let axis = |p0: f32, p1: f32, p2: f32, p3: f32| {
+        let (a, b, c) = (p1 - p0, p2 - p1, p3 - p2);
+        quadratic_roots(a - 2.0 * b + c, 2.0 * (b - a), a)
+    };
+    axis(p0.x, p1.x, p2.x, p3.x)
+        .into_iter()
+        .chain(axis(p0.y, p1.y, p2.y, p3.y))
+        .flatten()
+        .filter(|t| *t > 0.0 && *t < 1.0)
+}
+
+/// Real solutions of `a t² + b t + c = 0`.
+fn quadratic_roots(a: f32, b: f32, c: f32) -> [Option<f32>; 2] {
+    // When the handles are evenly spaced, the t² term vanishes and the
+    // equation is linear (or, if b is zero too, has no single solution).
+    if a.abs() < 1e-6 {
+        return [(b.abs() > 1e-6).then(|| -c / b), None];
+    }
+    let discriminant = b * b - 4.0 * a * c;
+    if discriminant < 0.0 {
+        return [None, None];
+    }
+    let root = discriminant.sqrt();
+    [Some((-b + root) / (2.0 * a)), Some((-b - root) / (2.0 * a))]
 }
 
 /// Even-odd point-in-polygon test: cast a ray to the right of `p` and count
@@ -241,6 +296,43 @@ mod tests {
         let shape = Shape::Path(triangle());
         assert!(!shape.hit_test(Point::new(2.0, 2.0), &stroked, 0.0));
         assert!(shape.hit_test(Point::new(5.0, 0.5), &stroked, 0.0));
+    }
+
+    #[test]
+    fn curve_bounds_hug_the_curve_not_its_handles() {
+        // An arch from (0,0) to (10,0) whose handles reach up to y = -8. The
+        // curve itself only rises three quarters of the way: to y = -6.
+        let arch = Path {
+            start: Point::ZERO,
+            segments: vec![Segment::Cubic {
+                ctrl1: Point::new(0.0, -8.0),
+                ctrl2: Point::new(10.0, -8.0),
+                to: Point::new(10.0, 0.0),
+            }],
+            closed: false,
+        };
+        let bounds = Shape::Path(arch).bounds();
+        assert!((bounds.min.y - -6.0).abs() < 1e-4, "top was {}", bounds.min.y);
+        assert_eq!((bounds.min.x, bounds.max.x, bounds.max.y), (0.0, 10.0, 0.0));
+    }
+
+    #[test]
+    fn curve_bounds_include_overshoot_past_the_endpoints() {
+        // An S-curve whose handles swing out sideways: the curve bulges past
+        // x = 0 and x = 10 even though both endpoints are inside that range.
+        let s_curve = Path {
+            start: Point::ZERO,
+            segments: vec![Segment::Cubic {
+                ctrl1: Point::new(-10.0, 5.0),
+                ctrl2: Point::new(20.0, 5.0),
+                to: Point::new(10.0, 10.0),
+            }],
+            closed: false,
+        };
+        let bounds = Shape::Path(s_curve).bounds();
+        assert!(bounds.min.x < -1.0 && bounds.max.x > 11.0);
+        // And it never reaches the handles themselves.
+        assert!(bounds.min.x > -10.0 && bounds.max.x < 20.0);
     }
 
     #[test]

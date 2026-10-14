@@ -1217,6 +1217,7 @@ mod tests {
     // ---- Interaction tests: drive the real stage with simulated mouse input.
 
     use egui_kittest::Harness;
+    use inkframe_core::{Color, Stroke};
 
     type State = (StageView, Editor);
 
@@ -1332,12 +1333,13 @@ mod tests {
         assert!(bounds.center().distance(Point::ZERO) < 30.0);
     }
 
-    /// An editor with a selected 200×200 box centered at (400, 400).
+    /// An editor with a selected 200×200 box centered at (400, 400). It has
+    /// no stroke, so its selection bounds are exactly the shape's edges.
     fn editor_with_selected_box() -> (Editor, LayerId) {
         let mut editor = Editor::new(Document::default());
         let square = Element {
             shape: Shape::Rect { width: 200.0, height: 200.0, corner_radius: 0.0 },
-            style: editor.draw_style,
+            style: Style { stroke: None, ..editor.draw_style },
         };
         let id = editor.doc.add_layer("Box", vec![square], 0, Transform::at(Point::new(400.0, 400.0)));
         editor.selection = Some(id);
@@ -1362,6 +1364,27 @@ mod tests {
         assert!(pose.scale.distance(Point::new(2.0, 2.0)) < 0.02, "scale {:?}", pose.scale);
         // The top-left corner stayed at (300, 300), so the center moved to (500, 500).
         assert!(pose.position.distance(Point::new(500.0, 500.0)) < 3.0, "position {:?}", pose.position);
+    }
+
+    #[test]
+    fn handles_sit_outside_a_thick_stroke() {
+        // A 40-unit stroke paints 20 units past the box's edges, so the
+        // bottom-right handle belongs at (520, 520), not on the outline at
+        // (500, 500), which is now inside the painted stroke.
+        let (mut editor, id) = editor_with_selected_box();
+        editor.doc.layer_mut(id).unwrap().elements[0].style.stroke =
+            Some(Stroke { color: Color::BLACK, width: 40.0 });
+        let mut h = harness(editor);
+
+        let corner = screen(&h, 520.0, 520.0);
+        // Dragging that corner to (760, 760) doubles the 240-unit box, with
+        // the opposite corner at (280, 280) pinned.
+        let target = screen(&h, 760.0, 760.0);
+        drag(&mut h, corner, &[corner + vec2(10.0, 10.0), target]);
+
+        let pose = pose(&h, id);
+        assert!(pose.scale.distance(Point::new(2.0, 2.0)) < 0.02, "scale {:?}", pose.scale);
+        assert!(pose.position.distance(Point::new(520.0, 520.0)) < 3.0, "position {:?}", pose.position);
     }
 
     #[test]

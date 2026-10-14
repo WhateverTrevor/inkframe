@@ -60,7 +60,6 @@ after the macOS app bundle.
 
 Smaller ideas noted along the way:
 
-- Selection bounds ignore stroke width (thick strokes poke outside the box).
 - Audio decoding is whole-file in memory (~23 MB per minute). Fine for
   dialogue and music, but long files might want streaming.
 - Easing is per tween, per property; a graph editor would be a natural

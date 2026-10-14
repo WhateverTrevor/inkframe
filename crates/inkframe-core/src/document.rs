@@ -98,6 +98,19 @@ pub struct Element {
     pub style: Style,
 }
 
+impl Element {
+    /// The area the element paints, stroke included.
+    ///
+    /// A stroke is centred on the outline, so half its width lies outside.
+    /// Strokes are drawn with round joins and caps, which never reach further
+    /// than that half width (unlike mitered corners, which spike outward), so
+    /// growing the outline's bounds by half the width is exact.
+    pub fn bounds(&self) -> Rect {
+        let half_stroke = self.style.stroke.map_or(0.0, |s| s.width.max(0.0) / 2.0);
+        self.shape.bounds().expand(half_stroke)
+    }
+}
+
 /// Frames per second as an exact fraction.
 ///
 /// Broadcast rates such as 23.976 and 29.97 aren't representable exactly as
@@ -473,10 +486,11 @@ impl Layer {
         self.track.sample(frame as f32)
     }
 
-    /// Bounds of the layer's own shapes in its local coordinates. For the
-    /// full bounds, including a symbol instance, use [`Document::layer_bounds`].
+    /// Bounds of what the layer's own shapes paint, strokes included, in its
+    /// local coordinates. For the full bounds, including a symbol instance,
+    /// use [`Document::layer_bounds`].
     pub fn shape_bounds(&self) -> Option<Rect> {
-        self.elements.iter().map(|e| e.shape.bounds()).reduce(Rect::union)
+        self.elements.iter().map(Element::bounds).reduce(Rect::union)
     }
 }
 
@@ -501,6 +515,17 @@ mod tests {
                 stroke: Some(Stroke { color: Color::BLACK, width: 2.0 }),
             },
         }
+    }
+
+    #[test]
+    fn bounds_include_half_the_stroke() {
+        // A 100-unit square with a 2-unit stroke paints 1 unit past each edge.
+        let bounds = square_element().bounds();
+        assert_eq!((bounds.min, bounds.max), (Point::new(-51.0, -51.0), Point::new(51.0, 51.0)));
+
+        let mut unstroked = square_element();
+        unstroked.style.stroke = None;
+        assert_eq!(unstroked.bounds().width(), 100.0);
     }
 
     #[test]
