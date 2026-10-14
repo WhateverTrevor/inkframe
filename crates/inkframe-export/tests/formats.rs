@@ -234,3 +234,24 @@ fn missing_audio_fails_the_export_clearly() {
     assert!(matches!(result, Err(ExportError::Audio(ref message)) if message.contains("not-here.wav")));
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn missing_images_fail_the_export_clearly() {
+    let dir = scratch_dir("missing-image");
+    let mut doc = sample_doc();
+    let image = doc.add_image(&dir.join("backdrop.png"), Some(&dir), (64, 36));
+    let backdrop = Element {
+        shape: Shape::Image { image, width: 64.0, height: 36.0 },
+        style: Style { fill: None, stroke: None },
+    };
+    doc.add_layer("Backdrop", vec![backdrop], 0, Transform::at(Point::new(32.0, 18.0)));
+    let mut settings = settings(ExportFormat::PngSequence, dir.join("shot.png"), true);
+    settings.project_dir = Some(dir.clone());
+
+    let result = export(&doc, &settings, |_| ControlFlow::Continue(()));
+    assert!(
+        matches!(result, Err(ExportError::Image(ref message)) if message.contains("backdrop")),
+        "{result:?}"
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}

@@ -276,6 +276,8 @@ struct RenderKey {
     frame: u32,
     size: (u32, u32),
     onion: Option<OnionSkin>,
+    /// Changes whenever an image finishes loading, so it gets drawn.
+    images: u64,
 }
 
 pub struct StageView {
@@ -1004,6 +1006,7 @@ impl StageView {
             surroundings: surroundings.clone(),
             size,
             onion,
+            images: editor.images.generation(),
         };
         if self.rendered.as_ref() == Some(&key) {
             return;
@@ -1017,8 +1020,14 @@ impl StageView {
 
         // Editing in place: the scene around the symbol, faded so the
         // symbol itself stands out, as in Animate.
-        let faded =
-            RenderOptions { scale, draw_background: false, opacity: SURROUNDINGS_OPACITY, tint: None };
+        let images = Some(&editor.images);
+        let faded = RenderOptions {
+            scale,
+            draw_background: false,
+            opacity: SURROUNDINGS_OPACITY,
+            tint: None,
+            images,
+        };
         for level in &surroundings {
             render_timeline_into(
                 &mut pixmap,
@@ -1034,7 +1043,7 @@ impl StageView {
         if let Some(onion) = onion {
             draw_onion_skins(&mut pixmap, editor, onion, scale);
         }
-        let options = RenderOptions { scale, draw_background: false, ..RenderOptions::default() };
+        let options = RenderOptions { scale, draw_background: false, images, ..RenderOptions::default() };
         render_timeline_into(&mut pixmap, doc, timeline, editor.frame, to_stage, None, &options);
 
         // tiny-skia and egui both use premultiplied alpha, so the bytes can be
@@ -1062,6 +1071,7 @@ fn draw_onion_skins(pixmap: &mut tiny_skia::Pixmap, editor: &Editor, onion: Onio
         scale,
         draw_background: false,
         tint: Some(tint),
+        images: Some(&editor.images),
         opacity: 0.45 * (count - distance + 1) as f32 / count as f32,
     };
     // Farthest first, so nearer ghosts paint on top.

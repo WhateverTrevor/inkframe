@@ -16,6 +16,9 @@ const THUMBNAIL_SIZE: f32 = 40.0;
 /// it's out of date.
 struct Thumbnail {
     source: Symbol,
+    /// The image library's generation when rendered, so a thumbnail
+    /// redraws once a picture inside the symbol has loaded.
+    images: u64,
     texture: Option<egui::TextureHandle>,
 }
 
@@ -103,17 +106,19 @@ impl LibraryView {
         ui.painter().rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
         let Some(symbol) = editor.doc.symbol(id) else { return };
 
-        let stale = self.thumbnails.get(&id).is_none_or(|t| t.source != *symbol);
+        let images = editor.images.generation();
+        let stale = self.thumbnails.get(&id).is_none_or(|t| t.source != *symbol || t.images != images);
         if stale {
             // Render at the display's pixel density so thumbnails are sharp.
             let pixels = (THUMBNAIL_SIZE * ui.ctx().pixels_per_point()).round() as u32;
             let texture =
-                inkframe_render::render_symbol_thumbnail(&editor.doc, id, 0, pixels).map(|pixmap| {
-                    let size = [pixmap.width() as usize, pixmap.height() as usize];
-                    let image = egui::ColorImage::from_rgba_premultiplied(size, pixmap.data());
-                    ui.ctx().load_texture(format!("symbol-{id:?}"), image, egui::TextureOptions::LINEAR)
-                });
-            self.thumbnails.insert(id, Thumbnail { source: symbol.clone(), texture });
+                inkframe_render::render_symbol_thumbnail(&editor.doc, Some(&editor.images), id, 0, pixels)
+                    .map(|pixmap| {
+                        let size = [pixmap.width() as usize, pixmap.height() as usize];
+                        let image = egui::ColorImage::from_rgba_premultiplied(size, pixmap.data());
+                        ui.ctx().load_texture(format!("symbol-{id:?}"), image, egui::TextureOptions::LINEAR)
+                    });
+            self.thumbnails.insert(id, Thumbnail { source: symbol.clone(), images, texture });
         }
 
         if let Some(texture) = self.thumbnails.get(&id).and_then(|t| t.texture.as_ref()) {

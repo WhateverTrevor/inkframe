@@ -43,10 +43,12 @@ The data model and the math behind animation.
 | `track.rs` | `Track`: a layer's four channels, auto-keying (`set_pose`), and loading older file formats |
 | `transform.rs` | `Transform`, the animatable properties: position, rotation, scale, opacity |
 | `easing.rs` | Easing curves, including a CSS-style cubic-Bézier solver |
-| `shape.rs` | Rectangles, ellipses, Bézier paths, styles, and hit-testing |
+| `shape.rs` | Rectangles, ellipses, Bézier paths, images, styles, and hit-testing |
 | `freehand.rs` | Turns jittery pointer samples into a smooth path |
 | `anchor.rs` | Anchor points with in/out handles; conversion between anchors, paths and shapes; nearest-point search and curve-preserving point insertion |
 | `symbol.rs` | `Symbol` (library entry), `Instance` (a symbol placed on a layer) and its timing, Convert to Symbol, and symbol-aware bounds and hit-testing |
+| `image.rs` | `ImageAsset`: an image file the document links to, and its size in pixels |
+| `audio.rs` | `AudioTrack`: a sound file laid against the timeline; how linked files are found |
 | `history.rs` | Snapshot-based undo/redo |
 | `geometry.rs` | `Point`, `Rect`, `Affine` |
 
@@ -94,12 +96,12 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 5. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 6. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
-symbols and version 5 audio tracks; earlier files load with whole-length
-layers, an empty library and no audio.
+symbols, version 5 audio tracks and version 6 images; earlier files load
+with whole-length layers, an empty library, no audio and no images.
 
 **Coordinates.** Stage pixels, with y pointing down. Rotation is in degrees,
 clockwise. Frames are 0-based internally and shown 1-based in the UI.
@@ -120,7 +122,12 @@ other; the buffer covers only the pixels the layer can reach.
 
 For speed, each frame is split into fixed-height horizontal bands that are
 drawn in parallel on every CPU core, and shapes outside a band are skipped
-before their outlines are built. `cargo run --release -p inkframe-render
+before their outlines are built.
+
+Images are drawn from an `ImageLibrary` (`images.rs`), which decodes each
+file once and keeps half-size copies (mipmaps) so shrunken pictures don't
+shimmer. Callers pass it in `RenderOptions::images`; without it, images
+show as crossed-out placeholders. `cargo run --release -p inkframe-render
 --example stage_benchmark` times scenes of 10 to 2,000 layers at Retina
 stage size; run it before and after renderer changes.
 

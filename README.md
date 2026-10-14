@@ -10,6 +10,8 @@ planned (the code is already cross-platform and CI builds it on Windows).
 
 - **Draw** rectangles, ovals, Bézier paths with the Pen tool, and freehand
   pencil strokes on a stage of any size.
+- **Import images** (PNG, JPEG, GIF, WebP) to trace over or composite.
+  They move, scale, rotate, fade and animate like any other layer.
 - **Animate with per-property keyframes.** Go to a frame, move or change a
   layer, and a key is created for just the properties you changed. Position,
   rotation, scale and opacity each have their own keys and timing, so a
@@ -90,7 +92,8 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Step frames | `,` and `.` (or ← →), `Home` / `End` |
 | Pan / zoom | Scroll or Space-drag to pan, pinch or ⌘-scroll to zoom, `⌘0` to fit |
 | Symbols | Select a layer and press `F8` (Modify ▸ Convert to Symbol). Use **Place** in the Library to add more instances; set each instance's playback (Loop, Play Once, Single Frame) and first frame in the properties panel. Double-click an instance (or **Edit** in the Library) to change the symbol; `Esc` or the breadcrumb bar takes you back out |
-| Audio | File › Import Audio adds a sound at the playhead. Drag its waveform to re-time it; click the speaker to mute. Volume and start frame are in the properties panel's Audio section |
+| Images | File › Import to Stage (`⌘R`), or drag image files onto the window. Each lands on a new layer at the playhead, centered on the stage. **Actual size** in the properties panel resets its size to the file's own pixels |
+| Audio | File › Import Audio adds a sound at the playhead (or drag sound files onto the window). Drag its waveform to re-time it; click the speaker to mute. Volume and start frame are in the properties panel's Audio section |
 | Export | `⌘E` |
 
 Shortcuts follow Adobe Animate where possible. On Windows, use Ctrl in

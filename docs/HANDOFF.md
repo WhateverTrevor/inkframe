@@ -10,7 +10,7 @@ after the macOS app bundle.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
   --all-targets -- -D warnings` and `cargo test --workspace` (183 tests)
   all pass.
-- **File format:** version 5. Older versions load and upgrade automatically
+- **File format:** version 6. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -43,6 +43,8 @@ after the macOS app bundle.
 16. Easing curve editor: drag the Bézier handles in the properties panel
 17. Faster renderer: translucent layers use scratch buffers sized to the
     layer, frames render in parallel bands, off-screen shapes are skipped
+18. Image import (format v6): File › Import to Stage (⌘R) or drag and
+    drop; linked files like audio, decoded once with mipmaps
 
 ## Not yet verified by hand
 

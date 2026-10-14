@@ -8,9 +8,10 @@
 use std::path::{Path, PathBuf};
 
 use inkframe_core::{
-    Affine, Color, Document, DocumentError, Element, History, Layer, LayerId, Point, Property, Stroke, Style,
-    SymbolId, TimelineId, Transform,
+    Affine, Color, Document, DocumentError, Element, History, Layer, LayerId, Point, Property, Shape, Stroke,
+    Style, SymbolId, TimelineId, Transform,
 };
+use inkframe_render::ImageLibrary;
 
 /// The tools in the toolbar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +104,9 @@ pub struct Editor {
     pub onion: OnionSkin,
     /// The property whose easing curve the inspector is showing and editing.
     pub focused_property: Property,
+    /// The document's image files, decoded. Not part of the document (and so
+    /// not part of undo): it's a cache, rebuilt from the files on disk.
+    pub images: ImageLibrary,
     /// The symbols being edited, outermost first. Empty while editing the
     /// main timeline. `frame` and `selection` always refer to the innermost.
     open_symbols: Vec<OpenSymbol>,
@@ -126,6 +130,7 @@ impl Editor {
             playback: Playback { looping: true, ..Playback::default() },
             onion: OnionSkin { enabled: false, before: 2, after: 2 },
             focused_property: Property::Position,
+            images: ImageLibrary::default(),
             open_symbols: Vec::new(),
         }
     }
@@ -156,6 +161,32 @@ impl Editor {
         let start = if self.timeline() == TimelineId::Main { self.frame } else { 0 };
         let project_dir = self.project_dir();
         self.doc.add_audio(path, project_dir.as_deref(), start);
+    }
+
+    /// Places an image file on a new layer, on the current frame, in the
+    /// middle of the stage, at its own size in pixels (or shrunk to fit the
+    /// stage, so a 6000-pixel photo doesn't land as a giant).
+    pub fn import_image(&mut self, path: &Path) -> Result<(), String> {
+        let (width, height) = inkframe_render::image_size(path)?;
+        let project_dir = self.project_dir();
+        let image = self.doc.add_image(path, project_dir.as_deref(), (width, height));
+
+        let fit = (self.doc.width as f32 / width as f32).min(self.doc.height as f32 / height as f32).min(1.0);
+        let element = Element {
+            shape: Shape::Image { image, width: width as f32 * fit, height: height as f32 * fit },
+            style: Style { fill: None, stroke: None },
+        };
+        // The stage's center, in the coordinates of the timeline being
+        // edited, so inside a symbol the picture still appears mid-stage.
+        let stage_center = self.doc.stage_rect().center();
+        let center =
+            self.timeline_transform().inverse().map_or(stage_center, |to_local| to_local.apply(stage_center));
+
+        let name = self.doc.image(image).map_or_else(|| "Image".to_owned(), |i| i.name.clone());
+        let taken = self.layers().iter().any(|l| l.name == name);
+        let name = if taken { self.doc.next_layer_name_in(self.timeline(), &name) } else { name };
+        self.add_named_layer(name, element, center);
+        Ok(())
     }
 
     pub fn has_unsaved_changes(&self) -> bool {
@@ -343,8 +374,14 @@ impl Editor {
     /// Adds a layer for something just drawn, to the timeline being edited.
     /// Like Animate, the drawing appears from the current frame onward.
     pub fn add_drawn_layer(&mut self, prefix: &str, element: Element, position: Point) {
+        let name = self.doc.next_layer_name_in(self.timeline(), prefix);
+        self.add_named_layer(name, element, position);
+    }
+
+    /// Adds a layer holding `element` to the timeline being edited, starting
+    /// on the current frame, and selects it.
+    fn add_named_layer(&mut self, name: String, element: Element, position: Point) {
         let timeline = self.timeline();
-        let name = self.doc.next_layer_name_in(timeline, prefix);
         let id = self.doc.add_layer_to(timeline, name, vec![element], self.frame, Transform::at(position));
         if let Some(layer) = id.and_then(|id| self.doc.layer_mut(id)) {
             layer.start = self.frame;
@@ -518,6 +555,46 @@ impl Editor {
 mod tests {
     use super::*;
     use inkframe_core::{FrameRate, Point};
+
+    /// Writes a blank PNG of the given size to a temporary file.
+    fn png(name: &str, width: u32, height: u32) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("inkframe-editor-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        tiny_skia::Pixmap::new(width, height).unwrap().save_png(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn imported_images_land_mid_stage_at_their_own_size() {
+        let mut editor = Editor::new(Document::default());
+        editor.frame = 5;
+        editor.import_image(&png("logo.png", 300, 200)).unwrap();
+
+        let layer = editor.selected_layer().expect("the new layer is selected");
+        assert_eq!(layer.name, "logo");
+        assert_eq!(layer.start, 5, "it starts on the current frame");
+        assert_eq!(layer.transform_at(5).position, Point::new(960.0, 540.0));
+        assert!(matches!(layer.elements[0].shape, Shape::Image { width: 300.0, height: 200.0, .. }));
+    }
+
+    #[test]
+    fn images_bigger_than_the_stage_are_shrunk_to_fit() {
+        let mut editor = Editor::new(Document::default());
+        editor.import_image(&png("panorama.png", 3840, 1080)).unwrap();
+        let layer = editor.selected_layer().unwrap();
+        // Half size fits the 1920-pixel-wide stage, keeping the proportions.
+        assert!(matches!(layer.elements[0].shape, Shape::Image { width: 1920.0, height: 540.0, .. }));
+    }
+
+    #[test]
+    fn importing_something_that_isnt_an_image_explains_why() {
+        let path = png("notes.png", 1, 1).with_file_name("notes.txt");
+        std::fs::write(&path, "not a picture").unwrap();
+        let mut editor = Editor::new(Document::default());
+        assert!(editor.import_image(&path).is_err());
+        assert!(editor.doc.layers.is_empty() && editor.doc.images.is_empty());
+    }
 
     fn editor_with_layer() -> (Editor, LayerId) {
         let mut editor = Editor::new(Document::default());

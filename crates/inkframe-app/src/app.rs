@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use egui::{Key, Modifiers};
 use inkframe_core::{Document, SymbolId, TimelineId};
+use inkframe_render::IMAGE_EXTENSIONS;
 
 use crate::audio_engine::AudioEngine;
 use crate::editor::{Editor, Tool};
@@ -20,6 +21,7 @@ use crate::{inspector, shortcuts, toolbar};
 enum Command {
     New,
     Open,
+    ImportImage,
     ImportAudio,
     Save,
     SaveAs,
@@ -56,6 +58,8 @@ enum Command {
 }
 
 const FILE_EXTENSION: &str = "inkf";
+/// Sound files Inkframe can import (see `inkframe-audio`).
+const AUDIO_EXTENSIONS: [&str; 9] = ["wav", "mp3", "m4a", "aac", "flac", "ogg", "aif", "aiff", "caf"];
 
 pub struct InkframeApp {
     editor: Editor,
@@ -114,6 +118,7 @@ impl InkframeApp {
                 }
             }
             Command::Open => self.open(),
+            Command::ImportImage => self.import_image(),
             Command::ImportAudio => self.import_audio(),
             Command::Save => {
                 self.save();
@@ -168,6 +173,7 @@ impl InkframeApp {
             (OPEN, Command::Open),
             (NEW, Command::New),
             (EXPORT, Command::Export),
+            (IMPORT, Command::ImportImage),
         ];
         let editing_shortcuts = [
             (REDO, Command::Redo),
@@ -281,6 +287,7 @@ impl InkframeApp {
             ui.menu_button("File", |ui| {
                 item(ui, "New", Some(shortcuts::NEW), Command::New, true);
                 item(ui, "Open…", Some(shortcuts::OPEN), Command::Open, true);
+                item(ui, "Import to Stage…", Some(shortcuts::IMPORT), Command::ImportImage, true);
                 item(ui, "Import Audio…", None, Command::ImportAudio, true);
                 ui.separator();
                 item(ui, "Save", Some(shortcuts::SAVE), Command::Save, true);
@@ -394,10 +401,52 @@ impl InkframeApp {
         }
     }
 
+    fn import_image(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("Import to stage")
+            .add_filter("Images", &IMAGE_EXTENSIONS)
+            .pick_file()
+        else {
+            return;
+        };
+        if let Err(message) = self.editor.import_image(&path) {
+            show_error("Couldn't import the image", &message);
+        }
+    }
+
+    /// Imports image and sound files dropped onto the window, the same as
+    /// choosing them from the File menu.
+    fn import_dropped_files(&mut self, ctx: &egui::Context) {
+        // A file dropped without a path on disk can't be linked to, so skip it.
+        let dropped: Vec<PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .filter(|p| !p.as_os_str().is_empty())
+                .collect()
+        });
+        for path in dropped {
+            let extension = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+            if IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+                if let Err(message) = self.editor.import_image(&path) {
+                    show_error("Couldn't import the image", &message);
+                }
+            } else if AUDIO_EXTENSIONS.contains(&extension.as_str()) {
+                self.editor.import_audio(&path);
+            } else {
+                show_error(
+                    "Can't import that file",
+                    &format!("{} isn't an image or a sound file Inkframe can read.", file_name(&path)),
+                );
+            }
+        }
+    }
+
     fn import_audio(&mut self) {
         let Some(path) = rfd::FileDialog::new()
             .set_title("Import audio")
-            .add_filter("Audio", &["wav", "mp3", "m4a", "aac", "flac", "ogg", "aif", "aiff", "caf"])
+            .add_filter("Audio", &AUDIO_EXTENSIONS)
             .pick_file()
         else {
             return;
@@ -490,6 +539,11 @@ impl eframe::App for InkframeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.handle_shortcuts(&ctx);
+        self.import_dropped_files(&ctx);
+        // Decode any image that's new (just imported, or brought back by
+        // undo) before the stage draws.
+        let project_dir = self.editor.project_dir();
+        self.editor.images.sync(&self.editor.doc, project_dir.as_deref());
 
         // Panel order decides who owns the corners: the timeline is added
         // before the side panels so it spans the full window width.
@@ -521,6 +575,9 @@ impl eframe::App for InkframeApp {
                 breadcrumbs(ui, &mut self.editor);
             }
             self.stage.show(ui, &mut self.editor);
+            if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
+                drop_hint(ui);
+            }
         });
 
         let name = self.editor.display_name();
@@ -586,6 +643,20 @@ fn breadcrumbs(ui: &mut egui::Ui, editor: &mut Editor) {
     if let Some(depth) = exit_to {
         editor.exit_to(depth);
     }
+}
+
+/// Shown over the stage while files are dragged over the window.
+fn drop_hint(ui: &egui::Ui) {
+    let area = ui.max_rect();
+    let painter = ui.painter();
+    painter.rect_filled(area, 0.0, egui::Color32::from_black_alpha(140));
+    painter.text(
+        area.center(),
+        egui::Align2::CENTER_CENTER,
+        "Drop images or sounds to import them",
+        egui::FontId::proportional(20.0),
+        egui::Color32::WHITE,
+    );
 }
 
 fn show_error(title: &str, detail: &str) {

@@ -15,6 +15,8 @@ pub const OPEN: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::O);
 pub const SAVE: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::S);
 pub const SAVE_AS: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::S);
 pub const EXPORT: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::E);
+/// Animate's File › Import › Import to Stage.
+pub const IMPORT: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::R);
 
 pub const UNDO: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::Z);
 pub const REDO: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::Z);

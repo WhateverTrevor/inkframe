@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 use inkframe_audio::{Clip, sample_frame};
 use inkframe_core::Document;
-use inkframe_render::{RenderOptions, render_frame};
+use inkframe_render::{ImageLibrary, RenderOptions, render_frame};
 use tiny_skia::Pixmap;
 
 /// The output formats Inkframe can produce.
@@ -152,6 +152,8 @@ pub enum ExportError {
     Png(String),
     #[error("couldn't use an audio file: {0}")]
     Audio(String),
+    #[error("couldn't use an image: {0}")]
+    Image(String),
     #[error("export cancelled")]
     Cancelled,
 }
@@ -174,7 +176,13 @@ pub fn export(
     }
 
     let audio = soundtrack(doc, settings)?;
-    let renderer = FrameRenderer::new(doc, settings);
+    // As with audio, a missing picture fails the export up front instead of
+    // putting a placeholder into the final render.
+    let images = ImageLibrary::load(doc, settings.project_dir.as_deref());
+    if let Some((name, problem)) = images.problems(doc).next() {
+        return Err(ExportError::Image(format!("{name}: {problem}")));
+    }
+    let renderer = FrameRenderer::new(doc, &images, settings);
     match settings.format {
         ExportFormat::PngSequence => png_sequence::write(&renderer, settings, audio.as_ref(), on_progress),
         _ => ffmpeg::encode(&renderer, settings, audio.as_ref(), on_progress),
@@ -207,14 +215,15 @@ fn soundtrack(doc: &Document, settings: &ExportSettings) -> Result<Option<Clip>,
 /// Renders frames for an export with fixed settings.
 struct FrameRenderer<'a> {
     doc: &'a Document,
-    options: RenderOptions,
+    options: RenderOptions<'a>,
 }
 
 impl<'a> FrameRenderer<'a> {
-    fn new(doc: &'a Document, settings: &ExportSettings) -> Self {
+    fn new(doc: &'a Document, images: &'a ImageLibrary, settings: &ExportSettings) -> Self {
         let options = RenderOptions {
             scale: settings.scale,
             draw_background: !settings.transparent_output(),
+            images: Some(images),
             ..RenderOptions::default()
         };
         Self { doc, options }

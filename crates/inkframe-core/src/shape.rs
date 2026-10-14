@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::color::Color;
 use crate::geometry::{Point, Rect};
+use crate::image::ImageId;
 
 /// Geometry of a drawable shape, in the owning layer's local coordinates.
 ///
@@ -23,6 +24,14 @@ pub enum Shape {
         radius_y: f32,
     },
     Path(Path),
+    /// A bitmap from the document's images, stretched to `width`×`height`
+    /// and centered on the origin like a rectangle. Its element's style is
+    /// ignored: an image paints its own pixels.
+    Image {
+        image: ImageId,
+        width: f32,
+        height: f32,
+    },
 }
 
 /// A sequence of connected line and curve segments.
@@ -153,6 +162,7 @@ impl Shape {
                 Rect::from_center_size(Point::ZERO, radius_x * 2.0, radius_y * 2.0)
             }
             Shape::Path(path) => path.tight_bounds(),
+            Shape::Image { width, height, .. } => Rect::from_center_size(Point::ZERO, *width, *height),
         }
     }
 
@@ -169,6 +179,12 @@ impl Shape {
                 // Rounded corners are ignored here; clicking a hair outside a
                 // rounded corner still selecting the shape feels fine.
                 Rect::from_center_size(Point::ZERO, *width, *height).expand(reach).contains(p)
+            }
+            // Clicking anywhere on an image selects it, transparent parts
+            // included. They're usually backgrounds or reference art, where
+            // having to find an opaque pixel would just get in the way.
+            Shape::Image { width, height, .. } => {
+                Rect::from_center_size(Point::ZERO, *width, *height).expand(tolerance).contains(p)
             }
             Shape::Ellipse { radius_x, radius_y } => {
                 let rx = radius_x + reach;

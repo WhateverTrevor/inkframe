@@ -39,14 +39,20 @@ impl AudioTrack {
     /// no longer exists (the project was copied to another machine, say),
     /// a file of the same name next to the project is used instead.
     pub fn resolve(&self, project_dir: Option<&Path>) -> PathBuf {
-        match project_dir {
-            Some(dir) if self.path.is_relative() => dir.join(&self.path),
-            Some(dir) if !self.path.exists() => match self.path.file_name() {
-                Some(name) if dir.join(name).exists() => dir.join(name),
-                _ => self.path.clone(),
-            },
-            _ => self.path.clone(),
-        }
+        resolve_linked(&self.path, project_dir)
+    }
+}
+
+/// Where a file linked from the project really is. Shared by every kind of
+/// linked file (sounds, images), so they all follow the same rules.
+pub(crate) fn resolve_linked(path: &Path, project_dir: Option<&Path>) -> PathBuf {
+    match project_dir {
+        Some(dir) if path.is_relative() => dir.join(path),
+        Some(dir) if !path.exists() => match path.file_name() {
+            Some(name) if dir.join(name).exists() => dir.join(name),
+            _ => path.to_path_buf(),
+        },
+        _ => path.to_path_buf(),
     }
 }
 

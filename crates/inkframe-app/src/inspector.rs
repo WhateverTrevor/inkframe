@@ -3,7 +3,8 @@
 
 use egui::{Color32, DragValue, Sense, Stroke as EguiStroke, vec2};
 use inkframe_core::{
-    Color, Easing, FrameRate, Layer, LayerId, Playback, Property, Shape, Stroke, Style, SymbolId, Tween,
+    Color, Easing, FrameRate, ImageId, Layer, LayerId, Playback, Property, Shape, Stroke, Style, SymbolId,
+    Tween,
 };
 
 use crate::audio_engine::AudioEngine;
@@ -287,6 +288,20 @@ fn easing_combo(ui: &mut egui::Ui, id_salt: Property, easing: &mut Easing) -> bo
 }
 
 fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    // What the image rows show, gathered before the layer is borrowed for
+    // editing (it lives inside the same document).
+    let images: Vec<ImageInfo> = editor
+        .doc
+        .images
+        .iter()
+        .map(|asset| ImageInfo {
+            id: asset.id,
+            name: asset.name.clone(),
+            size: (asset.width, asset.height),
+            problem: editor.images.problem(asset.id).map(str::to_owned),
+        })
+        .collect();
+
     let Some(layer) = editor.doc.layer_mut(id) else { return };
     let count = layer.elements.len();
     for (i, element) in layer.elements.iter_mut().enumerate() {
@@ -295,12 +310,55 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 Shape::Rect { .. } => "Rectangle",
                 Shape::Ellipse { .. } => "Oval",
                 Shape::Path(_) => "Stroke",
+                Shape::Image { .. } => "Image",
             };
             ui.strong(if count > 1 { format!("{title} {}", i + 1) } else { title.to_owned() });
-            shape_size_editor(ui, &mut element.shape);
-            style_editor(ui, &mut element.style);
+            if let Shape::Image { image, width, height } = &mut element.shape {
+                // An image paints its own pixels, so it has no fill or stroke.
+                if let Some(info) = images.iter().find(|info| info.id == *image) {
+                    image_editor(ui, info, width, height);
+                }
+            } else {
+                shape_size_editor(ui, &mut element.shape);
+                style_editor(ui, &mut element.style);
+            }
         });
     }
+}
+
+struct ImageInfo {
+    id: ImageId,
+    name: String,
+    /// The file's own size in pixels.
+    size: (u32, u32),
+    problem: Option<String>,
+}
+
+fn image_editor(ui: &mut egui::Ui, info: &ImageInfo, width: &mut f32, height: &mut f32) {
+    egui::Grid::new("image").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        ui.label("File");
+        match &info.problem {
+            Some(problem) => ui.colored_label(ui.visuals().error_fg_color, problem),
+            None => ui.label(&info.name),
+        };
+        ui.end_row();
+        ui.label("Size");
+        ui.horizontal(|ui| {
+            ui.add(DragValue::new(width).range(0.0..=f32::MAX).prefix("w "));
+            ui.add(DragValue::new(height).range(0.0..=f32::MAX).prefix("h "));
+        });
+        ui.end_row();
+        ui.label("");
+        let (w, h) = info.size;
+        if ui
+            .button("Actual size")
+            .on_hover_text(format!("{w} × {h}, one stage pixel per image pixel"))
+            .clicked()
+        {
+            (*width, *height) = (w as f32, h as f32);
+        }
+        ui.end_row();
+    });
 }
 
 fn shape_size_editor(ui: &mut egui::Ui, shape: &mut Shape) {
@@ -324,8 +382,9 @@ fn shape_size_editor(ui: &mut egui::Ui, shape: &mut Shape) {
             });
             ui.end_row();
         }
-        // Freehand paths are edited by redrawing, for now.
-        Shape::Path(_) => {}
+        // Freehand paths are edited by redrawing, for now. Images have their
+        // own editor.
+        Shape::Path(_) | Shape::Image { .. } => {}
     });
 }
 

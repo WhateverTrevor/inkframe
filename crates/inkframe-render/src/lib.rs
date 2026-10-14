@@ -10,16 +10,23 @@
 //!
 //! [tiny-skia]: https://github.com/linebender/tiny-skia
 
+mod images;
 mod path;
 
-use inkframe_core::{Affine, Color, Document, Element, Layer, LayerId, Point, SymbolId, TimelineId};
-use tiny_skia::{FillRule, IntRect, LineCap, LineJoin, Paint, Pixmap, PixmapMut, PixmapPaint, Transform};
+use inkframe_core::{Affine, Color, Document, Element, Layer, LayerId, Point, Shape, SymbolId, TimelineId};
+use tiny_skia::{
+    FillRule, FilterQuality, IntRect, LineCap, LineJoin, Paint, PathBuilder, Pattern, Pixmap, PixmapMut,
+    PixmapPaint, SpreadMode, Transform,
+};
 
+pub use images::{IMAGE_EXTENSIONS, ImageLibrary, image_size};
 pub use path::build_path;
+
+use images::Mipmaps;
 
 /// Settings for one render pass.
 #[derive(Debug, Clone, Copy)]
-pub struct RenderOptions {
+pub struct RenderOptions<'a> {
     /// Output pixels per stage pixel. 1.0 renders at the document's size,
     /// 2.0 at double resolution (for Retina displays or high-res export).
     pub scale: f32,
@@ -31,11 +38,14 @@ pub struct RenderOptions {
     pub tint: Option<Color>,
     /// Extra opacity multiplied into every layer (0.0–1.0).
     pub opacity: f32,
+    /// The document's images, decoded. Without it (or for a file that
+    /// couldn't be read) each image is drawn as a crossed-out placeholder.
+    pub images: Option<&'a ImageLibrary>,
 }
 
-impl Default for RenderOptions {
+impl Default for RenderOptions<'_> {
     fn default() -> Self {
-        Self { scale: 1.0, draw_background: true, tint: None, opacity: 1.0 }
+        Self { scale: 1.0, draw_background: true, tint: None, opacity: 1.0, images: None }
     }
 }
 
@@ -85,7 +95,7 @@ pub fn render_timeline_into(
     }
 
     let to_pixels = Affine::scale(options.scale, options.scale).pre_concat(to_stage);
-    let style = Style { tint: options.tint };
+    let style = Style { tint: options.tint, images: options.images };
     let layers = doc.layers_of(timeline);
     in_bands(pixmap, |band, shift| {
         let to_band = shift.pre_concat(to_pixels);
@@ -148,7 +158,13 @@ fn in_bands(pixmap: &mut Pixmap, draw: impl Fn(&mut PixmapMut, Affine) + Sync) {
 
 /// Renders one frame of a symbol, scaled to fit a `size`×`size` square, for
 /// library thumbnails. Returns `None` for symbols with nothing to draw.
-pub fn render_symbol_thumbnail(doc: &Document, symbol: SymbolId, frame: u32, size: u32) -> Option<Pixmap> {
+pub fn render_symbol_thumbnail(
+    doc: &Document,
+    images: Option<&ImageLibrary>,
+    symbol: SymbolId,
+    frame: u32,
+    size: u32,
+) -> Option<Pixmap> {
     let symbol = doc.symbol(symbol)?;
     let bounds = symbol
         .layers
@@ -171,15 +187,17 @@ pub fn render_symbol_thumbnail(doc: &Document, symbol: SymbolId, frame: u32, siz
         .pre_concat(Affine::translate(-center));
 
     let mut pixmap = Pixmap::new(size, size)?;
-    render_layers(&mut pixmap.as_mut(), doc, &symbol.layers, frame, fit, 1.0, Style { tint: None }, None, 0);
+    let style = Style { tint: None, images };
+    render_layers(&mut pixmap.as_mut(), doc, &symbol.layers, frame, fit, 1.0, style, None, 0);
     Some(pixmap)
 }
 
 /// Settings that apply to everything drawn in one pass, however deeply
 /// nested inside symbols.
 #[derive(Clone, Copy)]
-struct Style {
+struct Style<'a> {
     tint: Option<Color>,
+    images: Option<&'a ImageLibrary>,
 }
 
 /// Draws a stack of layers (the document's, or a symbol's) at `frame`.
@@ -196,7 +214,7 @@ fn render_layers(
     frame: u32,
     parent: Affine,
     opacity: f32,
-    style: Style,
+    style: Style<'_>,
     skip: Option<LayerId>,
     depth: usize,
 ) {
@@ -266,7 +284,7 @@ fn draw_layer(
     layer: &Layer,
     frame: u32,
     matrix: Affine,
-    style: Style,
+    style: Style<'_>,
     depth: usize,
 ) {
     let skia_matrix = to_skia_transform(matrix);
@@ -282,7 +300,7 @@ fn draw_layer(
         inkframe_core::Rect::bounding(corners).is_some_and(|b| overlaps(b, image))
     };
     for element in layer.elements.iter().filter(|e| visible(e)) {
-        draw_element(pixmap, element, skia_matrix, style.tint);
+        draw_element(pixmap, element, skia_matrix, style);
     }
     // `instance_view` stops at the nesting limit, so a malformed file can't
     // recurse forever.
@@ -300,7 +318,13 @@ fn overlaps(a: inkframe_core::Rect, b: inkframe_core::Rect) -> bool {
         && a.max.y >= b.min.y - 1.0
 }
 
-fn draw_element(pixmap: &mut PixmapMut, element: &Element, matrix: Transform, tint: Option<Color>) {
+fn draw_element(pixmap: &mut PixmapMut, element: &Element, matrix: Transform, style: Style<'_>) {
+    if let Shape::Image { image, width, height } = element.shape {
+        let pixels = style.images.and_then(|library| library.get(image));
+        draw_image(pixmap, pixels, width, height, matrix);
+        return;
+    }
+    let tint = style.tint;
     let Some(path) = build_path(&element.shape) else {
         return; // Degenerate geometry, e.g. a zero-size rectangle.
     };
@@ -325,6 +349,58 @@ fn draw_element(pixmap: &mut PixmapMut, element: &Element, matrix: Transform, ti
         };
         pixmap.stroke_path(&path, &paint_for(stroke.color), &style, matrix, None);
     }
+}
+
+/// Draws a picture stretched over the `width`×`height` rectangle centered on
+/// the origin, or a crossed-out placeholder if its pixels aren't available.
+///
+/// The rectangle is filled with the picture as a pattern rather than copied
+/// with `draw_pixmap`, which doesn't anti-alias: a rotated image would get
+/// jagged edges. Onion-skin tinting doesn't apply; a ghost of a picture is
+/// drawn as the picture, faded.
+fn draw_image(pixmap: &mut PixmapMut, pixels: Option<&Mipmaps>, width: f32, height: f32, matrix: Transform) {
+    let Some(rect) = tiny_skia::Rect::from_xywh(-width / 2.0, -height / 2.0, width, height) else {
+        return; // Zero-sized.
+    };
+    let outline = PathBuilder::from_rect(rect);
+
+    let Some(mips) = pixels else {
+        let mut paint = Paint { anti_alias: true, ..Paint::default() };
+        paint.set_color_rgba8(160, 160, 160, 90);
+        pixmap.fill_path(&outline, &paint, FillRule::Winding, matrix, None);
+        let mut cross = PathBuilder::new();
+        cross.move_to(rect.left(), rect.top());
+        cross.line_to(rect.right(), rect.bottom());
+        cross.move_to(rect.right(), rect.top());
+        cross.line_to(rect.left(), rect.bottom());
+        cross.push_rect(rect);
+        paint.set_color_rgba8(110, 110, 110, 255);
+        // Width 0 is a hairline: one pixel wide however the image is scaled.
+        let hairline = tiny_skia::Stroke { width: 0.0, ..tiny_skia::Stroke::default() };
+        if let Some(cross) = cross.finish() {
+            pixmap.stroke_path(&cross, &paint, &hairline, matrix, None);
+        }
+        return;
+    };
+
+    // How many output pixels each of the image's own pixels covers: the
+    // stretch to `width`×`height`, times however much the layer and stage
+    // scale it (the square root of the matrix's area scale).
+    let stretch = (width / mips.width() as f32, height / mips.height() as f32);
+    let area = (matrix.sx * matrix.sy - matrix.kx * matrix.ky).abs();
+    let scale = area.sqrt() * (stretch.0 * stretch.1).abs().sqrt();
+    let (level, factor) = mips.level_for(scale);
+
+    // The pattern's transform places the chosen copy's pixels on the
+    // rectangle; `factor` makes up for it being smaller than the original.
+    let to_rect = Transform::from_translate(-width / 2.0, -height / 2.0)
+        .pre_scale(stretch.0 * factor, stretch.1 * factor);
+    // Bilinear is exact at 1:1 and, with a suitable copy to start from,
+    // smooth when shrinking. Bicubic gives smoother edges when enlarging.
+    let quality = if scale > 1.0 { FilterQuality::Bicubic } else { FilterQuality::Bilinear };
+    let shader = Pattern::new(level.as_ref(), SpreadMode::Pad, quality, 1.0, to_rect);
+    let paint = Paint { shader, anti_alias: true, ..Paint::default() };
+    pixmap.fill_path(&outline, &paint, FillRule::Winding, matrix, None);
 }
 
 fn to_skia_transform(m: Affine) -> Transform {
@@ -411,7 +487,7 @@ mod tests {
         let mut doc = red_square_doc();
         let id = doc.layers[0].id;
         let symbol = doc.convert_layer_to_symbol(id, 0).unwrap();
-        let thumb = render_symbol_thumbnail(&doc, symbol, 0, 64).unwrap();
+        let thumb = render_symbol_thumbnail(&doc, None, symbol, 0, 64).unwrap();
         // The red square fills the middle of the thumbnail.
         assert_eq!(pixel(&thumb, 32, 32), [255, 0, 0, 255]);
         assert_eq!(pixel(&thumb, 0, 0)[3], 0);
@@ -475,7 +551,7 @@ mod tests {
         let mut whole = Pixmap::new(banded.width(), banded.height()).unwrap();
         whole.fill(to_skia_color(doc.background));
         let to_pixels = Affine::scale(1.3, 1.3);
-        let style = super::Style { tint: None };
+        let style = super::Style { tint: None, images: None };
         render_layers(&mut whole.as_mut(), &doc, &doc.layers, 0, to_pixels, 1.0, style, None, 0);
 
         // tiny-skia clips each shape's outline where a band starts and ends,
@@ -496,6 +572,43 @@ mod tests {
 
         // And the split never varies, so the result is the same every time.
         assert!(render_frame(&doc, 0, &options).unwrap().data() == banded.data());
+    }
+
+    #[test]
+    fn images_are_drawn_from_their_files() {
+        // A 2×1 picture, red on the left and blue on the right, stretched
+        // over a 40×20 rectangle in the middle of the stage.
+        let dir = std::env::temp_dir().join(format!("inkframe-render-image-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("flag.png");
+        let mut picture = image::RgbaImage::new(2, 1);
+        picture.put_pixel(0, 0, image::Rgba([255, 0, 0, 255]));
+        picture.put_pixel(1, 0, image::Rgba([0, 0, 255, 255]));
+        picture.save(&path).unwrap();
+
+        let mut doc = red_square_doc();
+        doc.layers.clear();
+        let image = doc.add_image(&path, None, (2, 1));
+        let element = Element {
+            shape: Shape::Image { image, width: 40.0, height: 20.0 },
+            style: Style { fill: None, stroke: None },
+        };
+        doc.add_layer("Flag", vec![element], 0, Pose::at(Point::new(50.0, 50.0)));
+
+        let library = ImageLibrary::load(&doc, None);
+        let options = RenderOptions { images: Some(&library), ..RenderOptions::default() };
+        let pixmap = render_frame(&doc, 0, &options).unwrap();
+        assert_eq!(pixel(&pixmap, 34, 50), [255, 0, 0, 255]);
+        assert_eq!(pixel(&pixmap, 66, 50), [0, 0, 255, 255]);
+        assert_eq!(pixel(&pixmap, 50, 30), [255, 255, 255, 255], "nothing outside the rectangle");
+
+        // Without the pixels, a placeholder marks where the image goes.
+        std::fs::remove_dir_all(&dir).unwrap();
+        let missing = ImageLibrary::load(&doc, None);
+        assert_eq!(missing.problems(&doc).count(), 1);
+        let options = RenderOptions { images: Some(&missing), ..RenderOptions::default() };
+        let placeholder = render_frame(&doc, 0, &options).unwrap();
+        assert_ne!(pixel(&placeholder, 40, 50), [255, 255, 255, 255]);
     }
 
     #[test]

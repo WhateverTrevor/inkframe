@@ -85,7 +85,8 @@ impl Shape {
     ///
     /// Rectangles and ellipses come out as the same Bézier outline the
     /// renderer draws, so converting one to a path for editing doesn't
-    /// change how it looks.
+    /// change how it looks. Images have no anchors: their outline is the
+    /// edge of the picture, which can't be bent.
     pub fn to_anchors(&self) -> (Vec<Anchor>, bool) {
         match self {
             Shape::Path(path) => (anchors_from_path(path), path.closed),
@@ -95,6 +96,7 @@ impl Shape {
                 (rect_anchors(bounds, radius), true)
             }
             Shape::Ellipse { radius_x, radius_y } => (ellipse_anchors(*radius_x, *radius_y), true),
+            Shape::Image { .. } => (Vec::new(), false),
         }
     }
 }
