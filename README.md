@@ -16,7 +16,8 @@ planned (the code is already cross-platform and CI builds it on Windows).
   layer can ease its movement while fading at a steady rate. Scale and
   rotate with on-stage handles, or type exact values in the properties panel.
 - **Ease** each property's tweens separately with Linear, Ease In/Out/In-Out,
-  Hold, or a custom cubic-Bézier curve, previewed live in the properties panel.
+  Hold, or a custom curve: drag the curve's handles in the properties panel
+  to shape it, with the playhead's position shown on the curve.
 - **Timeline** with layers that expand into one row per property, visibility
   and lock toggles, draggable keys, scrubbing, looped playback and onion
   skinning. Each layer's bar shows the frames it appears on; drag its ends
@@ -83,6 +84,7 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Pen (`P`) | Click for corners, drag for curves. Click the first point to close the shape; Enter, Esc or clicking the last point ends an open line. Backspace removes the last point, Shift snaps to 45°. Click a selected shape's outline to add a point without changing its curve |
 | Animate | Move the playhead to a later frame, then drag the shape or edit its transform |
 | Layer start / end | Drag either end of a layer's bar in the timeline, press `⌥[` / `⌥]` to start or end it at the playhead, or type frames in the properties panel. New drawings start on the current frame |
+| Shape easing | In the properties panel's Easing section, pick a property, then drag the curve's orange handles. Pull a handle above the top line to overshoot, or below the bottom to anticipate |
 | Insert / remove keyframe | `F6` / `Shift+F6` keys every property; right-click a property row in the timeline, or click the ◇ next to a property in the properties panel, to key just that one |
 | Play / pause | `Enter` |
 | Step frames | `,` and `.` (or ← →), `Home` / `End` |

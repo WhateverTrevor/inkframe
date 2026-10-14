@@ -9,6 +9,7 @@
 mod app;
 mod audio_engine;
 mod convert;
+mod easing_editor;
 mod editor;
 mod export_dialog;
 mod handles;

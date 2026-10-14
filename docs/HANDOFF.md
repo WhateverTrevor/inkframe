@@ -39,6 +39,8 @@ after the macOS app bundle.
 14. Windows installer: `cargo xtask bundle-windows` (Inno Setup), built and
     uploaded as an artifact by CI on every push, with gyan.dev's static
     ffmpeg 9.0.2 bundled (pinned URL and SHA-256 in ci.yml)
+15. Selection bounds include stroke width and hug curves tightly
+16. Easing curve editor: drag the Bézier handles in the properties panel
 
 ## Not yet verified by hand
 
@@ -62,8 +64,9 @@ Smaller ideas noted along the way:
 
 - Audio decoding is whole-file in memory (~23 MB per minute). Fine for
   dialogue and music, but long files might want streaming.
-- Easing is per tween, per property; a graph editor would be a natural
-  next step for animators.
+- A value graph (Animate's Motion Editor: each property's value plotted
+  over the whole timeline, keys draggable up and down) would complement the
+  per-tween easing curve editor.
 
 ## Working conventions
 

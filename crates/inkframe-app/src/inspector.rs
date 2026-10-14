@@ -8,6 +8,7 @@ use inkframe_core::{
 
 use crate::audio_engine::AudioEngine;
 use crate::convert::color_button;
+use crate::easing_editor;
 use crate::editor::Editor;
 
 /// Shows the panel's contents. The caller provides the scroll area, so the
@@ -239,7 +240,13 @@ fn easing_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u3
     });
 
     let focused = editor.focused_property;
-    let Some(mut easing) = tweens.iter().find(|(p, _)| *p == focused).map(|(_, t)| t.easing) else { return };
+    let Some(tween) = tweens.iter().find(|(p, _)| *p == focused).map(|(_, t)| *t) else { return };
+    let mut easing = tween.easing;
+    let progress = (frame - tween.start) as f32 / (tween.end - tween.start).max(1) as f32;
+    if easing_editor::show(ui, &mut easing, Some(progress)) {
+        changes.push((focused, easing));
+    }
+    // Exact numbers, for matching a curve from elsewhere (CSS, say).
     if let Easing::CubicBezier { x1, y1, x2, y2 } = &mut easing {
         let mut edited = false;
         ui.horizontal(|ui| {
@@ -252,7 +259,6 @@ fn easing_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u3
             changes.push((focused, easing));
         }
     }
-    easing_graph(ui, easing);
 
     if let Some(layer) = editor.doc.layer_mut(id) {
         for (property, easing) in changes {
@@ -278,29 +284,6 @@ fn easing_combo(ui: &mut egui::Ui, id_salt: Property, easing: &mut Easing) -> bo
         }
     });
     *easing != before
-}
-
-/// A small plot of the easing curve: time across, progress up.
-fn easing_graph(ui: &mut egui::Ui, easing: Easing) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width().min(220.0), 90.0), Sense::hover());
-    let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
-
-    // Leave headroom so overshooting curves (y outside 0–1) stay visible.
-    let plot = rect.shrink2(vec2(8.0, 18.0));
-    let to_screen =
-        |t: f32, v: f32| egui::pos2(plot.left() + t * plot.width(), plot.bottom() - v * plot.height());
-
-    let guide = EguiStroke::new(1.0, ui.visuals().weak_text_color().gamma_multiply(0.4));
-    painter.line_segment([to_screen(0.0, 0.0), to_screen(1.0, 1.0)], guide);
-
-    let points = (0..=48)
-        .map(|i| {
-            let t = i as f32 / 48.0;
-            to_screen(t, easing.apply(t))
-        })
-        .collect();
-    painter.line(points, (2.0, Color32::from_rgb(0x8a, 0x7c, 0xd8)));
 }
 
 fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
