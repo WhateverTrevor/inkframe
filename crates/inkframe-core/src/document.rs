@@ -236,7 +236,7 @@ impl Document {
         }
     }
 
-    fn layers_of_mut(&mut self, timeline: TimelineId) -> Option<&mut Vec<Layer>> {
+    pub(crate) fn layers_of_mut(&mut self, timeline: TimelineId) -> Option<&mut Vec<Layer>> {
         match timeline {
             TimelineId::Main => Some(&mut self.layers),
             TimelineId::Symbol(id) => self.symbol_mut(id).map(|s| &mut s.layers),

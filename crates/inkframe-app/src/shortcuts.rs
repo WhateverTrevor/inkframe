@@ -9,6 +9,7 @@ use crate::editor::Tool;
 
 const CMD: Modifiers = Modifiers::COMMAND;
 const CMD_SHIFT: Modifiers = Modifiers::COMMAND.plus(Modifiers::SHIFT);
+const CMD_ALT: Modifiers = Modifiers::COMMAND.plus(Modifiers::ALT);
 
 pub const NEW: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::N);
 pub const OPEN: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::O);
@@ -23,6 +24,17 @@ pub const REDO: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::Z);
 /// Windows users expect Ctrl+Y for redo, so accept it everywhere.
 pub const REDO_ALT: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::Y);
 pub const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::D);
+
+// Copy and paste arrive from the system as clipboard events rather than
+// keys (see `InkframeApp::handle_shortcuts`); these are only for showing in
+// menus. Animate's keys: ⌘V pastes in the center of the view, ⌘⇧V in place,
+// and ⌥ copies and pastes keyframes instead of layers.
+pub const CUT: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::X);
+pub const COPY: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::C);
+pub const PASTE: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::V);
+pub const PASTE_IN_PLACE: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::V);
+pub const COPY_FRAMES: KeyboardShortcut = KeyboardShortcut::new(CMD_ALT, Key::C);
+pub const PASTE_FRAMES: KeyboardShortcut = KeyboardShortcut::new(CMD_ALT, Key::V);
 /// F8, as in Animate.
 pub const CONVERT_TO_SYMBOL: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F8);
 

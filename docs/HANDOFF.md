@@ -62,6 +62,10 @@ after the macOS app bundle.
 24. Masks (format v11): `Layer::mask` and `Layer::masked_by`; anything a mask
     draws is the window (soft masks via its opacity); Modify › Mask masks
     the layer below; clicks pass through masks unless one is selected.
+25. Copy and paste: layers (with symbols, images, fonts; between projects
+    via tagged JSON on the system clipboard), Paste in Center/in Place,
+    Copy/Paste Frames (a layer's pose), and plain text as a text layer.
+    Only the single selected layer is copied until multi-select exists.
 
 ## Not yet verified by hand
 

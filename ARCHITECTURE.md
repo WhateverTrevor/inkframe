@@ -53,6 +53,7 @@ The data model and the math behind animation.
 | `font_file.rs` | `FontFile`: a font file linked to the project, and the families it provides |
 | `image.rs` | `ImageAsset`: an image file the document links to, and its size in pixels |
 | `audio.rs` | `AudioTrack`: a sound file laid against the timeline; how linked files are found |
+| `clipboard.rs` | Copying layers (with the symbols, images and fonts they need) and keyframes, and pasting them into the same or another project |
 | `history.rs` | Snapshot-based undo/redo |
 | `geometry.rs` | `Point`, `Rect`, `Affine` |
 

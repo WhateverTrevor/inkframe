@@ -12,6 +12,7 @@ use inkframe_core::{
     Affine, Color, Document, DocumentError, Element, History, Layer, LayerId, Point, Property, Shape, Stroke,
     Style, SymbolId, Text, TimelineId, Transform,
 };
+use inkframe_core::{Clipboard, CopiedKeyframe};
 use inkframe_render::ImageLibrary;
 
 /// The tools in the toolbar.
@@ -600,6 +601,61 @@ impl Editor {
         }
     }
 
+    // ------------------------------------------------------------ clipboard
+
+    /// The selected layer, with everything it needs, for the clipboard.
+    pub fn copy_selection(&self) -> Option<Clipboard> {
+        let id = self.selection?;
+        Some(Clipboard::Layers(self.doc.copy_layers(&[id], self.project_dir().as_deref())?))
+    }
+
+    /// The selected layer's pose on the current frame, for the clipboard.
+    pub fn copy_keyframe(&self) -> Option<Clipboard> {
+        let layer = self.selected_layer()?;
+        Some(Clipboard::Keyframe(CopiedKeyframe::from_track(&layer.track, self.frame)?))
+    }
+
+    /// Pastes clipboard contents. Layers land on top of the timeline being
+    /// edited, either where they were (`centered_on` is `None`: "Paste in
+    /// Place") or moved so they're centered on a point; a keyframe is
+    /// pasted onto the selected layer at the current frame.
+    pub fn paste(&mut self, clipboard: &Clipboard, centered_on: Option<Point>) {
+        match clipboard {
+            Clipboard::Layers(copied) => {
+                // Where the copies are on this frame, on average, so the
+                // group lands centered rather than by its first layer.
+                let offset = centered_on.map_or(Point::ZERO, |center| {
+                    let positions: Vec<Point> =
+                        copied.layers.iter().map(|l| l.track.sample(self.frame as f32).position).collect();
+                    let sum = positions.iter().fold(Point::ZERO, |sum, p| sum + *p);
+                    center - sum * (1.0 / positions.len().max(1) as f32)
+                });
+                let project_dir = self.project_dir();
+                let pasted = self.doc.paste_layers(copied, self.timeline(), offset, project_dir.as_deref());
+                if let Some(&last) = pasted.last() {
+                    self.selection = Some(last);
+                }
+            }
+            Clipboard::Keyframe(keyframe) => {
+                let frame = self.frame;
+                if let Some(layer) = self.selection.and_then(|id| self.doc.layer_mut(id)) {
+                    keyframe.paste_into(&mut layer.track, frame);
+                }
+            }
+        }
+    }
+
+    /// Text copied from another app becomes a new text layer at `at`.
+    pub fn paste_text(&mut self, text: &str, at: Point) {
+        if let Some(id) = self.add_text(at)
+            && let Some(layer) = self.doc.layer_mut(id)
+            && let Some(Shape::Text(t)) = layer.elements.first_mut().map(|e| &mut e.shape)
+        {
+            t.content = text.to_owned();
+        }
+        self.remeasure_text();
+    }
+
     pub fn duplicate_selected_layer(&mut self) {
         if let Some(id) = self.selection {
             self.selection = self.doc.duplicate_layer(id);
@@ -697,6 +753,38 @@ mod tests {
         assert_eq!(editor.hit_test(middle, 1.0), Some(scene), "the mask isn't drawn, so the scene is hit");
         editor.selection = Some(mask);
         assert_eq!(editor.hit_test(middle, 1.0), Some(mask), "a selected mask can be grabbed");
+    }
+
+    #[test]
+    fn copied_layers_paste_in_the_center_or_in_place() {
+        let mut editor = Editor::new(Document::default());
+        let square = Element {
+            shape: Shape::Rect { width: 10.0, height: 10.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::BLACK), stroke: None },
+        };
+        let id = editor.doc.add_layer("Box", vec![square], 0, Transform::at(Point::new(100.0, 100.0)));
+        editor.selection = Some(id);
+        let copied = editor.copy_selection().unwrap();
+
+        editor.paste(&copied, Some(Point::new(960.0, 540.0)));
+        let centered = editor.selected_layer().unwrap();
+        assert_ne!(centered.id, id);
+        assert_eq!(centered.transform_at(0).position, Point::new(960.0, 540.0));
+
+        editor.paste(&copied, None);
+        assert_eq!(editor.selected_layer().unwrap().transform_at(0).position, Point::new(100.0, 100.0));
+        assert_eq!(editor.doc.layers.len(), 3);
+    }
+
+    #[test]
+    fn text_from_another_app_pastes_as_a_text_layer() {
+        let mut editor = Editor::new(Document::default());
+        editor.paste_text("Hello from elsewhere", Point::new(200.0, 200.0));
+        let Shape::Text(text) = &editor.selected_layer().unwrap().elements[0].shape else {
+            panic!("not text")
+        };
+        assert_eq!(text.content, "Hello from elsewhere");
+        assert!(text.measured.width() > 0.0);
     }
 
     fn editor_with_layer() -> (Editor, LayerId) {

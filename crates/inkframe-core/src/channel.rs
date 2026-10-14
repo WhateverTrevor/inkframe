@@ -262,6 +262,26 @@ impl<T: Animatable> Channel<T> {
         }
     }
 
+    /// The key at `frame`, or if there isn't one, a key holding the value
+    /// there with this channel's default easing: what a "copy keyframe"
+    /// should pick up.
+    pub fn key_or_sample(&self, frame: u32) -> Option<Key<T>> {
+        if let Some(key) = self.key_at(frame) {
+            return Some(*key);
+        }
+        let value = self.sample(frame as f32)?;
+        Some(Key { frame, value, easing: Easing::default(), bend: None })
+    }
+
+    /// Puts a whole key (value, easing and curve) at `key.frame`, replacing
+    /// any key already there.
+    pub fn put(&mut self, key: Key<T>) {
+        match self.index_of(key.frame) {
+            Ok(i) => self.keys[i] = key,
+            Err(i) => self.keys.insert(i, key),
+        }
+    }
+
     /// Rewrites every key's value, keeping frames and easing.
     pub fn map_values(&mut self, f: impl Fn(T) -> T) {
         for key in &mut self.keys {

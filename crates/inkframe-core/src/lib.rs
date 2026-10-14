@@ -11,6 +11,7 @@
 mod anchor;
 mod audio;
 mod channel;
+mod clipboard;
 mod color;
 mod document;
 mod easing;
@@ -32,6 +33,7 @@ pub use anchor::{
 };
 pub use audio::{AudioId, AudioTrack};
 pub use channel::{Animatable, AnyChannel, Bend, Channel, Key, MotionCurve, Tween};
+pub use clipboard::{Clipboard, CopiedKeyframe, CopiedLayers};
 pub use color::{Color, ParseColorError};
 pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, Layer, LayerId, TimelineId};
 pub use easing::Easing;

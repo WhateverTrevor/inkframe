@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use egui::{Key, Modifiers};
-use inkframe_core::{Document, SymbolId, TimelineId};
+use inkframe_core::{Clipboard, Document, SymbolId, TimelineId};
 use inkframe_render::IMAGE_EXTENSIONS;
 
 use crate::audio_engine::AudioEngine;
@@ -29,6 +29,16 @@ enum Command {
     Export,
     Undo,
     Redo,
+    Cut,
+    Copy,
+    /// Pastes layers in the middle of the view (or a keyframe at the playhead).
+    Paste,
+    /// Pastes layers exactly where they were copied from.
+    PasteInPlace,
+    /// Copies the selected layer's pose on the current frame.
+    CopyFrames,
+    /// Pastes a copied pose onto the selected layer at the current frame.
+    PasteFrames,
     DuplicateLayer,
     DeleteLayer,
     ConvertToSymbol,
@@ -78,6 +88,11 @@ pub struct InkframeApp {
     /// Set once the user has confirmed quitting with unsaved changes.
     allow_close: bool,
     screenshot: Option<AutoScreenshot>,
+    /// What was last copied. Kept here as well as on the system clipboard,
+    /// because egui only reports a paste when the system clipboard has
+    /// text, and the Edit menu has no other way to read it.
+    clipboard: Option<Clipboard>,
+    ctx: egui::Context,
 }
 
 impl InkframeApp {
@@ -105,6 +120,8 @@ impl InkframeApp {
             title: String::new(),
             allow_close: false,
             screenshot: AutoScreenshot::from_env(),
+            clipboard: None,
+            ctx: cc.egui_ctx.clone(),
         };
         if app.screenshot.is_some() {
             AutoScreenshot::set_up_scene(&mut app.editor);
@@ -139,6 +156,23 @@ impl InkframeApp {
                 self.save_as();
             }
             Command::Export => self.export.open(&self.editor.doc),
+            Command::Cut => {
+                self.copy(false);
+                self.editor.delete_selected_layer();
+            }
+            Command::Copy => self.copy(false),
+            Command::CopyFrames => self.copy(true),
+            Command::Paste => {
+                let center = self.stage.visible_center(&self.editor);
+                if let Some(clipboard) = &self.clipboard {
+                    self.editor.paste(clipboard, Some(center));
+                }
+            }
+            Command::PasteInPlace | Command::PasteFrames => {
+                if let Some(clipboard) = &self.clipboard {
+                    self.editor.paste(clipboard, None);
+                }
+            }
             Command::Undo => editor.undo(),
             Command::Redo => editor.redo(),
             Command::DuplicateLayer => editor.duplicate_selected_layer(),
@@ -210,6 +244,7 @@ impl InkframeApp {
         ];
 
         let mut commands = Vec::new();
+        let mut pasted_text = None;
         // While a text field has focus, keys like ⌘Z and Delete belong to
         // the text field. File shortcuts still work everywhere.
         let typing = ctx.egui_wants_keyboard_input();
@@ -224,6 +259,31 @@ impl InkframeApp {
             }
             if typing {
                 return;
+            }
+            // Copy, cut and paste come from the system as clipboard events,
+            // not keys. ⌥ makes them act on keyframes, and ⇧ pastes in place.
+            for event in &input.events {
+                let (alt, shift) = (input.modifiers.alt, input.modifiers.shift);
+                match event {
+                    egui::Event::Copy => commands.push(if alt { Command::CopyFrames } else { Command::Copy }),
+                    egui::Event::Cut => commands.push(Command::Cut),
+                    egui::Event::Paste(text) => match Clipboard::from_text(text) {
+                        // Inkframe data, perhaps from another window: paste
+                        // that, and remember it for the Edit menu.
+                        Some(clipboard) => {
+                            let command = match (&clipboard, shift) {
+                                (Clipboard::Keyframe(_), _) => Command::PasteFrames,
+                                (Clipboard::Layers(_), true) => Command::PasteInPlace,
+                                (Clipboard::Layers(_), false) => Command::Paste,
+                            };
+                            self.clipboard = Some(clipboard);
+                            commands.push(command);
+                        }
+                        // Text from another app becomes a text layer.
+                        None => pasted_text = Some(text.clone()),
+                    },
+                    _ => {}
+                }
             }
             // Some keys mean something different while the stage is busy:
             // with a pen path in progress, Enter and Escape finish it and
@@ -277,6 +337,21 @@ impl InkframeApp {
         for command in commands {
             self.execute(command);
         }
+        if let Some(text) = pasted_text {
+            let center = self.stage.visible_center(&self.editor);
+            self.editor.paste_text(&text, center);
+        }
+    }
+
+    /// Copies the selected layer, or with `keyframe` its pose on this frame,
+    /// to the system clipboard (so it can be pasted into another window)
+    /// and to our own.
+    fn copy(&mut self, keyframe: bool) {
+        let copied = if keyframe { self.editor.copy_keyframe() } else { self.editor.copy_selection() };
+        if let Some(clipboard) = copied {
+            self.ctx.copy_text(clipboard.to_text());
+            self.clipboard = Some(clipboard);
+        }
     }
 
     // ---------------------------------------------------------------- menus
@@ -325,6 +400,22 @@ impl InkframeApp {
                     has_selection,
                 );
                 item(ui, "Delete Layer", None, Command::DeleteLayer, has_selection);
+                ui.separator();
+                let layers = matches!(self.clipboard, Some(Clipboard::Layers(_)));
+                let keyframe = matches!(self.clipboard, Some(Clipboard::Keyframe(_)));
+                item(ui, "Cut", Some(shortcuts::CUT), Command::Cut, has_selection);
+                item(ui, "Copy", Some(shortcuts::COPY), Command::Copy, has_selection);
+                item(ui, "Paste in Center", Some(shortcuts::PASTE), Command::Paste, layers);
+                item(ui, "Paste in Place", Some(shortcuts::PASTE_IN_PLACE), Command::PasteInPlace, layers);
+                ui.separator();
+                item(ui, "Copy Frames", Some(shortcuts::COPY_FRAMES), Command::CopyFrames, has_selection);
+                item(
+                    ui,
+                    "Paste Frames",
+                    Some(shortcuts::PASTE_FRAMES),
+                    Command::PasteFrames,
+                    keyframe && has_selection,
+                );
             });
             ui.menu_button("Modify", |ui| {
                 item(

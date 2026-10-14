@@ -102,6 +102,7 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Motion paths | Select a layer that moves: its path appears as a dashed line. Drag the path to bend that tween; drag the round handles to fine-tune. **Orient to path** and **Straighten path** are under the transform in the properties panel |
 | Motion guides | Draw a path (Pencil, Pen, or a shape) and tick **Guide** in its properties. Select the layer that should travel and pick the guide under **Follow guide**: between its first and last position keyframes it runs the whole guide, with its easing setting the pace. A middle keyframe pins it to the nearest point on the guide |
 | Masks | Select a layer and choose Modify › Mask to make it mask the layer below, or tick **Mask** on a layer and pick it under **Masked by** on any others. The mask isn't drawn; select it to see it faintly and drag it into place |
+| Copy and paste | `⌘C` / `⌘X` copy or cut the selected layer with its animation, symbols, images and fonts; `⌘V` pastes it in the middle of the view, `⌘⇧V` in place. Works between windows and projects. `⌥⌘C` / `⌥⌘V` copy a layer's pose on the current frame and paste it onto another frame or layer. Text copied from another app pastes as a text layer |
 | Insert / remove keyframe | `F6` / `Shift+F6` keys every property; right-click a property row in the timeline, or click the ◇ next to a property in the properties panel, to key just that one |
 | Play / pause | `Enter` |
 | Step frames | `,` and `.` (or ← →), `Home` / `End` |

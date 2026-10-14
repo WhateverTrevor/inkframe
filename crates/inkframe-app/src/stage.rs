@@ -391,6 +391,17 @@ impl StageView {
         }
     }
 
+    /// The middle of the visible part of the stage, in the coordinates of
+    /// the timeline being edited: where "Paste in Center" puts things.
+    pub fn visible_center(&self, editor: &Editor) -> Point {
+        let view = self.view(self.last_area, &editor.doc).with_timeline(editor.timeline_transform());
+        if self.last_area.is_positive() {
+            view.to_local(self.last_area.center())
+        } else {
+            editor.doc.stage_rect().center()
+        }
+    }
+
     pub fn zoom_to_fit(&mut self) {
         self.zoom = None;
         self.pan = Vec2::ZERO;
