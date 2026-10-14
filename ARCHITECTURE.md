@@ -135,7 +135,9 @@ before their outlines are built.
 Text is laid out in `text.rs`: fontdb finds the font, harfrust shapes the
 string into positioned glyphs (kerning, ligatures, complex scripts) and
 skrifa supplies each glyph's outline, which is then filled and stroked like
-any path. Layouts are cached. Fonts live in one store shared by the whole
+any path. Characters the chosen font lacks are looked up in other fonts
+(`Fonts::fallback_for`, cached per character) and shaped as separate runs
+on the same line. Layouts are cached. Fonts live in one store shared by the whole
 program: installed fonts, plus project font files (`sync_project_fonts`),
 which are searched first so a project's copy of a font wins. `inkframe-core` can't lay out text, so the
 editor stores each text's measured extent in `Text::measured`

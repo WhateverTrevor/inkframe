@@ -12,7 +12,8 @@ planned (the code is already cross-platform and CI builds it on Windows).
   pencil strokes on a stage of any size.
 - **Text** in any installed font, or font files imported into the project
   (so titles look the same on every machine), with bold, italic, alignment
-  and line spacing. It's real vector outlines, filled and stroked like shapes, so
+  and line spacing. Characters the font doesn't have, like emoji or
+  Chinese in a Latin font, come from another font that does. It's real vector outlines, filled and stroked like shapes, so
   it stays sharp at any size and animates like any other layer.
 - **Import images** (PNG, JPEG, GIF, WebP) to trace over or composite.
   They move, scale, rotate, fade and animate like any other layer.

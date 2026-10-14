@@ -198,6 +198,10 @@ struct Fonts {
     files: HashMap<PathBuf, Result<Vec<String>, String>>,
     families: Arc<FontFamilies>,
     generation: u64,
+    /// For each character the chosen font lacked, the installed face that
+    /// has it (or `None` if none does). Searching is slow, so it's done once
+    /// per character.
+    fallbacks: Mutex<HashMap<char, Option<fontdb::ID>>>,
 }
 
 impl Fonts {
@@ -220,8 +224,51 @@ impl Fonts {
         Ok(families)
     }
 
+    /// An installed face with an outline for `c`, for when the chosen font
+    /// has no glyph for it.
+    ///
+    /// Fonts known to cover a lot (emoji, Chinese, Japanese, Korean,
+    /// symbols) on each platform are tried first, so the same characters
+    /// look consistent; then every installed face. Color emoji fonts store
+    /// pictures, not outlines, so they don't count: emoji come from the
+    /// black-and-white Noto Emoji bundled with Inkframe instead.
+    fn fallback_for(&self, c: char) -> Option<fontdb::ID> {
+        if let Some(found) = self.fallbacks.lock().expect("fallback cache lock").get(&c) {
+            return *found;
+        }
+        const PREFERRED: [&str; 11] = [
+            "Noto Emoji",
+            "PingFang SC",
+            "Hiragino Sans",
+            "Apple SD Gothic Neo",
+            "Microsoft YaHei",
+            "Yu Gothic",
+            "Malgun Gothic",
+            "Arial Unicode MS",
+            "Apple Symbols",
+            "Segoe UI Symbol",
+            "Noto Sans",
+        ];
+        let has_outline = |id: fontdb::ID| {
+            Face { database: &self.installed, id }
+                .with_font(|font| {
+                    font.charmap().map(c).is_some_and(|glyph| font.outline_glyphs().get(glyph).is_some())
+                })
+                .unwrap_or(false)
+        };
+        let by_name = PREFERRED.iter().filter_map(|family| {
+            let query = Query { families: &[Family::Name(family)], ..Query::default() };
+            self.installed.query(&query)
+        });
+        let everything = self.installed.faces().map(|face| face.id);
+        let found = by_name.chain(everything).find(|id| has_outline(*id));
+        self.fallbacks.lock().expect("fallback cache lock").insert(c, found);
+        found
+    }
+
     /// Call after any change to the fonts.
     fn changed(&mut self) {
+        self.fallbacks.lock().expect("fallback cache lock").clear();
         self.families = Arc::new(FontFamilies {
             project: family_names(&self.project),
             installed: family_names(&self.installed),
@@ -262,8 +309,11 @@ fn family_names(database: &Database) -> Vec<String> {
 fn installed_fonts() -> (Database, fontdb::ID) {
     let mut database = Database::new();
     database.load_system_fonts();
+    // Black-and-white emoji, for when no installed font has emoji outlines
+    // (color emoji fonts store pictures instead).
+    database.load_font_data(epaint_default_fonts::NOTO_EMOJI_REGULAR.to_vec());
     database.load_font_data(epaint_default_fonts::UBUNTU_LIGHT.to_vec());
-    // Fonts are added in order, so the bundled one is the last face.
+    // Fonts are added in order, so the bundled Ubuntu is the last face.
     let fallback = database.faces().last().expect("the bundled font was just added").id;
     (database, fallback)
 }
@@ -279,6 +329,7 @@ fn fonts() -> &'static RwLock<Fonts> {
             files: HashMap::new(),
             families: Arc::default(),
             generation: 0,
+            fallbacks: Mutex::default(),
         };
         fonts.changed();
         RwLock::new(fonts)
@@ -297,53 +348,66 @@ fn write_fonts() -> RwLockWriteGuard<'static, Fonts> {
 
 fn lay_out(text: &Text) -> TextLayout {
     let fonts = read_fonts();
-    let (database, face) = fonts.find_face(&text.font);
-    let family = database.face(face).and_then(|f| f.families.first()).map(|(name, _)| name.clone());
-    let family = family.unwrap_or_default();
+    let (database, primary) = fonts.find_face(&text.font);
+    let primary = Face { database, id: primary };
+    let family = primary.family();
     // A font file that can't be parsed draws nothing rather than failing.
-    let blank = |family| TextLayout {
+    let blank = TextLayout {
         path: None,
         bounds: Rect::from_points(Point::ZERO, Point::ZERO),
-        family,
+        family: family.clone(),
         lines: Vec::new(),
         ascent: 0.0,
         descent: 0.0,
     };
-    database
-        .with_face_data(face, |data, index| match skrifa::FontRef::from_index(data, index) {
-            Ok(font) => lay_out_with(text, &font, family.clone()),
-            Err(_) => blank(family.clone()),
-        })
-        .unwrap_or_else(|| blank(family))
-}
-
-fn lay_out_with(text: &Text, font: &skrifa::FontRef, family: String) -> TextLayout {
-    let metrics = font.metrics(Size::unscaled(), LocationRef::default());
-    // Fonts are designed on a grid of "units per em"; this converts those
-    // units to the text's size in stage pixels.
+    // Line spacing comes from the chosen font, so a stray emoji or a word
+    // in another script doesn't push its line around.
+    let Some((metrics, covered)) = primary.with_font(|font| {
+        let charmap = font.charmap();
+        let covered: Vec<bool> = text.content.chars().map(|c| charmap.map(c).is_some()).collect();
+        (font.metrics(Size::unscaled(), LocationRef::default()), covered)
+    }) else {
+        return blank;
+    };
     let scale = text.size / metrics.units_per_em.max(1) as f32;
     let ascent = metrics.ascent * scale;
     let descent = -metrics.descent * scale; // stored negative (below the baseline)
     let line_height = text.size * text.line_spacing;
 
-    let shaper_data = ShaperData::new(font);
-    let shaper = shaper_data.shaper(font).build();
-    let outlines = font.outline_glyphs();
-
-    let mut path = PathBuilder::new();
+    let mut placed: Vec<(Face, Vec<PlacedGlyph>)> = Vec::new();
     let (mut left, mut right) = (0.0f32, 0.0f32);
     let mut line_layouts = Vec::new();
     let mut line_start = 0;
+    let mut char_index = 0;
     let lines: Vec<&str> = text.content.split('\n').collect();
     for (number, line) in lines.iter().enumerate() {
-        let mut buffer = UnicodeBuffer::new();
-        buffer.push_str(line);
-        // Works out the script and direction (left-to-right or not) from
-        // the characters themselves.
-        buffer.guess_segment_properties();
-        let glyphs = shaper.shape(buffer, ShapeOptions::new());
+        // Each character goes to the chosen font if it has it, otherwise to
+        // the first font that does (see `Fonts::fallback_for`).
+        let mut runs: Vec<(Range<usize>, Face)> = Vec::new();
+        for (byte, c) in line.char_indices() {
+            let face = if covered[char_index] {
+                primary
+            } else if attaches_to_previous(c) && !runs.is_empty() {
+                runs.last().expect("checked").1
+            } else {
+                fonts.fallback_for(c).map_or(primary, |id| Face { database: &fonts.installed, id })
+            };
+            char_index += 1;
+            match runs.last_mut() {
+                Some((range, last)) if *last == face => range.end = byte + c.len_utf8(),
+                _ => runs.push((byte..byte + c.len_utf8(), face)),
+            }
+        }
+        char_index += 1; // the newline
 
-        let width: f32 = glyphs.glyph_positions().iter().map(|p| p.x_advance as f32 * scale).sum();
+        // Shape each run with its own font, laid end to end.
+        let shaped: Vec<(Face, Vec<PlacedGlyph>)> = runs
+            .iter()
+            .filter_map(|(range, face)| {
+                Some((*face, face.shape(&line[range.clone()], range.start, text.size)?))
+            })
+            .collect();
+        let width: f32 = shaped.iter().flat_map(|(_, glyphs)| glyphs).map(|g| g.advance).sum();
         let start = match text.align {
             TextAlign::Left => 0.0,
             TextAlign::Center => -width / 2.0,
@@ -357,23 +421,17 @@ fn lay_out_with(text: &Text, font: &skrifa::FontRef, family: String) -> TextLayo
         // Where each cluster (the glyphs made from a run of characters)
         // starts and how wide it is, for placing the text cursor.
         let mut clusters: BTreeMap<usize, (f32, f32)> = BTreeMap::new();
-        for (info, position) in glyphs.glyph_infos().iter().zip(glyphs.glyph_positions()) {
-            let advance = position.x_advance as f32 * scale;
-            let cluster = clusters.entry(info.cluster as usize).or_insert((pen_x, 0.0));
-            cluster.0 = cluster.0.min(pen_x);
-            cluster.1 += advance;
-            let origin = Point::new(
-                pen_x + position.x_offset as f32 * scale,
-                baseline - position.y_offset as f32 * scale,
-            );
-            if let Some(glyph) = outlines.get(GlyphId::new(info.glyph_id)) {
-                let mut pen = GlyphPen { path: &mut path, origin, scale };
-                // A glyph that fails to draw is left out rather than
-                // failing the whole line.
-                let _ =
-                    glyph.draw(DrawSettings::unhinted(Size::unscaled(), LocationRef::default()), &mut pen);
+        for (face, glyphs) in shaped {
+            let mut positioned = Vec::with_capacity(glyphs.len());
+            for glyph in glyphs {
+                let cluster = clusters.entry(glyph.cluster).or_insert((pen_x, 0.0));
+                cluster.0 = cluster.0.min(pen_x);
+                cluster.1 += glyph.advance;
+                let origin = Point::new(pen_x + glyph.origin.x, baseline + glyph.origin.y);
+                positioned.push(PlacedGlyph { origin, ..glyph });
+                pen_x += glyph.advance;
             }
-            pen_x += advance;
+            placed.push((face, positioned));
         }
         let carets = caret_positions(line, &clusters, start);
         let range = line_start..line_start + line.len();
@@ -385,6 +443,23 @@ fn lay_out_with(text: &Text, font: &skrifa::FontRef, family: String) -> TextLayo
         line_start += line.len() + 1; // the newline
     }
 
+    // Draw the glyphs, font by font.
+    let mut path = PathBuilder::new();
+    for (face, glyphs) in &placed {
+        face.with_font(|font| {
+            let outlines = font.outline_glyphs();
+            for glyph in glyphs {
+                if let Some(outline) = outlines.get(GlyphId::new(glyph.id)) {
+                    let mut pen = GlyphPen { path: &mut path, origin: glyph.origin, scale: glyph.scale };
+                    // A glyph that fails to draw is left out rather than
+                    // failing the whole line.
+                    let _ = outline
+                        .draw(DrawSettings::unhinted(Size::unscaled(), LocationRef::default()), &mut pen);
+                }
+            }
+        });
+    }
+
     let bottom = (lines.len() - 1) as f32 * line_height + descent;
     TextLayout {
         path: path.finish(),
@@ -394,6 +469,100 @@ fn lay_out_with(text: &Text, font: &skrifa::FontRef, family: String) -> TextLayo
         ascent,
         descent,
     }
+}
+
+/// A font face in one of the font databases.
+#[derive(Clone, Copy)]
+struct Face<'a> {
+    database: &'a Database,
+    id: fontdb::ID,
+}
+
+impl PartialEq for Face<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.database, other.database) && self.id == other.id
+    }
+}
+
+impl Face<'_> {
+    fn family(&self) -> String {
+        self.database
+            .face(self.id)
+            .and_then(|f| f.families.first())
+            .map(|(name, _)| name.clone())
+            .unwrap_or_default()
+    }
+
+    /// Runs `f` with the face's font, or returns `None` if its file can't be
+    /// read or parsed.
+    fn with_font<T>(&self, f: impl FnOnce(&skrifa::FontRef) -> T) -> Option<T> {
+        self.database
+            .with_face_data(self.id, |data, index| {
+                skrifa::FontRef::from_index(data, index).ok().map(|font| f(&font))
+            })
+            .flatten()
+    }
+
+    /// Shapes `run` (which starts `offset` bytes into its line) at `size`,
+    /// with glyph origins relative to the pen and the baseline.
+    fn shape(&self, run: &str, offset: usize, size: f32) -> Option<Vec<PlacedGlyph>> {
+        self.with_font(|font| {
+            let units = font.metrics(Size::unscaled(), LocationRef::default()).units_per_em.max(1);
+            let scale = size / units as f32;
+            let data = ShaperData::new(font);
+            let shaper = data.shaper(font).build();
+            let mut buffer = UnicodeBuffer::new();
+            buffer.push_str(run);
+            // Works out the script and direction (left-to-right or not) from
+            // the characters themselves.
+            buffer.guess_segment_properties();
+            let glyphs = shaper.shape(buffer, ShapeOptions::new());
+            glyphs
+                .glyph_infos()
+                .iter()
+                .zip(glyphs.glyph_positions())
+                .map(|(info, position)| PlacedGlyph {
+                    id: info.glyph_id,
+                    cluster: offset + info.cluster as usize,
+                    advance: position.x_advance as f32 * scale,
+                    origin: Point::new(position.x_offset as f32 * scale, -position.y_offset as f32 * scale),
+                    scale,
+                })
+                .collect()
+        })
+    }
+}
+
+/// One glyph, shaped and (once the line is laid out) placed.
+#[derive(Clone, Copy)]
+struct PlacedGlyph {
+    id: u32,
+    /// The byte in the line where the characters it came from start.
+    cluster: usize,
+    advance: f32,
+    /// While shaping, the offset from the pen; once placed, where it's drawn.
+    origin: Point,
+    /// Font units to stage pixels, for this glyph's font.
+    scale: f32,
+}
+
+/// Characters that only make sense with the one before them (accents
+/// added on top, the joiner and variation selectors inside emoji
+/// sequences, skin tones): they stay in the previous character's font even
+/// if that font doesn't list them.
+fn attaches_to_previous(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x0300..=0x036F      // combining accents
+            | 0x1AB0..=0x1AFF
+            | 0x1DC0..=0x1DFF
+            | 0x20D0..=0x20FF   // combining symbols, including the keycap
+            | 0xFE00..=0xFE0F   // variation selectors (text or emoji style)
+            | 0xFE20..=0xFE2F
+            | 0x200D            // zero-width joiner
+            | 0x1F3FB..=0x1F3FF // skin tones
+            | 0xE0020..=0xE007F // tags (flag sequences)
+    )
 }
 
 /// The x position for a text cursor at every character boundary of `line`.
@@ -580,6 +749,33 @@ mod tests {
         let layout = layout(&text(""));
         assert_eq!(layout.lines.len(), 1);
         assert_eq!(layout.lines[0].carets, [(0, 0.0)]);
+    }
+
+    #[test]
+    fn characters_the_font_lacks_come_from_another_font() {
+        // Ubuntu has no emoji, so the smiley comes from the bundled Noto
+        // Emoji instead of being an empty box.
+        let plain = layout(&text("A"));
+        let with_emoji = layout(&text("A😀"));
+        let emoji_width = with_emoji.bounds.width() - plain.bounds.width();
+        assert!(emoji_width > 50.0, "the emoji should take real space: {emoji_width}");
+        let id = read_fonts().fallback_for('😀').expect("an emoji font is bundled");
+        let fonts = read_fonts();
+        assert!(Face { database: &fonts.installed, id }.family().contains("Emoji"));
+        // The caret still steps over it as one character.
+        let bytes: Vec<usize> = with_emoji.lines[0].carets.iter().map(|c| c.0).collect();
+        assert_eq!(bytes, [0, 1, 5]);
+        assert!(with_emoji.lines[0].carets[2].1 > with_emoji.lines[0].carets[1].1);
+    }
+
+    #[test]
+    fn emoji_variation_selectors_stay_with_their_emoji() {
+        // "❤️" is the heart plus a variation selector asking for emoji style;
+        // the selector must not split off into a font of its own.
+        assert!(attaches_to_previous('\u{FE0F}'));
+        let heart = layout(&text("\u{2764}\u{FE0F}"));
+        assert!(heart.path.is_some());
+        assert_eq!(heart.lines[0].carets.len(), 3);
     }
 
     #[test]

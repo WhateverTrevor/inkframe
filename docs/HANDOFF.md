@@ -76,6 +76,8 @@ A checkpoint for picking development back up. Last updated 2026-10-14
 28. Value graph: the timeline's Graph mode (`value_graph.rs`) plots a
     property over time on the timeline's frame axis; drag keys (value and
     frame) and easing handles in real values.
+29. Font fallback: characters the chosen font lacks come from another
+    font (preferred emoji/CJK/symbol fonts, then any installed face).
 
 ## Not yet verified by hand
 
@@ -103,8 +105,10 @@ more features, since real use will show what matters. Open items:
    `stage_benchmark` example before deciding the GPU path is still needed.
    The user chose to skip the GPU preview for now; revisit only if a real
    project feels slow.
-3. **Text extras:** per-character font fallback (emoji, CJK in a Latin
-   font) and IME input when typing on the stage.
+3. **Text extras:** IME input when typing on the stage. (Per-character
+   font fallback is done: emoji come out black and white, from the
+   bundled Noto Emoji, since color emoji fonts store pictures rather than
+   outlines.)
 4. **Skew** on the layer transform, which would also make uneven group
    scaling of rotated layers exact.
 5. **Verify by hand:** the Windows installer has never been run on a real
@@ -115,9 +119,7 @@ Smaller ideas noted along the way:
 - With several layers selected, the properties panel edits only the
   last-picked layer. Stretching a group unevenly stretches rotated layers
   along their own axes (layers have no skew), so it's close, not exact.
-- Characters missing from the chosen font (emoji, CJK in a Latin font)
-  show as the font's empty box; there's no per-character font fallback
-  yet. On-stage typing doesn't support input methods (IME) for Chinese,
+- On-stage typing doesn't support input methods (IME) for Chinese,
   Japanese or Korean yet; the properties panel's Text box does. ⌘Z while
   typing on the stage does nothing; the whole typing session undoes as one
   step afterwards.
