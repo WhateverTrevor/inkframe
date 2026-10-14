@@ -18,8 +18,9 @@ pub fn build_path(shape: &Shape) -> Option<Path> {
         Shape::Ellipse { radius_x, radius_y } => {
             PathBuilder::from_oval(Rect::from_xywh(-radius_x, -radius_y, radius_x * 2.0, radius_y * 2.0)?)
         }
-        // Images aren't outlines; the renderer draws them separately.
-        Shape::Image { .. } => None,
+        // Images aren't outlines, and text outlines come from its font; the
+        // renderer handles both separately.
+        Shape::Image { .. } | Shape::Text(_) => None,
         Shape::Path(ref path) => {
             let mut pb = PathBuilder::new();
             pb.move_to(path.start.x, path.start.y);

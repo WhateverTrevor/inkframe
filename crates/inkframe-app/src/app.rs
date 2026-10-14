@@ -78,6 +78,9 @@ pub struct InkframeApp {
 impl InkframeApp {
     pub fn new(cc: &eframe::CreationContext<'_>, open_path: Option<PathBuf>) -> Self {
         cc.egui_ctx.set_theme(egui::Theme::Dark);
+        // Indexing the system's fonts takes a moment; do it now, off the UI
+        // thread, so the first text drawn doesn't pause the app.
+        std::thread::spawn(inkframe_render::load_fonts);
 
         let editor = match open_path {
             Some(path) => Editor::open(&path).unwrap_or_else(|err| {
@@ -544,6 +547,7 @@ impl eframe::App for InkframeApp {
         // undo) before the stage draws.
         let project_dir = self.editor.project_dir();
         self.editor.images.sync(&self.editor.doc, project_dir.as_deref());
+        self.editor.remeasure_text();
 
         // Panel order decides who owns the corners: the timeline is added
         // before the side panels so it spans the full window width.

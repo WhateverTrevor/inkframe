@@ -1,10 +1,11 @@
 //! The properties panel on the right: numeric editing of the selected layer,
 //! its keyframe easing and shapes, and the document settings.
 
+use egui::text::{CCursor, CCursorRange};
 use egui::{Color32, DragValue, Sense, Stroke as EguiStroke, vec2};
 use inkframe_core::{
     Color, Easing, FrameRate, ImageId, Layer, LayerId, Playback, Property, Shape, Stroke, Style, SymbolId,
-    Tween,
+    Text, TextAlign, Tween,
 };
 
 use crate::audio_engine::AudioEngine;
@@ -302,6 +303,7 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         })
         .collect();
 
+    let edit_text = std::mem::take(&mut editor.edit_text);
     let Some(layer) = editor.doc.layer_mut(id) else { return };
     let count = layer.elements.len();
     for (i, element) in layer.elements.iter_mut().enumerate() {
@@ -311,6 +313,7 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 Shape::Ellipse { .. } => "Oval",
                 Shape::Path(_) => "Stroke",
                 Shape::Image { .. } => "Image",
+                Shape::Text(_) => "Text",
             };
             ui.strong(if count > 1 { format!("{title} {}", i + 1) } else { title.to_owned() });
             if let Shape::Image { image, width, height } = &mut element.shape {
@@ -318,6 +321,9 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 if let Some(info) = images.iter().find(|info| info.id == *image) {
                     image_editor(ui, info, width, height);
                 }
+            } else if let Shape::Text(text) = &mut element.shape {
+                text_editor(ui, text, edit_text);
+                style_editor(ui, &mut element.style);
             } else {
                 shape_size_editor(ui, &mut element.shape);
                 style_editor(ui, &mut element.style);
@@ -361,6 +367,68 @@ fn image_editor(ui: &mut egui::Ui, info: &ImageInfo, width: &mut f32, height: &m
     });
 }
 
+/// The text itself and its font settings. `focus` puts the cursor in the
+/// text box with everything selected, so typing replaces the placeholder.
+fn text_editor(ui: &mut egui::Ui, text: &mut Text, focus: bool) {
+    let output =
+        egui::TextEdit::multiline(&mut text.content).desired_rows(2).desired_width(f32::INFINITY).show(ui);
+    if focus {
+        output.response.request_focus();
+        let mut state = output.state;
+        let everything = CCursorRange::two(CCursor::new(0), CCursor::new(text.content.chars().count()));
+        state.cursor.set_char_range(Some(everything));
+        state.store(ui.ctx(), output.response.id);
+    }
+
+    egui::Grid::new("text").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        ui.label("Font");
+        egui::ComboBox::from_id_salt("font").selected_text(&text.font.family).width(160.0).show_ui(
+            ui,
+            |ui| {
+                for family in installed_families() {
+                    ui.selectable_value(&mut text.font.family, family.clone(), family);
+                }
+            },
+        );
+        ui.end_row();
+        // Name the stand-in when the chosen font isn't on this machine
+        // (a project from someone else's computer, say).
+        let used = inkframe_render::layout_text(text).family.clone();
+        if used != text.font.family {
+            ui.label("");
+            ui.colored_label(ui.visuals().warn_fg_color, format!("Not installed; showing {used}"));
+            ui.end_row();
+        }
+
+        ui.label("Style");
+        ui.horizontal(|ui| {
+            ui.toggle_value(&mut text.font.bold, "Bold");
+            ui.toggle_value(&mut text.font.italic, "Italic");
+        });
+        ui.end_row();
+        ui.label("Size");
+        ui.add(DragValue::new(&mut text.size).range(1.0..=2000.0).suffix(" px"));
+        ui.end_row();
+        ui.label("Align");
+        ui.horizontal(|ui| {
+            for align in TextAlign::ALL {
+                ui.selectable_value(&mut text.align, align, align.label());
+            }
+        });
+        ui.end_row();
+        ui.label("Line spacing");
+        ui.add(DragValue::new(&mut text.line_spacing).range(0.5..=5.0).speed(0.01).suffix("×"));
+        ui.end_row();
+    });
+}
+
+/// The installed font families, found once: scanning the system's fonts
+/// every frame would make the panel crawl.
+fn installed_families() -> &'static [String] {
+    static FAMILIES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    FAMILIES.get_or_init(inkframe_render::font_families)
+}
+
 fn shape_size_editor(ui: &mut egui::Ui, shape: &mut Shape) {
     egui::Grid::new("shape").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| match shape {
         Shape::Rect { width, height, corner_radius } => {
@@ -382,9 +450,9 @@ fn shape_size_editor(ui: &mut egui::Ui, shape: &mut Shape) {
             });
             ui.end_row();
         }
-        // Freehand paths are edited by redrawing, for now. Images have their
-        // own editor.
-        Shape::Path(_) | Shape::Image { .. } => {}
+        // Freehand paths are edited by redrawing, for now. Images and text
+        // have their own editors.
+        Shape::Path(_) | Shape::Image { .. } | Shape::Text(_) => {}
     });
 }
 

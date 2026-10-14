@@ -10,3 +10,7 @@ rust-version.workspace = true
 inkframe-core.workspace = true
 tiny-skia.workspace = true
 image.workspace = true
+fontdb.workspace = true
+harfrust.workspace = true
+skrifa.workspace = true
+epaint_default_fonts.workspace = true

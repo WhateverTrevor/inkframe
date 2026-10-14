@@ -10,7 +10,7 @@ after the macOS app bundle.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
   --all-targets -- -D warnings` and `cargo test --workspace` (183 tests)
   all pass.
-- **File format:** version 6. Older versions load and upgrade automatically
+- **File format:** version 7. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -45,6 +45,8 @@ after the macOS app bundle.
     layer, frames render in parallel bands, off-screen shapes are skipped
 18. Image import (format v6): File › Import to Stage (⌘R) or drag and
     drop; linked files like audio, decoded once with mipmaps
+19. Text (format v7): Text tool (T), edited in the properties panel;
+    fontdb + harfrust + skrifa outlines, filled and stroked like shapes
 
 ## Not yet verified by hand
 
@@ -71,6 +73,11 @@ after the macOS app bundle.
 
 Smaller ideas noted along the way:
 
+- Text is edited in the properties panel, not on the stage. On-stage
+  editing (a caret drawn in the transformed text) would be the natural
+  next step. Characters missing from the chosen font (emoji, CJK in a
+  Latin font) show as the font's empty box; there's no per-character
+  font fallback yet.
 - Audio decoding is whole-file in memory (~23 MB per minute). Fine for
   dialogue and music, but long files might want streaming.
 - A value graph (Animate's Motion Editor: each property's value plotted

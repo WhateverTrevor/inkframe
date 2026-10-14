@@ -20,6 +20,7 @@ mod history;
 mod image;
 mod shape;
 mod symbol;
+mod text;
 mod track;
 mod transform;
 
@@ -37,5 +38,6 @@ pub use history::History;
 pub use image::{ImageAsset, ImageId};
 pub use shape::{Path, Segment, Shape, Stroke, Style};
 pub use symbol::{Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId};
+pub use text::{DEFAULT_FAMILY, Font, Text, TextAlign};
 pub use track::{Property, Track};
 pub use transform::Transform;

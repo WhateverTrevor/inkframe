@@ -51,5 +51,6 @@ pub fn tool_key(tool: Tool) -> Key {
         Tool::Rectangle => Key::R,
         Tool::Ellipse => Key::O,
         Tool::Pencil => Key::Y,
+        Tool::Text => Key::T,
     }
 }

@@ -12,6 +12,7 @@
 
 mod images;
 mod path;
+mod text;
 
 use inkframe_core::{Affine, Color, Document, Element, Layer, LayerId, Point, Shape, SymbolId, TimelineId};
 use tiny_skia::{
@@ -21,6 +22,7 @@ use tiny_skia::{
 
 pub use images::{IMAGE_EXTENSIONS, ImageLibrary, image_size};
 pub use path::build_path;
+pub use text::{TextLayout, font_families, layout as layout_text, load_fonts};
 
 use images::Mipmaps;
 
@@ -325,7 +327,11 @@ fn draw_element(pixmap: &mut PixmapMut, element: &Element, matrix: Transform, st
         return;
     }
     let tint = style.tint;
-    let Some(path) = build_path(&element.shape) else {
+    let path = match &element.shape {
+        Shape::Text(text) => text::layout(text).path.clone(),
+        shape => build_path(shape),
+    };
+    let Some(path) = path else {
         return; // Degenerate geometry, e.g. a zero-size rectangle.
     };
     let paint_for = |color: Color| {
@@ -609,6 +615,27 @@ mod tests {
         let options = RenderOptions { images: Some(&missing), ..RenderOptions::default() };
         let placeholder = render_frame(&doc, 0, &options).unwrap();
         assert_ne!(pixel(&placeholder, 40, 50), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn text_is_filled_and_stroked_like_a_shape() {
+        let mut doc = red_square_doc();
+        doc.layers.clear();
+        let mut text = inkframe_core::Text::new("I", 80.0);
+        text.font.family = "Ubuntu".into(); // bundled, so the same everywhere
+        let style = Style { fill: Some(Color::rgb(0, 0, 255)), stroke: None };
+        doc.add_layer(
+            "Label",
+            vec![Element { shape: Shape::Text(text), style }],
+            0,
+            Pose::at(Point::new(40.0, 80.0)),
+        );
+
+        let pixmap = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        // The "I" is a vertical bar standing on the baseline at y = 80.
+        let blue = (0..100).filter(|&x| pixel(&pixmap, x, 60) == [0, 0, 255, 255]).count();
+        assert!(blue >= 3, "the letter's stem should be solid blue, found {blue} pixels");
+        assert_eq!(pixel(&pixmap, 40, 90), [255, 255, 255, 255], "nothing below the baseline");
     }
 
     #[test]

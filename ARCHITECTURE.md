@@ -47,6 +47,7 @@ The data model and the math behind animation.
 | `freehand.rs` | Turns jittery pointer samples into a smooth path |
 | `anchor.rs` | Anchor points with in/out handles; conversion between anchors, paths and shapes; nearest-point search and curve-preserving point insertion |
 | `symbol.rs` | `Symbol` (library entry), `Instance` (a symbol placed on a layer) and its timing, Convert to Symbol, and symbol-aware bounds and hit-testing |
+| `text.rs` | `Text`: content, `Font`, size, alignment; its measured extent, which the editor keeps up to date |
 | `image.rs` | `ImageAsset`: an image file the document links to, and its size in pixels |
 | `audio.rs` | `AudioTrack`: a sound file laid against the timeline; how linked files are found |
 | `history.rs` | Snapshot-based undo/redo |
@@ -96,12 +97,13 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 6. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 7. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
-symbols, version 5 audio tracks and version 6 images; earlier files load
-with whole-length layers, an empty library, no audio and no images.
+symbols, version 5 audio tracks, version 6 images and version 7 text;
+earlier files load with whole-length layers, an empty library, no audio
+and no images.
 
 **Coordinates.** Stage pixels, with y pointing down. Rotation is in degrees,
 clockwise. Frames are 0-based internally and shown 1-based in the UI.
@@ -123,6 +125,13 @@ other; the buffer covers only the pixels the layer can reach.
 For speed, each frame is split into fixed-height horizontal bands that are
 drawn in parallel on every CPU core, and shapes outside a band are skipped
 before their outlines are built.
+
+Text is laid out in `text.rs`: fontdb finds the font, harfrust shapes the
+string into positioned glyphs (kerning, ligatures, complex scripts) and
+skrifa supplies each glyph's outline, which is then filled and stroked like
+any path. Layouts are cached. `inkframe-core` can't lay out text, so the
+editor stores each text's measured extent in `Text::measured`
+(`Editor::remeasure_text`) for selection and hit-testing.
 
 Images are drawn from an `ImageLibrary` (`images.rs`), which decodes each
 file once and keeps half-size copies (mipmaps) so shrunken pictures don't

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::color::Color;
 use crate::geometry::{Point, Rect};
 use crate::image::ImageId;
+use crate::text::Text;
 
 /// Geometry of a drawable shape, in the owning layer's local coordinates.
 ///
@@ -32,6 +33,8 @@ pub enum Shape {
         width: f32,
         height: f32,
     },
+    /// Lines of text, painted with the element's fill and stroke.
+    Text(Text),
 }
 
 /// A sequence of connected line and curve segments.
@@ -163,6 +166,7 @@ impl Shape {
             }
             Shape::Path(path) => path.tight_bounds(),
             Shape::Image { width, height, .. } => Rect::from_center_size(Point::ZERO, *width, *height),
+            Shape::Text(text) => text.measured,
         }
     }
 
@@ -186,6 +190,9 @@ impl Shape {
             Shape::Image { width, height, .. } => {
                 Rect::from_center_size(Point::ZERO, *width, *height).expand(tolerance).contains(p)
             }
+            // Anywhere in the block selects it, gaps between letters
+            // included; aiming for the inside of an "o" would be maddening.
+            Shape::Text(text) => text.measured.expand(reach).contains(p),
             Shape::Ellipse { radius_x, radius_y } => {
                 let rx = radius_x + reach;
                 let ry = radius_y + reach;

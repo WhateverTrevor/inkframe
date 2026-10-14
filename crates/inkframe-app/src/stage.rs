@@ -569,6 +569,43 @@ impl StageView {
             editor.enter_instance(id);
             return;
         }
+        // Double-clicking text edits it, as in Animate.
+        if response.double_clicked()
+            && editor.tool == Tool::Select
+            && let Some(pointer) = response.interact_pointer_pos()
+            && let Some(id) = editor.hit_test(view.to_local(pointer), HIT_TOLERANCE / view.zoom)
+            && editor
+                .doc
+                .layer(id)
+                .is_some_and(|l| l.elements.iter().any(|e| matches!(e.shape, Shape::Text(_))))
+        {
+            editor.selection = Some(id);
+            editor.edit_text = true;
+            return;
+        }
+
+        // The Text tool: click existing text to edit it, or anywhere else to
+        // start new text there.
+        if response.clicked()
+            && editor.tool == Tool::Text
+            && let Some(pointer) = response.interact_pointer_pos()
+        {
+            let p = view.to_local(pointer);
+            let text_layer = editor.hit_test(p, HIT_TOLERANCE / view.zoom).filter(|id| {
+                editor
+                    .doc
+                    .layer(*id)
+                    .is_some_and(|l| l.elements.iter().any(|e| matches!(e.shape, Shape::Text(_))))
+            });
+            match text_layer {
+                Some(id) => {
+                    editor.selection = Some(id);
+                    editor.edit_text = true;
+                }
+                None => editor.add_text(p),
+            }
+            return;
+        }
 
         // A click without dragging selects whatever is under the pointer.
         // Clicks on a handle (which may be outside the shape) keep the selection.
@@ -644,7 +681,8 @@ impl StageView {
             }
             Tool::Pencil => Some(Gesture::Pencil { points: vec![p] }),
             // The pen handles its own presses and drags; see `handle_pen`.
-            Tool::Pen => None,
+            // The Text tool only clicks.
+            Tool::Pen | Tool::Text => None,
             Tool::Subselect => {
                 let Some((target, part)) = self.anchor_hit(editor, view, press) else {
                     // Dragging off the anchors selects a layer, but doesn't move it.
@@ -975,6 +1013,7 @@ impl StageView {
                         }
                     }
                     (None, Tool::Rectangle | Tool::Ellipse | Tool::Pencil) => CursorIcon::Crosshair,
+                    (None, Tool::Text) => CursorIcon::Text,
                 }
             }
         };
@@ -1278,6 +1317,42 @@ mod tests {
         assert!((width - 400.0).abs() < 3.0 && (height - 200.0).abs() < 3.0, "{width}×{height}");
         assert!(layer.transform_at(0).position.distance(Point::new(300.0, 200.0)) < 3.0);
         assert_eq!(editor.selection, Some(layer.id));
+    }
+
+    #[test]
+    fn text_tool_places_text_where_clicked_and_edits_it() {
+        let mut editor = Editor::new(Document::default());
+        editor.tool = Tool::Text;
+        let mut h = harness(editor);
+
+        let at = screen(&h, 300.0, 400.0);
+        h.drag_at(at);
+        h.step();
+        h.drop_at(at);
+        h.run();
+
+        let editor = &h.state().1;
+        let layer = editor.selected_layer().expect("the new text is selected");
+        let Shape::Text(text) = &layer.elements[0].shape else { panic!("not text") };
+        assert_eq!(text.content, "Text");
+        assert!(text.measured.width() > 0.0, "it was measured, so it can be selected");
+        // The first line's baseline starts where the click was.
+        assert!(layer.transform_at(0).position.distance(Point::new(300.0, 400.0)) < 3.0);
+        assert!(editor.edit_text, "the properties panel should put the cursor in the text");
+
+        // Clicking the text again with the Text tool edits it rather than
+        // starting another.
+        let id = layer.id;
+        let on_text = screen(&h, 320.0, 390.0);
+        h.state_mut().1.edit_text = false;
+        h.drag_at(on_text);
+        h.step();
+        h.drop_at(on_text);
+        h.run();
+        let editor = &h.state().1;
+        assert_eq!(editor.doc.layers.len(), 1);
+        assert_eq!(editor.selection, Some(id));
+        assert!(editor.edit_text);
     }
 
     #[test]

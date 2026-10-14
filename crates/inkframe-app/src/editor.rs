@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use inkframe_core::{
     Affine, Color, Document, DocumentError, Element, History, Layer, LayerId, Point, Property, Shape, Stroke,
-    Style, SymbolId, TimelineId, Transform,
+    Style, SymbolId, Text, TimelineId, Transform,
 };
 use inkframe_render::ImageLibrary;
 
@@ -22,11 +22,12 @@ pub enum Tool {
     Rectangle,
     Ellipse,
     Pencil,
+    Text,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 6] =
-        [Tool::Select, Tool::Subselect, Tool::Pen, Tool::Rectangle, Tool::Ellipse, Tool::Pencil];
+    pub const ALL: [Tool; 7] =
+        [Tool::Select, Tool::Subselect, Tool::Pen, Tool::Rectangle, Tool::Ellipse, Tool::Pencil, Tool::Text];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -36,6 +37,7 @@ impl Tool {
             Tool::Rectangle => "Rectangle",
             Tool::Ellipse => "Oval",
             Tool::Pencil => "Pencil",
+            Tool::Text => "Text",
         }
     }
 }
@@ -107,6 +109,9 @@ pub struct Editor {
     /// The document's image files, decoded. Not part of the document (and so
     /// not part of undo): it's a cache, rebuilt from the files on disk.
     pub images: ImageLibrary,
+    /// Set when the selected text layer should be edited: the properties
+    /// panel puts the cursor in its text box, then clears this.
+    pub edit_text: bool,
     /// The symbols being edited, outermost first. Empty while editing the
     /// main timeline. `frame` and `selection` always refer to the innermost.
     open_symbols: Vec<OpenSymbol>,
@@ -131,6 +136,7 @@ impl Editor {
             onion: OnionSkin { enabled: false, before: 2, after: 2 },
             focused_property: Property::Position,
             images: ImageLibrary::default(),
+            edit_text: false,
             open_symbols: Vec::new(),
         }
     }
@@ -187,6 +193,39 @@ impl Editor {
         let name = if taken { self.doc.next_layer_name_in(self.timeline(), &name) } else { name };
         self.add_named_layer(name, element, center);
         Ok(())
+    }
+
+    /// Starts a new text layer with its first line's baseline at `at`, and
+    /// asks for its text box to be edited.
+    pub fn add_text(&mut self, at: Point) {
+        let element = Element {
+            shape: Shape::Text(Text::new("Text", 48.0)),
+            style: Style { fill: Some(Color::BLACK), stroke: None },
+        };
+        let name = self.doc.next_layer_name_in(self.timeline(), "Text");
+        self.add_named_layer(name, element, at);
+        self.remeasure_text();
+        self.edit_text = true;
+    }
+
+    /// Brings every text shape's stored size up to date with its layout.
+    ///
+    /// The document model can't lay out text (that needs fonts), so it
+    /// relies on these stored sizes for selection and hit-testing. Laying
+    /// out is cached, so calling this every frame is cheap; it catches every
+    /// way text can change: typing, undo, a file opened on a machine with
+    /// different fonts.
+    pub fn remeasure_text(&mut self) {
+        let doc = &mut self.doc;
+        let layers = doc.layers.iter_mut().chain(doc.symbols.iter_mut().flat_map(|s| s.layers.iter_mut()));
+        for element in layers.flat_map(|layer| layer.elements.iter_mut()) {
+            if let Shape::Text(text) = &mut element.shape {
+                let bounds = inkframe_render::layout_text(text).bounds;
+                if text.measured != bounds {
+                    text.measured = bounds;
+                }
+            }
+        }
     }
 
     pub fn has_unsaved_changes(&self) -> bool {

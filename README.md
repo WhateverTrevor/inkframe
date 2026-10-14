@@ -10,6 +10,9 @@ planned (the code is already cross-platform and CI builds it on Windows).
 
 - **Draw** rectangles, ovals, Bézier paths with the Pen tool, and freehand
   pencil strokes on a stage of any size.
+- **Text** in any installed font, with bold, italic, alignment and line
+  spacing. It's real vector outlines, filled and stroked like shapes, so
+  it stays sharp at any size and animates like any other layer.
 - **Import images** (PNG, JPEG, GIF, WebP) to trace over or composite.
   They move, scale, rotate, fade and animate like any other layer.
 - **Animate with per-property keyframes.** Go to a frame, move or change a
@@ -92,6 +95,7 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Step frames | `,` and `.` (or ← →), `Home` / `End` |
 | Pan / zoom | Scroll or Space-drag to pan, pinch or ⌘-scroll to zoom, `⌘0` to fit |
 | Symbols | Select a layer and press `F8` (Modify ▸ Convert to Symbol). Use **Place** in the Library to add more instances; set each instance's playback (Loop, Play Once, Single Frame) and first frame in the properties panel. Double-click an instance (or **Edit** in the Library) to change the symbol; `Esc` or the breadcrumb bar takes you back out |
+| Text | Text tool (`T`): click to place text, then type in the properties panel's Text box. Click existing text with the Text tool, or double-click it with the Selection tool, to edit it. Font, size, alignment and fill/stroke are in the same panel |
 | Images | File › Import to Stage (`⌘R`), or drag image files onto the window. Each lands on a new layer at the playhead, centered on the stage. **Actual size** in the properties panel resets its size to the file's own pixels |
 | Audio | File › Import Audio adds a sound at the playhead (or drag sound files onto the window). Drag its waveform to re-time it; click the speaker to mute. Volume and start frame are in the properties panel's Audio section |
 | Export | `⌘E` |
