@@ -71,6 +71,9 @@ after the macOS app bundle.
     duplicating, copying and keyframing apply to all selected layers.
 27. Group scale and rotate: handles around several selected layers,
     treated as one imaginary layer (`transform_group` in stage.rs).
+28. Value graph: the timeline's Graph mode (`value_graph.rs`) plots a
+    property over time on the timeline's frame axis; drag keys (value and
+    frame) and easing handles in real values.
 
 ## Not yet verified by hand
 
@@ -108,9 +111,6 @@ Smaller ideas noted along the way:
   step afterwards.
 - Audio decoding is whole-file in memory (~23 MB per minute). Fine for
   dialogue and music, but long files might want streaming.
-- A value graph (Animate's Motion Editor: each property's value plotted
-  over the whole timeline, keys draggable up and down) would complement the
-  per-tween easing curve editor.
 
 ## Working conventions
 

@@ -130,6 +130,7 @@ impl InkframeApp {
             if let Some(name) = AutoScreenshot::type_into() {
                 app.stage.type_into(&mut app.editor, &name);
             }
+            app.timeline.set_graph_mode(AutoScreenshot::graph());
             if AutoScreenshot::expand_timeline() {
                 for layer in app.editor.doc.all_layers() {
                     app.timeline.set_expanded(layer.id, true);

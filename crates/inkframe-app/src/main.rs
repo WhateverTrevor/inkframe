@@ -24,6 +24,7 @@ mod subselect;
 mod text_edit;
 mod timeline;
 mod toolbar;
+mod value_graph;
 
 use std::path::PathBuf;
 

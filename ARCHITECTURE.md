@@ -187,6 +187,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `subselect.rs` | The math for moving, deleting and converting anchors with the Subselection tool |
 | `timeline.rs` | Transport bar and the hand-painted layer × frame grid |
 | `inspector.rs` | The properties panel |
+| `value_graph.rs` | The timeline's Graph mode: a property's values over time, with draggable keys and easing handles |
 | `easing_editor.rs` | The easing curve in the properties panel, with draggable Bézier handles |
 | `toolbar.rs` | Tool buttons with vector-drawn icons |
 | `audio_engine.rs` | Plays the soundtrack in sync (the audio clock drives playback) and scrubs it; decodes files in the background |

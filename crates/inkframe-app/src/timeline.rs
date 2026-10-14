@@ -17,6 +17,7 @@ use inkframe_core::{AnyChannel, AudioId, Easing, Layer, LayerId, Property, Timel
 
 use crate::audio_engine::AudioEngine;
 use crate::editor::Editor;
+use crate::value_graph::{self, FrameAxis, ValueGraph};
 
 const NAME_WIDTH: f32 = 200.0;
 const RULER_HEIGHT: f32 = 22.0;
@@ -155,6 +156,11 @@ pub struct TimelineView {
     context_row: Option<Row>,
     /// Or the audio row that was right-clicked.
     context_audio: Option<AudioId>,
+    /// Showing the value graph instead of the layer grid.
+    graph_mode: bool,
+    graph: ValueGraph,
+    /// Dragging along the ruler in graph mode, which scrubs.
+    scrubbing: bool,
     /// Where the grid was drawn last frame. Tests use it to find cells.
     #[cfg(test)]
     grid_rect: Option<Rect>,
@@ -162,7 +168,12 @@ pub struct TimelineView {
 
 impl TimelineView {
     pub fn is_busy(&self) -> bool {
-        self.drag.is_some()
+        self.drag.is_some() || self.graph.is_busy() || self.scrubbing
+    }
+
+    /// Shows the value graph instead of the layer rows, or not.
+    pub fn set_graph_mode(&mut self, on: bool) {
+        self.graph_mode = on;
     }
 
     /// Shows or hides a layer's property rows.
@@ -175,9 +186,101 @@ impl TimelineView {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) {
-        transport_bar(ui, editor);
+        transport_bar(ui, editor, &mut self.graph_mode);
         ui.add_space(2.0);
-        self.grid(ui, editor, audio);
+        if self.graph_mode {
+            self.graph_grid(ui, editor);
+        } else {
+            self.grid(ui, editor, audio);
+        }
+    }
+
+    /// The value graph in place of the layer rows: the same ruler and
+    /// frame spacing, with the selected layer's properties to choose from
+    /// on the left.
+    fn graph_grid(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+        let (response, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
+        let rect = response.rect;
+        self.update_scroll(ui, &response, editor, rect, 0);
+        let layout = Layout::new(rect, self.scroll);
+
+        // Pressing on the ruler scrubs, as in the timeline.
+        let press = ui.input(|i| i.pointer.press_origin());
+        if response.drag_started() || response.clicked() {
+            self.scrubbing = press.is_some_and(|p| layout.ruler.contains(p));
+        }
+        if self.scrubbing
+            && let Some(p) = response.interact_pointer_pos()
+        {
+            editor.set_frame(layout.frame_at(p.x).clamp(0, editor.last_frame() as i64) as u32);
+        }
+        if !response.is_pointer_button_down_on() {
+            self.scrubbing = false;
+        }
+        // Clicking a property name on the left shows its graph.
+        if response.clicked()
+            && let Some(p) = response.interact_pointer_pos()
+            && layout.names.contains(p)
+            && let Some(row) = layout.row_at(p.y)
+            && let Some(&property) = Property::ALL.get(row)
+        {
+            editor.focused_property = property;
+        }
+
+        painter.rect_filled(rect, 0.0, ui.visuals().extreme_bg_color);
+        paint_ruler(&painter.with_clip_rect(layout.ruler), ui, editor, &layout);
+        let (left, scroll) = (layout.frames.left(), self.scroll.x);
+        let x_of = move |frame: f32| left + frame * FRAME_WIDTH - scroll + FRAME_WIDTH / 2.0;
+        let frame_of = move |x: f32| (x - left + scroll - FRAME_WIDTH / 2.0) / FRAME_WIDTH;
+        // The graph only takes presses inside its own area, so scrubbing on
+        // the ruler above never grabs a key.
+        let axis = FrameAxis { x_of: &x_of, frame_of: &frame_of };
+        self.graph.show(ui, &response, layout.frames, editor, axis);
+
+        // The property list, with the selected one highlighted, and a key to
+        // the curve colors under it.
+        let names = painter.with_clip_rect(layout.names);
+        names.rect_filled(layout.names, 0.0, ui.visuals().panel_fill);
+        let font = FontId::proportional(12.0);
+        for (row, property) in Property::ALL.into_iter().enumerate() {
+            let cell = layout.row_rect(row, layout.names);
+            if property == editor.focused_property {
+                names.rect_filled(cell, 0.0, ui.visuals().selection.bg_fill);
+            }
+            names.text(
+                pos2(cell.left() + 10.0, cell.center().y),
+                Align2::LEFT_CENTER,
+                property.name(),
+                font.clone(),
+                ui.visuals().text_color(),
+            );
+        }
+        let legend_top = layout.row_rect(Property::ALL.len(), layout.names).top() + 6.0;
+        for (i, name) in value_graph::curve_names(editor.focused_property).iter().enumerate() {
+            let y = legend_top + i as f32 * 16.0 + 8.0;
+            names.circle_filled(pos2(layout.names.left() + 14.0, y), 4.0, value_graph::curve_color(i));
+            names.text(
+                pos2(layout.names.left() + 24.0, y),
+                Align2::LEFT_CENTER,
+                *name,
+                FontId::proportional(11.0),
+                ui.visuals().weak_text_color(),
+            );
+        }
+
+        let corner = Rect::from_min_max(rect.min, pos2(layout.names.right(), layout.ruler.bottom()));
+        painter.rect_filled(corner, 0.0, ui.visuals().panel_fill);
+        let title = editor.selected_layer().map_or_else(|| "Graph".to_owned(), |l| l.name.clone());
+        painter.text(
+            pos2(corner.left() + 8.0, corner.center().y),
+            Align2::LEFT_CENTER,
+            title,
+            FontId::proportional(11.0),
+            ui.visuals().weak_text_color(),
+        );
+        let line = Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color);
+        painter.vline(layout.frames.left(), rect.y_range(), line);
+        painter.hline(rect.x_range(), layout.frames.top(), line);
     }
 
     /// The rows to show, top to bottom. Layers run from the front-most down,
@@ -580,7 +683,7 @@ fn select_row(editor: &mut Editor, row: Row) {
     }
 }
 
-fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor) {
+fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) {
     ui.horizontal(|ui| {
         let last = editor.last_frame();
         if ui.button("⏮").on_hover_text("First frame (Home)").clicked() {
@@ -612,6 +715,10 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor) {
         let seconds = editor.frame as f64 / editor.doc.frame_rate.fps();
         ui.label(format!("of {}   {seconds:.2}s", editor.duration()));
 
+        ui.separator();
+
+        ui.toggle_value(graph_mode, "Graph")
+            .on_hover_text("Show the selected layer's animation as a graph of values over time");
         ui.separator();
 
         ui.toggle_value(&mut editor.onion.enabled, "Onion skin")

@@ -16,6 +16,7 @@
 //! * `INKFRAME_SCREENSHOT_EDIT=Ball` opens the named symbol on its own (before `_SELECT`).
 //! * `INKFRAME_SCREENSHOT_OPEN=Ball` opens the named instance layer's symbol in place (after `_FRAME`).
 //! * `INKFRAME_SCREENSHOT_TYPE=Title` starts typing into the named text layer, with its text selected.
+//! * `INKFRAME_SCREENSHOT_GRAPH=1` shows the value graph in the timeline.
 
 use std::path::PathBuf;
 
@@ -75,6 +76,11 @@ impl AutoScreenshot {
     /// The text layer to start typing into, if any.
     pub fn type_into() -> Option<String> {
         std::env::var("INKFRAME_SCREENSHOT_TYPE").ok()
+    }
+
+    /// Whether the timeline should show the value graph.
+    pub fn graph() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_GRAPH").is_some()
     }
 
     /// Whether the timeline should start with every layer expanded.
