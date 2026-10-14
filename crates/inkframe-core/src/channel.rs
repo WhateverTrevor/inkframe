@@ -15,6 +15,18 @@ pub trait Animatable: Copy + PartialEq {
     /// Blends from `self` (t = 0) to `other` (t = 1). `t` has easing already
     /// applied and may leave 0–1 for overshooting curves.
     fn lerp(self, other: Self, t: f32) -> Self;
+
+    /// The value `t` of the way through the tween from `from` to `to`.
+    /// Usually a straight blend; positions override this to follow a curved
+    /// motion path (see [`Bend`]).
+    fn tween(from: &Key<Self>, to: &Key<Self>, t: f32) -> Self {
+        from.value.lerp(to.value, t)
+    }
+
+    /// Called when a key is inserted at `t` (by time) through the tween from
+    /// `from` to `to`, to keep the tween's shape. Only positions have a
+    /// shape to keep.
+    fn split(_from: &mut Key<Self>, _to: &mut Key<Self>, _inserted: &mut Key<Self>, _t: f32) {}
 }
 
 impl Animatable for f32 {
@@ -30,6 +42,140 @@ impl Animatable for Point {
     fn lerp(self, other: Point, t: f32) -> Point {
         Point::lerp(self, other, t)
     }
+
+    fn tween(from: &Key<Point>, to: &Key<Point>, t: f32) -> Point {
+        match MotionCurve::between(from, to) {
+            Some(curve) => curve.at_distance(t),
+            None => from.value.lerp(to.value, t),
+        }
+    }
+
+    fn split(from: &mut Key<Point>, to: &mut Key<Point>, inserted: &mut Key<Point>, t: f32) {
+        let Some(curve) = MotionCurve::between(from, to) else { return };
+        // Split the curve where the new key lands on it (de Casteljau's
+        // construction), so the two halves trace exactly the old path.
+        let s = curve.parameter_at_distance(t);
+        let [p0, p1, p2, p3] = curve.points;
+        let (a, b, c) = (p0.lerp(p1, s), p1.lerp(p2, s), p2.lerp(p3, s));
+        let (d, e) = (a.lerp(b, s), b.lerp(c, s));
+        let middle = d.lerp(e, s);
+        from.bend.get_or_insert_default().out = a - p0;
+        to.bend.get_or_insert_default().into = c - p3;
+        inserted.value = middle;
+        inserted.bend = Some(Bend { into: d - middle, out: e - middle });
+    }
+}
+
+impl Channel<Point> {
+    /// Sets the curve handles on the key at `frame`. Returns false if
+    /// there's no key there.
+    pub fn set_bend(&mut self, frame: u32, bend: Option<Bend>) -> bool {
+        match self.index_of(frame) {
+            Ok(i) => {
+                // All-zero handles are the same as none; store them as none
+                // so the file stays tidy.
+                self.keys[i].bend = bend.filter(|b| *b != Bend::default());
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Straightens every tween: removes all curve handles.
+    pub fn straighten(&mut self) {
+        for key in &mut self.keys {
+            key.bend = None;
+        }
+    }
+}
+
+/// Curve handles on a position key, which bend the motion path through it,
+/// as in Animate's motion paths and After Effects' spatial keyframes.
+///
+/// Like the handles on a pen point: `into` shapes the path arriving at the
+/// key and `out` the path leaving it. Both are offsets from the key's
+/// position, so moving the key carries the curve's shape along with it. A
+/// zero handle means the path leaves or arrives straight.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct Bend {
+    pub into: Point,
+    pub out: Point,
+}
+
+/// The cubic Bézier a bent tween travels along.
+pub struct MotionCurve {
+    pub points: [Point; 4],
+}
+
+impl MotionCurve {
+    /// The curve from `from` to `to`, or `None` if the tween runs straight
+    /// (neither end has a handle on that side).
+    pub fn between(from: &Key<Point>, to: &Key<Point>) -> Option<Self> {
+        let out = from.bend.map_or(Point::ZERO, |b| b.out);
+        let into = to.bend.map_or(Point::ZERO, |b| b.into);
+        if out == Point::ZERO && into == Point::ZERO {
+            return None;
+        }
+        // A zero handle on one end means "straight out of this end": put
+        // that control point a third of the way along, which is what makes
+        // a cubic with no bend at all an evenly paced straight line.
+        let (start, end) = (from.value, to.value);
+        let near = |at: Point, toward: Point, handle: Point| {
+            if handle == Point::ZERO { at.lerp(toward, 1.0 / 3.0) } else { at + handle }
+        };
+        Some(Self { points: [start, near(start, end, out), near(end, start, into), end] })
+    }
+
+    /// The point at parameter `s` (0 at the start, 1 at the end). Equal
+    /// steps of `s` aren't equal distances along the curve; see
+    /// [`MotionCurve::at_distance`].
+    pub fn at(&self, s: f32) -> Point {
+        let [p0, p1, p2, p3] = self.points;
+        crate::shape::cubic_point(p0, p1, p2, p3, s)
+    }
+
+    /// The point a fraction `t` of the way along the curve's length.
+    ///
+    /// A Bézier's own parameter speeds up and slows down along the curve
+    /// (it bunches up where the curve bends tightly). Animators expect a
+    /// linear tween to travel at an even speed, with easing the only thing
+    /// changing it, so positions are spaced by distance instead.
+    pub fn at_distance(&self, t: f32) -> Point {
+        self.at(self.parameter_at_distance(t))
+    }
+
+    /// The parameter that's a fraction `t` of the way along the curve.
+    ///
+    /// Measured by adding up the lengths of short straight pieces, which is
+    /// plenty accurate for placing a layer. Outside 0–1 (an overshooting
+    /// ease), the parameter simply runs on past the ends.
+    pub fn parameter_at_distance(&self, t: f32) -> f32 {
+        if !(0.0..=1.0).contains(&t) {
+            return t;
+        }
+        const STEPS: usize = 64;
+        let mut lengths = [0.0f32; STEPS + 1];
+        let mut previous = self.points[0];
+        for (i, length) in lengths.iter_mut().enumerate().skip(1) {
+            let point = self.at(i as f32 / STEPS as f32);
+            *length = previous.distance(point);
+            previous = point;
+        }
+        let total: f32 = lengths.iter().sum();
+        if total <= f32::EPSILON {
+            return t;
+        }
+        let target = t * total;
+        let mut covered = 0.0;
+        for (i, &length) in lengths.iter().enumerate().skip(1) {
+            if covered + length >= target {
+                let within = if length > 0.0 { (target - covered) / length } else { 0.0 };
+                return ((i - 1) as f32 + within) / STEPS as f32;
+            }
+            covered += length;
+        }
+        1.0
+    }
 }
 
 /// A value pinned to a frame.
@@ -44,6 +190,10 @@ pub struct Key<T> {
     /// loses a setting.
     #[serde(default)]
     pub easing: Easing,
+    /// For positions only: curve handles that bend the motion path through
+    /// this key. `None` means straight lines either side.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bend: Option<Bend>,
 }
 
 /// One property's keys, always sorted by frame with at most one key per
@@ -59,7 +209,7 @@ pub struct Channel<T> {
 impl<T: Animatable> Channel<T> {
     /// A channel holding `value` still, from a single key.
     pub fn new(frame: u32, value: T) -> Self {
-        Self { keys: vec![Key { frame, value, easing: Easing::default() }] }
+        Self { keys: vec![Key { frame, value, easing: Easing::default(), bend: None }] }
     }
 
     pub(crate) fn from_keys(keys: Vec<Key<T>>) -> Self {
@@ -95,7 +245,7 @@ impl<T: Animatable> Channel<T> {
         let next = self.keys.partition_point(|k| k.frame as f32 <= frame);
         let (a, b) = (&self.keys[next - 1], &self.keys[next]);
         let progress = (frame - a.frame as f32) / (b.frame - a.frame) as f32;
-        Some(a.value.lerp(b.value, a.easing.apply(progress)))
+        Some(T::tween(a, b, a.easing.apply(progress)))
     }
 
     /// Writes `value` at `frame`, creating a key if there isn't one.
@@ -107,7 +257,7 @@ impl<T: Animatable> Channel<T> {
             Ok(i) => self.keys[i].value = value,
             Err(i) => {
                 let easing = i.checked_sub(1).map_or(Easing::default(), |p| self.keys[p].easing);
-                self.keys.insert(i, Key { frame, value, easing });
+                self.keys.insert(i, Key { frame, value, easing, bend: None });
             }
         }
     }
@@ -189,6 +339,18 @@ impl<T: Animatable> AnyChannel for Channel<T> {
             return false;
         };
         self.set(frame, value);
+        // A key added partway through a tween splits it in two; give the
+        // value a chance to keep the tween's shape (a curved path, say).
+        if let Ok(i) = self.index_of(frame)
+            && i > 0
+            && i + 1 < self.keys.len()
+        {
+            let (before, rest) = self.keys.split_at_mut(i);
+            let (inserted, after) = rest.split_at_mut(1);
+            let (from, to) = (&mut before[i - 1], &mut after[0]);
+            let t = (frame - from.frame) as f32 / (to.frame - from.frame) as f32;
+            T::split(from, to, &mut inserted[0], from.easing.apply(t));
+        }
         true
     }
 
@@ -317,10 +479,64 @@ mod tests {
 
     #[test]
     fn from_keys_sorts_and_keeps_the_last_duplicate() {
-        let key = |frame, value| Key { frame, value, easing: Easing::Linear };
+        let key = |frame, value| Key { frame, value, easing: Easing::Linear, bend: None };
         let channel = Channel::from_keys(vec![key(5, 1.0), key(1, 2.0), key(5, 9.0)]);
         assert_eq!(channel.key_frames(), [1, 5]);
         assert_eq!(channel.key_at(5).unwrap().value, 9.0);
+    }
+
+    /// A tween from (0, 0) at frame 0 to (100, 0) at frame 10.
+    fn straight_path() -> Channel<Point> {
+        let mut channel = Channel::new(0, Point::ZERO);
+        channel.set(10, Point::new(100.0, 0.0));
+        channel
+    }
+
+    #[test]
+    fn unbent_paths_are_straight_lines() {
+        assert_eq!(straight_path().sample(5.0), Some(Point::new(50.0, 0.0)));
+    }
+
+    #[test]
+    fn bent_paths_curve_through_their_handles_side() {
+        // Both handles pull upward (negative y): the path arcs up.
+        let mut channel = straight_path();
+        channel.keys[0].bend = Some(Bend { into: Point::ZERO, out: Point::new(30.0, -60.0) });
+        channel.keys[1].bend = Some(Bend { into: Point::new(-30.0, -60.0), out: Point::ZERO });
+        let middle = channel.sample(5.0).unwrap();
+        assert!((middle.x - 50.0).abs() < 1e-3, "symmetric, so halfway is in the middle");
+        assert!(middle.y < -30.0, "the arc rises: {middle:?}");
+        // The ends are still exactly on the keys.
+        assert_eq!(channel.sample(0.0), Some(Point::ZERO));
+        assert_eq!(channel.sample(10.0), Some(Point::new(100.0, 0.0)));
+    }
+
+    #[test]
+    fn bent_paths_are_travelled_at_an_even_speed() {
+        // A lopsided curve: one handle long, the other none. By the curve's
+        // own parameter the layer would rush along one end; by distance,
+        // every frame covers about the same ground.
+        let mut channel = straight_path();
+        channel.keys[0].bend = Some(Bend { into: Point::ZERO, out: Point::new(0.0, -150.0) });
+        let points: Vec<Point> = (0..=10).map(|f| channel.sample(f as f32).unwrap()).collect();
+        let steps: Vec<f32> = points.windows(2).map(|w| w[0].distance(w[1])).collect();
+        let (shortest, longest) = steps.iter().fold((f32::MAX, 0.0f32), |(s, l), d| (s.min(*d), l.max(*d)));
+        assert!(longest / shortest < 1.1, "steps should be even: {steps:?}");
+    }
+
+    #[test]
+    fn inserting_a_key_keeps_a_curved_path_in_place() {
+        let mut channel = straight_path();
+        channel.keys[0].bend = Some(Bend { into: Point::ZERO, out: Point::new(20.0, -80.0) });
+        channel.keys[1].bend = Some(Bend { into: Point::new(-40.0, -40.0), out: Point::ZERO });
+        let before: Vec<Point> = (0..=10).map(|f| channel.sample(f as f32).unwrap()).collect();
+        assert!(channel.insert_key(4));
+        let after: Vec<Point> = (0..=10).map(|f| channel.sample(f as f32).unwrap()).collect();
+        for (frame, (a, b)) in before.iter().zip(&after).enumerate() {
+            // The halves are re-spaced by their own lengths, so frames may
+            // shift slightly along the path, but the path itself is unchanged.
+            assert!(a.distance(*b) < 2.0, "frame {frame}: {a:?} vs {b:?}");
+        }
     }
 
     #[test]

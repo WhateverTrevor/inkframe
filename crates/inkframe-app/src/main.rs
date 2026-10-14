@@ -15,6 +15,7 @@ mod export_dialog;
 mod handles;
 mod inspector;
 mod library;
+mod motion_path;
 mod pen;
 mod screenshot;
 mod shortcuts;

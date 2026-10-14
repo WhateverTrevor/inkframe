@@ -21,6 +21,9 @@ planned (the code is already cross-platform and CI builds it on Windows).
   rotation, scale and opacity each have their own keys and timing, so a
   layer can ease its movement while fading at a steady rate. Scale and
   rotate with on-stage handles, or type exact values in the properties panel.
+- **Motion paths:** a moving layer's path is drawn on the stage, with a dot
+  per frame showing its spacing. Drag the path to curve it, then fine-tune
+  the curve handles; "Orient to path" turns the layer to face where it's going.
 - **Ease** each property's tweens separately with Linear, Ease In/Out/In-Out,
   Hold, or a custom curve: drag the curve's handles in the properties panel
   to shape it, with the playhead's position shown on the curve.
@@ -91,6 +94,7 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Animate | Move the playhead to a later frame, then drag the shape or edit its transform |
 | Layer start / end | Drag either end of a layer's bar in the timeline, press `⌥[` / `⌥]` to start or end it at the playhead, or type frames in the properties panel. New drawings start on the current frame |
 | Shape easing | In the properties panel's Easing section, pick a property, then drag the curve's orange handles. Pull a handle above the top line to overshoot, or below the bottom to anticipate |
+| Motion paths | Select a layer that moves: its path appears as a dashed line. Drag the path to bend that tween; drag the round handles to fine-tune. **Orient to path** and **Straighten path** are under the transform in the properties panel |
 | Insert / remove keyframe | `F6` / `Shift+F6` keys every property; right-click a property row in the timeline, or click the ◇ next to a property in the properties panel, to key just that one |
 | Play / pause | `Enter` |
 | Step frames | `,` and `.` (or ← →), `Home` / `End` |

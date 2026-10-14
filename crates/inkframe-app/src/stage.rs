@@ -7,14 +7,16 @@
 
 use egui::{Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{
-    Affine, Anchor, Document, Element, LayerId, Path, Point, Rect as StageRect, Shape, Style, Text,
-    TimelineId, Transform, fit_freehand_path, insert_anchor, nearest_on_anchors, path_from_anchors,
+    Affine, Anchor, Bend, Document, Element, LayerId, MotionCurve, Path, Point, Rect as StageRect, Shape,
+    Style, Text, TimelineId, Transform, fit_freehand_path, insert_anchor, nearest_on_anchors,
+    path_from_anchors,
 };
 use inkframe_render::{RenderOptions, output_size, render_timeline_into};
 
 use crate::convert::{to_color32, to_point};
 use crate::editor::{Editor, OnionSkin, Surrounding, Tool};
 use crate::handles::{RotateDrag, ScaleHandle, ScaleOptions, scale_pose};
+use crate::motion_path;
 use crate::pen::PenPath;
 use crate::subselect::{AnchorPart, move_part, remove_anchor, toggle_smooth};
 use crate::text_edit::{TextCursor, caret_position, position_at, selection_boxes, word_at};
@@ -135,8 +137,20 @@ enum Gesture {
         grab: Point,
         to_local: Affine,
     },
+    /// Dragging a layer's motion path to bend the tween under the pointer.
+    /// `segment` is the tween as it was when the drag began.
+    BendPath { layer: LayerId, segment: motion_path::Segment, s: f32 },
+    /// Dragging one curve handle of a motion path: the one leaving (`out`)
+    /// or arriving at the position key on `frame`.
+    PathHandle { layer: LayerId, frame: u32, out: bool },
     /// Space + drag scrolls the view, like the hand tool in Animate.
     Pan,
+}
+
+/// Something on a motion path under the pointer.
+enum PathHit {
+    Handle { frame: u32, out: bool },
+    Segment { segment: motion_path::Segment, s: f32 },
 }
 
 /// One anchor of one shape in a layer, as picked with the Subselection tool.
@@ -443,6 +457,7 @@ impl StageView {
         if editor.timeline() != TimelineId::Main {
             draw_registration_point(&overlay, view.to_screen(Point::ZERO));
         }
+        self.draw_motion_path(&overlay, editor, view);
         self.draw_overlays(&overlay, editor, view, handles.as_ref());
         self.draw_text_editing(ui, &overlay, editor, view);
         self.draw_pen_preview(&overlay, view, response.hover_pos());
@@ -563,6 +578,28 @@ impl StageView {
                         points.push(p);
                     }
                 }
+                Some(Gesture::BendPath { layer, segment, s }) => {
+                    let (out, into) = motion_path::bend_through(segment, *s, p);
+                    if let Some(layer) = editor.doc.layer_mut(*layer) {
+                        let position = &mut layer.track.position;
+                        // Keep the handles on the far side of each key as they were.
+                        let keep = |frame| position.key_at(frame).and_then(|k| k.bend).unwrap_or_default();
+                        let (from, to) = (keep(segment.from), keep(segment.to));
+                        position.set_bend(segment.from, Some(Bend { out, ..from }));
+                        position.set_bend(segment.to, Some(Bend { into, ..to }));
+                    }
+                }
+                Some(Gesture::PathHandle { layer, frame, out }) => {
+                    if let Some(layer) = editor.doc.layer_mut(*layer) {
+                        let position = &mut layer.track.position;
+                        let key = position.key_at(*frame).map(|k| k.value);
+                        if let Some(bend) =
+                            key.and_then(|at| motion_path::with_handle(position, *frame, *out, p - at))
+                        {
+                            position.set_bend(*frame, Some(bend));
+                        }
+                    }
+                }
                 Some(Gesture::Pan) | None => {}
             }
         }
@@ -641,6 +678,75 @@ impl StageView {
                 let tolerance = HIT_TOLERANCE / view.zoom;
                 editor.selection = editor.hit_test(view.to_local(pointer), tolerance);
             }
+        }
+    }
+
+    /// The layer whose motion path is shown: the selected layer, if it
+    /// moves (has two or more position keys), while the Selection tool is
+    /// in use and nothing's playing or being typed.
+    fn motion_path_layer<'a>(&self, editor: &'a Editor) -> Option<&'a inkframe_core::Layer> {
+        if editor.tool != Tool::Select || editor.playback.playing || self.text_editing.is_some() {
+            return None;
+        }
+        editor.selected_layer().filter(|l| l.track.position.keys().len() >= 2 && !l.locked)
+    }
+
+    /// The motion path handle or tween under `pointer`, if any.
+    fn motion_path_hit(&self, editor: &Editor, view: View, pointer: Pos2) -> Option<PathHit> {
+        let layer = self.motion_path_layer(editor)?;
+        let segments = motion_path::segments(&layer.track.position);
+        let near = |at: Point, reach: f32| view.to_screen(at).distance(pointer) <= reach;
+        for segment in segments.iter().filter(|s| s.bent) {
+            let [p0, p1, p2, p3] = segment.points;
+            if near(p1, ANCHOR_HIT) && p1 != p0 {
+                return Some(PathHit::Handle { frame: segment.from, out: true });
+            }
+            if near(p2, ANCHOR_HIT) && p2 != p3 {
+                return Some(PathHit::Handle { frame: segment.to, out: false });
+            }
+        }
+        let local = view.to_local(pointer);
+        segments
+            .iter()
+            .map(|segment| (segment, motion_path::nearest(segment, local)))
+            .filter(|(_, (_, distance))| distance * view.zoom <= HIT_TOLERANCE + 2.0)
+            .min_by(|a, b| a.1.1.total_cmp(&b.1.1))
+            .map(|(segment, (s, _))| PathHit::Segment { segment: *segment, s })
+    }
+
+    /// The selected layer's motion path: a dashed line along the tweens,
+    /// a dot for each frame (so the spacing shows where it speeds up and
+    /// slows down, as in Animate), a square at each key, and the handles
+    /// of curved tweens.
+    fn draw_motion_path(&self, painter: &egui::Painter, editor: &Editor, view: View) {
+        let Some(layer) = self.motion_path_layer(editor) else { return };
+        let position = &layer.track.position;
+        let path_color = SELECTION.gamma_multiply(0.8);
+        for segment in motion_path::segments(position) {
+            let curve = MotionCurve { points: segment.points };
+            let points: Vec<Pos2> = (0..=32).map(|i| view.to_screen(curve.at(i as f32 / 32.0))).collect();
+            painter.extend(egui::Shape::dashed_line(&points, (1.0, path_color), 5.0, 3.0));
+        }
+        let keys = position.keys();
+        let (first, last) = (keys[0].frame, keys[keys.len() - 1].frame);
+        for frame in first..=last {
+            if let Some(at) = position.sample(frame as f32) {
+                painter.circle_filled(view.to_screen(at), 2.0, path_color);
+            }
+        }
+        for segment in motion_path::segments(position).iter().filter(|s| s.bent) {
+            let [p0, p1, p2, p3] = segment.points.map(|p| view.to_screen(p));
+            for (anchor, handle) in [(p0, p1), (p3, p2)] {
+                if anchor != handle {
+                    painter.line_segment([anchor, handle], (1.0, SELECTION));
+                    painter.circle(handle, 3.5, Color32::WHITE, (1.0, SELECTION));
+                }
+            }
+        }
+        for key in keys {
+            let square = Rect::from_center_size(view.to_screen(key.value), Vec2::splat(6.0));
+            painter.rect_filled(square, 0.0, Color32::WHITE);
+            painter.rect_stroke(square, 0.0, (1.0, SELECTION), StrokeKind::Middle);
         }
     }
 
@@ -844,8 +950,20 @@ impl StageView {
                         None => {}
                     }
                 }
+                // Then the motion path's handles, then the layer itself, then
+                // the path, so grabbing the layer where it sits on its own
+                // path moves it rather than bending the path.
+                let path_hit = self.motion_path_hit(editor, view, press);
+                if let (Some(PathHit::Handle { frame, out }), Some(layer)) = (&path_hit, editor.selection) {
+                    return Some(Gesture::PathHandle { layer, frame: *frame, out: *out });
+                }
                 let tolerance = HIT_TOLERANCE / view.zoom;
                 let hit = editor.hit_test(p, tolerance);
+                if hit.is_none()
+                    && let (Some(PathHit::Segment { segment, s }), Some(layer)) = (path_hit, editor.selection)
+                {
+                    return Some(Gesture::BendPath { layer, segment, s });
+                }
                 editor.selection = hit;
                 let layer = editor.doc.layer(hit?)?;
                 Some(Gesture::Move {
@@ -1171,12 +1289,22 @@ impl StageView {
             Some(Gesture::Move { .. }) => CursorIcon::Move,
             Some(Gesture::Rotate { .. }) => CursorIcon::Grabbing,
             Some(Gesture::EditAnchor { .. }) => CursorIcon::Move,
+            Some(Gesture::BendPath { .. } | Gesture::PathHandle { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Scale { handle, .. }) => handle_cursor(HandleHit::Scale(*handle)),
             Some(Gesture::DrawShape { .. } | Gesture::Pencil { .. }) => CursorIcon::Crosshair,
             None => {
                 let hovered = handles.zip(response.hover_pos()).and_then(|(h, p)| h.hit(p, view));
                 match (hovered, editor.tool) {
                     (Some(hit), _) => handle_cursor(hit),
+                    // A hand over the motion path says it can be dragged.
+                    (None, Tool::Select)
+                        if response.hover_pos().is_some_and(|p| {
+                            editor.hit_test(view.to_local(p), HIT_TOLERANCE / view.zoom).is_none()
+                                && self.motion_path_hit(editor, view, p).is_some()
+                        }) =>
+                    {
+                        CursorIcon::Grab
+                    }
                     (None, Tool::Select) => CursorIcon::Default,
                     (None, Tool::Subselect) => {
                         let on_anchor =
@@ -1351,6 +1479,8 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
         | Gesture::Scale { .. }
         | Gesture::Rotate { .. }
         | Gesture::EditAnchor { .. }
+        | Gesture::BendPath { .. }
+        | Gesture::PathHandle { .. }
         | Gesture::Pan => {}
     }
 }
@@ -1741,6 +1871,27 @@ mod tests {
         let pose = pose(&h, id);
         assert!(pose.scale.distance(Point::new(2.0, 2.0)) < 0.02, "scale {:?}", pose.scale);
         assert!(pose.position.distance(Point::new(520.0, 520.0)) < 3.0, "position {:?}", pose.position);
+    }
+
+    #[test]
+    fn dragging_the_motion_path_curves_the_motion() {
+        // The box moves from (400, 400) on frame 1 to (800, 400) on frame 11.
+        let (mut editor, id) = editor_with_selected_box();
+        editor.doc.layer_mut(id).unwrap().track.position.set(10, Point::new(800.0, 400.0));
+        let mut h = harness(editor);
+
+        // Grab the path halfway, clear of the box, and pull it up.
+        let from = screen(&h, 650.0, 400.0);
+        let to = screen(&h, 650.0, 250.0);
+        drag(&mut h, from, &[from + vec2(0.0, -10.0), to]);
+
+        let editor = &h.state().1;
+        let track = &editor.doc.layer(id).unwrap().track;
+        let midway = track.position.sample(5.0).unwrap();
+        assert!(midway.y < 330.0, "the middle of the motion should arc upward: {midway:?}");
+        // The keys stay where they were, and the box didn't move.
+        assert_eq!(track.position.sample(0.0), Some(Point::new(400.0, 400.0)));
+        assert_eq!(track.position.sample(10.0), Some(Point::new(800.0, 400.0)));
     }
 
     #[test]

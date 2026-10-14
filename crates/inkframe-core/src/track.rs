@@ -46,6 +46,11 @@ pub struct Track {
     pub rotation: Channel<f32>,
     pub scale: Channel<Point>,
     pub opacity: Channel<f32>,
+    /// Turn the layer to face the way it's moving, as with Animate's
+    /// "Orient to path": the direction of travel is added to its rotation.
+    /// A layer drawn facing right then points along its motion path.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub orient_to_path: bool,
 }
 
 impl Track {
@@ -56,6 +61,7 @@ impl Track {
             rotation: Channel::new(frame, pose.rotation),
             scale: Channel::new(frame, pose.scale),
             opacity: Channel::new(frame, pose.opacity),
+            orient_to_path: false,
         }
     }
 
@@ -90,11 +96,45 @@ impl Track {
         // Channels are never empty, but fall back to the identity pose
         // rather than panicking if that were ever violated.
         let identity = Transform::default();
+        let mut rotation = self.rotation.sample(frame).unwrap_or(identity.rotation);
+        if self.orient_to_path {
+            rotation += self.heading(frame).unwrap_or(0.0);
+        }
         Transform {
             position: self.position.sample(frame).unwrap_or(identity.position),
-            rotation: self.rotation.sample(frame).unwrap_or(identity.rotation),
+            rotation,
             scale: self.scale.sample(frame).unwrap_or(identity.scale),
             opacity: self.opacity.sample(frame).unwrap_or(identity.opacity),
+        }
+    }
+
+    /// The direction the layer is travelling at `frame`, in degrees
+    /// clockwise from pointing right (the same sense as rotation), or
+    /// `None` if it never moves.
+    ///
+    /// Worked out from where it is half a frame either side, which follows
+    /// curves and straight lines alike. Before the motion starts and after
+    /// it ends, the layer faces the way it sets off and arrives. While it
+    /// pauses partway, it keeps facing the way it was last going rather
+    /// than snapping back to its unturned rotation.
+    pub fn heading(&self, frame: f32) -> Option<f32> {
+        let keys = self.position.keys();
+        let (first, last) = (keys.first()?.frame as f32, keys.last()?.frame as f32);
+        let direction_at = |frame: f32| {
+            let (behind, ahead) = ((frame - 0.5).max(first), (frame + 0.5).min(last));
+            let travel = self.position.sample(ahead)? - self.position.sample(behind)?;
+            (travel.length() > 1e-4).then(|| travel.y.atan2(travel.x).to_degrees())
+        };
+        let mut at = frame.clamp(first, last);
+        loop {
+            if let Some(direction) = direction_at(at) {
+                return Some(direction);
+            }
+            if at <= first {
+                // Still at the start: look forward to the first movement.
+                return (first as u32..=last as u32).find_map(|f| direction_at(f as f32));
+            }
+            at = (at - 1.0).max(first);
         }
     }
 
@@ -105,8 +145,17 @@ impl Track {
     /// left alone. That's what keeps per-property animation clean: moving a
     /// shape on frame 24 keys its position only, so a fade on the opacity
     /// channel carries on undisturbed.
-    pub fn set_pose(&mut self, frame: u32, pose: Transform) {
-        let current = self.sample(frame as f32);
+    pub fn set_pose(&mut self, frame: u32, mut pose: Transform) {
+        // With orient-to-path on, the rotation a layer shows includes the
+        // way it's heading. Only the part on top of that is keyed, or the
+        // heading would be counted twice.
+        if self.orient_to_path {
+            pose.rotation -= self.heading(frame as f32).unwrap_or(0.0);
+        }
+        let current = Transform {
+            rotation: self.rotation.sample(frame as f32).unwrap_or_default(),
+            ..self.sample(frame as f32)
+        };
         fn update<T: crate::channel::Animatable>(channel: &mut Channel<T>, frame: u32, old: T, new: T) {
             if old != new || channel.key_at(frame).is_some() {
                 channel.set(frame, new);
@@ -190,6 +239,8 @@ enum TrackFormat {
         rotation: Vec<Key<f32>>,
         scale: Vec<Key<Point>>,
         opacity: Vec<Key<f32>>,
+        #[serde(default)]
+        orient_to_path: bool,
     },
     Version1(Vec<KeyframeV1>),
 }
@@ -207,11 +258,12 @@ struct KeyframeV1 {
 impl From<TrackFormat> for Track {
     fn from(format: TrackFormat) -> Self {
         match format {
-            TrackFormat::Current { position, rotation, scale, opacity } => Track {
+            TrackFormat::Current { position, rotation, scale, opacity, orient_to_path } => Track {
                 position: Channel::from_keys(position),
                 rotation: Channel::from_keys(rotation),
                 scale: Channel::from_keys(scale),
                 opacity: Channel::from_keys(opacity),
+                orient_to_path,
             },
             // Each old keyframe becomes a key on every property, with the
             // same easing, so the animation plays back exactly as before.
@@ -222,7 +274,12 @@ impl From<TrackFormat> for Track {
                 ) -> Channel<T> {
                     Channel::from_keys(
                         keys.iter()
-                            .map(|k| Key { frame: k.frame, value: value(&k.transform), easing: k.easing })
+                            .map(|k| Key {
+                                frame: k.frame,
+                                value: value(&k.transform),
+                                easing: k.easing,
+                                bend: None,
+                            })
                             .collect(),
                     )
                 }
@@ -231,6 +288,7 @@ impl From<TrackFormat> for Track {
                     rotation: channel(&keys, |t| t.rotation),
                     scale: channel(&keys, |t| t.scale),
                     opacity: channel(&keys, |t| t.opacity),
+                    orient_to_path: false,
                 }
             }
         }
@@ -326,6 +384,29 @@ mod tests {
         assert_eq!((end.position.x, end.rotation, end.opacity), (100.0, 90.0, 0.5));
         // Fields missing from a v1 transform took their defaults.
         assert_eq!(end.scale, Point::new(1.0, 1.0));
+    }
+
+    #[test]
+    fn orient_to_path_turns_the_layer_the_way_it_moves() {
+        let mut track = Track::new(0, at_x(0.0));
+        track.set_pose(10, Transform::at(Point::new(0.0, 100.0))); // straight down
+        track.orient_to_path = true;
+        assert!((track.sample(5.0).rotation - 90.0).abs() < 1e-3);
+        // Before and after the motion, it faces the way it sets off and arrives.
+        assert!((track.sample(0.0).rotation - 90.0).abs() < 1e-3);
+        assert!((track.sample(20.0).rotation - 90.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn rotating_an_oriented_layer_keys_only_the_extra_turn() {
+        let mut track = Track::new(0, at_x(0.0));
+        track.set_pose(10, Transform::at(Point::new(0.0, 100.0)));
+        track.orient_to_path = true;
+        // Turn it 10° more than its heading at frame 5.
+        let pose = Transform { rotation: 100.0, ..track.sample(5.0) };
+        track.set_pose(5, pose);
+        assert_eq!(track.rotation.key_at(5).unwrap().value, 10.0);
+        assert!((track.sample(5.0).rotation - 100.0).abs() < 1e-3);
     }
 
     #[test]

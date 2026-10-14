@@ -29,7 +29,7 @@ pub use anchor::{
     Anchor, KAPPA, PathHit, anchors_from_path, insert_anchor, nearest_on_anchors, path_from_anchors,
 };
 pub use audio::{AudioId, AudioTrack};
-pub use channel::{Animatable, AnyChannel, Channel, Key, Tween};
+pub use channel::{Animatable, AnyChannel, Bend, Channel, Key, MotionCurve, Tween};
 pub use color::{Color, ParseColorError};
 pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, Layer, LayerId, TimelineId};
 pub use easing::Easing;

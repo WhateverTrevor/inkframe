@@ -186,6 +186,29 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
     if let Some(property) = toggled {
         editor.toggle_property_key(id, property);
     }
+    motion_path_section(ui, editor, id);
+}
+
+/// Options for a layer that moves: turning to face its direction of travel,
+/// and undoing any curves in its motion path.
+fn motion_path_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    let Some(layer) = editor.doc.layer_mut(id) else { return };
+    let track = &mut layer.track;
+    if track.position.keys().len() < 2 {
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.checkbox(&mut track.orient_to_path, "Orient to path")
+            .on_hover_text("Turn the layer to face the way it's moving");
+        let curved = track.position.keys().iter().any(|k| k.bend.is_some());
+        if ui
+            .add_enabled(curved, egui::Button::new("Straighten path").small())
+            .on_hover_text("Make every tween a straight line again. Drag the path on the stage to curve it.")
+            .clicked()
+        {
+            track.position.straighten();
+        }
+    });
 }
 
 /// A small diamond button: filled when the property has a key on this frame.

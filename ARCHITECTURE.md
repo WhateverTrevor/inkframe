@@ -39,7 +39,7 @@ The data model and the math behind animation.
 | File | What's in it |
 |---|---|
 | `document.rs` | `Document` (stage settings plus layers), `Layer`, `Element`, loading and saving |
-| `channel.rs` | `Channel<T>`, one property's sorted keys, and `sample()`, which tweens between them; `AnyChannel` for type-independent editing |
+| `channel.rs` | `Channel<T>`, one property's sorted keys, and `sample()`, which tweens between them; `AnyChannel` for type-independent editing; `Bend` and `MotionCurve`, which curve position tweens and travel them at an even speed |
 | `track.rs` | `Track`: a layer's four channels, auto-keying (`set_pose`), and loading older file formats |
 | `transform.rs` | `Transform`, the animatable properties: position, rotation, scale, opacity |
 | `easing.rs` | Easing curves, including a CSS-style cubic-Bézier solver |
@@ -98,12 +98,12 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 8. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 9. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
 symbols, version 5 audio tracks, version 6 images, version 7 text and
-version 8 project font files;
+version 8 project font files and version 9 curved motion paths;
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 
@@ -183,6 +183,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `library.rs` | The Library panel, with cached symbol thumbnails |
 | `export_dialog.rs` | Export settings and the background export thread |
 | `shortcuts.rs` | Every keyboard shortcut in one place |
+| `motion_path.rs` | The math for showing and bending a layer's motion path on the stage |
 | `text_edit.rs` | Typing into text on the stage: the text cursor, selection and keys, kept separate from drawing so it can be tested |
 | `screenshot.rs` | `INKFRAME_SCREENSHOT=out.png` captures the window and quits |
 

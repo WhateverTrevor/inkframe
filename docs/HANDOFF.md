@@ -10,7 +10,7 @@ after the macOS app bundle.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
   --all-targets -- -D warnings` and `cargo test --workspace` (183 tests)
   all pass.
-- **File format:** version 8. Older versions load and upgrade automatically
+- **File format:** version 9. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -52,6 +52,10 @@ after the macOS app bundle.
     fonts; exports fail if a font file in use is missing
 21. On-stage text editing: type directly on the stage with a cursor and
     selection that follow rotated/scaled text (`text_edit.rs`)
+22. Motion paths, part 1 (format v9): position keys carry `Bend` handles;
+    curved tweens are travelled by arc length; drag the path on the stage
+    to bend it; Orient to path. Part 2, guide layers (attach a layer to a
+    drawn path), was agreed with the user and is next.
 
 ## Not yet verified by hand
 
