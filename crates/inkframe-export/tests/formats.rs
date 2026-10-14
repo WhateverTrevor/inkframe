@@ -44,8 +44,11 @@ fn probe(file: &Path, entry: &str) -> String {
 
 /// Asks ffprobe for one property of a given stream, e.g. `a:0` for audio.
 fn probe_stream(file: &Path, stream: &str, entry: &str) -> String {
-    let ffprobe =
-        ffmpeg::locate().unwrap().with_file_name(format!("ffprobe{}", std::env::consts::EXE_SUFFIX));
+    // ffprobe usually sits next to ffmpeg. A bundled ffmpeg (tested with
+    // `INKFRAME_FFMPEG=Inkframe.app/Contents/MacOS/ffmpeg`) comes alone, so
+    // fall back to whichever ffprobe is on PATH.
+    let beside = ffmpeg::locate().unwrap().with_file_name(format!("ffprobe{}", std::env::consts::EXE_SUFFIX));
+    let ffprobe = if beside.is_file() { beside } else { PathBuf::from("ffprobe") };
     let out = Command::new(ffprobe)
         .args(["-v", "error", "-select_streams", stream, "-show_entries"])
         .arg(format!("stream={entry}"))

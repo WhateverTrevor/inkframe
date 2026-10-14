@@ -30,6 +30,23 @@ across a dozen libraries in `/opt/homebrew`), and the packaging task will
 refuse it and list what it depends on. Use a static build instead, either one
 you compile or a trusted prebuilt one for your architecture.
 
+Put it at `vendor/ffmpeg/ffmpeg`, which git ignores. The release builds so
+far used the static macOS arm64 build from
+[ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de) (ffmpeg 9.0.2).
+Check the download against the SHA-256 checksum published beside it:
+
+```sh
+shasum -a 256 ffmpeg.zip     # compare with ffmpeg.zip.sha256
+cargo xtask bundle-macos --ffmpeg vendor/ffmpeg/ffmpeg --dmg
+```
+
+Then run the export tests through the bundled copy, which encodes every
+format for real and checks the results with ffprobe:
+
+```sh
+INKFRAME_FFMPEG=$PWD/target/release/Inkframe.app/Contents/MacOS/ffmpeg cargo test -p inkframe-export
+```
+
 It needs these encoders, which `ffmpeg -encoders` lists:
 
 | Encoder | Used for |

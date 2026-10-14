@@ -40,8 +40,9 @@ after the macOS app bundle.
 ## Not yet verified by hand
 
 - Audio playback was checked by ear on 2026-10-14 and works.
-- No ffmpeg has been bundled yet: it needs a self-contained (static) build,
-  and Homebrew's isn't one. See `packaging/macos/README.md`.
+- The bundled ffmpeg (static build, ffmpeg 9.0.2, in the git-ignored
+  `vendor/ffmpeg/`) passes every export test. See `packaging/macos/README.md`
+  to fetch it again on a new machine.
 - Pointer interactions are tested with simulated input (`egui_kittest`) and
   screenshots, not by clicking through the real app.
 
