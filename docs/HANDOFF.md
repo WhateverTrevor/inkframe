@@ -65,7 +65,10 @@ after the macOS app bundle.
 25. Copy and paste: layers (with symbols, images, fonts; between projects
     via tagged JSON on the system clipboard), Paste in Center/in Place,
     Copy/Paste Frames (a layer's pose), and plain text as a text layer.
-    Only the single selected layer is copied until multi-select exists.
+26. Multi-select: `Editor::selected_ids` (primary `selection` plus
+    `also_selected`, which lapses when `selection` is set directly).
+    Shift-click, marquee, timeline Shift/⌘-click, ⌘A. Moving, deleting,
+    duplicating, copying and keyframing apply to all selected layers.
 
 ## Not yet verified by hand
 
@@ -92,6 +95,9 @@ after the macOS app bundle.
 
 Smaller ideas noted along the way:
 
+- With several layers selected there are no group scale/rotate handles
+  yet (they move together, but scale and rotate one at a time), and the
+  properties panel edits only the last-picked layer.
 - Characters missing from the chosen font (emoji, CJK in a Latin font)
   show as the font's empty box; there's no per-character font fallback
   yet. On-stage typing doesn't support input methods (IME) for Chinese,

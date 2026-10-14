@@ -29,6 +29,8 @@ enum Command {
     Export,
     Undo,
     Redo,
+    SelectAll,
+    Deselect,
     Cut,
     Copy,
     /// Pastes layers in the middle of the view (or a keyframe at the playhead).
@@ -156,6 +158,8 @@ impl InkframeApp {
                 self.save_as();
             }
             Command::Export => self.export.open(&self.editor.doc),
+            Command::SelectAll => editor.select_all(),
+            Command::Deselect => editor.select(None),
             Command::Cut => {
                 self.copy(false);
                 self.editor.delete_selected_layer();
@@ -231,6 +235,10 @@ impl InkframeApp {
             (UNDO, Command::Undo),
             (REDO_ALT, Command::Redo),
             (DUPLICATE, Command::DuplicateLayer),
+            // Deselect (⌘⇧A) before Select All (⌘A), since shortcuts
+            // ignore extra Shift.
+            (DESELECT_ALL, Command::Deselect),
+            (SELECT_ALL, Command::SelectAll),
             (CONVERT_TO_SYMBOL, Command::ConvertToSymbol),
             (ZOOM_FIT, Command::ZoomFit),
             (ZOOM_100, Command::ZoomActualSize),
@@ -403,6 +411,9 @@ impl InkframeApp {
                 ui.separator();
                 let layers = matches!(self.clipboard, Some(Clipboard::Layers(_)));
                 let keyframe = matches!(self.clipboard, Some(Clipboard::Keyframe(_)));
+                item(ui, "Select All", Some(shortcuts::SELECT_ALL), Command::SelectAll, true);
+                item(ui, "Deselect All", Some(shortcuts::DESELECT_ALL), Command::Deselect, has_selection);
+                ui.separator();
                 item(ui, "Cut", Some(shortcuts::CUT), Command::Cut, has_selection);
                 item(ui, "Copy", Some(shortcuts::COPY), Command::Copy, has_selection);
                 item(ui, "Paste in Center", Some(shortcuts::PASTE), Command::Paste, layers);

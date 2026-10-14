@@ -91,6 +91,7 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Action | How |
 |---|---|
 | Select / move | Selection tool (`V`), click or drag a shape. Hold Shift to lock to one axis |
+| Select several | Shift-click shapes, or drag a box over empty stage; Shift- or ⌘-click layer names in the timeline; `⌘A` selects all, `⌘⇧A` none. Dragging any of them moves them all, and delete, duplicate, copy/cut and F6 keyframes apply to every selected layer |
 | Scale | Drag a square handle. Shift keeps proportions, Option/Alt scales from the pivot |
 | Rotate | Drag the round knob, or just outside a corner. Shift snaps to 15° |
 | Draw | Rectangle (`R`), Oval (`O`), Pencil (`Y`). Hold Shift for squares and circles |

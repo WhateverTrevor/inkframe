@@ -9,7 +9,7 @@
 //! Optional variables set up the scene first:
 //!
 //! * `INKFRAME_SCREENSHOT_FRAME=12` moves the playhead (1-based, like the timeline).
-//! * `INKFRAME_SCREENSHOT_SELECT=Ball` selects the layer with that name.
+//! * `INKFRAME_SCREENSHOT_SELECT=Ball` selects the layer with that name (or `Ball,Floor` for several).
 //! * `INKFRAME_SCREENSHOT_ONION=1` turns on onion skinning.
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
 //! * `INKFRAME_SCREENSHOT_EXPAND=1` expands every layer's property rows in the timeline.
@@ -54,8 +54,12 @@ impl AutoScreenshot {
                 None => eprintln!("No layer named {name:?} for INKFRAME_SCREENSHOT_OPEN"),
             }
         }
-        if let Some(name) = var("INKFRAME_SCREENSHOT_SELECT") {
-            editor.selection = editor.layers().iter().find(|l| l.name == name).map(|l| l.id);
+        if let Some(names) = var("INKFRAME_SCREENSHOT_SELECT") {
+            let ids: Vec<_> = names
+                .split(',')
+                .filter_map(|name| editor.layers().iter().find(|l| l.name == name.trim()).map(|l| l.id))
+                .collect();
+            editor.select_many(&ids);
         }
         if var("INKFRAME_SCREENSHOT_ONION").is_some() {
             editor.onion.enabled = true;

@@ -310,9 +310,11 @@ impl TimelineView {
 
         let pressed = response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed());
         if pressed && let Some(p) = response.interact_pointer_pos() {
+            // Shift- or ⌘-clicking a layer's name adds it to the selection.
+            let adding = ui.input(|i| i.modifiers.shift || i.modifiers.command);
             self.drag = match audio_under(p.y).filter(|_| !layout.ruler.contains(p)) {
                 Some(id) => press_audio(editor, layout, id, p),
-                None => self.press(editor, layout, rows, p),
+                None => self.press(editor, layout, rows, p, adding),
             };
         }
 
@@ -385,7 +387,14 @@ impl TimelineView {
     }
 
     /// Decides what a primary-button press starts, based on where it landed.
-    fn press(&mut self, editor: &mut Editor, layout: &Layout, rows: &[Row], p: Pos2) -> Option<Drag> {
+    fn press(
+        &mut self,
+        editor: &mut Editor,
+        layout: &Layout,
+        rows: &[Row],
+        p: Pos2,
+        adding: bool,
+    ) -> Option<Drag> {
         if layout.ruler.contains(p) {
             return Some(Drag::Scrub);
         }
@@ -410,13 +419,17 @@ impl TimelineView {
                     return None;
                 }
             }
-            select_row(editor, row);
+            if adding && row.property.is_none() {
+                editor.toggle_selected(row.layer);
+            } else {
+                select_row(editor, row);
+            }
             return None;
         }
 
         if layout.frames.contains(p) {
             let Some(row) = row else {
-                editor.selection = None;
+                editor.select(None);
                 return Some(Drag::Scrub);
             };
             select_row(editor, row);
@@ -459,7 +472,7 @@ impl TimelineView {
         for (index, row) in rows.iter().enumerate() {
             let Some(layer) = editor.doc.layer(row.layer) else { continue };
             let rect = layout.row_rect(index, layout.names);
-            let selected = editor.selection == Some(row.layer);
+            let selected = editor.is_selected(row.layer);
 
             match row.property {
                 None => {
@@ -561,7 +574,7 @@ fn press_audio(editor: &mut Editor, layout: &Layout, id: AudioId, p: Pos2) -> Op
 /// Selects a row's layer, and for a property row, points the inspector's
 /// easing graph at that property.
 fn select_row(editor: &mut Editor, row: Row) {
-    editor.selection = Some(row.layer);
+    editor.select(Some(row.layer));
     if let Some(property) = row.property {
         editor.focused_property = property;
     }

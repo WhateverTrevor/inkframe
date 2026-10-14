@@ -114,8 +114,12 @@ impl View {
 
 /// An in-progress mouse interaction on the stage.
 enum Gesture {
-    /// Dragging a layer. Positions are in stage pixels.
-    Move { layer: LayerId, grab: Point, start_position: Point },
+    /// Dragging the selected layers, each from where it started. Positions
+    /// are in the timeline's coordinates.
+    Move { layers: Vec<(LayerId, Point)>, grab: Point },
+    /// Dragging a selection box over empty stage. `adding` keeps what was
+    /// already selected (Shift held).
+    Marquee { start: Point, current: Point, adding: bool },
     /// Dragging out a new rectangle or ellipse.
     DrawShape { tool: Tool, start: Point, current: Point },
     /// Drawing a freehand stroke.
@@ -198,7 +202,9 @@ struct Handles {
 impl Handles {
     /// Handles for the current selection, if it can be transformed.
     fn for_selection(editor: &Editor, view: View) -> Option<Self> {
-        if editor.tool != Tool::Select {
+        // Scaling and rotating work on one layer at a time; with several
+        // selected, they can only be moved together.
+        if editor.tool != Tool::Select || editor.selected_ids().len() > 1 {
             return None;
         }
         let layer = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !l.locked)?;
@@ -540,26 +546,28 @@ impl StageView {
             let press = ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos());
             let space_held = ui.input(|i| i.key_down(egui::Key::Space));
             if let Some(press) = press {
-                self.gesture = self.begin_gesture(editor, press, view, space_held);
+                self.gesture = self.begin_gesture(editor, press, view, space_held, shift);
             }
         }
 
         if let Some(pointer) = response.interact_pointer_pos() {
             let p = view.to_local(pointer);
             match &mut self.gesture {
-                Some(Gesture::Move { layer, grab, start_position }) => {
+                Some(Gesture::Move { layers, grab }) => {
                     let mut delta = p - *grab;
                     if shift {
                         // Constrain to the dominant axis, like every design tool.
                         if delta.x.abs() > delta.y.abs() { delta.y = 0.0 } else { delta.x = 0.0 }
                     }
-                    let id = *layer;
-                    let position = *start_position + delta;
-                    if let Some(layer) = editor.doc.layer(id) {
-                        let pose = Transform { position, ..editor.doc.pose(layer, editor.frame) };
-                        editor.set_pose(id, pose);
+                    for &(id, start) in layers.iter() {
+                        if let Some(layer) = editor.doc.layer(id) {
+                            let pose =
+                                Transform { position: start + delta, ..editor.doc.pose(layer, editor.frame) };
+                            editor.set_pose(id, pose);
+                        }
                     }
                 }
+                Some(Gesture::Marquee { current, .. }) => *current = p,
                 Some(Gesture::Scale { layer, handle, start, bounds }) => {
                     let options = ScaleOptions { proportional: shift, from_pivot: alt };
                     editor.set_pose(*layer, scale_pose(start, *bounds, *handle, p, options));
@@ -689,7 +697,14 @@ impl StageView {
                 |pointer| Handles::for_selection(editor, view).and_then(|h| h.hit(pointer, view)).is_some();
             if let Some(pointer) = response.interact_pointer_pos().filter(|p| !on_handle(*p)) {
                 let tolerance = HIT_TOLERANCE / view.zoom;
-                editor.selection = editor.hit_test(view.to_local(pointer), tolerance);
+                let hit = editor.hit_test(view.to_local(pointer), tolerance);
+                // Shift-click adds or removes a layer, as in Animate; a
+                // Shift-click on empty stage leaves the selection alone.
+                match (hit, shift) {
+                    (Some(id), true) => editor.toggle_selected(id),
+                    (None, true) => {}
+                    (hit, false) => editor.select(hit),
+                }
             }
         }
     }
@@ -699,6 +714,9 @@ impl StageView {
     /// in use and nothing's playing or being typed.
     fn motion_path_layer<'a>(&self, editor: &'a Editor) -> Option<&'a inkframe_core::Layer> {
         if editor.tool != Tool::Select || editor.playback.playing || self.text_editing.is_some() {
+            return None;
+        }
+        if editor.selected_ids().len() > 1 {
             return None;
         }
         editor.selected_layer().filter(|l| l.track.position.keys().len() >= 2 && !l.locked)
@@ -825,7 +843,7 @@ impl StageView {
         ui.memory_mut(|m| m.surrender_focus(id));
         let empty =
             text_of(editor, editing.layer, editing.element).is_some_and(|t| t.content.trim().is_empty());
-        editor.selection = Some(editing.layer);
+        editor.select(Some(editing.layer));
         if empty {
             editor.delete_selected_layer();
         }
@@ -959,6 +977,7 @@ impl StageView {
         press: Pos2,
         view: View,
         space_held: bool,
+        shift: bool,
     ) -> Option<Gesture> {
         if space_held {
             return Some(Gesture::Pan);
@@ -995,13 +1014,27 @@ impl StageView {
                 {
                     return Some(Gesture::BendPath { layer, segment, s });
                 }
-                editor.selection = hit;
-                let layer = editor.doc.layer(hit?)?;
-                Some(Gesture::Move {
-                    layer: layer.id,
-                    grab: p,
-                    start_position: editor.doc.pose(layer, editor.frame).position,
-                })
+                let Some(hit) = hit else {
+                    // Empty stage: drag out a box to select what it touches.
+                    return Some(Gesture::Marquee { start: p, current: p, adding: shift });
+                };
+                // Dragging one of several selected layers moves them all;
+                // Shift-dragging another adds it first. Otherwise the layer
+                // under the pointer becomes the selection.
+                if shift && !editor.is_selected(hit) {
+                    editor.toggle_selected(hit);
+                } else if !editor.is_selected(hit) {
+                    editor.select(Some(hit));
+                }
+                let frame = editor.frame;
+                let layers = editor
+                    .selected_ids()
+                    .into_iter()
+                    .filter_map(|id| editor.doc.layer(id))
+                    .filter(|l| !l.locked)
+                    .map(|l| (l.id, editor.doc.pose(l, frame).position))
+                    .collect();
+                Some(Gesture::Move { layers, grab: p })
             }
             tool @ (Tool::Rectangle | Tool::Ellipse) => {
                 Some(Gesture::DrawShape { tool, start: p, current: p })
@@ -1246,16 +1279,22 @@ impl StageView {
         if shows_points {
             self.draw_anchor_overlay(painter, editor, view);
         }
-        if let Some(layer) = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !shows_points)
-        {
+        let selected = editor.selected_ids();
+        for layer in selected.iter().filter_map(|id| editor.doc.layer(*id)) {
+            if !layer.is_shown_at(editor.frame) || shows_points {
+                continue;
+            }
             if let Some(bounds) = editor.doc.layer_bounds(layer, editor.frame) {
                 let pose = editor.doc.pose(layer, editor.frame);
                 let to_stage = pose.to_affine();
                 let corners = bounds.corners().map(|c| view.to_screen(to_stage.apply(c))).to_vec();
                 painter.add(egui::Shape::closed_line(corners, (1.5, SELECTION)));
-                // The pivot: the point the layer rotates and scales around.
-                let pivot = view.to_screen(pose.position);
-                painter.circle(pivot, 3.5, Color32::WHITE, (1.5, SELECTION));
+                // The pivot (the point the layer rotates and scales around)
+                // matters only when there's one layer to rotate or scale.
+                if selected.len() == 1 {
+                    let pivot = view.to_screen(pose.position);
+                    painter.circle(pivot, 3.5, Color32::WHITE, (1.5, SELECTION));
+                }
             }
         }
         if let Some(handles) = handles {
@@ -1263,6 +1302,11 @@ impl StageView {
         }
 
         let preview = (1.0, SELECTION);
+        if let Some(Gesture::Marquee { start, current, .. }) = &self.gesture {
+            let area = Rect::from_two_pos(view.to_screen(*start), view.to_screen(*current));
+            painter.rect_filled(area, 0.0, SELECTION.gamma_multiply(0.12));
+            painter.rect_stroke(area, 0.0, (1.0, SELECTION), StrokeKind::Middle);
+        }
         match &self.gesture {
             Some(Gesture::DrawShape { tool, start, current }) => {
                 // Built from local points, so the preview turns and stretches
@@ -1318,6 +1362,7 @@ impl StageView {
             Some(Gesture::Pan) => CursorIcon::Grabbing,
             _ if space_held => CursorIcon::Grab,
             Some(Gesture::Move { .. }) => CursorIcon::Move,
+            Some(Gesture::Marquee { .. }) => CursorIcon::Crosshair,
             Some(Gesture::Rotate { .. }) => CursorIcon::Grabbing,
             Some(Gesture::EditAnchor { .. }) => CursorIcon::Move,
             Some(Gesture::BendPath { .. } | Gesture::PathHandle { .. }) => CursorIcon::Grabbing,
@@ -1521,6 +1566,33 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
             let style = Style { fill: None, stroke: Some(editor.pencil_stroke) };
             add_path_layer(editor, "Stroke", path, style);
         }
+        Gesture::Marquee { start, current, adding } => {
+            let area = StageRect::from_points(start, current);
+            let frame = editor.frame;
+            let touched: Vec<LayerId> = editor
+                .layers()
+                .iter()
+                .filter(|l| l.is_shown_at(frame) && !l.locked && !l.mask)
+                .filter(|l| {
+                    // The layer's box on the stage, from its corners, so rotated
+                    // layers are judged by where they actually are.
+                    let to_stage = editor.doc.pose(l, frame).to_affine();
+                    editor
+                        .doc
+                        .layer_bounds(l, frame)
+                        .and_then(|b| StageRect::bounding(b.corners().map(|c| to_stage.apply(c))))
+                        .is_some_and(|b| overlaps(b, area))
+                })
+                .map(|l| l.id)
+                .collect();
+            let mut selected = if adding { editor.selected_ids() } else { Vec::new() };
+            for id in touched {
+                if !selected.contains(&id) {
+                    selected.push(id);
+                }
+            }
+            editor.select_many(&selected);
+        }
         Gesture::Move { .. }
         | Gesture::Scale { .. }
         | Gesture::Rotate { .. }
@@ -1589,6 +1661,10 @@ struct TextEditing {
     cursor: TextCursor,
     /// While the mouse button that placed the cursor is held, dragging selects.
     selecting: bool,
+}
+
+fn overlaps(a: StageRect, b: StageRect) -> bool {
+    a.min.x <= b.max.x && a.max.x >= b.min.x && a.min.y <= b.max.y && a.max.y >= b.min.y
 }
 
 /// Whether a layer is travelling along a motion guide.
@@ -1943,6 +2019,53 @@ mod tests {
         // The keys stay where they were, and the box didn't move.
         assert_eq!(track.position.sample(0.0), Some(Point::new(400.0, 400.0)));
         assert_eq!(track.position.sample(10.0), Some(Point::new(800.0, 400.0)));
+    }
+
+    /// Two 100×100 boxes, at (200, 200) and (600, 200), nothing selected.
+    fn two_boxes() -> (Editor, LayerId, LayerId) {
+        let mut editor = Editor::new(Document::default());
+        let square = Element {
+            shape: Shape::Rect { width: 100.0, height: 100.0, corner_radius: 0.0 },
+            style: Style { fill: Some(inkframe_core::Color::BLACK), stroke: None },
+        };
+        let a = editor.doc.add_layer("A", vec![square.clone()], 0, Transform::at(Point::new(200.0, 200.0)));
+        let b = editor.doc.add_layer("B", vec![square], 0, Transform::at(Point::new(600.0, 200.0)));
+        (editor, a, b)
+    }
+
+    #[test]
+    fn dragging_a_box_over_empty_stage_selects_what_it_touches() {
+        let (editor, a, b) = two_boxes();
+        let mut h = harness(editor);
+        let (from, to) = (screen(&h, 100.0, 400.0), screen(&h, 700.0, 180.0));
+        drag(&mut h, from, &[from + vec2(10.0, -10.0), to]);
+        let mut selected = h.state().1.selected_ids();
+        selected.sort();
+        assert_eq!(selected, [a, b]);
+    }
+
+    #[test]
+    fn shift_click_adds_and_dragging_moves_every_selected_layer() {
+        let (editor, a, b) = two_boxes();
+        let mut h = harness(editor);
+        let on_a = screen(&h, 200.0, 200.0);
+        click(&mut h, on_a);
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+        let on_b = screen(&h, 600.0, 200.0);
+        click(&mut h, on_b);
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+        assert_eq!(h.state().1.selected_ids().len(), 2);
+
+        // Drag A: B comes along.
+        let to = screen(&h, 250.0, 300.0);
+        for _ in 0..30 {
+            h.step(); // past the double-click window
+        }
+        drag(&mut h, on_a, &[on_a + vec2(10.0, 10.0), to]);
+        let editor = &h.state().1;
+        let at = |id| editor.doc.layer(id).unwrap().transform_at(0).position;
+        assert!(at(a).distance(Point::new(250.0, 300.0)) < 3.0, "{:?}", at(a));
+        assert!(at(b).distance(Point::new(650.0, 300.0)) < 3.0, "{:?}", at(b));
     }
 
     #[test]

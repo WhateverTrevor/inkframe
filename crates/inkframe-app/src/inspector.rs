@@ -15,6 +15,14 @@ use crate::editor::Editor;
 /// Shows the panel's contents. The caller provides the scroll area, so the
 /// library can share it.
 pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
+    // With several layers selected, the panel shows the one picked last.
+    let count = editor.selected_ids().len();
+    if count > 1 {
+        ui.weak(format!(
+            "{count} layers selected. Below is the last one picked; drag on the stage to move them all."
+        ));
+        ui.add_space(4.0);
+    }
     if let Some(id) = editor.selection {
         layer_section(ui, editor, id);
         ui.add_space(8.0);

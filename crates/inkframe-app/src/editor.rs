@@ -98,7 +98,16 @@ pub struct Editor {
     saved: Document,
 
     pub frame: u32,
+    /// The selected layer: the one the properties panel shows and the
+    /// transform handles are on. When several layers are selected, this is
+    /// the one picked last, and the others are in `also_selected`.
     pub selection: Option<LayerId>,
+    /// The other selected layers, if several are. They only count while
+    /// `selection` is still the layer they were selected alongside
+    /// (`also_selected_with`), so code that simply sets `selection` to pick
+    /// one layer ends a multi-selection without having to know about it.
+    also_selected: Vec<LayerId>,
+    also_selected_with: Option<LayerId>,
     pub tool: Tool,
     /// Fill and stroke given to newly drawn shapes.
     pub draw_style: Style,
@@ -128,6 +137,8 @@ impl Editor {
             path: None,
             frame: 0,
             selection: None,
+            also_selected: Vec::new(),
+            also_selected_with: None,
             tool: Tool::Select,
             draw_style: Style {
                 fill: Some(Color::rgb(0x3d, 0x8b, 0xfd)),
@@ -512,6 +523,59 @@ impl Editor {
         self.selection.and_then(|id| self.doc.layer(id))
     }
 
+    /// Every selected layer that still exists, bottom-most first (the order
+    /// layers are stacked in, which is how they're copied and deleted).
+    pub fn selected_ids(&self) -> Vec<LayerId> {
+        let Some(primary) = self.selection else { return Vec::new() };
+        let others = if self.also_selected_with == Some(primary) { &self.also_selected[..] } else { &[] };
+        let timeline = self.timeline();
+        self.doc
+            .layers_of(timeline)
+            .iter()
+            .map(|l| l.id)
+            .filter(|id| *id == primary || others.contains(id))
+            .collect()
+    }
+
+    pub fn is_selected(&self, id: LayerId) -> bool {
+        self.selected_ids().contains(&id)
+    }
+
+    /// Selects just `id` (or nothing).
+    pub fn select(&mut self, id: Option<LayerId>) {
+        self.selection = id;
+        self.also_selected.clear();
+    }
+
+    /// Selects several layers, the last becoming the one the properties
+    /// panel shows.
+    pub fn select_many(&mut self, ids: &[LayerId]) {
+        self.selection = ids.last().copied();
+        self.also_selected = ids.iter().copied().filter(|id| Some(*id) != self.selection).collect();
+        self.also_selected_with = self.selection;
+    }
+
+    /// Adds `id` to the selection, or takes it out if it's already in:
+    /// Shift-click, as in Animate.
+    pub fn toggle_selected(&mut self, id: LayerId) {
+        let mut ids = self.selected_ids();
+        if let Some(index) = ids.iter().position(|selected| *selected == id) {
+            ids.remove(index);
+        } else {
+            ids.push(id);
+        }
+        self.select_many(&ids);
+    }
+
+    /// Selects every layer in the timeline being edited that can be
+    /// edited (shown and unlocked).
+    pub fn select_all(&mut self) {
+        let frame = self.frame;
+        let ids: Vec<LayerId> =
+            self.layers().iter().filter(|l| l.is_shown_at(frame) && !l.locked).map(|l| l.id).collect();
+        self.select_many(&ids);
+    }
+
     pub fn selected_layer_mut(&mut self) -> Option<&mut Layer> {
         self.selection.and_then(|id| self.doc.layer_mut(id))
     }
@@ -581,32 +645,39 @@ impl Editor {
         self.doc.can_place(self.timeline(), symbol)
     }
 
+    /// Keys every selected layer on the current frame.
     pub fn insert_keyframe(&mut self) {
         let frame = self.frame;
-        if let Some(layer) = self.selected_layer_mut() {
-            layer.track.insert_key(frame);
+        for id in self.selected_ids() {
+            if let Some(layer) = self.doc.layer_mut(id) {
+                layer.track.insert_key(frame);
+            }
         }
     }
 
     pub fn remove_keyframe(&mut self) {
         let frame = self.frame;
-        if let Some(layer) = self.selected_layer_mut() {
-            layer.track.remove_key(frame);
+        for id in self.selected_ids() {
+            if let Some(layer) = self.doc.layer_mut(id) {
+                layer.track.remove_key(frame);
+            }
         }
     }
 
+    /// Deletes every selected layer.
     pub fn delete_selected_layer(&mut self) {
-        if let Some(id) = self.selection.take() {
+        for id in self.selected_ids() {
             self.doc.remove_layer(id);
         }
+        self.select(None);
     }
 
     // ------------------------------------------------------------ clipboard
 
-    /// The selected layer, with everything it needs, for the clipboard.
+    /// The selected layers, with everything they need, for the clipboard.
     pub fn copy_selection(&self) -> Option<Clipboard> {
-        let id = self.selection?;
-        Some(Clipboard::Layers(self.doc.copy_layers(&[id], self.project_dir().as_deref())?))
+        let ids = self.selected_ids();
+        Some(Clipboard::Layers(self.doc.copy_layers(&ids, self.project_dir().as_deref())?))
     }
 
     /// The selected layer's pose on the current frame, for the clipboard.
@@ -632,9 +703,7 @@ impl Editor {
                 });
                 let project_dir = self.project_dir();
                 let pasted = self.doc.paste_layers(copied, self.timeline(), offset, project_dir.as_deref());
-                if let Some(&last) = pasted.last() {
-                    self.selection = Some(last);
-                }
+                self.select_many(&pasted);
             }
             Clipboard::Keyframe(keyframe) => {
                 let frame = self.frame;
@@ -656,10 +725,11 @@ impl Editor {
         self.remeasure_text();
     }
 
+    /// Duplicates every selected layer, selecting the copies.
     pub fn duplicate_selected_layer(&mut self) {
-        if let Some(id) = self.selection {
-            self.selection = self.doc.duplicate_layer(id);
-        }
+        let copies: Vec<LayerId> =
+            self.selected_ids().into_iter().filter_map(|id| self.doc.duplicate_layer(id)).collect();
+        self.select_many(&copies);
     }
 
     pub fn move_selected_layer(&mut self, delta: isize) {
@@ -785,6 +855,38 @@ mod tests {
         };
         assert_eq!(text.content, "Hello from elsewhere");
         assert!(text.measured.width() > 0.0);
+    }
+
+    #[test]
+    fn several_selected_layers_are_copied_deleted_and_keyed_together() {
+        let mut editor = Editor::new(Document::default());
+        let ids: Vec<LayerId> =
+            (0..3).map(|i| editor.doc.add_layer(format!("L{i}"), vec![], 0, Transform::default())).collect();
+        editor.select_many(&[ids[0], ids[2]]);
+        assert_eq!(editor.selected_ids(), [ids[0], ids[2]]);
+
+        editor.frame = 5;
+        editor.insert_keyframe();
+        assert!(editor.doc.layer(ids[0]).unwrap().track.has_key(5));
+        assert!(!editor.doc.layer(ids[1]).unwrap().track.has_key(5));
+
+        let Some(Clipboard::Layers(copied)) = editor.copy_selection() else { panic!("nothing copied") };
+        assert_eq!(copied.layers.len(), 2);
+
+        editor.delete_selected_layer();
+        assert_eq!(editor.doc.layers.len(), 1);
+        assert!(editor.selected_ids().is_empty());
+    }
+
+    #[test]
+    fn picking_one_layer_ends_a_multi_selection() {
+        let mut editor = Editor::new(Document::default());
+        let a = editor.doc.add_layer("A", vec![], 0, Transform::default());
+        let b = editor.doc.add_layer("B", vec![], 0, Transform::default());
+        editor.select_many(&[a, b]);
+        // Older code that just sets the selection still gets one layer.
+        editor.selection = Some(a);
+        assert_eq!(editor.selected_ids(), [a]);
     }
 
     fn editor_with_layer() -> (Editor, LayerId) {

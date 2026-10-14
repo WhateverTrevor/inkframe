@@ -24,6 +24,8 @@ pub const REDO: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::Z);
 /// Windows users expect Ctrl+Y for redo, so accept it everywhere.
 pub const REDO_ALT: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::Y);
 pub const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::D);
+pub const SELECT_ALL: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::A);
+pub const DESELECT_ALL: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::A);
 
 // Copy and paste arrive from the system as clipboard events rather than
 // keys (see `InkframeApp::handle_shortcuts`); these are only for showing in
