@@ -32,6 +32,8 @@ enum Command {
     DuplicateLayer,
     DeleteLayer,
     ConvertToSymbol,
+    /// Makes the selected layer a mask over the layer below it.
+    MaskLayerBelow,
     /// Opens the selected instance's symbol for editing.
     EditSymbol,
     /// Steps out of the symbol being edited.
@@ -143,6 +145,11 @@ impl InkframeApp {
             Command::DeleteLayer => editor.delete_selected_layer(),
             Command::ConvertToSymbol => {
                 editor.convert_selected_to_symbol();
+            }
+            Command::MaskLayerBelow => {
+                if let Some(id) = editor.selection {
+                    editor.doc.mask_layer_below(id);
+                }
             }
             Command::EditSymbol => {
                 if let Some(id) = editor.selection {
@@ -331,6 +338,13 @@ impl InkframeApp {
                 item(ui, "Edit Symbol", None, Command::EditSymbol, instance_selected);
                 let in_symbol = self.editor.timeline() != TimelineId::Main;
                 item(ui, "Exit Symbol", None, Command::ExitSymbol, in_symbol);
+                ui.separator();
+                // Only offered when there's a layer below to mask.
+                let below = self
+                    .editor
+                    .selection
+                    .is_some_and(|id| self.editor.layers().first().is_some_and(|bottom| bottom.id != id));
+                item(ui, "Mask", None, Command::MaskLayerBelow, below);
             });
             ui.menu_button("Timeline", |ui| {
                 let play = if self.editor.playback.playing { "Pause" } else { "Play" };

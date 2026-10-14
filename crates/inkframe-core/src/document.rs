@@ -24,7 +24,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 10;
+pub const FORMAT_VERSION: u32 = 11;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -108,6 +108,13 @@ pub struct Layer {
     /// The guide layer this layer travels along, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub follow: Option<LayerId>,
+    /// A mask: its drawing is a window onto the layers it masks, rather
+    /// than drawn itself (see `mask.rs`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mask: bool,
+    /// The mask layer this layer is seen through, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub masked_by: Option<LayerId>,
 }
 
 /// A styled shape inside a layer.
@@ -289,6 +296,8 @@ impl Document {
             track: Track::new(frame, transform),
             guide: false,
             follow: None,
+            mask: false,
+            masked_by: None,
         });
         Some(id)
     }
@@ -353,6 +362,12 @@ impl Document {
         self.hit_test_in(TimelineId::Main, point, frame, tolerance)
     }
 
+    /// Whether `point` is on the layer's drawing at `frame`. `point` is in
+    /// the coordinates of the layer's timeline.
+    pub fn hits_layer(&self, layer: &Layer, point: Point, frame: u32, tolerance: f32) -> bool {
+        self.layer_hit(layer, point, frame, tolerance)
+    }
+
     /// Like [`Document::hit_test`], for any timeline. For a symbol, `point`
     /// is in the symbol's own coordinates and `frame` is a symbol frame.
     pub fn hit_test_in(
@@ -365,7 +380,10 @@ impl Document {
         self.layers_of(timeline)
             .iter()
             .rev()
-            .filter(|l| l.is_shown_at(frame) && !l.locked)
+            // Mask layers aren't drawn, so clicking where one is should
+            // reach what's visible there instead. (The editor still lets
+            // a selected mask be dragged; see `Editor::hit_test`.)
+            .filter(|l| l.is_shown_at(frame) && !l.locked && !l.mask)
             .find(|l| self.layer_hit(l, point, frame, tolerance))
             .map(|l| l.id)
     }

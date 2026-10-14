@@ -20,6 +20,7 @@ mod geometry;
 mod guide;
 mod history;
 mod image;
+mod mask;
 mod shape;
 mod symbol;
 mod text;

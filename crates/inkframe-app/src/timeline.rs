@@ -489,10 +489,21 @@ impl TimelineView {
                     let name_pos = pos2(layout.lock_rect(index).right() + 6.0, rect.center().y);
                     let color = if layer.visible { text } else { faint };
                     let name = painter.text(name_pos, Align2::LEFT_CENTER, &layer.name, font.clone(), color);
-                    // Motion guides are labelled, since they don't export.
-                    if layer.guide {
-                        let tag = pos2(name.right() + 6.0, rect.center().y);
-                        painter.text(tag, Align2::LEFT_CENTER, "guide", font.clone(), faint);
+                    // Guides and masks are labelled, since neither is drawn in
+                    // an export, and masked layers say so, since what shows of
+                    // them depends on another layer.
+                    let tag = if layer.guide {
+                        Some("guide")
+                    } else if layer.mask {
+                        Some("mask")
+                    } else if editor.doc.mask_for(layer, editor.frame).is_some() {
+                        Some("masked")
+                    } else {
+                        None
+                    };
+                    if let Some(tag) = tag {
+                        let at = pos2(name.right() + 6.0, rect.center().y);
+                        painter.text(at, Align2::LEFT_CENTER, tag, font.clone(), faint);
                     }
                 }
                 Some(property) => {

@@ -424,7 +424,15 @@ impl Editor {
 
     /// The front-most layer of the current timeline under `point`, which is
     /// in the timeline's own coordinates.
+    /// The layer under `point` on the stage. Masks aren't drawn, so clicks
+    /// go through them, except for a selected mask, which can be dragged
+    /// into place.
     pub fn hit_test(&self, point: Point, tolerance: f32) -> Option<LayerId> {
+        if let Some(mask) = self.selected_layer().filter(|l| l.mask && !l.locked && l.is_shown_at(self.frame))
+            && self.doc.hits_layer(mask, point, self.frame, tolerance)
+        {
+            return Some(mask.id);
+        }
         self.doc.hit_test_in(self.timeline(), point, self.frame, tolerance)
     }
 
@@ -670,6 +678,25 @@ mod tests {
         editor.import_font(&path).unwrap();
         assert_eq!(editor.doc.fonts.len(), 1);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn clicks_go_through_masks_unless_the_mask_is_selected() {
+        let mut editor = Editor::new(Document::default());
+        let square = |size: f32| Element {
+            shape: Shape::Rect { width: size, height: size, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::BLACK), stroke: None },
+        };
+        let scene =
+            editor.doc.add_layer("Scene", vec![square(400.0)], 0, Transform::at(Point::new(200.0, 200.0)));
+        let mask =
+            editor.doc.add_layer("Window", vec![square(100.0)], 0, Transform::at(Point::new(200.0, 200.0)));
+        editor.doc.mask_layer_below(mask);
+
+        let middle = Point::new(200.0, 200.0);
+        assert_eq!(editor.hit_test(middle, 1.0), Some(scene), "the mask isn't drawn, so the scene is hit");
+        editor.selection = Some(mask);
+        assert_eq!(editor.hit_test(middle, 1.0), Some(mask), "a selected mask can be grabbed");
     }
 
     fn editor_with_layer() -> (Editor, LayerId) {

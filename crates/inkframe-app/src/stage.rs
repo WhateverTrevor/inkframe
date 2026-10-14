@@ -295,6 +295,8 @@ struct RenderKey {
     images: u64,
     /// Changes when fonts are added, which can change how text looks.
     fonts: u64,
+    /// The mask layer shown faintly because it's selected.
+    shown_mask: Option<LayerId>,
 }
 
 pub struct StageView {
@@ -1371,6 +1373,8 @@ impl StageView {
         let timeline = editor.timeline();
         let to_stage = editor.timeline_transform();
         let surroundings = editor.surroundings();
+        // A selected mask is drawn faintly so it can be seen while moving it.
+        let shown_mask = editor.selected_layer().filter(|l| l.mask).map(|l| l.id);
         let key = RenderKey {
             doc: doc.clone(),
             timeline,
@@ -1381,6 +1385,7 @@ impl StageView {
             onion,
             images: editor.images.generation(),
             fonts: inkframe_render::fonts_generation(),
+            shown_mask,
         };
         if self.rendered.as_ref() == Some(&key) {
             return;
@@ -1402,6 +1407,7 @@ impl StageView {
             tint: None,
             images,
             show_guides: true,
+            show_mask: None,
         };
         for level in &surroundings {
             render_timeline_into(
@@ -1456,6 +1462,7 @@ fn draw_onion_skins(pixmap: &mut tiny_skia::Pixmap, editor: &Editor, onion: Onio
         // A guide doesn't move with the animation, so ghosts of it would
         // only clutter.
         show_guides: false,
+        show_mask: None,
         opacity: 0.45 * (count - distance + 1) as f32 / count as f32,
     };
     // Farthest first, so nearer ghosts paint on top.

@@ -49,6 +49,7 @@ The data model and the math behind animation.
 | `symbol.rs` | `Symbol` (library entry), `Instance` (a symbol placed on a layer) and its timing, Convert to Symbol, and symbol-aware bounds and hit-testing |
 | `text.rs` | `Text`: content, `Font`, size, alignment; its measured extent, which the editor keeps up to date |
 | `guide.rs` | Motion guides: `Document::pose`, a layer's transform following its guide (use it rather than `Layer::transform_at` wherever layers are drawn or edited) |
+| `mask.rs` | Masks: which mask a layer is seen through, and Animate's "mask the layer below" |
 | `font_file.rs` | `FontFile`: a font file linked to the project, and the families it provides |
 | `image.rs` | `ImageAsset`: an image file the document links to, and its size in pixels |
 | `audio.rs` | `AudioTrack`: a sound file laid against the timeline; how linked files are found |
@@ -99,13 +100,13 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 10. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 11. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
 symbols, version 5 audio tracks, version 6 images, version 7 text and
-version 8 project font files, version 9 curved motion paths and version 10
-motion guides;
+version 8 project font files, version 9 curved motion paths, version 10
+motion guides and version 11 masks;
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 
@@ -138,6 +139,12 @@ program: installed fonts, plus project font files (`sync_project_fonts`),
 which are searched first so a project's copy of a font wins. `inkframe-core` can't lay out text, so the
 editor stores each text's measured extent in `Text::measured`
 (`Editor::remeasure_text`) for selection and hit-testing.
+
+A masked layer is drawn into a scratch buffer like a translucent one; the
+mask layer is drawn into a second buffer of the same size, whose coverage
+becomes a stencil (`mask_stencil`) cut out of the first before it's
+blended down. Mask layers themselves are never drawn, except faintly on the
+stage while selected (`RenderOptions::show_mask`).
 
 Images are drawn from an `ImageLibrary` (`images.rs`), which decodes each
 file once and keeps half-size copies (mipmaps) so shrunken pictures don't

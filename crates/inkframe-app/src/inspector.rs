@@ -37,6 +37,9 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         ui.checkbox(&mut layer.guide, "Guide").on_hover_text(
             "A motion guide: other layers can follow its path. Shown while editing, never exported.",
         );
+        ui.checkbox(&mut layer.mask, "Mask").on_hover_text(
+            "A mask: layers masked by it only show where it has something drawn. It isn't drawn itself.",
+        );
     });
     span_editor(ui, layer, last_frame);
 
@@ -190,6 +193,28 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
         editor.toggle_property_key(id, property);
     }
     motion_path_section(ui, editor, id);
+    mask_section(ui, editor, id);
+}
+
+/// Which mask, if any, the layer is seen through.
+fn mask_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    let masks: Vec<(LayerId, String)> =
+        editor.doc.masks_beside(id).into_iter().map(|m| (m.id, m.name.clone())).collect();
+    let Some(layer) = editor.doc.layer_mut(id) else { return };
+    if layer.mask || (masks.is_empty() && layer.masked_by.is_none()) {
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.label("Masked by");
+        let current =
+            masks.iter().find(|(m, _)| Some(*m) == layer.masked_by).map_or("None", |(_, name)| name);
+        egui::ComboBox::from_id_salt("masked_by").selected_text(current).show_ui(ui, |ui| {
+            ui.selectable_value(&mut layer.masked_by, None, "None");
+            for (mask, name) in &masks {
+                ui.selectable_value(&mut layer.masked_by, Some(*mask), name);
+            }
+        });
+    });
 }
 
 /// Options for a layer that moves: following a motion guide, turning to

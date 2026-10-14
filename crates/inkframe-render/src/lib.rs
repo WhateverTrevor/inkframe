@@ -16,8 +16,8 @@ mod text;
 
 use inkframe_core::{Affine, Color, Document, Element, Layer, LayerId, Point, Shape, SymbolId, TimelineId};
 use tiny_skia::{
-    FillRule, FilterQuality, IntRect, LineCap, LineJoin, Paint, PathBuilder, Pattern, Pixmap, PixmapMut,
-    PixmapPaint, SpreadMode, Transform,
+    FillRule, FilterQuality, IntRect, LineCap, LineJoin, Mask, MaskType, Paint, PathBuilder, Pattern, Pixmap,
+    PixmapMut, PixmapPaint, SpreadMode, Transform,
 };
 
 pub use images::{IMAGE_EXTENSIONS, ImageLibrary, image_size};
@@ -49,11 +49,22 @@ pub struct RenderOptions<'a> {
     /// Draw motion guide layers. They're shown while editing, but they're
     /// scaffolding, not artwork, so exports leave them out.
     pub show_guides: bool,
+    /// A mask layer to draw faintly, so it can be seen while it's being
+    /// positioned. Masks are otherwise never drawn, only used.
+    pub show_mask: Option<LayerId>,
 }
 
 impl Default for RenderOptions<'_> {
     fn default() -> Self {
-        Self { scale: 1.0, draw_background: true, tint: None, opacity: 1.0, images: None, show_guides: false }
+        Self {
+            scale: 1.0,
+            draw_background: true,
+            tint: None,
+            opacity: 1.0,
+            images: None,
+            show_guides: false,
+            show_mask: None,
+        }
     }
 }
 
@@ -103,7 +114,12 @@ pub fn render_timeline_into(
     }
 
     let to_pixels = Affine::scale(options.scale, options.scale).pre_concat(to_stage);
-    let style = Style { tint: options.tint, images: options.images, show_guides: options.show_guides };
+    let style = Style {
+        tint: options.tint,
+        images: options.images,
+        show_guides: options.show_guides,
+        show_mask: options.show_mask,
+    };
     let layers = doc.layers_of(timeline);
     in_bands(pixmap, |band, shift| {
         let to_band = shift.pre_concat(to_pixels);
@@ -195,7 +211,7 @@ pub fn render_symbol_thumbnail(
         .pre_concat(Affine::translate(-center));
 
     let mut pixmap = Pixmap::new(size, size)?;
-    let style = Style { tint: None, images, show_guides: true };
+    let style = Style { tint: None, images, show_guides: true, show_mask: None };
     render_layers(&mut pixmap.as_mut(), doc, &symbol.layers, frame, fit, 1.0, style, None, 0);
     Some(pixmap)
 }
@@ -207,7 +223,11 @@ struct Style<'a> {
     tint: Option<Color>,
     images: Option<&'a ImageLibrary>,
     show_guides: bool,
+    show_mask: Option<LayerId>,
 }
+
+/// How strongly a mask layer is drawn when it's shown for positioning.
+const MASK_PREVIEW_OPACITY: f32 = 0.35;
 
 /// Draws a stack of layers (the document's, or a symbol's) at `frame`.
 ///
@@ -228,16 +248,25 @@ fn render_layers(
     depth: usize,
 ) {
     // Layers are stored bottom-first, so a plain loop paints back to front.
-    let drawn = |l: &&Layer| l.is_shown_at(frame) && Some(l.id) != skip && (style.show_guides || !l.guide);
+    // Guides are only drawn while editing, and masks only when one is being
+    // shown for positioning; otherwise a mask just shapes what it masks.
+    let drawn = |l: &&Layer| {
+        l.is_shown_at(frame)
+            && Some(l.id) != skip
+            && (style.show_guides || !l.guide)
+            && (!l.mask || style.show_mask == Some(l.id))
+    };
     for layer in layers.iter().filter(drawn) {
         let transform = doc.pose(layer, frame);
-        let opacity = (transform.opacity * opacity).clamp(0.0, 1.0);
+        let preview = if layer.mask { MASK_PREVIEW_OPACITY } else { 1.0 };
+        let opacity = (transform.opacity * opacity * preview).clamp(0.0, 1.0);
         if opacity <= 0.0 {
             continue;
         }
         let matrix = parent.pre_concat(transform.to_affine());
+        let mask = doc.mask_for(layer, frame).filter(|_| !layer.mask);
 
-        if opacity >= 1.0 {
+        if opacity >= 1.0 && mask.is_none() {
             draw_layer(pixmap, doc, layer, frame, matrix, style, depth);
             continue;
         }
@@ -247,6 +276,8 @@ fn render_layers(
         // would show through each other. So we draw the layer fully opaque
         // into a scratch buffer, then blend that buffer down in one go.
         // Symbols nest, so each translucent layer needs a buffer of its own.
+        // A masked layer goes through a scratch buffer too, so the mask can
+        // be cut out of it before it's blended down.
         //
         // The buffer only needs to cover the pixels the layer can touch.
         // A whole-image buffer would cost a full-screen allocation and blend
@@ -258,12 +289,46 @@ fn render_layers(
         let mut scratch = Pixmap::new(region.width(), region.height()).expect("region is non-empty");
         // Shifting by whole pixels lines the scratch buffer up exactly with
         // the image beneath it, so the result is identical to drawing in place.
-        let offset = Point::new(-region.x() as f32, -region.y() as f32);
-        let shifted = Affine::translate(offset).pre_concat(matrix);
-        draw_layer(&mut scratch.as_mut(), doc, layer, frame, shifted, style, depth);
+        let offset = Affine::translate(Point::new(-region.x() as f32, -region.y() as f32));
+        draw_layer(&mut scratch.as_mut(), doc, layer, frame, offset.pre_concat(matrix), style, depth);
+        if let Some(mask) = mask {
+            let stencil = mask_stencil(doc, mask, frame, offset.pre_concat(parent), &scratch, style, depth);
+            scratch.apply_mask(&stencil);
+        }
         let paint = PixmapPaint { opacity, ..PixmapPaint::default() };
         pixmap.draw_pixmap(region.x(), region.y(), scratch.as_ref(), &paint, Transform::identity(), None);
     }
+}
+
+/// A mask layer's drawing as a stencil the size of `scratch`: how much of
+/// each pixel shows through, from its coverage. `parent` maps the layers'
+/// coordinates onto `scratch`.
+///
+/// The mask is drawn untinted (an onion skin's tint shouldn't change what
+/// shows through it), and its own opacity scales the whole stencil, so a
+/// mask faded to 50% lets half of the masked layer through.
+fn mask_stencil(
+    doc: &Document,
+    mask: &Layer,
+    frame: u32,
+    parent: Affine,
+    scratch: &Pixmap,
+    style: Style<'_>,
+    depth: usize,
+) -> Mask {
+    let pose = doc.pose(mask, frame);
+    let mut drawing =
+        Pixmap::new(scratch.width(), scratch.height()).expect("same size as the scratch buffer");
+    let untinted = Style { tint: None, ..style };
+    draw_layer(&mut drawing.as_mut(), doc, mask, frame, parent.pre_concat(pose.to_affine()), untinted, depth);
+    let mut stencil = Mask::from_pixmap(drawing.as_ref(), MaskType::Alpha);
+    let opacity = pose.opacity.clamp(0.0, 1.0);
+    if opacity < 1.0 {
+        for coverage in stencil.data_mut() {
+            *coverage = (*coverage as f32 * opacity).round() as u8;
+        }
+    }
+    stencil
 }
 
 /// The pixels a layer can paint when drawn with `matrix`, clipped to a
@@ -565,7 +630,7 @@ mod tests {
         let mut whole = Pixmap::new(banded.width(), banded.height()).unwrap();
         whole.fill(to_skia_color(doc.background));
         let to_pixels = Affine::scale(1.3, 1.3);
-        let style = super::Style { tint: None, images: None, show_guides: false };
+        let style = super::Style { tint: None, images: None, show_guides: false, show_mask: None };
         render_layers(&mut whole.as_mut(), &doc, &doc.layers, 0, to_pixels, 1.0, style, None, 0);
 
         // tiny-skia clips each shape's outline where a band starts and ends,
@@ -654,6 +719,52 @@ mod tests {
         assert_eq!(pixel(&exported, 20, 50), [255, 255, 255, 255]);
         let editing = RenderOptions { show_guides: true, ..RenderOptions::default() };
         assert_eq!(pixel(&render_frame(&doc, 0, &editing).unwrap(), 20, 50), [255, 0, 0, 255]);
+    }
+
+    /// A red 100×100 page, masked by a 20×20 square in the middle.
+    fn masked_page() -> (Document, LayerId) {
+        let mut doc = Document::default();
+        (doc.width, doc.height) = (100, 100);
+        doc.background = Color::WHITE;
+        let red = Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None };
+        let page =
+            Element { shape: Shape::Rect { width: 100.0, height: 100.0, corner_radius: 0.0 }, style: red };
+        let window =
+            Element { shape: Shape::Rect { width: 20.0, height: 20.0, corner_radius: 0.0 }, style: red };
+        doc.add_layer("Page", vec![page], 0, Pose::at(Point::new(50.0, 50.0)));
+        let mask = doc.add_layer("Window", vec![window], 0, Pose::at(Point::new(50.0, 50.0)));
+        doc.mask_layer_below(mask);
+        (doc, mask)
+    }
+
+    #[test]
+    fn masked_layers_only_show_through_the_mask() {
+        let (doc, _) = masked_page();
+        let pixmap = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        assert_eq!(pixel(&pixmap, 50, 50), [255, 0, 0, 255], "inside the window");
+        assert_eq!(pixel(&pixmap, 10, 10), [255, 255, 255, 255], "outside it, only the background");
+    }
+
+    #[test]
+    fn a_half_faded_mask_lets_half_through() {
+        let (mut doc, mask) = masked_page();
+        doc.layer_mut(mask).unwrap().track.opacity.set(0, 0.5);
+        let options = RenderOptions { draw_background: false, ..RenderOptions::default() };
+        let [_, _, _, alpha] = pixel(&render_frame(&doc, 0, &options).unwrap(), 50, 50);
+        assert!((126..=129).contains(&alpha), "alpha was {alpha}");
+    }
+
+    #[test]
+    fn masks_are_never_drawn_unless_shown_for_positioning() {
+        // Unlink the page, so only the mask itself could draw anything.
+        let (mut doc, mask) = masked_page();
+        doc.layers[0].masked_by = None;
+        doc.layers[0].visible = false;
+        let options = RenderOptions { draw_background: false, ..RenderOptions::default() };
+        assert_eq!(pixel(&render_frame(&doc, 0, &options).unwrap(), 50, 50)[3], 0);
+        let shown = RenderOptions { show_mask: Some(mask), ..options };
+        let [_, _, _, alpha] = pixel(&render_frame(&doc, 0, &shown).unwrap(), 50, 50);
+        assert!(alpha > 0 && alpha < 255, "a faint preview, alpha {alpha}");
     }
 
     #[test]

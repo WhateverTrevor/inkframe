@@ -26,6 +26,9 @@ planned (the code is already cross-platform and CI builds it on Windows).
   the curve handles; "Orient to path" turns the layer to face where it's going.
   For any shape of path (loops, winding roads), draw it, tick **Guide**, and
   have another layer **Follow guide**. Guides never appear in exports.
+- **Masks:** any layer can be a mask, a window that other layers only show
+  through. Masks can be animated (a moving spotlight) and soft (a faded
+  mask lets part of the layer through).
 - **Ease** each property's tweens separately with Linear, Ease In/Out/In-Out,
   Hold, or a custom curve: drag the curve's handles in the properties panel
   to shape it, with the playhead's position shown on the curve.
@@ -98,6 +101,7 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Shape easing | In the properties panel's Easing section, pick a property, then drag the curve's orange handles. Pull a handle above the top line to overshoot, or below the bottom to anticipate |
 | Motion paths | Select a layer that moves: its path appears as a dashed line. Drag the path to bend that tween; drag the round handles to fine-tune. **Orient to path** and **Straighten path** are under the transform in the properties panel |
 | Motion guides | Draw a path (Pencil, Pen, or a shape) and tick **Guide** in its properties. Select the layer that should travel and pick the guide under **Follow guide**: between its first and last position keyframes it runs the whole guide, with its easing setting the pace. A middle keyframe pins it to the nearest point on the guide |
+| Masks | Select a layer and choose Modify › Mask to make it mask the layer below, or tick **Mask** on a layer and pick it under **Masked by** on any others. The mask isn't drawn; select it to see it faintly and drag it into place |
 | Insert / remove keyframe | `F6` / `Shift+F6` keys every property; right-click a property row in the timeline, or click the ◇ next to a property in the properties panel, to key just that one |
 | Play / pause | `Enter` |
 | Step frames | `,` and `.` (or ← →), `Home` / `End` |

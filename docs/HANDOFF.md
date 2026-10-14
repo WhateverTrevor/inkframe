@@ -10,7 +10,7 @@ after the macOS app bundle.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
   --all-targets -- -D warnings` and `cargo test --workspace` (183 tests)
   all pass.
-- **File format:** version 10. Older versions load and upgrade automatically
+- **File format:** version 11. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -59,6 +59,9 @@ after the macOS app bundle.
     follower runs the whole guide between its first and last position
     keys (middle keys pin to the nearest point). `Document::pose` resolves
     this; use it instead of `Layer::transform_at`. Guides aren't exported.
+24. Masks (format v11): `Layer::mask` and `Layer::masked_by`; anything a mask
+    draws is the window (soft masks via its opacity); Modify › Mask masks
+    the layer below; clicks pass through masks unless one is selected.
 
 ## Not yet verified by hand
 
