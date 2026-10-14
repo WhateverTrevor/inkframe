@@ -37,7 +37,8 @@ after the macOS app bundle.
 13. macOS packaging, part A: `cargo xtask bundle-macos [--dmg] [--ffmpeg]`
     builds an ad-hoc-signed `Inkframe.app`, with an app icon drawn in code
 14. Windows installer: `cargo xtask bundle-windows` (Inno Setup), built and
-    uploaded as an artifact by CI on every push
+    uploaded as an artifact by CI on every push, with gyan.dev's static
+    ffmpeg 9.0.2 bundled (pinned URL and SHA-256 in ci.yml)
 
 ## Not yet verified by hand
 

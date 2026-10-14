@@ -37,3 +37,9 @@ task refuses a "shared" build, since only `ffmpeg.exe` is copied into the
 installer. It needs the `prores_ks` and `libx264` encoders (HEVC with alpha
 is macOS-only). Licensing works the same way as on macOS; see
 [../macos/README.md](../macos/README.md#licensing).
+
+CI bundles the "essentials" build from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/)
+(ffmpeg 9.0.2, GPLv3). The download URL and its SHA-256 are pinned at the top
+of `.github/workflows/ci.yml`. To do the same by hand, download that zip,
+check it with `certutil -hashfile ffmpeg.zip SHA256`, and copy
+`bin\ffmpeg.exe` from it to `vendor\ffmpeg\ffmpeg.exe`.
