@@ -43,9 +43,10 @@ after the macOS app bundle.
 ## Not yet verified by hand
 
 - Audio playback was checked by ear on 2026-10-14 and works.
-- The bundled ffmpeg (static build, ffmpeg 9.0.2, in the git-ignored
-  `vendor/ffmpeg/`) passes every export test. See `packaging/macos/README.md`
-  to fetch it again on a new machine.
+- Both installers bundle a static ffmpeg 9.0.2 (macOS: martin-riedl.de,
+  Windows: gyan.dev). CI downloads them with pinned SHA-256s, bundles them
+  and runs the export tests through the bundled copies. Locally the macOS
+  one lives in the git-ignored `vendor/ffmpeg/`.
 - Pointer interactions are tested with simulated input (`egui_kittest`) and
   screenshots, not by clicking through the real app.
 

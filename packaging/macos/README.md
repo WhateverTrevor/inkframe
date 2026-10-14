@@ -30,9 +30,10 @@ across a dozen libraries in `/opt/homebrew`), and the packaging task will
 refuse it and list what it depends on. Use a static build instead, either one
 you compile or a trusted prebuilt one for your architecture.
 
-Put it at `vendor/ffmpeg/ffmpeg`, which git ignores. The release builds so
-far used the static macOS arm64 build from
-[ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de) (ffmpeg 9.0.2).
+Put it at `vendor/ffmpeg/ffmpeg`, which git ignores. CI bundles the static
+macOS arm64 build from [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de)
+(ffmpeg 9.0.2); its download URL and SHA-256 are pinned at the top of
+`.github/workflows/ci.yml`.
 Check the download against the SHA-256 checksum published beside it:
 
 ```sh

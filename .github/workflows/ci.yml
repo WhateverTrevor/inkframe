@@ -7,9 +7,15 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # The static ffmpeg bundled into the Windows installer: gyan.dev's
-  # "essentials" build, pinned to one version and checked against the
-  # SHA-256 that gyan.dev publishes. To update, change all three together.
+  # The static ffmpeg builds bundled into the installers, each pinned to one
+  # version and checked against the SHA-256 its builder publishes. To update
+  # one, change its three values together.
+  #
+  # macOS (Apple Silicon): martin-riedl.de's static build.
+  MACOS_FFMPEG_VERSION: "9.0.2"
+  MACOS_FFMPEG_URL: https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip
+  MACOS_FFMPEG_SHA256: c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924
+  # Windows (x64): gyan.dev's "essentials" build.
   WINDOWS_FFMPEG_VERSION: "9.0.2"
   WINDOWS_FFMPEG_URL: https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip
   WINDOWS_FFMPEG_SHA256: 60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba
@@ -44,15 +50,36 @@ jobs:
 
       # Build the installers on every run, so packaging can't quietly break,
       # and keep them for two weeks so anyone can download a build to test
-      # (from the run's page on GitHub, under Artifacts). The Windows
-      # installer bundles ffmpeg; the macOS one doesn't yet, so video export
-      # there needs ffmpeg installed separately.
+      # (from the run's page on GitHub, under Artifacts). Both bundle a
+      # static ffmpeg, so video export works without installing anything.
+      #
+      # Each ffmpeg download is cached, so it's fetched once per version
+      # rather than on every run. After bundling, every export format is
+      # encoded through the bundled copy and checked with the ffprobe
+      # installed earlier.
+      - name: Cache the macOS ffmpeg
+        if: runner.os == 'macOS'
+        id: macos-ffmpeg
+        uses: actions/cache@v6
+        with:
+          path: vendor/ffmpeg
+          key: macos-ffmpeg-${{ env.MACOS_FFMPEG_VERSION }}-${{ env.MACOS_FFMPEG_SHA256 }}
+      - name: Download the macOS ffmpeg
+        if: runner.os == 'macOS' && steps.macos-ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          curl --fail --silent --show-error --location -o "$RUNNER_TEMP/ffmpeg.zip" "$MACOS_FFMPEG_URL"
+          echo "$MACOS_FFMPEG_SHA256  $RUNNER_TEMP/ffmpeg.zip" | shasum -a 256 --check
+          mkdir -p vendor/ffmpeg
+          unzip -o "$RUNNER_TEMP/ffmpeg.zip" ffmpeg -d vendor/ffmpeg
       - name: Bundle the macOS app
         if: runner.os == 'macOS'
-        run: cargo xtask bundle-macos --dmg
+        run: cargo xtask bundle-macos --ffmpeg vendor/ffmpeg/ffmpeg --dmg
+      - name: Test export with the bundled ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          INKFRAME_FFMPEG="$PWD/target/release/Inkframe.app/Contents/MacOS/ffmpeg" \
+            cargo test --package inkframe-export
 
-      # The ffmpeg download is cached, so it's fetched once per version
-      # rather than on every run.
       - name: Cache the Windows ffmpeg
         if: runner.os == 'Windows'
         id: windows-ffmpeg
@@ -79,9 +106,7 @@ jobs:
       - name: Build the Windows installer
         if: runner.os == 'Windows'
         run: cargo xtask bundle-windows --ffmpeg vendor/ffmpeg/ffmpeg.exe
-      # Encode every export format through the bundled ffmpeg, checking the
-      # results with the ffprobe installed earlier.
-      - name: Test export with the bundled ffmpeg
+      - name: Test export with the bundled ffmpeg (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
