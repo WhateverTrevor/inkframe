@@ -162,6 +162,18 @@ egui is an *immediate-mode* UI: each panel's `show()` function runs every
 frame, draws its widgets, and handles input on the spot. There are no
 callbacks or retained widget trees. Panels read and change `Editor` directly.
 
+## Build tooling
+
+`xtask/` is a small binary for release chores, run as `cargo xtask <task>`
+(the alias is in `.cargo/config.toml`). It isn't part of the app.
+
+- `icon.rs` draws the app icon with tiny-skia at any size. `cargo xtask icon`
+  writes the PNGs in `assets/icon/`; the app embeds the 256-pixel one as its
+  window icon.
+- `macos.rs` assembles `Inkframe.app`, optionally with a bundled ffmpeg that
+  `ffmpeg::locate` finds next to the executable, signs it ad hoc and builds
+  a `.dmg`. See `packaging/macos/README.md`.
+
 ## Common changes
 
 **Add an animatable property** (for example, skew): add the field to

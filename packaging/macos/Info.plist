@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The app bundle's description, read by Finder and the Dock.
+  `cargo xtask bundle-macos` fills in {{VERSION}} from Cargo.toml.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Inkframe</string>
+	<key>CFBundleDisplayName</key>
+	<string>Inkframe</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.whatevertrevor.inkframe</string>
+	<key>CFBundleExecutable</key>
+	<string>inkframe</string>
+	<key>CFBundleIconFile</key>
+	<string>Inkframe</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleVersion</key>
+	<string>{{VERSION}}</string>
+	<key>CFBundleShortVersionString</key>
+	<string>{{VERSION}}</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.graphics-design</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<!-- Without this, macOS renders the window at half resolution on Retina screens. -->
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Inkframe contributors. Dual-licensed MIT or Apache-2.0.</string>
+</dict>
+</plist>

@@ -59,6 +59,15 @@ cargo run --release -- examples/bouncing-ball.inkf
 If ffmpeg is somewhere unusual, point Inkframe at it with the
 `INKFRAME_FFMPEG` environment variable.
 
+To build a double-clickable `Inkframe.app` (and a `.dmg` to install it from):
+
+```sh
+cargo xtask bundle-macos --dmg
+```
+
+[packaging/macos/README.md](packaging/macos/README.md) covers bundling
+ffmpeg inside the app and what still needs an Apple Developer account.
+
 ## Using the editor
 
 | Action | How |
@@ -91,6 +100,9 @@ crates/
   inkframe-audio/   decodes, resamples and mixes sound files
   inkframe-export/  PNG sequences and ffmpeg video encoding
   inkframe-app/     the desktop editor (egui)
+xtask/              build tooling: `cargo xtask icon`, `cargo xtask bundle-macos`
+packaging/          per-platform packaging files
+assets/icon/        the app icon (drawn in code by xtask)
 ```
 
 [ARCHITECTURE.md](ARCHITECTURE.md) explains how the pieces fit together and
@@ -101,8 +113,10 @@ development workflow.
 
 Roughly in priority order:
 
+- Signed and notarized macOS app (the unsigned `.app` and `.dmg` already
+  build with `cargo xtask bundle-macos`)
+- Windows installer
 - GPU stage preview for very large scenes
-- Windows installer and signed macOS app bundle
 
 ## License
 

@@ -1,7 +1,7 @@
 # Handoff: where Inkframe stands
 
-A checkpoint for picking development back up. Last updated 2026-10-13,
-at commit "Add audio tracks…" on `main`.
+A checkpoint for picking development back up. Last updated 2026-10-14,
+after the macOS app bundle.
 
 ## State
 
@@ -14,8 +14,9 @@ at commit "Add audio tracks…" on `main`.
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
-- **Remote:** none yet. The CI workflow in `.github/workflows/ci.yml` runs
-  once the repo is pushed to GitHub.
+- **Remote:** https://github.com/WhateverTrevor/inkframe (public). CI runs
+  on macOS and Windows for every push and pull request, and both pass.
+  Commits use the GitHub noreply address, not a personal email.
 
 ## Built so far (in order)
 
@@ -33,20 +34,22 @@ at commit "Add audio tracks…" on `main`.
 11. Edit in place (rotated/scaled instances, faded surroundings)
 12. Audio tracks: import, waveforms, synced playback, scrubbing, export
     (format v5)
+13. macOS packaging, part A: `cargo xtask bundle-macos [--dmg] [--ffmpeg]`
+    builds an ad-hoc-signed `Inkframe.app`, with an app icon drawn in code
 
 ## Not yet verified by hand
 
-- **Audio playback, sync and scrubbing.** Covered by tests but never heard,
-  since development happened without audio output. Worth a listen first.
+- Audio playback was checked by ear on 2026-10-14 and works.
+- No ffmpeg has been bundled yet: it needs a self-contained (static) build,
+  and Homebrew's isn't one. See `packaging/macos/README.md`.
 - Pointer interactions are tested with simulated input (`egui_kittest`) and
   screenshots, not by clicking through the real app.
 
 ## Next up (roadmap order)
 
-1. **Packaging:** a signed and notarized macOS `.app` (Apple Silicon), then a
-   Windows installer. Consider bundling ffmpeg (`ffmpeg::locate` already
-   checks next to the executable). Needs the user's Apple Developer account
-   for signing.
+1. **Packaging, part B:** sign with a Developer ID (hardened runtime) and
+   notarize, replacing `codesign` in `xtask/src/macos.rs`. Needs the user's
+   Apple Developer account. Then a Windows installer.
 2. **GPU stage preview** for very large scenes. Export should stay on the
    deterministic CPU renderer.
 
