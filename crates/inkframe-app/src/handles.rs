@@ -138,6 +138,11 @@ impl RotateDrag {
         Self { start, last_angle: angle_from(start.position, pointer), turned: 0.0 }
     }
 
+    /// The pose when the drag began.
+    pub fn start(&self) -> Transform {
+        self.start
+    }
+
     /// Returns the pose for the pointer's new position. With `snap`, the
     /// rotation lands on multiples of 15°.
     pub fn update(&mut self, pointer: Point, snap: bool) -> Transform {

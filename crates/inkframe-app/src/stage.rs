@@ -126,9 +126,17 @@ enum Gesture {
     Pencil { points: Vec<Point> },
     /// Dragging a scale handle. `start` is the pose when the drag began;
     /// every update is computed from it, so errors never accumulate.
-    Scale { layer: LayerId, handle: ScaleHandle, start: Transform, bounds: StageRect },
+    /// With several layers selected, `start` is the imaginary layer around
+    /// them and `group` the real ones with their starting poses.
+    Scale {
+        layer: LayerId,
+        handle: ScaleHandle,
+        start: Transform,
+        bounds: StageRect,
+        group: Vec<(LayerId, Transform)>,
+    },
     /// Dragging the rotation knob or a corner's rotate zone.
-    Rotate { layer: LayerId, drag: RotateDrag },
+    Rotate { layer: LayerId, drag: RotateDrag, group: Vec<(LayerId, Transform)> },
     /// Dragging an anchor point or one of its handles with the Subselection
     /// tool. `start` holds the shape's anchors from when the drag began, and
     /// the pointer is converted into the layer's local space with `to_local`.
@@ -190,6 +198,10 @@ enum HandleHit {
 /// follow the layer through tweens, undo and edits in the inspector.
 struct Handles {
     layer: LayerId,
+    /// With several layers selected: each one and its pose on this frame.
+    /// The handles then go around them all, as an imaginary layer (`pose`)
+    /// that the real ones follow; see `transform_group`.
+    group: Vec<(LayerId, Transform)>,
     pose: Transform,
     /// The layer's bounds in its own local coordinates.
     bounds: StageRect,
@@ -202,14 +214,36 @@ struct Handles {
 impl Handles {
     /// Handles for the current selection, if it can be transformed.
     fn for_selection(editor: &Editor, view: View) -> Option<Self> {
-        // Scaling and rotating work on one layer at a time; with several
-        // selected, they can only be moved together.
-        if editor.tool != Tool::Select || editor.selected_ids().len() > 1 {
+        if editor.tool != Tool::Select {
             return None;
         }
-        let layer = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !l.locked)?;
-        let bounds = editor.doc.layer_bounds(layer, editor.frame)?;
-        let pose = editor.doc.pose(layer, editor.frame);
+        let frame = editor.frame;
+        let editable: Vec<&inkframe_core::Layer> = editor
+            .selected_ids()
+            .into_iter()
+            .filter_map(|id| editor.doc.layer(id))
+            .filter(|l| l.is_shown_at(frame) && !l.locked)
+            .collect();
+        let (layer, group, bounds, pose) = match editable[..] {
+            [] => return None,
+            [layer] => {
+                (layer, Vec::new(), editor.doc.layer_bounds(layer, frame)?, editor.doc.pose(layer, frame))
+            }
+            // Several: an upright box around them all, centered on its
+            // own middle, standing in for a layer that holds them.
+            [.., last] => {
+                let boxes = editable.iter().filter_map(|l| {
+                    let to_stage = editor.doc.pose(l, frame).to_affine();
+                    StageRect::bounding(
+                        editor.doc.layer_bounds(l, frame)?.corners().map(|c| to_stage.apply(c)),
+                    )
+                });
+                let area = boxes.reduce(StageRect::union)?;
+                let group = editable.iter().map(|l| (l.id, editor.doc.pose(l, frame))).collect();
+                let bounds = StageRect::from_center_size(Point::ZERO, area.width(), area.height());
+                (last, group, bounds, Transform::at(area.center()))
+            }
+        };
         let to_stage = pose.to_affine();
         let screen = |local: Point| view.to_screen(to_stage.apply(local));
 
@@ -228,6 +262,7 @@ impl Handles {
 
         Some(Self {
             layer: layer.id,
+            group,
             pose,
             bounds,
             scale: ScaleHandle::ALL.map(|h| (h, screen(h.local_position(bounds)))),
@@ -568,12 +603,22 @@ impl StageView {
                     }
                 }
                 Some(Gesture::Marquee { current, .. }) => *current = p,
-                Some(Gesture::Scale { layer, handle, start, bounds }) => {
+                Some(Gesture::Scale { layer, handle, start, bounds, group }) => {
                     let options = ScaleOptions { proportional: shift, from_pivot: alt };
-                    editor.set_pose(*layer, scale_pose(start, *bounds, *handle, p, options));
+                    let pose = scale_pose(start, *bounds, *handle, p, options);
+                    if group.is_empty() {
+                        editor.set_pose(*layer, pose);
+                    } else {
+                        transform_group(editor, group, start, &pose);
+                    }
                 }
-                Some(Gesture::Rotate { layer, drag }) => {
-                    editor.set_pose(*layer, drag.update(p, shift));
+                Some(Gesture::Rotate { layer, drag, group }) => {
+                    let pose = drag.update(p, shift);
+                    if group.is_empty() {
+                        editor.set_pose(*layer, pose);
+                    } else {
+                        transform_group(editor, group, &drag.start(), &pose);
+                    }
                 }
                 Some(Gesture::EditAnchor { target, part, start, closed, grab, to_local }) => {
                     // Move the part by however far the pointer has moved, so
@@ -991,11 +1036,12 @@ impl StageView {
                     let layer = handles.layer;
                     match handles.hit(press, view) {
                         Some(HandleHit::Scale(handle)) => {
-                            let (start, bounds) = (handles.pose, handles.bounds);
-                            return Some(Gesture::Scale { layer, handle, start, bounds });
+                            let (start, bounds, group) = (handles.pose, handles.bounds, handles.group);
+                            return Some(Gesture::Scale { layer, handle, start, bounds, group });
                         }
                         Some(HandleHit::Rotate) => {
-                            return Some(Gesture::Rotate { layer, drag: RotateDrag::new(handles.pose, p) });
+                            let drag = RotateDrag::new(handles.pose, p);
+                            return Some(Gesture::Rotate { layer, drag, group: handles.group });
                         }
                         None => {}
                     }
@@ -1298,6 +1344,16 @@ impl StageView {
             }
         }
         if let Some(handles) = handles {
+            // Around a group, a faint box joins the handles, so it's clear
+            // they belong to the selection as a whole.
+            if !handles.group.is_empty() {
+                let corner = |x, y| handles.scale.iter().find(|(h, _)| h.x == x && h.y == y).map(|(_, p)| *p);
+                let corners: Vec<Pos2> = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
+                    .into_iter()
+                    .filter_map(|(x, y)| corner(x, y))
+                    .collect();
+                painter.add(egui::Shape::closed_line(corners, (1.0, SELECTION.gamma_multiply(0.6))));
+            }
             handles.draw(painter);
         }
 
@@ -1661,6 +1717,38 @@ struct TextEditing {
     cursor: TextCursor,
     /// While the mouse button that placed the cursor is held, dragging selects.
     selecting: bool,
+}
+
+/// Moves, scales and turns several layers as one, by however the imaginary
+/// layer around them changed from `before` to `after`.
+///
+/// Each layer's position, relative to the group's middle, is scaled and
+/// turned the same way the group was, and its own scale and rotation change
+/// by the same amounts. That's exact for uniform scaling and any rotation.
+/// Stretching a rotated layer along the group's axes would need a skew,
+/// which layers don't have, so it stretches along the layer's own axes:
+/// close, though not the same.
+fn transform_group(
+    editor: &mut Editor,
+    group: &[(LayerId, Transform)],
+    before: &Transform,
+    after: &Transform,
+) {
+    let factor = Point::new(after.scale.x / before.scale.x, after.scale.y / before.scale.y);
+    let turn = (after.rotation - before.rotation).to_radians();
+    let (sin, cos) = turn.sin_cos();
+    for &(id, start) in group {
+        let offset = start.position - before.position;
+        let scaled = Point::new(offset.x * factor.x, offset.y * factor.y);
+        let turned = Point::new(scaled.x * cos - scaled.y * sin, scaled.x * sin + scaled.y * cos);
+        let pose = Transform {
+            position: after.position + turned,
+            rotation: start.rotation + (after.rotation - before.rotation),
+            scale: Point::new(start.scale.x * factor.x, start.scale.y * factor.y),
+            opacity: start.opacity,
+        };
+        editor.set_pose(id, pose);
+    }
 }
 
 fn overlaps(a: StageRect, b: StageRect) -> bool {
@@ -2066,6 +2154,40 @@ mod tests {
         let at = |id| editor.doc.layer(id).unwrap().transform_at(0).position;
         assert!(at(a).distance(Point::new(250.0, 300.0)) < 3.0, "{:?}", at(a));
         assert!(at(b).distance(Point::new(650.0, 300.0)) < 3.0, "{:?}", at(b));
+    }
+
+    #[test]
+    fn several_layers_scale_together_from_the_group_corner() {
+        // The boxes span (150, 150) to (650, 250) together. Drag the group's
+        // bottom-right corner to (1150, 350): twice as big, top-left pinned.
+        let (mut editor, a, b) = two_boxes();
+        editor.select_many(&[a, b]);
+        let mut h = harness(editor);
+        let corner = screen(&h, 650.0, 250.0);
+        let target = screen(&h, 1150.0, 350.0);
+        drag(&mut h, corner, &[corner + vec2(10.0, 10.0), target]);
+
+        let editor = &h.state().1;
+        let pose = |id| editor.doc.layer(id).unwrap().transform_at(0);
+        assert!(pose(a).position.distance(Point::new(250.0, 250.0)) < 4.0, "{:?}", pose(a).position);
+        assert!(pose(b).position.distance(Point::new(1050.0, 250.0)) < 4.0, "{:?}", pose(b).position);
+        assert!(pose(a).scale.distance(Point::new(2.0, 2.0)) < 0.03, "{:?}", pose(a).scale);
+    }
+
+    #[test]
+    fn several_layers_turn_together_around_their_middle() {
+        let (mut editor, a, b) = two_boxes();
+        let group: Vec<(LayerId, Transform)> =
+            [a, b].iter().map(|&id| (id, editor.doc.layer(id).unwrap().transform_at(0))).collect();
+        let before = Transform::at(Point::new(400.0, 200.0));
+        transform_group(&mut editor, &group, &before, &Transform { rotation: 90.0, ..before });
+
+        let pose = |id| editor.doc.layer(id).unwrap().transform_at(0);
+        // A was 200 px left of the middle; a quarter turn clockwise puts it
+        // 200 px above, turned 90° itself.
+        assert!(pose(a).position.distance(Point::new(400.0, 0.0)) < 1e-3, "{:?}", pose(a).position);
+        assert!(pose(b).position.distance(Point::new(400.0, 400.0)) < 1e-3);
+        assert_eq!(pose(a).rotation, 90.0);
     }
 
     #[test]

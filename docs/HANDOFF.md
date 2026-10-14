@@ -69,6 +69,8 @@ after the macOS app bundle.
     `also_selected`, which lapses when `selection` is set directly).
     Shift-click, marquee, timeline Shift/⌘-click, ⌘A. Moving, deleting,
     duplicating, copying and keyframing apply to all selected layers.
+27. Group scale and rotate: handles around several selected layers,
+    treated as one imaginary layer (`transform_group` in stage.rs).
 
 ## Not yet verified by hand
 
@@ -95,9 +97,9 @@ after the macOS app bundle.
 
 Smaller ideas noted along the way:
 
-- With several layers selected there are no group scale/rotate handles
-  yet (they move together, but scale and rotate one at a time), and the
-  properties panel edits only the last-picked layer.
+- With several layers selected, the properties panel edits only the
+  last-picked layer. Stretching a group unevenly stretches rotated layers
+  along their own axes (layers have no skew), so it's close, not exact.
 - Characters missing from the chosen font (emoji, CJK in a Latin font)
   show as the font's empty box; there's no per-character font fallback
   yet. On-stage typing doesn't support input methods (IME) for Chinese,
