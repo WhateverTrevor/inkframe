@@ -34,6 +34,9 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     ui.horizontal(|ui| {
         ui.checkbox(&mut layer.visible, "Visible");
         ui.checkbox(&mut layer.locked, "Locked");
+        ui.checkbox(&mut layer.guide, "Guide").on_hover_text(
+            "A motion guide: other layers can follow its path. Shown while editing, never exported.",
+        );
     });
     span_editor(ui, layer, last_frame);
 
@@ -135,7 +138,7 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
     let Some(layer) = editor.doc.layer(id) else { return };
     let has_key = |property: Property| layer.track.channel(property).has_key(frame);
     let keyed = Property::ALL.map(has_key);
-    let mut pose = layer.transform_at(frame);
+    let mut pose = editor.doc.pose(layer, frame);
 
     ui.strong(format!("Transform at frame {}", frame + 1));
 
@@ -189,18 +192,45 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
     motion_path_section(ui, editor, id);
 }
 
-/// Options for a layer that moves: turning to face its direction of travel,
-/// and undoing any curves in its motion path.
+/// Options for a layer that moves: following a motion guide, turning to
+/// face its direction of travel, and undoing any curves in its motion path.
 fn motion_path_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    let guides: Vec<(LayerId, String)> =
+        editor.doc.guides_beside(id).into_iter().map(|g| (g.id, g.name.clone())).collect();
     let Some(layer) = editor.doc.layer_mut(id) else { return };
+    if layer.guide {
+        return;
+    }
+
+    if !guides.is_empty() || layer.follow.is_some() {
+        ui.horizontal(|ui| {
+            ui.label("Follow guide");
+            let current =
+                guides.iter().find(|(g, _)| Some(*g) == layer.follow).map_or("None", |(_, name)| name);
+            egui::ComboBox::from_id_salt("follow").selected_text(current).show_ui(ui, |ui| {
+                ui.selectable_value(&mut layer.follow, None, "None");
+                for (guide, name) in &guides {
+                    ui.selectable_value(&mut layer.follow, Some(*guide), name);
+                }
+            });
+        });
+        if layer.follow.is_some() && layer.track.position.keys().len() < 2 {
+            ui.weak(
+                "Add a second position keyframe: the layer travels the guide between its first and last.",
+            );
+        }
+    }
+
     let track = &mut layer.track;
     if track.position.keys().len() < 2 {
         return;
     }
+    let following = layer.follow.is_some();
     ui.horizontal(|ui| {
         ui.checkbox(&mut track.orient_to_path, "Orient to path")
             .on_hover_text("Turn the layer to face the way it's moving");
-        let curved = track.position.keys().iter().any(|k| k.bend.is_some());
+        // A layer on a guide takes its path from the guide.
+        let curved = !following && track.position.keys().iter().any(|k| k.bend.is_some());
         if ui
             .add_enabled(curved, egui::Button::new("Straighten path").small())
             .on_hover_text("Make every tween a straight line again. Drag the path on the stage to curve it.")

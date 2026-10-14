@@ -119,23 +119,8 @@ impl Track {
     /// than snapping back to its unturned rotation.
     pub fn heading(&self, frame: f32) -> Option<f32> {
         let keys = self.position.keys();
-        let (first, last) = (keys.first()?.frame as f32, keys.last()?.frame as f32);
-        let direction_at = |frame: f32| {
-            let (behind, ahead) = ((frame - 0.5).max(first), (frame + 0.5).min(last));
-            let travel = self.position.sample(ahead)? - self.position.sample(behind)?;
-            (travel.length() > 1e-4).then(|| travel.y.atan2(travel.x).to_degrees())
-        };
-        let mut at = frame.clamp(first, last);
-        loop {
-            if let Some(direction) = direction_at(at) {
-                return Some(direction);
-            }
-            if at <= first {
-                // Still at the start: look forward to the first movement.
-                return (first as u32..=last as u32).find_map(|f| direction_at(f as f32));
-            }
-            at = (at - 1.0).max(first);
-        }
+        let (first, last) = (keys.first()?.frame, keys.last()?.frame);
+        heading_along(first, last, frame, |f| self.position.sample(f))
     }
 
     /// Makes the layer have `pose` at `frame`: "auto-keying".
@@ -231,6 +216,34 @@ impl Track {
 /// an object with one array per property; version 1 was a single array of
 /// whole-transform keyframes. Accepting both here keeps the migration in one
 /// small place instead of needing a parallel copy of the whole document.
+/// The direction of travel at `frame` for motion running from frame `first`
+/// to `last`, where `position` gives the position at any time. See
+/// [`Track::heading`]; motion guides use this too.
+pub(crate) fn heading_along(
+    first: u32,
+    last: u32,
+    frame: f32,
+    position: impl Fn(f32) -> Option<Point>,
+) -> Option<f32> {
+    let (first, last) = (first as f32, last as f32);
+    let direction_at = |frame: f32| {
+        let (behind, ahead) = ((frame - 0.5).max(first), (frame + 0.5).min(last));
+        let travel = position(ahead)? - position(behind)?;
+        (travel.length() > 1e-4).then(|| travel.y.atan2(travel.x).to_degrees())
+    };
+    let mut at = frame.clamp(first, last);
+    loop {
+        if let Some(direction) = direction_at(at) {
+            return Some(direction);
+        }
+        if at <= first {
+            // Still at the start: look forward to the first movement.
+            return (first as u32..=last as u32).find_map(|f| direction_at(f as f32));
+        }
+        at = (at - 1.0).max(first);
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum TrackFormat {

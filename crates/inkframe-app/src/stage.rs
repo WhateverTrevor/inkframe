@@ -203,7 +203,7 @@ impl Handles {
         }
         let layer = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !l.locked)?;
         let bounds = editor.doc.layer_bounds(layer, editor.frame)?;
-        let pose = layer.transform_at(editor.frame);
+        let pose = editor.doc.pose(layer, editor.frame);
         let to_stage = pose.to_affine();
         let screen = |local: Point| view.to_screen(to_stage.apply(local));
 
@@ -543,7 +543,7 @@ impl StageView {
                     let id = *layer;
                     let position = *start_position + delta;
                     if let Some(layer) = editor.doc.layer(id) {
-                        let pose = Transform { position, ..layer.transform_at(editor.frame) };
+                        let pose = Transform { position, ..editor.doc.pose(layer, editor.frame) };
                         editor.set_pose(id, pose);
                     }
                 }
@@ -693,7 +693,9 @@ impl StageView {
 
     /// The motion path handle or tween under `pointer`, if any.
     fn motion_path_hit(&self, editor: &Editor, view: View, pointer: Pos2) -> Option<PathHit> {
-        let layer = self.motion_path_layer(editor)?;
+        // A layer following a guide takes its path from the guide; there's
+        // nothing of its own to bend.
+        let layer = self.motion_path_layer(editor).filter(|l| !follows_guide(editor, l))?;
         let segments = motion_path::segments(&layer.track.position);
         let near = |at: Point, reach: f32| view.to_screen(at).distance(pointer) <= reach;
         for segment in segments.iter().filter(|s| s.bent) {
@@ -722,6 +724,22 @@ impl StageView {
         let Some(layer) = self.motion_path_layer(editor) else { return };
         let position = &layer.track.position;
         let path_color = SELECTION.gamma_multiply(0.8);
+        // On a guide, the guide itself shows the path; just mark where the
+        // layer is on each frame, and at each key.
+        if follows_guide(editor, layer) {
+            let keys = position.keys();
+            for frame in keys[0].frame..=keys[keys.len() - 1].frame {
+                let at = view.to_screen(editor.doc.pose(layer, frame).position);
+                if position.key_at(frame).is_some() {
+                    let square = Rect::from_center_size(at, Vec2::splat(6.0));
+                    painter.rect_filled(square, 0.0, Color32::WHITE);
+                    painter.rect_stroke(square, 0.0, (1.0, SELECTION), StrokeKind::Middle);
+                } else {
+                    painter.circle_filled(at, 2.0, path_color);
+                }
+            }
+            return;
+        }
         for segment in motion_path::segments(position) {
             let curve = MotionCurve { points: segment.points };
             let points: Vec<Pos2> = (0..=32).map(|i| view.to_screen(curve.at(i as f32 / 32.0))).collect();
@@ -896,7 +914,7 @@ impl StageView {
         else {
             return;
         };
-        let to_stage = layer.transform_at(editor.frame).to_affine();
+        let to_stage = editor.doc.pose(layer, editor.frame).to_affine();
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
         let layout = inkframe_render::layout_text(text);
 
@@ -969,7 +987,7 @@ impl StageView {
                 Some(Gesture::Move {
                     layer: layer.id,
                     grab: p,
-                    start_position: layer.transform_at(editor.frame).position,
+                    start_position: editor.doc.pose(layer, editor.frame).position,
                 })
             }
             tool @ (Tool::Rectangle | Tool::Ellipse) => {
@@ -989,7 +1007,7 @@ impl StageView {
                 };
                 self.anchor_selection = Some(target);
                 let layer = editor.doc.layer(target.layer)?;
-                let to_local = layer.transform_at(editor.frame).to_affine().inverse()?;
+                let to_local = editor.doc.pose(layer, editor.frame).to_affine().inverse()?;
                 let (start, closed) = layer.elements.get(target.element)?.shape.to_anchors();
                 Some(Gesture::EditAnchor { target, part, start, closed, grab: to_local.apply(p), to_local })
             }
@@ -1007,7 +1025,7 @@ impl StageView {
             return None;
         }
         let layer = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !l.locked)?;
-        let to_stage = layer.transform_at(editor.frame).to_affine();
+        let to_stage = editor.doc.pose(layer, editor.frame).to_affine();
         let local = to_stage.inverse()?.apply(view.to_local(pointer));
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
 
@@ -1061,7 +1079,7 @@ impl StageView {
         let Some(layer) = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !l.locked) else {
             return Vec::new();
         };
-        let to_stage = layer.transform_at(editor.frame).to_affine();
+        let to_stage = editor.doc.pose(layer, editor.frame).to_affine();
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
 
         let mut handles = Vec::new();
@@ -1094,7 +1112,7 @@ impl StageView {
     /// of the selected anchor.
     fn draw_anchor_overlay(&self, painter: &egui::Painter, editor: &Editor, view: View) {
         let Some(layer) = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame)) else { return };
-        let to_stage = layer.transform_at(editor.frame).to_affine();
+        let to_stage = editor.doc.pose(layer, editor.frame).to_affine();
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
 
         for (element, e) in layer.elements.iter().enumerate() {
@@ -1218,7 +1236,7 @@ impl StageView {
         if let Some(layer) = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !shows_points)
         {
             if let Some(bounds) = editor.doc.layer_bounds(layer, editor.frame) {
-                let pose = layer.transform_at(editor.frame);
+                let pose = editor.doc.pose(layer, editor.frame);
                 let to_stage = pose.to_affine();
                 let corners = bounds.corners().map(|c| view.to_screen(to_stage.apply(c))).to_vec();
                 painter.add(egui::Shape::closed_line(corners, (1.5, SELECTION)));
@@ -1383,6 +1401,7 @@ impl StageView {
             opacity: SURROUNDINGS_OPACITY,
             tint: None,
             images,
+            show_guides: true,
         };
         for level in &surroundings {
             render_timeline_into(
@@ -1399,7 +1418,13 @@ impl StageView {
         if let Some(onion) = onion {
             draw_onion_skins(&mut pixmap, editor, onion, scale);
         }
-        let options = RenderOptions { scale, draw_background: false, images, ..RenderOptions::default() };
+        let options = RenderOptions {
+            scale,
+            draw_background: false,
+            images,
+            show_guides: true,
+            ..RenderOptions::default()
+        };
         render_timeline_into(&mut pixmap, doc, timeline, editor.frame, to_stage, None, &options);
 
         // tiny-skia and egui both use premultiplied alpha, so the bytes can be
@@ -1428,6 +1453,9 @@ fn draw_onion_skins(pixmap: &mut tiny_skia::Pixmap, editor: &Editor, onion: Onio
         draw_background: false,
         tint: Some(tint),
         images: Some(&editor.images),
+        // A guide doesn't move with the animation, so ghosts of it would
+        // only clutter.
+        show_guides: false,
         opacity: 0.45 * (count - distance + 1) as f32 / count as f32,
     };
     // Farthest first, so nearer ghosts paint on top.
@@ -1545,6 +1573,11 @@ struct TextEditing {
     selecting: bool,
 }
 
+/// Whether a layer is travelling along a motion guide.
+fn follows_guide(editor: &Editor, layer: &inkframe_core::Layer) -> bool {
+    layer.follow.is_some_and(|guide| editor.doc.guide_path(guide, editor.frame as f32).is_some())
+}
+
 /// The index of the first text element on a layer.
 fn text_element(editor: &Editor, layer: LayerId) -> Option<usize> {
     editor.doc.layer(layer)?.elements.iter().position(|e| matches!(e.shape, Shape::Text(_)))
@@ -1566,7 +1599,7 @@ fn text_of_mut(editor: &mut Editor, layer: LayerId, element: usize) -> Option<&m
 
 /// Maps the timeline's coordinates into a layer's own, where its shapes are.
 fn layer_to_local(editor: &Editor, layer: LayerId) -> Option<Affine> {
-    editor.doc.layer(layer)?.transform_at(editor.frame).to_affine().inverse()
+    editor.doc.pose(editor.doc.layer(layer)?, editor.frame).to_affine().inverse()
 }
 
 /// Moves `end` so the rectangle from `start` is a square, keeping the drag direction.

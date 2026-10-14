@@ -46,11 +46,14 @@ pub struct RenderOptions<'a> {
     /// The document's images, decoded. Without it (or for a file that
     /// couldn't be read) each image is drawn as a crossed-out placeholder.
     pub images: Option<&'a ImageLibrary>,
+    /// Draw motion guide layers. They're shown while editing, but they're
+    /// scaffolding, not artwork, so exports leave them out.
+    pub show_guides: bool,
 }
 
 impl Default for RenderOptions<'_> {
     fn default() -> Self {
-        Self { scale: 1.0, draw_background: true, tint: None, opacity: 1.0, images: None }
+        Self { scale: 1.0, draw_background: true, tint: None, opacity: 1.0, images: None, show_guides: false }
     }
 }
 
@@ -100,7 +103,7 @@ pub fn render_timeline_into(
     }
 
     let to_pixels = Affine::scale(options.scale, options.scale).pre_concat(to_stage);
-    let style = Style { tint: options.tint, images: options.images };
+    let style = Style { tint: options.tint, images: options.images, show_guides: options.show_guides };
     let layers = doc.layers_of(timeline);
     in_bands(pixmap, |band, shift| {
         let to_band = shift.pre_concat(to_pixels);
@@ -177,7 +180,7 @@ pub fn render_symbol_thumbnail(
         .filter(|l| l.is_shown_at(frame))
         .filter_map(|l| {
             let local = doc.layer_bounds(l, frame)?;
-            let to_symbol = l.transform_at(frame).to_affine();
+            let to_symbol = doc.pose(l, frame).to_affine();
             inkframe_core::Rect::bounding(local.corners().map(|c| to_symbol.apply(c)))
         })
         .reduce(inkframe_core::Rect::union)?;
@@ -192,7 +195,7 @@ pub fn render_symbol_thumbnail(
         .pre_concat(Affine::translate(-center));
 
     let mut pixmap = Pixmap::new(size, size)?;
-    let style = Style { tint: None, images };
+    let style = Style { tint: None, images, show_guides: true };
     render_layers(&mut pixmap.as_mut(), doc, &symbol.layers, frame, fit, 1.0, style, None, 0);
     Some(pixmap)
 }
@@ -203,6 +206,7 @@ pub fn render_symbol_thumbnail(
 struct Style<'a> {
     tint: Option<Color>,
     images: Option<&'a ImageLibrary>,
+    show_guides: bool,
 }
 
 /// Draws a stack of layers (the document's, or a symbol's) at `frame`.
@@ -224,8 +228,9 @@ fn render_layers(
     depth: usize,
 ) {
     // Layers are stored bottom-first, so a plain loop paints back to front.
-    for layer in layers.iter().filter(|l| l.is_shown_at(frame) && Some(l.id) != skip) {
-        let transform = layer.transform_at(frame);
+    let drawn = |l: &&Layer| l.is_shown_at(frame) && Some(l.id) != skip && (style.show_guides || !l.guide);
+    for layer in layers.iter().filter(drawn) {
+        let transform = doc.pose(layer, frame);
         let opacity = (transform.opacity * opacity).clamp(0.0, 1.0);
         if opacity <= 0.0 {
             continue;
@@ -560,7 +565,7 @@ mod tests {
         let mut whole = Pixmap::new(banded.width(), banded.height()).unwrap();
         whole.fill(to_skia_color(doc.background));
         let to_pixels = Affine::scale(1.3, 1.3);
-        let style = super::Style { tint: None, images: None };
+        let style = super::Style { tint: None, images: None, show_guides: false };
         render_layers(&mut whole.as_mut(), &doc, &doc.layers, 0, to_pixels, 1.0, style, None, 0);
 
         // tiny-skia clips each shape's outline where a band starts and ends,
@@ -639,6 +644,16 @@ mod tests {
         let blue = (0..100).filter(|&x| pixel(&pixmap, x, 60) == [0, 0, 255, 255]).count();
         assert!(blue >= 3, "the letter's stem should be solid blue, found {blue} pixels");
         assert_eq!(pixel(&pixmap, 40, 90), [255, 255, 255, 255], "nothing below the baseline");
+    }
+
+    #[test]
+    fn guides_are_shown_while_editing_but_never_exported() {
+        let mut doc = red_square_doc();
+        doc.layers[0].guide = true;
+        let exported = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        assert_eq!(pixel(&exported, 20, 50), [255, 255, 255, 255]);
+        let editing = RenderOptions { show_guides: true, ..RenderOptions::default() };
+        assert_eq!(pixel(&render_frame(&doc, 0, &editing).unwrap(), 20, 50), [255, 0, 0, 255]);
     }
 
     #[test]

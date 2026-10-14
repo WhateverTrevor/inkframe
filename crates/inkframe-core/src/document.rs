@@ -24,7 +24,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 9;
+pub const FORMAT_VERSION: u32 = 10;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -101,6 +101,13 @@ pub struct Layer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance: Option<Instance>,
     pub track: Track,
+    /// A motion guide: a path other layers can follow (see `guide.rs`).
+    /// Shown while editing, never exported.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub guide: bool,
+    /// The guide layer this layer travels along, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow: Option<LayerId>,
 }
 
 /// A styled shape inside a layer.
@@ -280,6 +287,8 @@ impl Document {
             elements,
             instance: None,
             track: Track::new(frame, transform),
+            guide: false,
+            follow: None,
         });
         Some(id)
     }

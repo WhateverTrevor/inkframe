@@ -488,7 +488,12 @@ impl TimelineView {
 
                     let name_pos = pos2(layout.lock_rect(index).right() + 6.0, rect.center().y);
                     let color = if layer.visible { text } else { faint };
-                    painter.text(name_pos, Align2::LEFT_CENTER, &layer.name, font.clone(), color);
+                    let name = painter.text(name_pos, Align2::LEFT_CENTER, &layer.name, font.clone(), color);
+                    // Motion guides are labelled, since they don't export.
+                    if layer.guide {
+                        let tag = pos2(name.right() + 6.0, rect.center().y);
+                        painter.text(tag, Align2::LEFT_CENTER, "guide", font.clone(), faint);
+                    }
                 }
                 Some(property) => {
                     // The property the inspector's easing graph is showing is

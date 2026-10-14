@@ -225,7 +225,7 @@ impl Document {
                 .filter(|inner| inner.is_shown_at(local_frame))
                 .filter_map(|inner| {
                     let bounds = self.layer_bounds_at_depth(inner, local_frame, depth + 1)?;
-                    let to_parent = inner.transform_at(local_frame).to_affine();
+                    let to_parent = self.pose(inner, local_frame).to_affine();
                     Rect::bounding(bounds.corners().map(|c| to_parent.apply(c)))
                 })
                 .reduce(Rect::union)
@@ -255,7 +255,7 @@ impl Document {
         tolerance: f32,
         depth: usize,
     ) -> bool {
-        let transform = layer.transform_at(frame);
+        let transform = self.pose(layer, frame);
         let Some(to_local) = transform.to_affine().inverse() else {
             return false; // Scaled to nothing: there's nothing to click on.
         };
