@@ -36,7 +36,21 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 
-      # Keeps the packaging task working; the bundle itself isn't kept.
+      # Build the installers on every run, so packaging can't quietly break,
+      # and keep them for two weeks so anyone can download a build to test
+      # (from the run's page on GitHub, under Artifacts). Neither bundles
+      # ffmpeg yet, so video export needs ffmpeg installed separately.
       - name: Bundle the macOS app
         if: runner.os == 'macOS'
         run: cargo xtask bundle-macos --dmg
+      - name: Build the Windows installer
+        if: runner.os == 'Windows'
+        run: cargo xtask bundle-windows
+      - uses: actions/upload-artifact@v7
+        with:
+          name: inkframe-${{ runner.os }}
+          path: |
+            target/release/*.dmg
+            target/release/*-setup.exe
+          if-no-files-found: error
+          retention-days: 14

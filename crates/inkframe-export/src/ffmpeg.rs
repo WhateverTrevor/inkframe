@@ -263,12 +263,19 @@ struct Encoder {
 
 impl Encoder {
     fn spawn(ffmpeg: &Path, args: &[OsString]) -> Result<Self, ExportError> {
-        let mut child = Command::new(ffmpeg)
-            .args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()?;
+        let mut command = Command::new(ffmpeg);
+        command.args(args).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped());
+        // Inkframe is a windowed program, so on Windows a console program it
+        // starts gets a brand-new console window of its own, which would
+        // flash up over the editor for the whole export. This flag runs
+        // ffmpeg without one; its output still comes back through the pipes.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+        let mut child = command.spawn()?;
 
         // ffmpeg's stderr has to be drained continuously on its own thread.
         // If nobody reads it and ffmpeg prints enough to fill the OS pipe

@@ -36,6 +36,8 @@ after the macOS app bundle.
     (format v5)
 13. macOS packaging, part A: `cargo xtask bundle-macos [--dmg] [--ffmpeg]`
     builds an ad-hoc-signed `Inkframe.app`, with an app icon drawn in code
+14. Windows installer: `cargo xtask bundle-windows` (Inno Setup), built and
+    uploaded as an artifact by CI on every push
 
 ## Not yet verified by hand
 
@@ -50,7 +52,7 @@ after the macOS app bundle.
 
 1. **Packaging, part B:** sign with a Developer ID (hardened runtime) and
    notarize, replacing `codesign` in `xtask/src/macos.rs`. Needs the user's
-   Apple Developer account. Then a Windows installer.
+   Apple Developer account. Windows code signing needs a certificate.
 2. **GPU stage preview** for very large scenes. Export should stay on the
    deterministic CPU renderer.
 

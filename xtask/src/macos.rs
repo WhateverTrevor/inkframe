@@ -26,6 +26,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::util::{
+    build_release, bundle_ffmpeg, copy, copy_licenses, fresh_dir, output, read, remove_dir, run, write,
+};
 use crate::{icon, workspace_root};
 
 pub struct Options {
@@ -60,20 +63,14 @@ pub fn bundle(options: &Options) -> Result<(), String> {
         check_self_contained(ffmpeg)?;
     }
 
-    println!("Building the release executable…");
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
-    run(Command::new(cargo).current_dir(&root).args(["build", "--release", "--package", "inkframe-app"]))?;
+    build_release(&root)?;
 
     let release = root.join("target/release");
     let app = release.join("Inkframe.app");
     let contents = app.join("Contents");
     let macos_dir = contents.join("MacOS");
     let resources = contents.join("Resources");
-    // Start from nothing, so files from an earlier bundle (an ffmpeg that's
-    // no longer wanted, say) can't linger.
-    if app.exists() {
-        fs::remove_dir_all(&app).map_err(|e| format!("couldn't remove the old {}: {e}", app.display()))?;
-    }
+    fresh_dir(&app)?;
     for dir in [&macos_dir, &resources.join("licenses")] {
         fs::create_dir_all(dir).map_err(|e| format!("couldn't create {}: {e}", dir.display()))?;
     }
@@ -82,9 +79,7 @@ pub fn bundle(options: &Options) -> Result<(), String> {
     let plist = read(&root.join("packaging/macos/Info.plist"))?.replace("{{VERSION}}", version);
     write(&contents.join("Info.plist"), plist.as_bytes())?;
     make_icns(&release, &resources.join("Inkframe.icns"))?;
-    for license in ["LICENSE-MIT", "LICENSE-APACHE"] {
-        copy(&root.join(license), &resources.join("licenses").join(license))?;
-    }
+    copy_licenses(&root, &resources.join("licenses"))?;
 
     if let Some(ffmpeg) = &options.ffmpeg {
         bundle_ffmpeg(ffmpeg, &macos_dir.join("ffmpeg"), &resources.join("licenses/ffmpeg"))?;
@@ -136,35 +131,13 @@ fn check_self_contained(ffmpeg: &Path) -> Result<(), String> {
     ))
 }
 
-/// Copies ffmpeg in, along with its licence.
-///
-/// ffmpeg's licence depends on how it was built (LGPL, or GPL when it
-/// includes x264), so rather than guess, ask the binary itself: `ffmpeg -L`
-/// prints the licence it was built under, and `-version` records exactly
-/// which build this is, so its source can be found.
-fn bundle_ffmpeg(ffmpeg: &Path, destination: &Path, license_dir: &Path) -> Result<(), String> {
-    copy(ffmpeg, destination)?;
-    fs::create_dir_all(license_dir).map_err(|e| format!("couldn't create {}: {e}", license_dir.display()))?;
-    let license = output(Command::new(ffmpeg).args(["-hide_banner", "-L"]))?;
-    write(&license_dir.join("LICENSE.txt"), license.as_bytes())?;
-    let version = output(Command::new(ffmpeg).args(["-hide_banner", "-version"]))?;
-    let note = format!(
-        "Inkframe runs this ffmpeg as a separate program to encode video.\n\
-         Source code for FFmpeg is available at https://ffmpeg.org/download.html\n\n{version}"
-    );
-    write(&license_dir.join("VERSION.txt"), note.as_bytes())
-}
-
 /// Builds the `.icns` file. macOS picks whichever size suits the context
 /// (Finder list view, Dock, Get Info), so each is rendered from the vector
 /// drawing rather than scaled from one bitmap. `iconutil` expects a folder of
 /// PNGs with these exact names.
 fn make_icns(scratch: &Path, icns: &Path) -> Result<(), String> {
     let iconset = scratch.join("Inkframe.iconset");
-    if iconset.exists() {
-        fs::remove_dir_all(&iconset).map_err(|e| format!("couldn't clear {}: {e}", iconset.display()))?;
-    }
-    fs::create_dir_all(&iconset).map_err(|e| format!("couldn't create {}: {e}", iconset.display()))?;
+    fresh_dir(&iconset)?;
     for points in [16, 32, 128, 256, 512] {
         for (scale, suffix) in [(1, ""), (2, "@2x")] {
             let path = iconset.join(format!("icon_{points}x{points}{suffix}.png"));
@@ -174,7 +147,7 @@ fn make_icns(scratch: &Path, icns: &Path) -> Result<(), String> {
         }
     }
     run(Command::new("iconutil").args(["--convert", "icns", "--output"]).arg(icns).arg(&iconset))?;
-    fs::remove_dir_all(&iconset).map_err(|e| format!("couldn't clean up {}: {e}", iconset.display()))
+    remove_dir(&iconset)
 }
 
 /// Signs ad hoc (`--sign -`). Part B of packaging swaps this for a
@@ -187,10 +160,7 @@ fn codesign(path: &Path) -> Result<(), String> {
 /// so installing is a single drag.
 fn make_dmg(scratch: &Path, app: &Path, dmg: &Path) -> Result<(), String> {
     let staging = scratch.join("dmg-staging");
-    if staging.exists() {
-        fs::remove_dir_all(&staging).map_err(|e| format!("couldn't clear {}: {e}", staging.display()))?;
-    }
-    fs::create_dir_all(&staging).map_err(|e| format!("couldn't create {}: {e}", staging.display()))?;
+    fresh_dir(&staging)?;
     // `ditto` copies a bundle exactly, keeping the extended attributes and
     // symlinks the code signature depends on.
     run(Command::new("ditto").arg(app).arg(staging.join("Inkframe.app")))?;
@@ -200,32 +170,5 @@ fn make_dmg(scratch: &Path, app: &Path, dmg: &Path) -> Result<(), String> {
         .args(["create", "-volname", "Inkframe", "-format", "UDZO", "-ov", "-srcfolder"])
         .arg(&staging)
         .arg(dmg))?;
-    fs::remove_dir_all(&staging).map_err(|e| format!("couldn't clean up {}: {e}", staging.display()))
-}
-
-fn run(command: &mut Command) -> Result<(), String> {
-    let status = command.status().map_err(|e| format!("couldn't run {command:?}: {e}"))?;
-    if status.success() { Ok(()) } else { Err(format!("{command:?} failed ({status})")) }
-}
-
-fn output(command: &mut Command) -> Result<String, String> {
-    let out = command.output().map_err(|e| format!("couldn't run {command:?}: {e}"))?;
-    if !out.status.success() {
-        return Err(format!("{command:?} failed: {}", String::from_utf8_lossy(&out.stderr)));
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-}
-
-fn copy(from: &Path, to: &Path) -> Result<(), String> {
-    fs::copy(from, to)
-        .map(|_| ())
-        .map_err(|e| format!("couldn't copy {} to {}: {e}", from.display(), to.display()))
-}
-
-fn read(path: &Path) -> Result<String, String> {
-    fs::read_to_string(path).map_err(|e| format!("couldn't read {}: {e}", path.display()))
-}
-
-fn write(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    fs::write(path, bytes).map_err(|e| format!("couldn't write {}: {e}", path.display()))
+    remove_dir(&staging)
 }

@@ -185,6 +185,38 @@ fn mix(a: (u8, u8, u8), b: (u8, u8, u8), t: f32) -> (u8, u8, u8) {
     (channel(a.0, b.0), channel(a.1, b.1), channel(a.2, b.2))
 }
 
+/// Packs the icon at several sizes into one Windows `.ico` file.
+///
+/// The format is a small directory followed by the images. Since Windows
+/// Vista, each image may simply be a PNG, which keeps this short: write a
+/// 6-byte header, a 16-byte entry per image saying where its PNG starts,
+/// then the PNGs themselves. All numbers are little-endian.
+pub fn ico(sizes: &[u32]) -> Vec<u8> {
+    let pngs: Vec<Vec<u8>> =
+        sizes.iter().map(|&size| render(size).encode_png().expect("icon encodes")).collect();
+
+    let mut out = Vec::new();
+    out.extend_from_slice(&0u16.to_le_bytes()); // reserved
+    out.extend_from_slice(&1u16.to_le_bytes()); // 1 = icon (2 would be a cursor)
+    out.extend_from_slice(&(pngs.len() as u16).to_le_bytes());
+
+    let mut offset = 6 + 16 * pngs.len();
+    for (&size, png) in sizes.iter().zip(&pngs) {
+        // Width and height are single bytes, so 256 is written as 0.
+        let side = if size >= 256 { 0 } else { size as u8 };
+        out.extend_from_slice(&[side, side, 0, 0]); // width, height, palette size, reserved
+        out.extend_from_slice(&1u16.to_le_bytes()); // colour planes
+        out.extend_from_slice(&32u16.to_le_bytes()); // bits per pixel
+        out.extend_from_slice(&(png.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(offset as u32).to_le_bytes());
+        offset += png.len();
+    }
+    for png in &pngs {
+        out.extend_from_slice(png);
+    }
+    out
+}
+
 fn quad_point(p0: (f32, f32), p1: (f32, f32), p2: (f32, f32), t: f32) -> (f32, f32) {
     let u = 1.0 - t;
     (u * u * p0.0 + 2.0 * u * t * p1.0 + t * t * p2.0, u * u * p0.1 + 2.0 * u * t * p1.1 + t * t * p2.1)
@@ -224,5 +256,19 @@ mod tests {
         assert_eq!(middle.alpha(), 255);
         // The very corner is outside the rounded body and the shadow.
         assert_eq!(icon.pixel(0, 0).unwrap().alpha(), 0);
+    }
+
+    #[test]
+    fn ico_entries_point_at_their_pngs() {
+        let file = ico(&[16, 256]);
+        let u32_at = |at: usize| u32::from_le_bytes(file[at..at + 4].try_into().unwrap()) as usize;
+        assert_eq!(&file[..6], &[0, 0, 1, 0, 2, 0]);
+        // The second entry is 256 pixels, stored as 0.
+        assert_eq!(file[6 + 16], 0);
+        for entry in 0..2 {
+            let (len, offset) = (u32_at(6 + 16 * entry + 8), u32_at(6 + 16 * entry + 12));
+            assert_eq!(&file[offset + 1..offset + 4], b"PNG");
+            assert!(offset + len <= file.len());
+        }
     }
 }

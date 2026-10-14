@@ -168,11 +168,16 @@ callbacks or retained widget trees. Panels read and change `Editor` directly.
 (the alias is in `.cargo/config.toml`). It isn't part of the app.
 
 - `icon.rs` draws the app icon with tiny-skia at any size. `cargo xtask icon`
-  writes the PNGs in `assets/icon/`; the app embeds the 256-pixel one as its
-  window icon.
+  writes the PNGs and the Windows `.ico` in `assets/icon/`; the app embeds
+  the 256-pixel PNG as its window icon.
 - `macos.rs` assembles `Inkframe.app`, optionally with a bundled ffmpeg that
   `ffmpeg::locate` finds next to the executable, signs it ad hoc and builds
   a `.dmg`. See `packaging/macos/README.md`.
+- `windows.rs` stages `inkframe.exe` (plus an optional ffmpeg) and runs Inno
+  Setup on `packaging/windows/inkframe.iss` to make a `setup.exe`. The
+  executable's icon is embedded by `crates/inkframe-app/build.rs`.
+- `util.rs` holds the steps both platforms share (release build, licences,
+  bundling ffmpeg).
 
 ## Common changes
 

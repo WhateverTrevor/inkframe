@@ -66,7 +66,10 @@ cargo xtask bundle-macos --dmg
 ```
 
 [packaging/macos/README.md](packaging/macos/README.md) covers bundling
-ffmpeg inside the app and what still needs an Apple Developer account.
+ffmpeg inside the app and what still needs an Apple Developer account. On
+Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
+[Inno Setup](https://jrsoftware.org/isinfo.php); see
+[packaging/windows/README.md](packaging/windows/README.md).
 
 ## Using the editor
 
@@ -100,7 +103,7 @@ crates/
   inkframe-audio/   decodes, resamples and mixes sound files
   inkframe-export/  PNG sequences and ffmpeg video encoding
   inkframe-app/     the desktop editor (egui)
-xtask/              build tooling: `cargo xtask icon`, `cargo xtask bundle-macos`
+xtask/              build tooling: `cargo xtask icon`, `bundle-macos`, `bundle-windows`
 packaging/          per-platform packaging files
 assets/icon/        the app icon (drawn in code by xtask)
 ```
@@ -115,7 +118,8 @@ Roughly in priority order:
 
 - Signed and notarized macOS app (the unsigned `.app` and `.dmg` already
   build with `cargo xtask bundle-macos`)
-- Windows installer
+- Code-signed Windows installer (the unsigned one already builds with
+  `cargo xtask bundle-windows`)
 - GPU stage preview for very large scenes
 
 ## License

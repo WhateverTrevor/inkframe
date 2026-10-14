@@ -2,6 +2,10 @@
 //!
 //! Usage: `inkframe [file.inkf]`
 
+// On Windows, release builds are GUI programs, so launching Inkframe doesn't
+// also open a console window. Debug builds keep the console for log output.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod app;
 mod audio_engine;
 mod convert;
