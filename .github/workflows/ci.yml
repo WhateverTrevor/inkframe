@@ -7,6 +7,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # The video export tests skip themselves when ffmpeg isn't installed, which
+  # suits a fresh laptop but would hide a broken install here. Fail instead.
+  INKFRAME_REQUIRE_FFMPEG: "1"
   # The static ffmpeg builds bundled into the installers, each pinned to one
   # version and checked against the SHA-256 its builder publishes. To update
   # one, change its three values together.
@@ -36,13 +39,44 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
 
-      # ffmpeg lets the video export tests run for real instead of skipping.
+      # ffmpeg lets the video export tests run for real instead of skipping
+      # (INKFRAME_REQUIRE_FFMPEG, above, makes them fail if it's missing).
+      # macOS uses Homebrew's. Windows uses the static build that goes into
+      # the installer, which also includes ffprobe for checking the output.
+      # The download is cached, so it's fetched once per version.
       - name: Install ffmpeg (macOS)
         if: runner.os == 'macOS'
         run: brew install ffmpeg
-      - name: Install ffmpeg (Windows)
+      - name: Cache the Windows ffmpeg
         if: runner.os == 'Windows'
-        run: choco install ffmpeg --no-progress -y
+        id: windows-ffmpeg
+        uses: actions/cache@v6
+        with:
+          path: vendor/ffmpeg
+          key: windows-ffmpeg-${{ env.WINDOWS_FFMPEG_VERSION }}-${{ env.WINDOWS_FFMPEG_SHA256 }}-with-ffprobe
+      - name: Download the Windows ffmpeg
+        if: runner.os == 'Windows' && steps.windows-ffmpeg.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP "ffmpeg.zip"
+          Invoke-WebRequest -Uri $env:WINDOWS_FFMPEG_URL -OutFile $zip
+          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          if ($hash -ne $env:WINDOWS_FFMPEG_SHA256) {
+            throw "ffmpeg.zip has SHA-256 $hash, expected $env:WINDOWS_FFMPEG_SHA256"
+          }
+          $unpacked = Join-Path $env:RUNNER_TEMP "ffmpeg"
+          Expand-Archive $zip -DestinationPath $unpacked
+          # The zip also has ffplay and docs. Keep ffmpeg, which ships in
+          # the installer, and ffprobe, which the tests use to check exports.
+          New-Item -ItemType Directory -Force vendor/ffmpeg | Out-Null
+          foreach ($tool in "ffmpeg.exe", "ffprobe.exe") {
+            Get-ChildItem $unpacked -Recurse -Filter $tool | Select-Object -First 1 |
+              Copy-Item -Destination vendor/ffmpeg/$tool
+          }
+      - name: Put ffmpeg on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: (Resolve-Path vendor/ffmpeg).Path | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -53,10 +87,8 @@ jobs:
       # (from the run's page on GitHub, under Artifacts). Both bundle a
       # static ffmpeg, so video export works without installing anything.
       #
-      # Each ffmpeg download is cached, so it's fetched once per version
-      # rather than on every run. After bundling, every export format is
-      # encoded through the bundled copy and checked with the ffprobe
-      # installed earlier.
+      # After bundling, every export format is encoded through the bundled
+      # copy and checked with the ffprobe installed earlier.
       - name: Cache the macOS ffmpeg
         if: runner.os == 'macOS'
         id: macos-ffmpeg
@@ -80,29 +112,6 @@ jobs:
           INKFRAME_FFMPEG="$PWD/target/release/Inkframe.app/Contents/MacOS/ffmpeg" \
             cargo test --package inkframe-export
 
-      - name: Cache the Windows ffmpeg
-        if: runner.os == 'Windows'
-        id: windows-ffmpeg
-        uses: actions/cache@v6
-        with:
-          path: vendor/ffmpeg
-          key: windows-ffmpeg-${{ env.WINDOWS_FFMPEG_VERSION }}-${{ env.WINDOWS_FFMPEG_SHA256 }}
-      - name: Download the Windows ffmpeg
-        if: runner.os == 'Windows' && steps.windows-ffmpeg.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $zip = Join-Path $env:RUNNER_TEMP "ffmpeg.zip"
-          Invoke-WebRequest -Uri $env:WINDOWS_FFMPEG_URL -OutFile $zip
-          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
-          if ($hash -ne $env:WINDOWS_FFMPEG_SHA256) {
-            throw "ffmpeg.zip has SHA-256 $hash, expected $env:WINDOWS_FFMPEG_SHA256"
-          }
-          $unpacked = Join-Path $env:RUNNER_TEMP "ffmpeg"
-          Expand-Archive $zip -DestinationPath $unpacked
-          # The zip also has ffprobe, ffplay and docs; only ffmpeg.exe ships.
-          New-Item -ItemType Directory -Force vendor/ffmpeg | Out-Null
-          Get-ChildItem $unpacked -Recurse -Filter ffmpeg.exe | Select-Object -First 1 |
-            Copy-Item -Destination vendor/ffmpeg/ffmpeg.exe
       - name: Build the Windows installer
         if: runner.os == 'Windows'
         run: cargo xtask bundle-windows --ffmpeg vendor/ffmpeg/ffmpeg.exe

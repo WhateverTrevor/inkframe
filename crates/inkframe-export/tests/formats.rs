@@ -2,7 +2,8 @@
 //!
 //! Video tests need ffmpeg (and ffprobe next to it). They print a notice and
 //! pass without checking anything when it's missing, so `cargo test` still
-//! works on a fresh machine; CI installs ffmpeg so they run for real there.
+//! works on a fresh machine. CI installs ffmpeg and sets
+//! `INKFRAME_REQUIRE_FFMPEG`, which turns a missing ffmpeg into a failure.
 
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
@@ -62,6 +63,8 @@ fn probe_stream(file: &Path, stream: &str, entry: &str) -> String {
 fn ffmpeg_available() -> bool {
     let found = ffmpeg::locate().is_some();
     if !found {
+        // CI sets this, so a failed ffmpeg install can't pass as a skip.
+        assert!(std::env::var_os("INKFRAME_REQUIRE_FFMPEG").is_none(), "ffmpeg is required but wasn't found");
         eprintln!("ffmpeg not found; skipping video export test");
     }
     found
