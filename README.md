@@ -122,7 +122,8 @@ Roughly in priority order:
   build with `cargo xtask bundle-macos`)
 - Code-signed Windows installer (the unsigned one already builds with
   `cargo xtask bundle-windows`)
-- GPU stage preview for very large scenes
+- GPU stage preview, if very large scenes ever outgrow the CPU renderer
+  (2,000 layers currently redraw in about 30 ms)
 
 ## License
 

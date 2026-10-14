@@ -116,7 +116,13 @@ gesture becomes one undo step.
 preview and every export use this same function, so what you see is exactly
 what you get. Translucent layers render into a scratch buffer and are then
 composited, so overlapping shapes inside a layer don't show through each
-other.
+other; the buffer covers only the pixels the layer can reach.
+
+For speed, each frame is split into fixed-height horizontal bands that are
+drawn in parallel on every CPU core, and shapes outside a band are skipped
+before their outlines are built. `cargo run --release -p inkframe-render
+--example stage_benchmark` times scenes of 10 to 2,000 layers at Retina
+stage size; run it before and after renderer changes.
 
 ### inkframe-audio
 

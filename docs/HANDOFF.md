@@ -41,6 +41,8 @@ after the macOS app bundle.
     ffmpeg 9.0.2 bundled (pinned URL and SHA-256 in ci.yml)
 15. Selection bounds include stroke width and hug curves tightly
 16. Easing curve editor: drag the Bézier handles in the properties panel
+17. Faster renderer: translucent layers use scratch buffers sized to the
+    layer, frames render in parallel bands, off-screen shapes are skipped
 
 ## Not yet verified by hand
 
@@ -58,7 +60,12 @@ after the macOS app bundle.
    notarize, replacing `codesign` in `xtask/src/macos.rs`. Needs the user's
    Apple Developer account. Windows code signing needs a certificate.
 2. **GPU stage preview** for very large scenes. Export should stay on the
-   deterministic CPU renderer.
+   deterministic CPU renderer. The CPU renderer was sped up first
+   (2026-10-14): 2,000 layers at 2880×1620 went from 216 ms to 28 ms a
+   frame, and translucent scenes up to 100× faster. Measure with the
+   `stage_benchmark` example before deciding the GPU path is still needed.
+   The user chose to skip the GPU preview for now; revisit only if a real
+   project feels slow.
 
 Smaller ideas noted along the way:
 

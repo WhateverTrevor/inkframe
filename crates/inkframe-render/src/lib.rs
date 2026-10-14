@@ -13,7 +13,7 @@
 mod path;
 
 use inkframe_core::{Affine, Color, Document, Element, Layer, LayerId, Point, SymbolId, TimelineId};
-use tiny_skia::{FillRule, LineCap, LineJoin, Paint, Pixmap, PixmapPaint, Transform};
+use tiny_skia::{FillRule, IntRect, LineCap, LineJoin, Paint, Pixmap, PixmapMut, PixmapPaint, Transform};
 
 pub use path::build_path;
 
@@ -87,7 +87,63 @@ pub fn render_timeline_into(
     let to_pixels = Affine::scale(options.scale, options.scale).pre_concat(to_stage);
     let style = Style { tint: options.tint };
     let layers = doc.layers_of(timeline);
-    render_layers(pixmap, doc, layers, frame, to_pixels, options.opacity, style, skip, 0);
+    in_bands(pixmap, |band, shift| {
+        let to_band = shift.pre_concat(to_pixels);
+        render_layers(band, doc, layers, frame, to_band, options.opacity, style, skip, 0);
+    });
+}
+
+/// Rows per band in [`in_bands`].
+const BAND_HEIGHT: u32 = 128;
+
+/// Runs `draw` on horizontal strips of `pixmap` in parallel, one strip per
+/// CPU core at a time.
+///
+/// Each strip is a view straight into the pixmap's rows (no copying), and
+/// `draw` receives the transform that moves the image's coordinates up to
+/// that strip's top. tiny-skia skips anything outside the strip, so every
+/// core works on its own rows and the strips meet seamlessly.
+///
+/// tiny-skia clips each shape's outline at the strip's top and bottom, which
+/// can shift the anti-aliasing of a pixel on that outline by a few levels
+/// compared with drawing in one pass. Nothing inside a shape changes, and
+/// it's invisible, but it means the split must never vary: strips are a
+/// fixed height rather than "one per core", so an export comes out
+/// byte-identical whichever machine renders it.
+fn in_bands(pixmap: &mut Pixmap, draw: impl Fn(&mut PixmapMut, Affine) + Sync) {
+    let (width, height) = (pixmap.width(), pixmap.height());
+    let row_bytes = width as usize * 4;
+    let mut bands: Vec<(u32, &mut [u8])> = pixmap
+        .data_mut()
+        .chunks_mut(row_bytes * BAND_HEIGHT as usize)
+        .enumerate()
+        .map(|(i, rows)| (i as u32 * BAND_HEIGHT, rows))
+        .collect();
+
+    let draw_band = |top: u32, rows: &mut [u8]| {
+        let band_height = (rows.len() / row_bytes) as u32;
+        let mut band =
+            PixmapMut::from_bytes(rows, width, band_height).expect("band is a whole number of rows");
+        draw(&mut band, Affine::translate(Point::new(0.0, -(top as f32))));
+    };
+    let workers = std::thread::available_parallelism().map_or(1, |n| n.get()).min(bands.len());
+    if workers <= 1 || height < 2 * BAND_HEIGHT {
+        // Small images (thumbnails, tests) aren't worth starting threads for.
+        bands.iter_mut().for_each(|(top, rows)| draw_band(*top, rows));
+        return;
+    }
+    // Deal the bands out round-robin, so each worker gets a mix of the top,
+    // middle and bottom of the image, where the busy areas tend to differ.
+    let mut shares: Vec<Vec<(u32, &mut [u8])>> = (0..workers).map(|_| Vec::new()).collect();
+    for (i, band) in bands.into_iter().enumerate() {
+        shares[i % workers].push(band);
+    }
+    std::thread::scope(|scope| {
+        for share in shares {
+            let draw_band = &draw_band;
+            scope.spawn(move || share.into_iter().for_each(|(top, rows)| draw_band(top, rows)));
+        }
+    });
 }
 
 /// Renders one frame of a symbol, scaled to fit a `size`×`size` square, for
@@ -115,7 +171,7 @@ pub fn render_symbol_thumbnail(doc: &Document, symbol: SymbolId, frame: u32, siz
         .pre_concat(Affine::translate(-center));
 
     let mut pixmap = Pixmap::new(size, size)?;
-    render_layers(&mut pixmap, doc, &symbol.layers, frame, fit, 1.0, Style { tint: None }, None, 0);
+    render_layers(&mut pixmap.as_mut(), doc, &symbol.layers, frame, fit, 1.0, Style { tint: None }, None, 0);
     Some(pixmap)
 }
 
@@ -134,7 +190,7 @@ struct Style {
 /// symbols can contain symbols to any depth (up to a safety limit).
 #[allow(clippy::too_many_arguments)]
 fn render_layers(
-    pixmap: &mut Pixmap,
+    pixmap: &mut PixmapMut,
     doc: &Document,
     layers: &[Layer],
     frame: u32,
@@ -163,17 +219,49 @@ fn render_layers(
         // would show through each other. So we draw the layer fully opaque
         // into a scratch buffer, then blend that buffer down in one go.
         // Symbols nest, so each translucent layer needs a buffer of its own.
-        let mut scratch =
-            Pixmap::new(pixmap.width(), pixmap.height()).expect("same size as an existing pixmap");
-        draw_layer(&mut scratch, doc, layer, frame, matrix, style, depth);
+        //
+        // The buffer only needs to cover the pixels the layer can touch.
+        // A whole-image buffer would cost a full-screen allocation and blend
+        // per translucent layer (about 20 ms each at Retina sizes), which
+        // made onion skinning, where every ghost is translucent, crawl.
+        let Some(region) = covered_pixels(doc, layer, frame, matrix, pixmap.width(), pixmap.height()) else {
+            continue; // Empty, or entirely outside the image.
+        };
+        let mut scratch = Pixmap::new(region.width(), region.height()).expect("region is non-empty");
+        // Shifting by whole pixels lines the scratch buffer up exactly with
+        // the image beneath it, so the result is identical to drawing in place.
+        let offset = Point::new(-region.x() as f32, -region.y() as f32);
+        let shifted = Affine::translate(offset).pre_concat(matrix);
+        draw_layer(&mut scratch.as_mut(), doc, layer, frame, shifted, style, depth);
         let paint = PixmapPaint { opacity, ..PixmapPaint::default() };
-        pixmap.draw_pixmap(0, 0, scratch.as_ref(), &paint, Transform::identity(), None);
+        pixmap.draw_pixmap(region.x(), region.y(), scratch.as_ref(), &paint, Transform::identity(), None);
     }
+}
+
+/// The pixels a layer can paint when drawn with `matrix`, clipped to a
+/// `width`×`height` image, or `None` if that's nothing.
+fn covered_pixels(
+    doc: &Document,
+    layer: &Layer,
+    frame: u32,
+    matrix: Affine,
+    width: u32,
+    height: u32,
+) -> Option<IntRect> {
+    let local = doc.layer_bounds(layer, frame)?;
+    let bounds = inkframe_core::Rect::bounding(local.corners().map(|c| matrix.apply(c)))?;
+    // Anti-aliasing can tint the pixel just past a shape's edge, so round
+    // outward and allow one more.
+    let left = (bounds.min.x.floor() as i32 - 1).max(0);
+    let top = (bounds.min.y.floor() as i32 - 1).max(0);
+    let right = (bounds.max.x.ceil() as i32 + 1).min(width as i32);
+    let bottom = (bounds.max.y.ceil() as i32 + 1).min(height as i32);
+    IntRect::from_ltrb(left, top, right, bottom)
 }
 
 /// Draws a layer's own shapes, then its symbol instance if it has one.
 fn draw_layer(
-    pixmap: &mut Pixmap,
+    pixmap: &mut PixmapMut,
     doc: &Document,
     layer: &Layer,
     frame: u32,
@@ -182,7 +270,18 @@ fn draw_layer(
     depth: usize,
 ) {
     let skia_matrix = to_skia_transform(matrix);
-    for element in &layer.elements {
+    // Skip shapes that can't reach this image. tiny-skia would discard them
+    // too, but only after building their outlines, and with the image split
+    // into bands every band would build every shape's outline.
+    let image = inkframe_core::Rect::from_points(
+        Point::ZERO,
+        Point::new(pixmap.width() as f32, pixmap.height() as f32),
+    );
+    let visible = |element: &Element| {
+        let corners = element.bounds().corners().map(|c| matrix.apply(c));
+        inkframe_core::Rect::bounding(corners).is_some_and(|b| overlaps(b, image))
+    };
+    for element in layer.elements.iter().filter(|e| visible(e)) {
         draw_element(pixmap, element, skia_matrix, style.tint);
     }
     // `instance_view` stops at the nesting limit, so a malformed file can't
@@ -192,7 +291,16 @@ fn draw_layer(
     }
 }
 
-fn draw_element(pixmap: &mut Pixmap, element: &Element, matrix: Transform, tint: Option<Color>) {
+/// Whether two rectangles share any area, allowing a pixel's slack for
+/// anti-aliasing just past a shape's edge.
+fn overlaps(a: inkframe_core::Rect, b: inkframe_core::Rect) -> bool {
+    a.min.x <= b.max.x + 1.0
+        && a.max.x >= b.min.x - 1.0
+        && a.min.y <= b.max.y + 1.0
+        && a.max.y >= b.min.y - 1.0
+}
+
+fn draw_element(pixmap: &mut PixmapMut, element: &Element, matrix: Transform, tint: Option<Color>) {
     let Some(path) = build_path(&element.shape) else {
         return; // Degenerate geometry, e.g. a zero-size rectangle.
     };
@@ -315,6 +423,79 @@ mod tests {
         doc.layers[0].set_start(5);
         let before = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
         assert_eq!(pixel(&before, 20, 50), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn translucent_layers_match_blending_a_full_image() {
+        // A rotated, stroked, half-transparent square: the case where the
+        // scratch buffer covers only part of the image.
+        let mut doc = red_square_doc();
+        doc.layers[0].elements[0].style.stroke =
+            Some(inkframe_core::Stroke { color: Color::BLACK, width: 3.0 });
+        doc.layers[0].track.rotation.set(0, 30.0);
+        let mut opaque = doc.clone();
+        doc.layers[0].track.opacity.set(0, 0.5);
+        let options = RenderOptions::default();
+        let actual = render_frame(&doc, 0, &options).unwrap();
+
+        // The straightforward way: draw the layer opaque on its own, as
+        // big as the whole image, then blend it over the background at 50%.
+        opaque.background = Color::TRANSPARENT;
+        let layer = render_frame(&opaque, 0, &options).unwrap();
+        let mut expected = Pixmap::new(100, 100).unwrap();
+        expected.fill(to_skia_color(doc.background));
+        let half = PixmapPaint { opacity: 0.5, ..PixmapPaint::default() };
+        expected.draw_pixmap(0, 0, layer.as_ref(), &half, Transform::identity(), None);
+
+        assert!(actual.data() == expected.data(), "the bounded scratch buffer changed the result");
+    }
+
+    #[test]
+    fn bands_only_touch_anti_aliased_edges() {
+        // Shapes straddling band edges, rendered in bands and in one pass.
+        let mut doc = Document::default();
+        doc.width = 300;
+        doc.height = 4 * BAND_HEIGHT + 37; // a short last band, too
+        for i in 0..12 {
+            let circle = Element {
+                shape: Shape::Ellipse { radius_x: 40.0, radius_y: 70.0 },
+                style: Style {
+                    fill: Some(Color::rgba(200, 40 * (i % 6) as u8, 90, 200)),
+                    stroke: Some(inkframe_core::Stroke { color: Color::BLACK, width: 5.0 }),
+                },
+            };
+            let mut pose = Pose::at(Point::new(25.0 * i as f32 + 20.0, 45.0 * i as f32 + 30.0));
+            pose.rotation = 17.0 * i as f32;
+            pose.opacity = if i % 2 == 0 { 1.0 } else { 0.6 };
+            doc.add_layer(format!("Circle {i}"), vec![circle], 0, pose);
+        }
+        let options = RenderOptions { scale: 1.3, ..RenderOptions::default() };
+        let banded = render_frame(&doc, 0, &options).unwrap();
+
+        let mut whole = Pixmap::new(banded.width(), banded.height()).unwrap();
+        whole.fill(to_skia_color(doc.background));
+        let to_pixels = Affine::scale(1.3, 1.3);
+        let style = super::Style { tint: None };
+        render_layers(&mut whole.as_mut(), &doc, &doc.layers, 0, to_pixels, 1.0, style, None, 0);
+
+        // tiny-skia clips each shape's outline where a band starts and ends,
+        // which can nudge the anti-aliasing of pixels on that outline. That's
+        // all that may differ: no pixel inside a shape or in open background
+        // (one that matches its neighbours) may change, and few may change.
+        let pixel = |image: &Pixmap, p: usize| image.data()[p * 4..p * 4 + 4].to_vec();
+        let width = whole.width() as usize;
+        let count = whole.data().len() / 4;
+        let on_an_edge = |p: usize| {
+            [p.wrapping_sub(1), p + 1, p.wrapping_sub(width), p + width]
+                .into_iter()
+                .any(|q| q < count && pixel(&whole, q) != pixel(&whole, p))
+        };
+        let changed: Vec<usize> = (0..count).filter(|&p| pixel(&banded, p) != pixel(&whole, p)).collect();
+        assert!(changed.iter().all(|&p| on_an_edge(p)), "a pixel away from any edge changed");
+        assert!(changed.len() * 100 < count, "{} of {count} pixels changed", changed.len());
+
+        // And the split never varies, so the result is the same every time.
+        assert!(render_frame(&doc, 0, &options).unwrap().data() == banded.data());
     }
 
     #[test]
