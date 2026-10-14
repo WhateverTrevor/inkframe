@@ -1,15 +1,17 @@
 # Handoff: where Inkframe stands
 
-A checkpoint for picking development back up. Last updated 2026-10-14,
-after the macOS app bundle.
+A checkpoint for picking development back up. Last updated 2026-10-14
+(end of the second long session), after the value graph.
 
 ## State
 
 - **Branch:** `main`, clean. Every feature was built on its own branch,
   then fast-forward merged and the branch deleted.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (183 tests)
-  all pass.
+  --all-targets -- -D warnings` and `cargo test --workspace` (273 tests)
+  all pass, on macOS locally and on macOS and Windows in CI. Clippy can
+  also be run for Windows from the Mac:
+  `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
 - **File format:** version 11. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
@@ -85,7 +87,11 @@ after the macOS app bundle.
 - Pointer interactions are tested with simulated input (`egui_kittest`) and
   screenshots, not by clicking through the real app.
 
-## Next up (roadmap order)
+## Next up
+
+Everything on the original "match Adobe Animate" list is built. The user
+hasn't yet made a real animation end to end with it; suggest that before
+more features, since real use will show what matters. Open items:
 
 1. **Packaging, part B:** sign with a Developer ID (hardened runtime) and
    notarize, replacing `codesign` in `xtask/src/macos.rs`. Needs the user's
@@ -97,6 +103,12 @@ after the macOS app bundle.
    `stage_benchmark` example before deciding the GPU path is still needed.
    The user chose to skip the GPU preview for now; revisit only if a real
    project feels slow.
+3. **Text extras:** per-character font fallback (emoji, CJK in a Latin
+   font) and IME input when typing on the stage.
+4. **Skew** on the layer transform, which would also make uneven group
+   scaling of rotated layers exact.
+5. **Verify by hand:** the Windows installer has never been run on a real
+   PC; copy/paste between two windows; on-stage typing feel.
 
 Smaller ideas noted along the way:
 
@@ -124,10 +136,19 @@ Smaller ideas noted along the way:
   hook instead:
   `INKFRAME_SCREENSHOT=out.png` plus optional `_FRAME`, `_SELECT`, `_ONION`,
   `_TOOL`, `_EXPAND`, `_EDIT` (symbol on its own), `_OPEN` (instance in place),
-  `_TYPE` (start typing into a text layer). Launching it from a background
+  `_TYPE` (start typing into a text layer), `_GRAPH` (timeline in graph
+  mode); `_SELECT` takes a comma-separated list. Launching it from a background
   shell sometimes never draws a frame; retry, it's not the app.
   It waits for audio to finish decoding before capturing.
 - egui's default font lacks some glyphs (▸, ◆, ∅): check screenshots for
   empty boxes after adding symbols to UI text.
 - `egui_kittest` defaults to a 0.25 s step; stage tests use 60 fps
-  (`with_step_dt`) so timing-based input like double-clicks works.
+  (`with_step_dt`) so timing-based input like double-clicks works. Hold
+  modifiers in tests with `harness.event(Event::ModifiersChanged(..))`, and
+  wait ~30 steps between clicks that mustn't count as a double-click.
+- Use `Document::pose` (not `Layer::transform_at`) wherever layers are
+  drawn, hit-tested or edited, and `Editor::selected_ids` for anything that
+  should act on every selected layer.
+- The user's workflow each round: build on a branch, show a screenshot,
+  then "commit and merge, then start X". Push to GitHub after merging and
+  check CI (`gh run watch`).
