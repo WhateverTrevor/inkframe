@@ -6,6 +6,7 @@ use egui::{Key, Modifiers};
 use inkframe_core::{Clipboard, Document, SymbolId, TimelineId};
 use inkframe_render::IMAGE_EXTENSIONS;
 
+use crate::adjust_dialog::{AdjustDialog, AdjustmentKind};
 use crate::audio_engine::AudioEngine;
 use crate::editor::{Editor, Tool};
 use crate::export_dialog::ExportDialog;
@@ -33,6 +34,13 @@ enum Command {
     Redo,
     SelectAll,
     Deselect,
+    /// Select › Inverse: the unselected pixels instead.
+    InvertSelection,
+    LayerViaCopy,
+    LayerViaCut,
+    MergeDown,
+    /// Opens the Adjustments window with this adjustment.
+    Adjust(AdjustmentKind),
     Cut,
     Copy,
     /// Pastes layers in the middle of the view (or a keyframe at the playhead).
@@ -105,6 +113,7 @@ pub struct InkframeApp {
     export: ExportDialog,
     lip_sync: LipSyncDialog,
     xsheet: ExposureSheet,
+    adjust: AdjustDialog,
     library: LibraryView,
     audio: AudioEngine,
     /// The window title we last set, so we only send changes.
@@ -142,6 +151,7 @@ impl InkframeApp {
             export: ExportDialog::default(),
             lip_sync: LipSyncDialog::default(),
             xsheet: ExposureSheet::default(),
+            adjust: AdjustDialog::default(),
             library: LibraryView::default(),
             audio: AudioEngine::default(),
             title: String::new(),
@@ -188,8 +198,21 @@ impl InkframeApp {
                 self.save_as();
             }
             Command::Export => self.export.open(&self.editor.doc),
+            // With a painting or selection tool, Select All and Deselect
+            // work on pixels, as in Photoshop; otherwise on layers.
+            Command::SelectAll if editor.tool.on_pixels() && editor.paint_target().is_some() => {
+                editor.select_all_pixels()
+            }
+            Command::Deselect if editor.tool.on_pixels() => editor.deselect_pixels(),
             Command::SelectAll => editor.select_all(),
             Command::Deselect => editor.select(None),
+            Command::InvertSelection => editor.invert_pixel_selection(),
+            Command::LayerViaCopy => editor.layer_via_copy(false),
+            Command::LayerViaCut => editor.layer_via_copy(true),
+            Command::MergeDown => {
+                editor.merge_down();
+            }
+            Command::Adjust(adjustment) => self.adjust.open(editor, adjustment),
             Command::Cut => {
                 self.copy(false);
                 self.editor.delete_selected_layer();
@@ -210,6 +233,10 @@ impl InkframeApp {
             Command::Undo => editor.undo(),
             Command::Redo => editor.redo(),
             Command::DuplicateLayer => editor.duplicate_selected_layer(),
+            // Delete with selected pixels clears them, not the whole layer.
+            Command::DeleteLayer if editor.active_selection().is_some() => {
+                editor.clear_selected_pixels();
+            }
             Command::DeleteLayer => editor.delete_selected_layer(),
             Command::ConvertToSymbol => {
                 editor.convert_selected_to_symbol();
@@ -282,6 +309,9 @@ impl InkframeApp {
             // ignore extra Shift.
             (DESELECT_ALL, Command::Deselect),
             (SELECT_ALL, Command::SelectAll),
+            (INVERT_SELECTION, Command::InvertSelection),
+            (LAYER_VIA_CUT, Command::LayerViaCut),
+            (LAYER_VIA_COPY, Command::LayerViaCopy),
             (CONVERT_TO_SYMBOL, Command::ConvertToSymbol),
             (ZOOM_FIT, Command::ZoomFit),
             (ZOOM_100, Command::ZoomActualSize),
@@ -502,6 +532,21 @@ impl InkframeApp {
                 item(ui, "Mask", None, Command::MaskLayerBelow, below);
                 ui.separator();
                 item(ui, "New Paint Layer", None, Command::NewPaintLayer, true);
+                let below_is_paint = self.editor.selection.is_some_and(|id| {
+                    let Some(timeline) = self.editor.doc.timeline_of(id) else { return false };
+                    let layers = self.editor.doc.layers_of(timeline);
+                    let index = layers.iter().position(|l| l.id == id).unwrap_or(0);
+                    index > 0
+                        && self.editor.doc.paint_canvas_at(layers[index - 1].id, self.editor.frame).is_some()
+                });
+                item(ui, "Merge Down", None, Command::MergeDown, below_is_paint);
+                let paint = self.editor.paint_target().is_some();
+                ui.menu_button("Adjustments", |ui| {
+                    for kind in AdjustmentKind::ALL {
+                        let label = format!("{}…", kind.neutral().name());
+                        item(ui, &label, None, Command::Adjust(kind), paint);
+                    }
+                });
                 // Drawing substitution: only for layers with their own
                 // artwork, not symbol instances.
                 let drawn = self.editor.selected_layer().filter(|l| l.instance.is_none());
@@ -518,6 +563,20 @@ impl InkframeApp {
                 );
                 item(ui, "Next Drawing", Some(shortcuts::NEXT_DRAWING), Command::NextDrawing, swaps);
                 item(ui, "Lip Sync…", None, Command::LipSync, swaps);
+            });
+            ui.menu_button("Select", |ui| {
+                let paint = self.editor.paint_target().is_some();
+                let selected = self.editor.active_selection().is_some();
+                item(ui, "All Pixels", Some(shortcuts::SELECT_ALL), Command::SelectAll, paint);
+                item(ui, "Deselect", Some(shortcuts::DESELECT_ALL), Command::Deselect, selected);
+                item(ui, "Inverse", Some(shortcuts::INVERT_SELECTION), Command::InvertSelection, paint);
+                ui.separator();
+                item(ui, "Layer via Copy", Some(shortcuts::LAYER_VIA_COPY), Command::LayerViaCopy, selected);
+                item(ui, "Layer via Cut", Some(shortcuts::LAYER_VIA_CUT), Command::LayerViaCut, selected);
+                ui.separator();
+                ui.weak(
+                    "All Pixels and Deselect use ⌘A and ⌘⇧A while a\npainting or selection tool is in use.",
+                );
             });
             ui.menu_button("Timeline", |ui| {
                 let play = if self.editor.playback.playing { "Pause" } else { "Play" };
@@ -779,9 +838,10 @@ impl eframe::App for InkframeApp {
             .default_size(230.0)
             .min_size(140.0)
             .show(ui, |ui| self.timeline.show(ui, &mut self.editor, &mut self.audio));
+        let toolbar_width = toolbar::width(ui.available_height());
         egui::Panel::left("tools")
             .resizable(false)
-            .exact_size(60.0)
+            .exact_size(toolbar_width)
             .show(ui, |ui| toolbar::show(ui, &mut self.editor));
         egui::Panel::right("inspector").resizable(true).default_size(290.0).show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
@@ -810,6 +870,7 @@ impl eframe::App for InkframeApp {
         self.export.show(&ctx, &self.editor.doc, &name, self.editor.project_dir());
         self.lip_sync.show(&ctx, &mut self.editor, &mut self.audio);
         self.xsheet.show(&ctx, &mut self.editor, &mut self.audio);
+        self.adjust.show(&ctx, &mut self.editor);
 
         let dt = ctx.input(|i| i.stable_dt) as f64;
         let project_dir = self.editor.project_dir();

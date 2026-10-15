@@ -11,35 +11,37 @@ use crate::editor::{Editor, Tool};
 use crate::shortcuts;
 
 const BUTTON_SIZE: f32 = 36.0;
+/// Room below the tools for the colours.
+const COLOURS_HEIGHT: f32 = 190.0;
+
+/// How many columns of tools fit `height`: one, or, when the window is too
+/// short for them all in a row, two, as Photoshop's toolbar does.
+fn columns(height: f32) -> usize {
+    let one_column = Tool::GROUPS.len() as f32 * (BUTTON_SIZE + 4.0) + COLOURS_HEIGHT;
+    if one_column <= height { 1 } else { 2 }
+}
+
+/// The toolbar's width for a window `height` tall.
+pub fn width(height: f32) -> f32 {
+    if columns(height) == 1 { 60.0 } else { 100.0 }
+}
 
 pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
+    let columns = columns(ui.available_height());
     ui.vertical_centered(|ui| {
         ui.add_space(4.0);
-        for group in Tool::GROUPS {
-            let shown = if group.contains(&editor.tool) { editor.tool } else { editor.slot_choice(group) };
-            let key = shortcuts::tool_key(shown).name();
-            let hint = if group.len() > 1 {
-                format!("{} ({key}; Shift+{key} for the others, or right-click)", shown.name())
-            } else {
-                format!("{} ({key})", shown.name())
-            };
-            let response =
-                tool_button(ui, shown, group.contains(&editor.tool), group.len() > 1).on_hover_text(hint);
-            if response.clicked() {
-                editor.use_tool(shown);
-            }
-            if group.len() > 1 {
-                response.context_menu(|ui| {
-                    for &tool in group {
-                        if ui.selectable_label(editor.tool == tool, tool.name()).clicked() {
-                            editor.use_tool(tool);
-                            ui.close();
-                        }
-                    }
-                });
-            }
+        for row in Tool::GROUPS.chunks(columns) {
+            ui.horizontal(|ui| {
+                // Centred: a lone button in a two-column row sits in the
+                // middle rather than at the left.
+                let used =
+                    row.len() as f32 * BUTTON_SIZE + (row.len() - 1) as f32 * ui.spacing().item_spacing.x;
+                ui.add_space(((ui.available_width() - used) / 2.0).max(0.0));
+                for group in row {
+                    group_button(ui, editor, group);
+                }
+            });
         }
-
         ui.add_space(12.0);
         ui.separator();
         ui.add_space(4.0);
@@ -64,6 +66,32 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
             }
         }
     });
+}
+
+/// One toolbar slot: the tool it shows, and, for a slot holding several,
+/// a right-click menu of the others.
+fn group_button(ui: &mut egui::Ui, editor: &mut Editor, group: &'static [Tool]) {
+    let shown = if group.contains(&editor.tool) { editor.tool } else { editor.slot_choice(group) };
+    let key = shortcuts::tool_key(shown).name();
+    let hint = if group.len() > 1 {
+        format!("{} ({key}; Shift+{key} for the others, or right-click)", shown.name())
+    } else {
+        format!("{} ({key})", shown.name())
+    };
+    let response = tool_button(ui, shown, group.contains(&editor.tool), group.len() > 1).on_hover_text(hint);
+    if response.clicked() {
+        editor.use_tool(shown);
+    }
+    if group.len() > 1 {
+        response.context_menu(|ui| {
+            for &tool in group {
+                if ui.selectable_label(editor.tool == tool, tool.name()).clicked() {
+                    editor.use_tool(tool);
+                    ui.close();
+                }
+            }
+        });
+    }
 }
 
 /// A color button with a small "none" toggle underneath. Returns true on change.
@@ -97,6 +125,15 @@ fn tool_button(ui: &mut egui::Ui, tool: Tool, selected: bool, grouped: bool) -> 
         ui.painter().add(egui::Shape::convex_polygon(triangle, color.gamma_multiply(0.7), Stroke::NONE));
     }
     response
+}
+
+/// A dashed line: marching ants, for the marquee icons.
+fn dashed(painter: &Painter, from: Pos2, to: Pos2, stroke: Stroke) {
+    let dashes = 4;
+    for i in 0..dashes {
+        let (a, b) = (i as f32 / dashes as f32, (i as f32 + 0.6) / dashes as f32);
+        painter.line_segment([from + (to - from) * a, from + (to - from) * b], stroke);
+    }
 }
 
 /// The pointer-arrow shape shared by the two selection tools.
@@ -271,6 +308,52 @@ fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) {
                 .line_segment([at(0.5, 0.34), at(0.5, 0.6)], Stroke::new(stroke.width + 1.0, stroke.color));
             painter.rect_filled(Rect::from_min_max(at(0.1, 0.6), at(0.9, 0.78)), 1.0, stroke.color);
             painter.line_segment([at(0.15, 0.92), at(0.85, 0.92)], stroke);
+        }
+        Tool::RectMarquee => {
+            let corners = [(0.05, 0.15), (0.95, 0.15), (0.95, 0.85), (0.05, 0.85)].map(|(x, y)| at(x, y));
+            for i in 0..4 {
+                dashed(painter, corners[i], corners[(i + 1) % 4], stroke);
+            }
+        }
+        Tool::EllipseMarquee => {
+            let points: Vec<Pos2> = (0..=32)
+                .map(|i| {
+                    let t = i as f32 / 32.0 * std::f32::consts::TAU;
+                    at(0.5 + t.cos() * 0.45, 0.5 + t.sin() * 0.36)
+                })
+                .collect();
+            for (i, pair) in points.windows(2).enumerate() {
+                if i % 2 == 0 {
+                    painter.line_segment([pair[0], pair[1]], stroke);
+                }
+            }
+        }
+        Tool::Lasso | Tool::PolygonLasso => {
+            // A loop of rope with its tail hanging below.
+            let points: Vec<Pos2> = if tool == Tool::Lasso {
+                (0..=24)
+                    .map(|i| {
+                        let t = i as f32 / 24.0 * std::f32::consts::TAU;
+                        at(0.55 + t.cos() * 0.4, 0.38 + t.sin() * 0.28)
+                    })
+                    .collect()
+            } else {
+                [(0.15, 0.3), (0.55, 0.08), (0.95, 0.35), (0.6, 0.66), (0.25, 0.6), (0.15, 0.3)]
+                    .map(|(x, y)| at(x, y))
+                    .to_vec()
+            };
+            painter.add(egui::Shape::line(points, stroke));
+            painter.line_segment([at(0.25, 0.6), at(0.15, 0.95)], stroke);
+        }
+        Tool::MagicWand => {
+            // A wand with a sparkle at its tip.
+            painter
+                .line_segment([at(0.05, 0.95), at(0.6, 0.4)], Stroke::new(stroke.width + 1.0, stroke.color));
+            let star = at(0.75, 0.25);
+            for (dx, dy) in [(0.22, 0.0), (0.0, 0.22), (0.15, 0.15), (0.15, -0.15)] {
+                let d = vec2(dx * r.width(), dy * r.height());
+                painter.line_segment([star - d, star + d], stroke);
+            }
         }
         Tool::Text => {
             // A capital T with small serifs, as in most apps' text tools.

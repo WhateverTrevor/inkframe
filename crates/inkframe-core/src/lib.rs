@@ -8,8 +8,10 @@
 //!
 //! The main entry point is [`Document`].
 
+mod adjust;
 mod anchor;
 mod audio;
+mod blend;
 mod brush;
 mod channel;
 mod clipboard;
@@ -32,16 +34,19 @@ mod mask;
 mod paint;
 mod retouch;
 mod rig;
+mod selection;
 mod shape;
 mod symbol;
 mod text;
 mod track;
 mod transform;
 
+pub use adjust::{Adjustment, adjust};
 pub use anchor::{
     Anchor, KAPPA, PathHit, anchors_from_path, insert_anchor, nearest_on_anchors, path_from_anchors,
 };
 pub use audio::{AudioId, AudioTrack};
+pub use blend::BlendMode;
 pub use brush::{BrushMode, BrushSettings, BrushStroke, DabPath};
 pub use channel::{Animatable, AnyChannel, Bend, Channel, Key, MotionCurve, Tween};
 pub use clipboard::{Clipboard, CopiedKeyframe, CopiedLayers};
@@ -50,7 +55,7 @@ pub use deform::Deformer;
 pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, Layer, LayerId, TimelineId};
 pub use drawing::{Drawing, Exposure};
 pub use easing::Easing;
-pub use fill::{BucketSettings, GradientShape, bucket_fill, gradient};
+pub use fill::{BucketSettings, Gradient, GradientShape, bucket_fill, gradient};
 pub use font_file::{FontFile, FontFileId};
 pub use freehand::fit_freehand_path;
 pub use geometry::{Affine, Point, Rect};
@@ -63,6 +68,7 @@ pub use lip_sync::{
 };
 pub use paint::{Canvas, CanvasId, TILE, premultiply, unpremultiply};
 pub use retouch::{Retouch, RetouchStroke, ToneRange};
+pub use selection::{Combine, Selection};
 pub use shape::{Path, Segment, Shape, Stroke, Style};
 pub use symbol::{Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId};
 pub use text::{DEFAULT_FAMILY, Font, Text, TextAlign};

@@ -53,6 +53,9 @@ The data model and the math behind animation.
 | `ik.rs` | Inverse kinematics for the Bone tool: `Document::ik_chain` (a layer and its parents below the root) and `Document::reach`, a cyclic-coordinate-descent solver that keys only rotations and honours `Layer::rotation_limits` |
 | `paint.rs` | Painted pixels: `Canvas` (256×256 premultiplied RGBA tiles, shared between undo snapshots with `Arc`), `Shape::Paint` naming a canvas, `Document::element_bounds`/`element_hit` (paint counts only painted pixels), `add_paint_layer`, `separate_canvases` (a duplicated layer or drawing gets its own canvas) |
 | `brush.rs` | The brush engine (and `BrushSettings::presets`, the paper `grain`, and `DabPath`, which every stroke tool uses to place its dabs): a `BrushStroke` lays round dabs along the pen's path into its own coverage mask, then redraws the touched tiles from how they were before the stroke, so opacity caps a whole stroke and flow builds up within it, as in Photoshop |
+| `selection.rs` | Pixel selections: a soft 0–255 mask per canvas pixel (`Selection`), from rectangles, ellipses and polygons (anti-aliased by 4×4 subsampling) or the magic wand; combining (`Combine`); `limit`/`limit_canvas` keep a change only where selected; `keep`/`clear`/`shifted` for moving and cutting; `outline` for marching ants |
+| `adjust.rs` | Brightness/Contrast, Hue/Saturation, Levels and Curves (a monotone cubic), returning a new canvas so the app can preview from the original |
+| `blend.rs` | `BlendMode`, every layer's Photoshop-style blend mode; the renderer composites a non-Normal layer through a scratch buffer |
 | `retouch.rs` | Smudge, Blur, Sharpen, Dodge, Burn and Clone Stamp: a `RetouchStroke` places dabs with the brush's `DabPath`, and each dab reads the square of pixels under it (`Canvas::read_region`), reworks them, and writes them back |
 | `fill.rs` | The Paint Bucket (`bucket_fill`, a scanline flood fill with a tolerance, or every matching pixel) and `gradient` (linear or radial, blended as straight colours) |
 | `container.rs` | The project file: a zip of `document.json` and each canvas tile as `canvases/<id>/<column>_<row>.png`. Plain-JSON files from before version 17 still open |
@@ -111,7 +114,7 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 17. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 18. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
@@ -120,8 +123,9 @@ version 8 project font files, version 9 curved motion paths, version 10
 motion guides, version 11 masks, version 12 skew, version 13 parents
 and pivots, version 14 drawings (a layer's `elements` became its first
 drawing; `drawing::drawings_or_elements` reads either), version 15
-joint rotation limits, version 16 deformers and version 17 paint layers,
-when project files became zips (see `container.rs`);
+joint rotation limits, version 16 deformers, version 17 paint layers,
+when project files became zips (see `container.rs`), and version 18
+layer blend modes;
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 
@@ -215,6 +219,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `lip_sync_dialog.rs` | The Lip Sync window: picks the dialogue and timing source, maps drawings to mouth shapes, applies `Layer::apply_lip_sync` |
 | `tablet.rs` | Pen pressure: from Windows Ink pens via egui's touch events with force, and on macOS from an AppKit local event monitor that notes each pen event's pressure and tilt. `samples` gives every pointer position since the last frame with its pressure |
 | `rhubarb.rs` | Finding and running Rhubarb Lip Sync on a background thread (`Job`): decodes the dialogue to a temporary WAV, reads progress from its `--machineReadable` log, parses its TSV output |
+| `adjust_dialog.rs` | The Adjustments window: live preview from the canvas as it was, OK or Cancel, and the Curves editor |
 | `xsheet.rs` | The Exposure Sheet window: `column` turns a layer's exposure into cells (starts and holds), `enter` exposes a typed drawing name, making the drawing if it's new |
 | `shortcuts.rs` | Every keyboard shortcut in one place |
 | `motion_path.rs` | The math for showing and bending a layer's motion path on the stage |

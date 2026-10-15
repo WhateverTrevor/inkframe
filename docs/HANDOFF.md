@@ -156,8 +156,15 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     last-used tool, Shift+key cycles, right-click lists them. Keys: G
     bucket/gradient, U smudge/blur/sharpen, D dodge/burn, S clone stamp.
     The properties panel's tool section shows each tool's own settings.
-    Planned next, as agreed with the user: phase 3 (marquee, lasso, magic
-    wand, adjustments, blend modes), phase 4 maybe (canvas rotation, PSD).
+42. Painting, phase 3 (format v18): selections (`selection.rs`; Marquee,
+    Lasso, Polygonal Lasso, Magic Wand tools; Editor::pixel_selection,
+    not saved or undone), limiting every painting tool, fill and
+    adjustment; marching ants; moving selected pixels with the Selection
+    tool (`Gesture::MovePixels`); Layer via Copy/Cut (core) and Merge Down
+    (`inkframe_render::merge_down`); adjustments (`adjust.rs`, window in
+    `adjust_dialog.rs`); layer blend modes (`blend.rs`). The toolbar goes
+    to two columns when the window is too short. Phase 4 (maybe, not
+    agreed yet): canvas rotation while drawing, PSD import/export.
 
 ## Not yet verified by hand
 

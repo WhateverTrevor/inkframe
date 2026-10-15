@@ -25,6 +25,7 @@ use std::sync::Arc;
 use crate::color::Color;
 use crate::geometry::Point;
 use crate::paint::{Canvas, TILE};
+use crate::selection::Selection;
 
 /// How a brush paints. Sizes are in canvas pixels; the rest are 0 to 1.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -208,6 +209,8 @@ pub struct BrushStroke {
     /// Tiles whose coverage changed since the canvas was last redrawn.
     dirty: BTreeSet<(u32, u32)>,
     path: DabPath,
+    /// Where it may paint, if not everywhere.
+    selection: Option<Selection>,
 }
 
 impl BrushStroke {
@@ -219,7 +222,14 @@ impl BrushStroke {
             coverage: BTreeMap::new(),
             dirty: BTreeSet::new(),
             path: DabPath::default(),
+            selection: None,
         }
+    }
+
+    /// Paints only within `selection` (soft edges painting partly).
+    pub fn within(mut self, selection: Option<Selection>) -> Self {
+        self.selection = selection;
+        self
     }
 
     /// Carries the stroke on to `at` (canvas pixels) with `pressure` (0 to
@@ -259,7 +269,11 @@ impl BrushStroke {
                         if cover <= 0.0 {
                             continue;
                         }
-                        let amount = cover * flow * s.grain_at(x, y);
+                        let selected = self
+                            .selection
+                            .as_ref()
+                            .map_or(1.0, |sel| sel.at(x as i64, y as i64) as f32 / 255.0);
+                        let amount = cover * flow * s.grain_at(x, y) * selected;
                         let c = &mut coverage[((y - top) * TILE + x - left) as usize];
                         *c += amount * (1.0 - *c);
                     }
@@ -417,6 +431,17 @@ mod tests {
         let row: Vec<u8> = (30..170).map(|x| canvas.pixel(x, 50)[3]).collect();
         assert!(row.iter().any(|&a| a > 200), "the paper's peaks catch paint");
         assert!(row.iter().any(|&a| a < 60), "its hollows don't");
+    }
+
+    #[test]
+    fn a_selection_keeps_paint_inside_it() {
+        let mut canvas = Canvas::new(100, 100);
+        let selection = Selection::rectangle(100, 100, Point::new(0.0, 0.0), Point::new(50.0, 100.0));
+        let mut stroke = BrushStroke::new(BrushSettings::default(), red()).within(Some(selection));
+        stroke.add_point(&mut canvas, Point::new(10.0, 50.0), 1.0);
+        stroke.add_point(&mut canvas, Point::new(90.0, 50.0), 1.0);
+        assert_eq!(canvas.pixel(40, 50)[3], 255);
+        assert_eq!(canvas.pixel(60, 50), [0; 4]);
     }
 
     #[test]

@@ -18,6 +18,9 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
     if editor.tool.paints() {
         brush_section(ui, editor);
         ui.add_space(8.0);
+    } else if editor.tool.selects() {
+        selection_section(ui, editor);
+        ui.add_space(8.0);
     }
     // With several layers selected, the panel shows the one picked last.
     let count = editor.selected_ids().len();
@@ -195,6 +198,47 @@ fn brush_controls(ui: &mut egui::Ui, settings: &mut inkframe_core::BrushSettings
     }
 }
 
+/// The selection tools' options, and what to do with a selection.
+fn selection_section(ui: &mut egui::Ui, editor: &mut Editor) {
+    use crate::editor::Tool;
+    ui.heading(editor.tool.name());
+    if editor.tool == Tool::MagicWand {
+        egui::Grid::new("wand").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            ui.label("Tolerance").on_hover_text("How different a colour may be and still be selected");
+            ui.add(egui::Slider::new(&mut editor.wand_tolerance, 0..=255));
+            ui.end_row();
+            ui.label("Contiguous").on_hover_text("Select only the area connected to where you click");
+            ui.checkbox(&mut editor.wand_contiguous, "");
+            ui.end_row();
+        });
+    }
+    ui.weak(match editor.tool {
+        Tool::PolygonLasso => {
+            "Click each corner; click the first again, double-click or press Enter to close."
+        }
+        Tool::MagicWand => "Click an area of colour to select it.",
+        _ => "Drag to select.",
+    });
+    ui.weak("Shift adds to the selection, Option/Alt takes away, both keep the overlap.");
+    let selected = editor.active_selection().is_some();
+    ui.horizontal(|ui| {
+        if ui.add_enabled(editor.paint_target().is_some(), egui::Button::new("All")).clicked() {
+            editor.select_all_pixels();
+        }
+        if ui.add_enabled(selected, egui::Button::new("Deselect")).clicked() {
+            editor.deselect_pixels();
+        }
+        if ui.add_enabled(editor.paint_target().is_some(), egui::Button::new("Inverse")).clicked() {
+            editor.invert_pixel_selection();
+        }
+    });
+    if selected {
+        ui.weak(
+            "Drag inside the selection with the Selection tool (V) to move those pixels; Delete clears them.",
+        );
+    }
+}
+
 /// A slider for a 0–1 setting, shown as a percentage.
 fn percent(value: &mut f32) -> egui::Slider<'_> {
     egui::Slider::new(value, 0.0..=1.0).custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
@@ -224,6 +268,14 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         );
     });
     span_editor(ui, layer, last_frame);
+    ui.horizontal(|ui| {
+        ui.label("Blend").on_hover_text("How the layer mixes with what's beneath it");
+        egui::ComboBox::from_id_salt("blend").selected_text(layer.blend.label()).show_ui(ui, |ui| {
+            for mode in inkframe_core::BlendMode::ALL {
+                ui.selectable_value(&mut layer.blend, mode, mode.label());
+            }
+        });
+    });
 
     ui.add_space(8.0);
     transform_section(ui, editor, id, frame);
