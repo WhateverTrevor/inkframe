@@ -51,6 +51,7 @@ The data model and the math behind animation.
 | `guide.rs` | Motion guides: `Document::pose`, a layer's transform following its guide (use it rather than `Layer::transform_at` wherever layers are drawn or edited) |
 | `rig.rs` | Parenting and pivots: `Document::layer_matrix` (parents · pose · −pivot), the one map from a layer's drawing to its timeline that drawing, hit testing and editing all use; `set_parent` and `set_pivot`, which keep the layer where it is on screen |
 | `drawing.rs` | Drawing substitution: a layer's named `Drawing`s and its `Exposure` keys (which drawing shows from which frame). Use `Layer::elements_at(frame)` for what a layer shows, `all_elements` for "is this asset used anywhere" |
+| `lip_sync.rs` | Lip sync: the nine standard `MouthShape`s, reading Rhubarb (`.tsv`) and Papagayo (`.dat`) timing, mouth shapes from loudness, guessing which drawing is which shape (`MouthMap`), and `Layer::apply_lip_sync`. No audio code: the app passes in per-frame loudness |
 | `mask.rs` | Masks: which mask a layer is seen through, and Animate's "mask the layer below" |
 | `font_file.rs` | `FontFile`: a font file linked to the project, and the families it provides |
 | `image.rs` | `ImageAsset`: an image file the document links to, and its size in pixels |

@@ -22,6 +22,7 @@ mod geometry;
 mod guide;
 mod history;
 mod image;
+mod lip_sync;
 mod mask;
 mod rig;
 mod shape;
@@ -46,6 +47,9 @@ pub use geometry::{Affine, Point, Rect};
 pub use guide::GuidePath;
 pub use history::History;
 pub use image::{ImageAsset, ImageId};
+pub use lip_sync::{
+    LipSyncError, MouthCue, MouthMap, MouthShape, cues_from_loudness, parse_papagayo, parse_rhubarb,
+};
 pub use shape::{Path, Segment, Shape, Stroke, Style};
 pub use symbol::{Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId};
 pub use text::{DEFAULT_FAMILY, Font, Text, TextAlign};

@@ -96,9 +96,9 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     gestures convert the pointer into that space (`Handles::space`,
     `into_parent_space`). Option/Alt-drag moves the pivot (a plain drag
     still moves the layer). Selecting a parent and child together only
-    transforms the parent (`Document::hangs_from`). The rest of the plan
-    after drawing substitution (34): bones/IK, lip sync, deformers and an
-    exposure sheet.
+    transforms the parent (`Document::hangs_from`). The rest of the plan,
+    after drawing substitution (34) and lip sync (35): bones/IK, deformers
+    and an exposure sheet.
 34. Drawing substitution (format v14): `Layer::drawings` (never empty)
     and `Layer::exposure` hold keys, in `drawing.rs`. Everything that
     draws, hits or edits a layer reads `elements_at(frame)`; the editor's
@@ -108,6 +108,12 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     the selected layer has more than one (`Editor::add_drawn_shape`),
     converting the shape to a path in the layer's coordinates.
     `examples/rig.inkf` has a mouth with four drawings.
+35. Lip sync: `lip_sync.rs` in core (no file format change) and the Lip
+    Sync window (`lip_sync_dialog.rs`, Modify › Lip Sync…). Loudness uses
+    `AudioEngine::peaks`; timing files are Rhubarb TSV or Papagayo
+    MohoSwitch1. The user chose "built-in, then Rhubarb": bundling Rhubarb
+    (MIT) to run it from inside the app, like ffmpeg, is the agreed next
+    step for lip sync, needing their OK for the download.
 
 ## Not yet verified by hand
 
