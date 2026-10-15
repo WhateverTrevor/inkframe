@@ -1,5 +1,5 @@
 {
-  "version": 13,
+  "version": 14,
   "width": 1920,
   "height": 1080,
   "frame_rate": {
@@ -15,23 +15,6 @@
       "visible": true,
       "locked": false,
       "start": 0,
-      "elements": [
-        {
-          "shape": {
-            "type": "rect",
-            "width": 220,
-            "height": 360,
-            "corner_radius": 40
-          },
-          "style": {
-            "fill": "#5b7fd6ff",
-            "stroke": {
-              "color": "#2b2a33ff",
-              "width": 4.0
-            }
-          }
-        }
-      ],
       "track": {
         "position": [
           {
@@ -113,7 +96,29 @@
       "pivot": {
         "x": 0,
         "y": 160
-      }
+      },
+      "drawings": [
+        {
+          "name": "1",
+          "elements": [
+            {
+              "shape": {
+                "type": "rect",
+                "width": 220,
+                "height": 360,
+                "corner_radius": 40
+              },
+              "style": {
+                "fill": "#5b7fd6ff",
+                "stroke": {
+                  "color": "#2b2a33ff",
+                  "width": 4.0
+                }
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "id": 2,
@@ -121,23 +126,6 @@
       "visible": true,
       "locked": false,
       "start": 0,
-      "elements": [
-        {
-          "shape": {
-            "type": "rect",
-            "width": 70,
-            "height": 220,
-            "corner_radius": 30
-          },
-          "style": {
-            "fill": "#f2b48cff",
-            "stroke": {
-              "color": "#2b2a33ff",
-              "width": 4.0
-            }
-          }
-        }
-      ],
       "track": {
         "position": [
           {
@@ -200,7 +188,29 @@
       "pivot": {
         "x": 0,
         "y": -90
-      }
+      },
+      "drawings": [
+        {
+          "name": "1",
+          "elements": [
+            {
+              "shape": {
+                "type": "rect",
+                "width": 70,
+                "height": 220,
+                "corner_radius": 30
+              },
+              "style": {
+                "fill": "#f2b48cff",
+                "stroke": {
+                  "color": "#2b2a33ff",
+                  "width": 4.0
+                }
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "id": 3,
@@ -208,23 +218,6 @@
       "visible": true,
       "locked": false,
       "start": 0,
-      "elements": [
-        {
-          "shape": {
-            "type": "rect",
-            "width": 60,
-            "height": 200,
-            "corner_radius": 28
-          },
-          "style": {
-            "fill": "#f2b48cff",
-            "stroke": {
-              "color": "#2b2a33ff",
-              "width": 4.0
-            }
-          }
-        }
-      ],
       "track": {
         "position": [
           {
@@ -287,7 +280,29 @@
       "pivot": {
         "x": 0,
         "y": -80
-      }
+      },
+      "drawings": [
+        {
+          "name": "1",
+          "elements": [
+            {
+              "shape": {
+                "type": "rect",
+                "width": 60,
+                "height": 200,
+                "corner_radius": 28
+              },
+              "style": {
+                "fill": "#f2b48cff",
+                "stroke": {
+                  "color": "#2b2a33ff",
+                  "width": 4.0
+                }
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "id": 4,
@@ -295,22 +310,6 @@
       "visible": true,
       "locked": false,
       "start": 0,
-      "elements": [
-        {
-          "shape": {
-            "type": "ellipse",
-            "radius_x": 42,
-            "radius_y": 42
-          },
-          "style": {
-            "fill": "#f2b48cff",
-            "stroke": {
-              "color": "#2b2a33ff",
-              "width": 4.0
-            }
-          }
-        }
-      ],
       "track": {
         "position": [
           {
@@ -355,7 +354,28 @@
           }
         ]
       },
-      "parent": 3
+      "parent": 3,
+      "drawings": [
+        {
+          "name": "1",
+          "elements": [
+            {
+              "shape": {
+                "type": "ellipse",
+                "radius_x": 42,
+                "radius_y": 42
+              },
+              "style": {
+                "fill": "#f2b48cff",
+                "stroke": {
+                  "color": "#2b2a33ff",
+                  "width": 4.0
+                }
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "id": 5,
@@ -363,22 +383,6 @@
       "visible": true,
       "locked": false,
       "start": 0,
-      "elements": [
-        {
-          "shape": {
-            "type": "ellipse",
-            "radius_x": 95,
-            "radius_y": 95
-          },
-          "style": {
-            "fill": "#f2b48cff",
-            "stroke": {
-              "color": "#2b2a33ff",
-              "width": 4.0
-            }
-          }
-        }
-      ],
       "track": {
         "position": [
           {
@@ -441,8 +445,190 @@
       "pivot": {
         "x": 0,
         "y": 80
+      },
+      "drawings": [
+        {
+          "name": "1",
+          "elements": [
+            {
+              "shape": {
+                "type": "ellipse",
+                "radius_x": 95,
+                "radius_y": 95
+              },
+              "style": {
+                "fill": "#f2b48cff",
+                "stroke": {
+                  "color": "#2b2a33ff",
+                  "width": 4.0
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Mouth",
+      "visible": true,
+      "locked": false,
+      "start": 0,
+      "parent": 5,
+      "drawings": [
+        {
+          "name": "closed",
+          "elements": [
+            {
+              "shape": {
+                "type": "rect",
+                "width": 50.0,
+                "height": 6.0,
+                "corner_radius": 3.0
+              },
+              "style": {
+                "fill": "#2b2a33ff",
+                "stroke": {
+                  "color": "#2b2a33ff",
+                  "width": 4.0
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "A",
+          "elements": [
+            {
+              "shape": {
+                "type": "ellipse",
+                "radius_x": 26,
+                "radius_y": 30
+              },
+              "style": {
+                "fill": "#7a2f3aff",
+                "stroke": {
+                  "color": "#2b2a33ff",
+                  "width": 4.0
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "E",
+          "elements": [
+            {
+              "shape": {
+                "type": "ellipse",
+                "radius_x": 34,
+                "radius_y": 14
+              },
+              "style": {
+                "fill": "#7a2f3aff",
+                "stroke": {
+                  "color": "#2b2a33ff",
+                  "width": 4.0
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "O",
+          "elements": [
+            {
+              "shape": {
+                "type": "ellipse",
+                "radius_x": 18,
+                "radius_y": 18
+              },
+              "style": {
+                "fill": "#7a2f3aff",
+                "stroke": {
+                  "color": "#2b2a33ff",
+                  "width": 4.0
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "exposure": [
+        {
+          "frame": 6,
+          "drawing": 1
+        },
+        {
+          "frame": 12,
+          "drawing": 2
+        },
+        {
+          "frame": 16,
+          "drawing": 3
+        },
+        {
+          "frame": 22,
+          "drawing": 0
+        },
+        {
+          "frame": 28,
+          "drawing": 1
+        },
+        {
+          "frame": 34,
+          "drawing": 3
+        },
+        {
+          "frame": 40,
+          "drawing": 0
+        }
+      ],
+      "track": {
+        "position": [
+          {
+            "frame": 0,
+            "value": {
+              "x": 0.0,
+              "y": 40.0
+            },
+            "easing": {
+              "type": "linear"
+            }
+          }
+        ],
+        "rotation": [
+          {
+            "frame": 0,
+            "value": 0.0,
+            "easing": {
+              "type": "linear"
+            }
+          }
+        ],
+        "scale": [
+          {
+            "frame": 0,
+            "value": {
+              "x": 1.0,
+              "y": 1.0
+            },
+            "easing": {
+              "type": "linear"
+            }
+          }
+        ],
+        "opacity": [
+          {
+            "frame": 0,
+            "value": 1.0,
+            "easing": {
+              "type": "linear"
+            }
+          }
+        ]
       }
     }
   ],
-  "next_layer_id": 6
+  "next_layer_id": 7
 }

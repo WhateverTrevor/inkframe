@@ -14,6 +14,7 @@ mod channel;
 mod clipboard;
 mod color;
 mod document;
+mod drawing;
 mod easing;
 mod font_file;
 mod freehand;
@@ -37,6 +38,7 @@ pub use channel::{Animatable, AnyChannel, Bend, Channel, Key, MotionCurve, Tween
 pub use clipboard::{Clipboard, CopiedKeyframe, CopiedLayers};
 pub use color::{Color, ParseColorError};
 pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, Layer, LayerId, TimelineId};
+pub use drawing::{Drawing, Exposure};
 pub use easing::Easing;
 pub use font_file::{FontFile, FontFileId};
 pub use freehand::fit_freehand_path;

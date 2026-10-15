@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 use inkframe_core::FontFileId;
 use inkframe_core::{
-    Affine, Color, Document, DocumentError, Element, History, Layer, LayerId, Point, Property, Shape, Stroke,
-    Style, SymbolId, Text, TimelineId, Transform,
+    Affine, Anchor, Color, Document, DocumentError, Drawing, Element, History, Layer, LayerId, Point,
+    Property, Shape, Stroke, Style, SymbolId, Text, TimelineId, Transform, path_from_anchors,
 };
 use inkframe_core::{Clipboard, CopiedKeyframe};
 use inkframe_render::ImageLibrary;
@@ -215,8 +215,9 @@ impl Editor {
         let families = inkframe_render::add_font_file(path)?;
         let project_dir = self.project_dir();
         self.doc.add_font_file(path, project_dir.as_deref(), families.clone());
+        let frame = self.frame;
         if let Some(layer) = self.selection.and_then(|id| self.doc.layer_mut(id)) {
-            for element in &mut layer.elements {
+            for element in layer.elements_at_mut(frame) {
                 if let Shape::Text(text) = &mut element.shape {
                     text.font.family = families[0].clone();
                 }
@@ -238,6 +239,16 @@ impl Editor {
         self.selection
     }
 
+    /// Shape `index` of the drawing `layer` shows on the current frame.
+    pub fn element(&self, layer: LayerId, index: usize) -> Option<&Element> {
+        self.doc.layer(layer)?.elements_at(self.frame).get(index)
+    }
+
+    pub fn element_mut(&mut self, layer: LayerId, index: usize) -> Option<&mut Element> {
+        let frame = self.frame;
+        self.doc.layer_mut(layer)?.elements_at_mut(frame).get_mut(index)
+    }
+
     /// Brings every text shape's stored size up to date with its layout.
     ///
     /// The document model can't lay out text (that needs fonts), so it
@@ -248,7 +259,7 @@ impl Editor {
     pub fn remeasure_text(&mut self) {
         let doc = &mut self.doc;
         let layers = doc.layers.iter_mut().chain(doc.symbols.iter_mut().flat_map(|s| s.layers.iter_mut()));
-        for element in layers.flat_map(|layer| layer.elements.iter_mut()) {
+        for element in layers.flat_map(|layer| layer.all_elements_mut()) {
             if let Shape::Text(text) = &mut element.shape {
                 let bounds = inkframe_render::layout_text(text).bounds;
                 if text.measured != bounds {
@@ -448,11 +459,51 @@ impl Editor {
         self.doc.hit_test_in(self.timeline(), point, self.frame, tolerance)
     }
 
-    /// Adds a layer for something just drawn, to the timeline being edited.
-    /// Like Animate, the drawing appears from the current frame onward.
-    pub fn add_drawn_layer(&mut self, prefix: &str, element: Element, position: Point) {
+    /// Puts something just drawn, centered on `position`, onto the stage.
+    ///
+    /// Usually that's a new layer in the timeline being edited, appearing
+    /// from the current frame onward, as in Animate. But when the selected
+    /// layer swaps between drawings (a mouth, a hand), the shape is added to
+    /// the drawing it shows on this frame instead: that's how a new, blank
+    /// drawing gets drawn into.
+    pub fn add_drawn_shape(&mut self, prefix: &str, element: Element, position: Point) {
+        if self.add_to_shown_drawing(&element, position) {
+            return;
+        }
         let name = self.doc.next_layer_name_in(self.timeline(), prefix);
         self.add_named_layer(name, element, position);
+    }
+
+    /// Adds `element` to the selected layer's showing drawing, if it swaps
+    /// drawings. The shape becomes a path in the layer's own coordinates,
+    /// since a turned or scaled layer would otherwise turn or scale it too.
+    fn add_to_shown_drawing(&mut self, element: &Element, position: Point) -> bool {
+        let frame = self.frame;
+        let Some(layer) = self
+            .selected_layer()
+            .filter(|l| l.drawings.len() > 1 && !l.locked && l.is_shown_at(frame) && l.instance.is_none())
+        else {
+            return false;
+        };
+        let to_local = self.doc.layer_matrix(layer, frame).inverse();
+        let Some(to_local) = to_local.map(|m| m.pre_concat(Affine::translate(position))) else {
+            return false;
+        };
+        let (anchors, closed) = element.shape.to_anchors();
+        let moved: Vec<Anchor> = anchors
+            .iter()
+            .map(|a| Anchor {
+                point: to_local.apply(a.point),
+                handle_in: to_local.apply(a.handle_in),
+                handle_out: to_local.apply(a.handle_out),
+            })
+            .collect();
+        let Some(path) = path_from_anchors(&moved, closed) else { return false };
+        let id = layer.id;
+        if let Some(layer) = self.doc.layer_mut(id) {
+            layer.elements_at_mut(frame).push(Element { shape: Shape::Path(path), style: element.style });
+        }
+        true
     }
 
     /// Adds a layer holding `element` to the timeline being edited, starting
@@ -464,6 +515,50 @@ impl Editor {
             layer.start = self.frame;
         }
         self.selection = id;
+    }
+
+    // ------------------------------------------------------------- drawings
+
+    /// Shows the selected layer's drawing `index` from the current frame on.
+    pub fn show_drawing(&mut self, index: usize) {
+        let frame = self.frame;
+        if let Some(layer) = self.selected_layer_mut() {
+            layer.expose(frame, index);
+        }
+    }
+
+    /// Swaps the selected layer to its next (`delta` 1) or previous (−1)
+    /// drawing from the current frame on, wrapping around: flipping through
+    /// mouth shapes until the right one shows.
+    pub fn cycle_drawing(&mut self, delta: isize) {
+        let frame = self.frame;
+        if let Some(layer) = self.selected_layer_mut() {
+            let count = layer.drawings.len() as isize;
+            let next = (layer.drawing_index_at(frame) as isize + delta).rem_euclid(count);
+            layer.expose(frame, next as usize);
+        }
+    }
+
+    /// Adds a drawing to the selected layer and shows it from the current
+    /// frame on: a blank one, or (`copy`) a copy of the one showing now, to
+    /// change a little.
+    pub fn new_drawing(&mut self, copy: bool) {
+        let frame = self.frame;
+        if let Some(layer) = self.selected_layer_mut().filter(|l| l.instance.is_none()) {
+            let elements = if copy { layer.elements_at(frame).to_vec() } else { Vec::new() };
+            let index = layer.add_drawing(Drawing::new(layer.next_drawing_name(), elements));
+            layer.expose(frame, index);
+        }
+    }
+
+    /// Removes the drawing the selected layer shows on the current frame,
+    /// unless it's the layer's only one.
+    pub fn delete_shown_drawing(&mut self) {
+        let frame = self.frame;
+        if let Some(layer) = self.selected_layer_mut() {
+            let index = layer.drawing_index_at(frame);
+            layer.remove_drawing(index);
+        }
     }
 
     // ------------------------------------------------------------- timeline
@@ -721,7 +816,7 @@ impl Editor {
     pub fn paste_text(&mut self, text: &str, at: Point) {
         if let Some(id) = self.add_text(at)
             && let Some(layer) = self.doc.layer_mut(id)
-            && let Some(Shape::Text(t)) = layer.elements.first_mut().map(|e| &mut e.shape)
+            && let Some(Shape::Text(t)) = layer.elements_at_mut(self.frame).first_mut().map(|e| &mut e.shape)
         {
             t.content = text.to_owned();
         }
@@ -766,7 +861,10 @@ mod tests {
         assert_eq!(layer.name, "logo");
         assert_eq!(layer.start, 5, "it starts on the current frame");
         assert_eq!(layer.transform_at(5).position, Point::new(960.0, 540.0));
-        assert!(matches!(layer.elements[0].shape, Shape::Image { width: 300.0, height: 200.0, .. }));
+        assert!(matches!(
+            layer.drawings[0].elements[0].shape,
+            Shape::Image { width: 300.0, height: 200.0, .. }
+        ));
     }
 
     #[test]
@@ -775,7 +873,10 @@ mod tests {
         editor.import_image(&png("panorama.png", 3840, 1080)).unwrap();
         let layer = editor.selected_layer().unwrap();
         // Half size fits the 1920-pixel-wide stage, keeping the proportions.
-        assert!(matches!(layer.elements[0].shape, Shape::Image { width: 1920.0, height: 540.0, .. }));
+        assert!(matches!(
+            layer.drawings[0].elements[0].shape,
+            Shape::Image { width: 1920.0, height: 540.0, .. }
+        ));
     }
 
     #[test]
@@ -798,7 +899,7 @@ mod tests {
         editor.add_text(Point::new(100.0, 100.0));
         assert_eq!(editor.import_font(&path).unwrap(), ["Hack"]);
         assert_eq!(editor.doc.fonts.len(), 1);
-        let Shape::Text(text) = &editor.selected_layer().unwrap().elements[0].shape else {
+        let Shape::Text(text) = &editor.selected_layer().unwrap().drawings[0].elements[0].shape else {
             panic!("not text")
         };
         assert_eq!(text.font.family, "Hack");
@@ -853,7 +954,7 @@ mod tests {
     fn text_from_another_app_pastes_as_a_text_layer() {
         let mut editor = Editor::new(Document::default());
         editor.paste_text("Hello from elsewhere", Point::new(200.0, 200.0));
-        let Shape::Text(text) = &editor.selected_layer().unwrap().elements[0].shape else {
+        let Shape::Text(text) = &editor.selected_layer().unwrap().drawings[0].elements[0].shape else {
             panic!("not text")
         };
         assert_eq!(text.content, "Hello from elsewhere");
@@ -897,6 +998,89 @@ mod tests {
         let id = editor.doc.add_layer("A", vec![], 0, Transform::default());
         editor.selection = Some(id);
         (editor, id)
+    }
+
+    #[test]
+    fn new_drawings_show_from_the_current_frame() {
+        let (mut editor, id) = editor_with_layer();
+        editor.set_frame(6);
+        editor.new_drawing(false);
+        editor.set_frame(10);
+        editor.new_drawing(false);
+        let layer = editor.doc.layer(id).unwrap();
+        let names: Vec<&str> = layer.drawings.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, ["1", "2", "3"]);
+        assert_eq!([0, 6, 9, 10].map(|f| layer.drawing_index_at(f)), [0, 1, 1, 2]);
+    }
+
+    #[test]
+    fn flipping_through_drawings_wraps_around() {
+        let (mut editor, id) = editor_with_layer();
+        editor.new_drawing(false);
+        editor.new_drawing(false);
+        editor.set_frame(4);
+        editor.cycle_drawing(1);
+        assert_eq!(editor.doc.layer(id).unwrap().drawing_index_at(4), 0, "from the last back to the first");
+        editor.cycle_drawing(-1);
+        assert_eq!(editor.doc.layer(id).unwrap().drawing_index_at(4), 2);
+        // Frames before keep what they showed.
+        assert_eq!(editor.doc.layer(id).unwrap().drawing_index_at(3), 2);
+    }
+
+    #[test]
+    fn duplicating_a_drawing_copies_what_shows() {
+        let (mut editor, id) = editor_with_layer();
+        let dot = Element {
+            shape: Shape::Ellipse { radius_x: 5.0, radius_y: 5.0 },
+            style: Style { fill: Some(Color::BLACK), stroke: None },
+        };
+        editor.doc.layer_mut(id).unwrap().drawings[0].elements.push(dot.clone());
+        editor.set_frame(3);
+        editor.new_drawing(true);
+        let layer = editor.doc.layer(id).unwrap();
+        assert_eq!(layer.drawing_index_at(3), 1);
+        assert_eq!(layer.elements_at(3), [dot]);
+    }
+
+    #[test]
+    fn shapes_drawn_on_a_swapping_layer_go_into_the_drawing_shown() {
+        let mut editor = Editor::new(Document::default());
+        let id = editor.doc.add_layer(
+            "Mouth",
+            vec![],
+            0,
+            Transform { scale: Point::new(2.0, 2.0), ..Transform::at(Point::new(400.0, 400.0)) },
+        );
+        editor.selection = Some(id);
+        editor.new_drawing(false);
+        let layers = editor.layers().len();
+
+        let dot = Element {
+            shape: Shape::Ellipse { radius_x: 10.0, radius_y: 10.0 },
+            style: Style { fill: Some(Color::BLACK), stroke: None },
+        };
+        editor.add_drawn_shape("Oval", dot, Point::new(460.0, 400.0));
+
+        assert_eq!(editor.layers().len(), layers, "no new layer");
+        let layer = editor.doc.layer(id).unwrap();
+        assert!(layer.drawings[0].elements.is_empty(), "the other drawing is untouched");
+        // In the layer's own coordinates, which are scaled 2×: 30 to the
+        // right, 5 across.
+        let bounds = layer.shape_bounds(0).unwrap();
+        assert!(bounds.center().distance(Point::new(30.0, 0.0)) < 0.01, "{bounds:?}");
+        assert!((bounds.width() - 10.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn shapes_drawn_with_a_one_drawing_layer_selected_get_their_own_layer() {
+        let (mut editor, _) = editor_with_layer();
+        let layers = editor.layers().len();
+        let dot = Element {
+            shape: Shape::Ellipse { radius_x: 10.0, radius_y: 10.0 },
+            style: Style { fill: Some(Color::BLACK), stroke: None },
+        };
+        editor.add_drawn_shape("Oval", dot, Point::new(460.0, 400.0));
+        assert_eq!(editor.layers().len(), layers + 1);
     }
 
     #[test]
@@ -985,7 +1169,7 @@ mod tests {
             shape: inkframe_core::Shape::Ellipse { radius_x: 5.0, radius_y: 5.0 },
             style: editor.draw_style,
         };
-        editor.add_drawn_layer("Oval", shape, Point::ZERO);
+        editor.add_drawn_shape("Oval", shape, Point::ZERO);
 
         assert_eq!(editor.doc.layers_of(TimelineId::Symbol(symbol)).len(), 2);
         assert_eq!(editor.doc.layers.len(), 1);

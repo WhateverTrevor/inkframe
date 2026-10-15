@@ -112,7 +112,7 @@ impl Document {
     pub fn guide_path(&self, guide: LayerId, frame: f32) -> Option<GuidePath> {
         let layer = self.layer(guide).filter(|l| l.guide)?;
         let to_timeline = self.layer_matrix(layer, frame as u32);
-        let outline = layer.elements.iter().find_map(|element| match &element.shape {
+        let outline = layer.elements_at(frame as u32).iter().find_map(|element| match &element.shape {
             Shape::Path(path) => Some(path.flatten()),
             shape @ (Shape::Rect { .. } | Shape::Ellipse { .. }) => {
                 let (anchors, closed) = shape.to_anchors();

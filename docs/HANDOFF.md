@@ -96,9 +96,18 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     gestures convert the pointer into that space (`Handles::space`,
     `into_parent_space`). Option/Alt-drag moves the pivot (a plain drag
     still moves the layer). Selecting a parent and child together only
-    transforms the parent (`Document::hangs_from`). Remaining steps of the
-    plan, not started: drawing substitution, bones/IK, lip sync, deformers,
+    transforms the parent (`Document::hangs_from`). The rest of the plan
+    after drawing substitution (34): bones/IK, lip sync, deformers and an
     exposure sheet.
+34. Drawing substitution (format v14): `Layer::drawings` (never empty)
+    and `Layer::exposure` hold keys, in `drawing.rs`. Everything that
+    draws, hits or edits a layer reads `elements_at(frame)`; the editor's
+    `element`/`element_mut` do that for the current frame. Inspector
+    Drawings section, Modify menu items, `[`/`]` to flip, orange swap
+    marks in the timeline. Drawing tools add into the shown drawing when
+    the selected layer has more than one (`Editor::add_drawn_shape`),
+    converting the shape to a path in the layer's coordinates.
+    `examples/rig.inkf` has a mouth with four drawings.
 
 ## Not yet verified by hand
 

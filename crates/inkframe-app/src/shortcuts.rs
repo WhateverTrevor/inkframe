@@ -56,6 +56,12 @@ pub const REMOVE_KEYFRAME: KeyboardShortcut = KeyboardShortcut::new(Modifiers::S
 pub const LAYER_START_HERE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::OpenBracket);
 pub const LAYER_END_HERE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::CloseBracket);
 
+// Flipping a layer through its drawings (mouth shapes, hand poses) from the
+// current frame on: plain [ and ], as in Toon Boom Harmony's drawing
+// substitution.
+pub const PREVIOUS_DRAWING: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::OpenBracket);
+pub const NEXT_DRAWING: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::CloseBracket);
+
 /// Single-key tool shortcuts, matching Animate so muscle memory carries over.
 pub fn tool_key(tool: Tool) -> Key {
     match tool {

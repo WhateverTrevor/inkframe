@@ -54,6 +54,14 @@ enum Command {
     RemoveKeyframe,
     LayerStartHere,
     LayerEndHere,
+    /// Adds a blank drawing to the selected layer, shown from this frame.
+    NewDrawing,
+    /// Copies the drawing showing now into a new one, shown from this frame.
+    DuplicateDrawing,
+    /// Removes the drawing showing now.
+    DeleteDrawing,
+    PreviousDrawing,
+    NextDrawing,
     PlayPause,
     StepBackward,
     StepForward,
@@ -200,6 +208,11 @@ impl InkframeApp {
             Command::RemoveKeyframe => editor.remove_keyframe(),
             Command::LayerStartHere => editor.set_layer_start_here(),
             Command::LayerEndHere => editor.set_layer_end_here(),
+            Command::NewDrawing => editor.new_drawing(false),
+            Command::DuplicateDrawing => editor.new_drawing(true),
+            Command::DeleteDrawing => editor.delete_shown_drawing(),
+            Command::PreviousDrawing => editor.cycle_drawing(-1),
+            Command::NextDrawing => editor.cycle_drawing(1),
             Command::PlayPause => editor.toggle_playback(),
             Command::StepBackward => editor.step(-1),
             Command::StepForward => editor.step(1),
@@ -248,6 +261,9 @@ impl InkframeApp {
             (REMOVE_KEYFRAME, Command::RemoveKeyframe),
             (LAYER_START_HERE, Command::LayerStartHere),
             (LAYER_END_HERE, Command::LayerEndHere),
+            // After the ⌥ versions above, so those don't also swap.
+            (PREVIOUS_DRAWING, Command::PreviousDrawing),
+            (NEXT_DRAWING, Command::NextDrawing),
             (INSERT_KEYFRAME, Command::InsertKeyframe),
             (PLAY, Command::PlayPause),
         ];
@@ -448,6 +464,22 @@ impl InkframeApp {
                     .selection
                     .is_some_and(|id| self.editor.layers().first().is_some_and(|bottom| bottom.id != id));
                 item(ui, "Mask", None, Command::MaskLayerBelow, below);
+                ui.separator();
+                // Drawing substitution: only for layers with their own
+                // artwork, not symbol instances.
+                let drawn = self.editor.selected_layer().filter(|l| l.instance.is_none());
+                let swaps = drawn.is_some_and(|l| l.drawings.len() > 1);
+                item(ui, "New Drawing", None, Command::NewDrawing, drawn.is_some());
+                item(ui, "Duplicate Drawing", None, Command::DuplicateDrawing, drawn.is_some());
+                item(ui, "Delete Drawing", None, Command::DeleteDrawing, swaps);
+                item(
+                    ui,
+                    "Previous Drawing",
+                    Some(shortcuts::PREVIOUS_DRAWING),
+                    Command::PreviousDrawing,
+                    swaps,
+                );
+                item(ui, "Next Drawing", Some(shortcuts::NEXT_DRAWING), Command::NextDrawing, swaps);
             });
             ui.menu_button("Timeline", |ui| {
                 let play = if self.editor.playback.playing { "Pause" } else { "Play" };

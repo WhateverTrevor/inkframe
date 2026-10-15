@@ -50,6 +50,7 @@ The data model and the math behind animation.
 | `text.rs` | `Text`: content, `Font`, size, alignment; its measured extent, which the editor keeps up to date |
 | `guide.rs` | Motion guides: `Document::pose`, a layer's transform following its guide (use it rather than `Layer::transform_at` wherever layers are drawn or edited) |
 | `rig.rs` | Parenting and pivots: `Document::layer_matrix` (parents · pose · −pivot), the one map from a layer's drawing to its timeline that drawing, hit testing and editing all use; `set_parent` and `set_pivot`, which keep the layer where it is on screen |
+| `drawing.rs` | Drawing substitution: a layer's named `Drawing`s and its `Exposure` keys (which drawing shows from which frame). Use `Layer::elements_at(frame)` for what a layer shows, `all_elements` for "is this asset used anywhere" |
 | `mask.rs` | Masks: which mask a layer is seen through, and Animate's "mask the layer below" |
 | `font_file.rs` | `FontFile`: a font file linked to the project, and the families it provides |
 | `image.rs` | `ImageAsset`: an image file the document links to, and its size in pixels |
@@ -102,14 +103,15 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 13. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 14. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
 symbols, version 5 audio tracks, version 6 images, version 7 text and
 version 8 project font files, version 9 curved motion paths, version 10
 motion guides, version 11 masks, version 12 skew and version 13 parents
-and pivots;
+and pivots, and version 14 drawings (a layer's `elements` became its
+first drawing; `drawing::drawings_or_elements` reads either);
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 

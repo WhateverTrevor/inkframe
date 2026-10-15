@@ -116,7 +116,7 @@ impl Document {
         let symbols: Vec<Symbol> = symbols.into_iter().filter_map(|id| self.symbol(id).cloned()).collect();
 
         let every_layer = || layers.iter().chain(symbols.iter().flat_map(|s| &s.layers));
-        let shapes = || every_layer().flat_map(|l| &l.elements).map(|e| &e.shape);
+        let shapes = || every_layer().flat_map(|l| l.all_elements()).map(|e| &e.shape);
         let image_ids: BTreeSet<ImageId> = shapes()
             .filter_map(|s| if let Shape::Image { image, .. } = s { Some(*image) } else { None })
             .collect();
@@ -231,7 +231,7 @@ impl Document {
                 if let Some(instance) = &mut copy.instance {
                     instance.symbol = symbols.get(&instance.symbol).copied().unwrap_or(instance.symbol);
                 }
-                for element in &mut copy.elements {
+                for element in copy.all_elements_mut() {
                     if let Shape::Image { image, .. } = &mut element.shape {
                         *image = images.get(image).copied().unwrap_or(*image);
                     }
@@ -299,7 +299,7 @@ mod tests {
 
         assert_eq!(target.symbols.len(), 1);
         let symbol = target.layer(pasted[0]).unwrap().instance.unwrap().symbol;
-        assert_eq!(target.symbol(symbol).unwrap().layers[0].elements, vec![square()]);
+        assert_eq!(target.symbol(symbol).unwrap().layers[0].elements_at(0), [square()]);
         // Layer ids inside the new symbol are fresh, not the source's.
         let inner = target.symbol(symbol).unwrap().layers[0].id;
         assert!(target.layers.iter().all(|l| l.id != inner));

@@ -28,6 +28,9 @@ planned (the code is already cross-platform and CI builds it on Windows).
   forearm, the forearm to the upper arm, the arm to the torso. Each part
   moves, turns and scales with what it hangs from, and turns around its own
   pivot (an elbow, a shoulder), which you can move anywhere on it.
+- **Swap drawings** for mouths, hands and blinks: a layer can hold several
+  named drawings ("closed", "A", "O") and show a different one from any
+  frame on, the way Toon Boom Harmony's drawing substitution works.
 - **Motion paths:** a moving layer's path is drawn on the stage, with a dot
   per frame showing its spacing. Drag the path to curve it, then fine-tune
   the curve handles; "Orient to path" turns the layer to face where it's going.
@@ -104,6 +107,7 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Skew | Drag an edge of the selection box between its handles to slant the layer, the opposite edge staying put; or type skew angles in the properties panel. Skew animates like any property |
 | Move the pivot | Option/Alt-drag the ring in the middle of the selected layer. It snaps to the corners, edge midpoints and center; or type it in the properties panel. The layer stays where it is, and from then on turns and scales around the new spot |
 | Attach to a parent | Pick a **Parent** in the properties panel. The layer stays where it is and from then on follows its parent; the timeline indents it under the parent's name. Deleting a parent hands its children to the parent above |
+| Swap drawings | In the properties panel's **Drawings** section, **New** adds a blank drawing (or **Duplicate** a copy of the one showing) from the current frame on. Click a drawing's name to show it from the current frame on, or press `[` and `]` to flip through them. With a layer that has several drawings selected, new shapes are drawn into the drawing that's showing. The timeline marks each swap with the drawing's name |
 | Draw | Rectangle (`R`), Oval (`O`), Pencil (`Y`). Hold Shift for squares and circles |
 | Reshape | Subselection tool (`A`): drag a shape's points, or a selected point's handles. Alt/Option moves one handle alone for a sharp corner; Alt/Option-click a point to switch it between corner and smooth; Delete removes the point. Rectangles and ovals become editable paths on the first edit |
 | Pen (`P`) | Click for corners, drag for curves. Click the first point to close the shape; Enter, Esc or clicking the last point ends an open line. Backspace removes the last point, Shift snaps to 45°. Click a selected shape's outline to add a point without changing its curve |

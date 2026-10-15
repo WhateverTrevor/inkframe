@@ -35,6 +35,8 @@ const CURRENT_KEY: Color32 = Color32::from_rgb(0x2f, 0x9b, 0xff);
 /// Animate shows tweens in a violet-blue; we follow suit so they read the same.
 const TWEEN: Color32 = Color32::from_rgb(0x8a, 0x7c, 0xd8);
 const HOLD: Color32 = Color32::from_gray(150);
+/// Drawing swaps: warm, to stand apart from the tweens' purple.
+const SWAP: Color32 = Color32::from_rgb(0xf0, 0xb0, 0x5a);
 const AUDIO: Color32 = Color32::from_rgb(0x4c, 0xc2, 0x8a);
 
 /// One line of the grid: a layer's summary row, or one of its properties.
@@ -926,6 +928,32 @@ fn paint_summary_row(painter: &egui::Painter, editor: &Editor, layout: &Layout, 
         );
     }
     paint_keys(painter, editor, layout, layer, &frames, row, dim);
+    paint_drawing_swaps(painter, layout, layer, row, dim);
+}
+
+/// For a layer that swaps drawings: a mark where each swap happens, with
+/// the name of the drawing it swaps to, like the drawing names in Harmony's
+/// exposure sheet. The drawing showing from the layer's start is named too.
+fn paint_drawing_swaps(
+    painter: &egui::Painter,
+    layout: &Layout,
+    layer: &Layer,
+    row: Rect,
+    dim: impl Fn(Color32) -> Color32,
+) {
+    if layer.drawings.len() < 2 {
+        return;
+    }
+    let font = FontId::proportional(9.0);
+    let color = dim(SWAP);
+    let first = std::iter::once(layer.start).filter(|&f| layer.exposure.first().is_none_or(|k| k.frame > f));
+    let swaps = first.chain(layer.exposure.iter().map(|key| key.frame).filter(|&f| f >= layer.start));
+    for frame in swaps {
+        let x = layout.frame_x(frame);
+        painter.vline(x, row.y_range().shrink(3.0), (1.5, color));
+        let name = &layer.drawings[layer.drawing_index_at(frame)].name;
+        painter.text(pos2(x + 3.0, row.bottom() - 2.0), Align2::LEFT_BOTTOM, name, font.clone(), color);
+    }
 }
 
 /// One property's own tweens, colored by easing, and its keys.

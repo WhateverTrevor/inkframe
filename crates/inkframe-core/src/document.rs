@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::audio::AudioTrack;
 use crate::color::Color;
+use crate::drawing::{Drawing, Exposure};
 use crate::font_file::FontFile;
 use crate::geometry::{Point, Rect};
 use crate::image::ImageAsset;
@@ -24,7 +25,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 13;
+pub const FORMAT_VERSION: u32 = 14;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -95,7 +96,15 @@ pub struct Layer {
     /// longer too, which is nearly always what's wanted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end: Option<u32>,
-    pub elements: Vec<Element>,
+    /// The layer's artwork: usually one drawing, or several to swap
+    /// between (a mouth's shapes), with `exposure` picking which shows on
+    /// each frame. Never empty. See `drawing.rs`.
+    #[serde(alias = "elements", deserialize_with = "crate::drawing::drawings_or_elements")]
+    pub drawings: Vec<Drawing>,
+    /// Which drawing shows from each key's frame on. Empty for a layer
+    /// that always shows its first drawing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exposure: Vec<Exposure>,
     /// A symbol drawn by this layer, through the layer's transform. Instance
     /// layers normally have no elements of their own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -302,7 +311,8 @@ impl Document {
             locked: false,
             start: 0,
             end: None,
-            elements,
+            drawings: vec![Drawing::new("1", elements)],
+            exposure: Vec::new(),
             instance: None,
             track: Track::new(frame, transform),
             guide: false,
@@ -546,11 +556,11 @@ impl Layer {
         self.track.sample(frame as f32)
     }
 
-    /// Bounds of what the layer's own shapes paint, strokes included, in its
-    /// local coordinates. For the full bounds, including a symbol instance,
-    /// use [`Document::layer_bounds`].
-    pub fn shape_bounds(&self) -> Option<Rect> {
-        self.elements.iter().map(Element::bounds).reduce(Rect::union)
+    /// Bounds of what the layer's own shapes paint on `frame`, strokes
+    /// included, in its local coordinates. For the full bounds, including a
+    /// symbol instance, use [`Document::layer_bounds`].
+    pub fn shape_bounds(&self, frame: u32) -> Option<Rect> {
+        self.elements_at(frame).iter().map(Element::bounds).reduce(Rect::union)
     }
 }
 

@@ -77,7 +77,7 @@ impl Document {
     /// layer back), so this is what decides whether a missing file matters.
     pub fn image_in_use(&self, id: ImageId) -> bool {
         self.all_layers()
-            .flat_map(|layer| &layer.elements)
+            .flat_map(|layer| layer.all_elements())
             .any(|element| matches!(element.shape, crate::Shape::Image { image, .. } if image == id))
     }
 }
