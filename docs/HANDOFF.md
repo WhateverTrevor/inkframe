@@ -85,6 +85,10 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     applied as scale → skew → rotate; drag a selection box edge to slant.
     Uneven group stretching of rotated layers is now exact
     (`Transform::from_affine`).
+32. Color emoji: the bundled Noto Color Emoji (COLRv1, OFL, in
+    `assets/fonts/`, pinned to googlefonts/noto-emoji commit 1ffdd21) is
+    painted as vector layers by `color_glyph.rs`; installers include its
+    licence.
 
 ## Not yet verified by hand
 
@@ -112,8 +116,6 @@ more features, since real use will show what matters. Open items:
    `stage_benchmark` example before deciding the GPU path is still needed.
    The user chose to skip the GPU preview for now; revisit only if a real
    project feels slow.
-3. **Color emoji** would need bitmap glyph support in the text renderer;
-   emoji are black and white (bundled Noto Emoji) for now.
 4. **Verify by hand:** the Windows installer has never been run on a real
    PC; copy/paste between two windows; on-stage typing feel.
 

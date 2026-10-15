@@ -10,6 +10,7 @@
 //!
 //! [tiny-skia]: https://github.com/linebender/tiny-skia
 
+mod color_glyph;
 mod images;
 mod path;
 mod text;
@@ -400,10 +401,20 @@ fn draw_element(pixmap: &mut PixmapMut, element: &Element, matrix: Transform, st
         return;
     }
     let tint = style.tint;
-    let path = match &element.shape {
-        Shape::Text(text) => text::layout(text).path.clone(),
-        shape => build_path(shape),
+    let layout = match &element.shape {
+        Shape::Text(text) => Some(text::layout(text)),
+        _ => None,
     };
+    let path = match &layout {
+        Some(layout) => layout.path.clone(),
+        None => build_path(&element.shape),
+    };
+    // Emoji and other color glyphs paint themselves, after the rest of the
+    // text, keeping their own colors.
+    if let Some(layout) = &layout {
+        let foreground = element.style.fill.unwrap_or(Color::BLACK);
+        text::paint_color_glyphs(pixmap, layout, matrix, foreground, tint);
+    }
     let Some(path) = path else {
         return; // Degenerate geometry, e.g. a zero-size rectangle.
     };
@@ -765,6 +776,33 @@ mod tests {
         let shown = RenderOptions { show_mask: Some(mask), ..options };
         let [_, _, _, alpha] = pixel(&render_frame(&doc, 0, &shown).unwrap(), 50, 50);
         assert!(alpha > 0 && alpha < 255, "a faint preview, alpha {alpha}");
+    }
+
+    #[test]
+    fn emoji_are_drawn_in_their_own_colors() {
+        let mut doc = Document::default();
+        (doc.width, doc.height) = (200, 200);
+        doc.background = Color::WHITE;
+        let mut text = inkframe_core::Text::new("😀", 150.0);
+        text.font.family = "Ubuntu".into(); // has no emoji, so they fall back
+        // Black text: any yellow must come from the emoji's own colors.
+        let style = Style { fill: Some(Color::BLACK), stroke: None };
+        doc.add_layer(
+            "Smile",
+            vec![Element { shape: Shape::Text(text), style }],
+            0,
+            Pose::at(Point::new(20.0, 160.0)),
+        );
+
+        let pixmap = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        let yellow = (0..200)
+            .flat_map(|y| (0..200).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                let [r, g, b, _] = pixel(&pixmap, x, y);
+                r > 200 && g > 150 && b < 120
+            })
+            .count();
+        assert!(yellow > 2000, "a big yellow face, found {yellow} yellow pixels");
     }
 
     #[test]

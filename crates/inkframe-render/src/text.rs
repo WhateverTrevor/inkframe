@@ -26,7 +26,10 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard}
 
 use fontdb::{Database, Family, Query, Stretch, Weight};
 use harfrust::{ShapeOptions, ShaperData, UnicodeBuffer};
-use inkframe_core::{Document, Font, FontFileId, Point, Rect, Text, TextAlign};
+use inkframe_core::{Color, Document, Font, FontFileId, Point, Rect, Text, TextAlign};
+use tiny_skia::PixmapMut;
+
+use crate::color_glyph;
 use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::{DrawSettings, OutlinePen};
 use skrifa::{GlyphId, MetadataProvider};
@@ -35,8 +38,10 @@ use tiny_skia::{Path, PathBuilder};
 /// Text laid out in local coordinates, with the first line's baseline at
 /// y = 0 (see [`TextAlign`]).
 pub struct TextLayout {
-    /// Every glyph's outline in one path, or `None` for blank text.
+    /// Every glyph's outline in one path, or `None` for blank text. Glyphs
+    /// with colors of their own aren't in it; they're in `colored`.
     pub path: Option<Path>,
+    pub colored: Vec<ColorGlyph>,
     /// The block's extent: the full width of its longest line, from the top
     /// of the first line to the bottom of the last.
     pub bounds: Rect,
@@ -229,14 +234,16 @@ impl Fonts {
     ///
     /// Fonts known to cover a lot (emoji, Chinese, Japanese, Korean,
     /// symbols) on each platform are tried first, so the same characters
-    /// look consistent; then every installed face. Color emoji fonts store
-    /// pictures, not outlines, so they don't count: emoji come from the
-    /// black-and-white Noto Emoji bundled with Inkframe instead.
+    /// look consistent; then every installed face. Emoji come from the
+    /// bundled Noto Color Emoji, drawn as colored vector layers. (Apple's
+    /// color emoji font stores pictures rather than shapes, so it's
+    /// skipped: it has neither outlines nor color layers.)
     fn fallback_for(&self, c: char) -> Option<fontdb::ID> {
         if let Some(found) = self.fallbacks.lock().expect("fallback cache lock").get(&c) {
             return *found;
         }
-        const PREFERRED: [&str; 11] = [
+        const PREFERRED: [&str; 12] = [
+            "Noto Color Emoji",
             "Noto Emoji",
             "PingFang SC",
             "Hiragino Sans",
@@ -309,8 +316,9 @@ fn family_names(database: &Database) -> Vec<String> {
 fn installed_fonts() -> (Database, fontdb::ID) {
     let mut database = Database::new();
     database.load_system_fonts();
-    // Black-and-white emoji, for when no installed font has emoji outlines
-    // (color emoji fonts store pictures instead).
+    // Emoji, in color, as vector layers (see `color_glyph.rs`), and in black
+    // and white as a last resort.
+    database.load_font_data(include_bytes!("../../../assets/fonts/Noto-COLRv1.ttf").to_vec());
     database.load_font_data(epaint_default_fonts::NOTO_EMOJI_REGULAR.to_vec());
     database.load_font_data(epaint_default_fonts::UBUNTU_LIGHT.to_vec());
     // Fonts are added in order, so the bundled Ubuntu is the last face.
@@ -354,6 +362,7 @@ fn lay_out(text: &Text) -> TextLayout {
     // A font file that can't be parsed draws nothing rather than failing.
     let blank = TextLayout {
         path: None,
+        colored: Vec::new(),
         bounds: Rect::from_points(Point::ZERO, Point::ZERO),
         family: family.clone(),
         lines: Vec::new(),
@@ -443,14 +452,20 @@ fn lay_out(text: &Text) -> TextLayout {
         line_start += line.len() + 1; // the newline
     }
 
-    // Draw the glyphs, font by font.
+    // Draw the glyphs, font by font. Glyphs with colors of their own (emoji)
+    // are set aside to be painted separately; see `paint_color_glyphs`.
     let mut path = PathBuilder::new();
+    let mut colored = Vec::new();
     for (face, glyphs) in &placed {
         face.with_font(|font| {
             let outlines = font.outline_glyphs();
             for glyph in glyphs {
-                if let Some(outline) = outlines.get(GlyphId::new(glyph.id)) {
-                    let mut pen = GlyphPen { path: &mut path, origin: glyph.origin, scale: glyph.scale };
+                if color_glyph::has_color(font, GlyphId::new(glyph.id)) {
+                    let project = std::ptr::eq(face.database, &fonts.project);
+                    colored.push(ColorGlyph { project, face: face.id, glyph: *glyph });
+                } else if let Some(outline) = outlines.get(GlyphId::new(glyph.id)) {
+                    let mut pen =
+                        GlyphPen { path: &mut path, origin: glyph.origin, scale: glyph.scale, flip: true };
                     // A glyph that fails to draw is left out rather than
                     // failing the whole line.
                     let _ = outline
@@ -463,11 +478,61 @@ fn lay_out(text: &Text) -> TextLayout {
     let bottom = (lines.len() - 1) as f32 * line_height + descent;
     TextLayout {
         path: path.finish(),
+        colored,
         bounds: Rect::from_points(Point::new(left, -ascent), Point::new(right, bottom)),
         family,
         lines: line_layouts,
         ascent,
         descent,
+    }
+}
+
+/// A glyph with colors of its own, and the font it's in.
+#[derive(Clone, Copy)]
+pub struct ColorGlyph {
+    /// Whether the font is one of the project's (or an installed one).
+    project: bool,
+    face: fontdb::ID,
+    glyph: PlacedGlyph,
+}
+
+/// Paints a layout's color glyphs (emoji) through `matrix` (the text's
+/// local coordinates to pixels). They keep their own colors; `foreground`
+/// is the text's fill, which some glyphs borrow for parts that should match
+/// the text, and `tint` replaces every color (onion skins).
+pub(crate) fn paint_color_glyphs(
+    pixmap: &mut PixmapMut,
+    layout: &TextLayout,
+    matrix: tiny_skia::Transform,
+    foreground: Color,
+    tint: Option<Color>,
+) {
+    if layout.colored.is_empty() {
+        return;
+    }
+    let fonts = read_fonts();
+    for colored in &layout.colored {
+        let database = if colored.project { &fonts.project } else { &fonts.installed };
+        let glyph = colored.glyph;
+        // Font units, which measure y upward, to the text's local space.
+        let placement = tiny_skia::Transform::from_row(
+            glyph.scale,
+            0.0,
+            0.0,
+            -glyph.scale,
+            glyph.origin.x,
+            glyph.origin.y,
+        );
+        Face { database, id: colored.face }.with_font(|font| {
+            color_glyph::paint(
+                pixmap,
+                font,
+                GlyphId::new(glyph.id),
+                matrix.pre_concat(placement),
+                foreground,
+                tint,
+            )
+        });
     }
 }
 
@@ -603,16 +668,20 @@ fn caret_positions(line: &str, clusters: &BTreeMap<usize, (f32, f32)>, start: f3
 }
 
 /// Adds a glyph's outline to a path, placed at `origin` and scaled from
-/// font units. Fonts measure y upward; the stage measures it downward.
-struct GlyphPen<'a> {
-    path: &'a mut PathBuilder,
-    origin: Point,
-    scale: f32,
+/// font units. Fonts measure y upward; the stage measures it downward, so
+/// outlines are flipped, unless something else (a color glyph's own
+/// transform) takes care of that.
+pub(crate) struct GlyphPen<'a> {
+    pub path: &'a mut PathBuilder,
+    pub origin: Point,
+    pub scale: f32,
+    pub flip: bool,
 }
 
 impl GlyphPen<'_> {
     fn at(&self, x: f32, y: f32) -> (f32, f32) {
-        (self.origin.x + x * self.scale, self.origin.y - y * self.scale)
+        let y = if self.flip { -y } else { y };
+        (self.origin.x + x * self.scale, self.origin.y + y * self.scale)
     }
 }
 
@@ -774,7 +843,7 @@ mod tests {
         // the selector must not split off into a font of its own.
         assert!(attaches_to_previous('\u{FE0F}'));
         let heart = layout(&text("\u{2764}\u{FE0F}"));
-        assert!(heart.path.is_some());
+        assert_eq!(heart.colored.len(), 1, "one color glyph, the selector included");
         assert_eq!(heart.lines[0].carets.len(), 3);
     }
 

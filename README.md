@@ -13,7 +13,8 @@ planned (the code is already cross-platform and CI builds it on Windows).
 - **Text** in any installed font, or font files imported into the project
   (so titles look the same on every machine), with bold, italic, alignment
   and line spacing. Characters the font doesn't have, like emoji or
-  Chinese in a Latin font, come from another font that does. It's real vector outlines, filled and stroked like shapes, so
+  Chinese in a Latin font, come from another font that does. Emoji are in
+  full color and stay sharp at any size. It's real vector outlines, filled and stroked like shapes, so
   it stays sharp at any size and animates like any other layer.
 - **Import images** (PNG, JPEG, GIF, WebP) to trace over or composite.
   They move, scale, rotate, fade and animate like any other layer.
@@ -158,3 +159,7 @@ Dual-licensed under either of
 
 at your option. This is the standard licensing for Rust projects. Unless
 you state otherwise, any contribution you submit is dual-licensed the same way.
+
+Inkframe includes [Noto Color Emoji](https://github.com/googlefonts/noto-emoji)
+(`assets/fonts/`), © Google, under the
+[SIL Open Font License 1.1](assets/fonts/Noto-COLRv1-LICENSE.txt).

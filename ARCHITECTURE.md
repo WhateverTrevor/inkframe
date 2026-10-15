@@ -135,7 +135,10 @@ before their outlines are built.
 Text is laid out in `text.rs`: fontdb finds the font, harfrust shapes the
 string into positioned glyphs (kerning, ligatures, complex scripts) and
 skrifa supplies each glyph's outline, which is then filled and stroked like
-any path. Characters the chosen font lacks are looked up in other fonts
+any path. Glyphs with colors of their own (emoji, from the bundled Noto
+Color Emoji in the vector COLR format) are painted by `color_glyph.rs`,
+which carries out the font's layers, gradients and clips with tiny-skia.
+Characters the chosen font lacks are looked up in other fonts
 (`Fonts::fallback_for`, cached per character) and shaped as separate runs
 on the same line. Layouts are cached. Fonts live in one store shared by the whole
 program: installed fonts, plus project font files (`sync_project_fonts`),

@@ -14,12 +14,14 @@ pub fn build_release(root: &Path) -> Result<(), String> {
     run(Command::new(cargo).current_dir(root).args(["build", "--release", "--package", "inkframe-app"]))
 }
 
-/// Copies Inkframe's own licence files into `dir`.
+/// Copies Inkframe's own licence files into `dir`, and the licence of the
+/// emoji font built into it (the SIL Open Font License asks for its notice
+/// to travel with the font).
 pub fn copy_licenses(root: &Path, dir: &Path) -> Result<(), String> {
     for license in ["LICENSE-MIT", "LICENSE-APACHE"] {
         copy(&root.join(license), &dir.join(license))?;
     }
-    Ok(())
+    copy(&root.join("assets/fonts/Noto-COLRv1-LICENSE.txt"), &dir.join("Noto-Color-Emoji-OFL.txt"))
 }
 
 /// Copies ffmpeg in, along with its licence.
