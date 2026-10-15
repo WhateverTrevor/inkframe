@@ -64,39 +64,124 @@ pub fn swatches(ui: &mut egui::Ui, editor: &mut Editor, state: &mut PanelState) 
         });
     }
     ui.add_space(4.0);
-
     let mut picked = None;
-    chip_grid(ui, &palette(), &mut picked, |_, _| {});
+    palette_section(ui, editor, state, &mut picked);
 
     ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("DOCUMENT").small().color(theme::TEXT_WEAK));
-        let current = current_color(editor, state.stroke);
-        if ui.add(IconButton::new(Icon::Plus, "Save the current colour as a swatch")).clicked()
-            && let Some(color) = current
-            && !editor.doc.swatches.contains(&color)
-        {
-            editor.doc.swatches.push(color);
-        }
-    });
-    let saved = editor.doc.swatches.clone();
-    if saved.is_empty() {
-        ui.weak("Colours saved here stay with the document.");
-    }
-    let mut remove = None;
-    chip_grid(ui, &saved, &mut picked, |i, response| {
-        response.context_menu(|ui| {
-            if ui.button("Remove Swatch").clicked() {
-                remove = Some(i);
-                ui.close();
-            }
-        });
-    });
-    if let Some(i) = remove {
-        editor.doc.swatches.remove(i);
-    }
+    egui::CollapsingHeader::new(egui::RichText::new("BASIC COLOURS").small().color(theme::TEXT_WEAK))
+        .id_salt("basic_colours")
+        .default_open(editor.doc.palette.swatches.is_empty())
+        .show(ui, |ui| chip_grid(ui, &palette(), &mut picked, |_, _| {}));
     if let Some(color) = picked {
         editor.use_color(color, state.stroke);
+    }
+}
+
+/// The document's palette: which version is in use, and each swatch with
+/// its name. Clicking a swatch uses its colour; right-clicking edits it,
+/// which recolours everything painted with it (see `palette.rs`).
+fn palette_section(
+    ui: &mut egui::Ui,
+    editor: &mut Editor,
+    state: &mut PanelState,
+    picked: &mut Option<Color>,
+) {
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("PALETTE").small().color(theme::TEXT_WEAK));
+        let palette = &editor.doc.palette;
+        let showing = palette.versions[palette.active].clone();
+        let mut switch = None;
+        let mut new_version = false;
+        egui::ComboBox::from_id_salt("palette_version")
+            .selected_text(showing)
+            .width(100.0)
+            .show_ui(ui, |ui| {
+                for (i, name) in palette.versions.iter().enumerate() {
+                    if ui.selectable_label(i == palette.active, name).clicked() {
+                        switch = Some(i);
+                    }
+                }
+                ui.separator();
+                new_version = ui
+                    .button("New Version")
+                    .on_hover_text("A copy of this version, to recolour: a night palette, say")
+                    .clicked();
+            })
+            .response
+            .on_hover_text("Switching versions recolours everything painted from the palette");
+        if let Some(version) = switch {
+            editor.doc.use_palette_version(version);
+        }
+        if new_version {
+            let name = format!("Version {}", editor.doc.palette.versions.len() + 1);
+            let version = editor.doc.add_palette_version(name);
+            editor.doc.use_palette_version(version);
+        }
+        let current = current_color(editor, state.stroke);
+        if ui.add(IconButton::new(Icon::Plus, "Add the current colour to the palette")).clicked()
+            && let Some(color) = current
+        {
+            let name = format!("Colour {}", editor.doc.palette.swatches.len() + 1);
+            editor.doc.add_swatch(name, color);
+        }
+    });
+
+    let count = editor.doc.palette.swatches.len();
+    if count == 0 {
+        ui.weak(
+            "Add colours here to paint with. Change one later and everything painted with it changes too.",
+        );
+    }
+    let mut remove = None;
+    for i in 0..count {
+        ui.push_id(("swatch", i), |ui| {
+            ui.horizontal(|ui| {
+                let Some(color) = editor.doc.palette.color(i) else { return };
+                let (rect, chip) = ui.allocate_exact_size(vec2(28.0, CHIP), Sense::click());
+                ui.painter().rect_filled(rect, 3.0, to_color32(color));
+                if chip.hovered() {
+                    ui.painter().rect_stroke(
+                        rect,
+                        3.0,
+                        Stroke::new(1.5, Color32::WHITE),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                if chip.clicked() {
+                    *picked = Some(color);
+                }
+                let uses = editor.doc.swatch_uses(i);
+                chip.on_hover_text(format!(
+                    "Use this colour. Right-click to change it ({uses} shapes use it)"
+                ))
+                .context_menu(|ui| {
+                    // Recolours live as the picker moves.
+                    let mut edited = to_color32(color);
+                    if egui::color_picker::color_picker_color32(
+                        ui,
+                        &mut edited,
+                        egui::color_picker::Alpha::OnlyBlend,
+                    ) {
+                        let [r, g, b, a] = edited.to_srgba_unmultiplied();
+                        editor.doc.set_swatch_color(i, Color::rgba(r, g, b, a));
+                    }
+                    ui.separator();
+                    if ui.button("Remove Swatch").on_hover_text("Shapes keep their colour").clicked() {
+                        remove = Some(i);
+                        ui.close();
+                    }
+                });
+                let name = &mut editor.doc.palette.swatches[i].name;
+                ui.add(
+                    egui::TextEdit::singleline(name)
+                        .desired_width(ui.available_width())
+                        .frame(egui::Frame::NONE),
+                );
+            });
+        });
+    }
+    if let Some(i) = remove {
+        editor.doc.remove_swatch(i);
     }
 }
 

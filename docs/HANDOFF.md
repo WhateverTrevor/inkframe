@@ -8,7 +8,7 @@ after animated effects.
 - **Branch:** `main`, clean. Every feature is built on its own branch,
   then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (496 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (501 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
@@ -266,6 +266,15 @@ after animated effects.
     the channel (`Layer::unanimated_*`, emptied in `validate`). The graph
     editor leaves Effects out (`GRAPHED` in timeline.rs). The screenshot
     hook's head glow now grows in over frames 1–25.
+
+53. Linked palettes (`palette.rs`): `Document::palette` replaces the
+    plain `swatches` list (loaded into it). Swatches own their exact
+    colour rather than shapes storing a link, so shapes, the renderer and
+    the format are unchanged; swatch colours are kept distinct per
+    version. Versions recolour the scene all at once. The Swatches panel
+    lists the palette with names, a right-click colour picker that
+    recolours live, and a version menu. `INKFRAME_SCREENSHOT_PALETTE=1`
+    builds a palette of the rig's colours with a Night version on.
 
 ## Not yet verified by hand
 

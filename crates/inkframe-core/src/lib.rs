@@ -37,6 +37,7 @@ mod lip_sync;
 mod mask;
 mod morph;
 mod paint;
+mod palette;
 mod psd;
 mod retouch;
 mod rig;
@@ -80,6 +81,7 @@ pub use lip_sync::{
 };
 pub use morph::{ShapeTween, morph};
 pub use paint::{Canvas, CanvasId, TILE, premultiply, unpremultiply};
+pub use palette::{Palette, Swatch};
 pub use psd::{Psd, PsdError, PsdLayer};
 pub use retouch::{Retouch, RetouchStroke, ToneRange};
 pub use selection::{Combine, Selection};

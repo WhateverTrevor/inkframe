@@ -190,8 +190,8 @@ pub fn describe(before: &Document, after: &Document) -> String {
     if before.images != after.images || before.fonts != after.fonts {
         return "Import".to_owned();
     }
-    if before.swatches != after.swatches {
-        return "Change swatches".to_owned();
+    if before.palette != after.palette {
+        return "Change palette".to_owned();
     }
     "Document settings".to_owned()
 }

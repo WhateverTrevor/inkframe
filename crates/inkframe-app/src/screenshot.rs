@@ -129,6 +129,12 @@ impl AutoScreenshot {
         std::env::var_os("INKFRAME_SCREENSHOT_CAMERA").is_some()
     }
 
+    /// Whether to make a palette of the rig's colours, with a darker
+    /// "Night" version switched on.
+    pub fn palette() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_PALETTE").is_some()
+    }
+
     /// Whether to give the rig a drop shadow, a glow and a tint, and show
     /// the effects in Properties.
     pub fn effects() -> bool {

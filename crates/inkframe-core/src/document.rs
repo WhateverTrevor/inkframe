@@ -15,6 +15,7 @@ use crate::ik::RotationLimits;
 use crate::image::ImageAsset;
 use crate::morph::ShapeTween;
 use crate::paint::{Canvas, CanvasId};
+use crate::palette::Palette;
 use crate::shape::{Shape, Style};
 use crate::symbol::{Instance, Symbol, SymbolId};
 use crate::track::Track;
@@ -63,9 +64,14 @@ pub struct Document {
     /// sizes are in the JSON; the pixels are saved beside it.
     #[serde(default)]
     pub canvases: BTreeMap<CanvasId, Canvas>,
-    /// Colours saved in the Swatches panel. Older builds ignore them.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub swatches: Vec<Color>,
+    /// The colour palette: swatches that own their colours, in one or more
+    /// versions (see `palette.rs`). Older builds ignore it.
+    #[serde(default, skip_serializing_if = "Palette::is_empty")]
+    pub palette: Palette,
+    /// Plain colours, as the Swatches panel saved them before there was a
+    /// palette; loading makes each a swatch.
+    #[serde(default, rename = "swatches", skip_serializing)]
+    pub(crate) old_swatches: Vec<Color>,
     pub(crate) next_layer_id: u64,
     #[serde(default = "first_id")]
     pub(crate) next_symbol_id: u64,
@@ -288,7 +294,8 @@ impl Default for Document {
             next_image_id: 1,
             next_font_id: 1,
             canvases: BTreeMap::new(),
-            swatches: Vec::new(),
+            palette: Palette::default(),
+            old_swatches: Vec::new(),
             next_canvas_id: 1,
         }
     }
@@ -583,6 +590,9 @@ impl Document {
             .any(|s| s.layers.iter().filter_map(|l| l.instance).any(|i| self.symbol_contains(i.symbol, s.id)))
         {
             return Err(DocumentError::Invalid("a symbol can't contain an instance of itself"));
+        }
+        for (i, color) in std::mem::take(&mut self.old_swatches).into_iter().enumerate() {
+            self.add_swatch(format!("Colour {}", i + 1), color);
         }
         // Effects from format 22, which couldn't animate: they become the
         // Effects property's value throughout.

@@ -208,6 +208,29 @@ impl InkframeApp {
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
             }
+            if AutoScreenshot::palette() {
+                let doc = &mut app.editor.doc;
+                let mut colours: Vec<inkframe_core::Color> = Vec::new();
+                for element in doc.all_layers().flat_map(|l| l.all_elements()) {
+                    let used = element.style.fill.into_iter().chain(element.style.stroke.map(|s| s.color));
+                    for colour in used {
+                        if !colours.contains(&colour) {
+                            colours.push(colour);
+                        }
+                    }
+                }
+                for (i, colour) in colours.iter().enumerate() {
+                    doc.add_swatch(format!("Colour {}", i + 1), *colour);
+                }
+                let night = doc.add_palette_version("Night");
+                for swatch in &mut doc.palette.swatches {
+                    let c = swatch.colors[0];
+                    let dim = |v: u8, k: f32| (v as f32 * k) as u8;
+                    swatch.colors[night] =
+                        inkframe_core::Color::rgb(dim(c.r, 0.45), dim(c.g, 0.5), dim(c.b, 0.8));
+                }
+                doc.use_palette_version(night);
+            }
             if AutoScreenshot::effects() {
                 use inkframe_core::{Color, ColorEffect, Effects, Filter, FilterKind};
                 let find = |editor: &crate::editor::Editor, name: &str| {
