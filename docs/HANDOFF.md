@@ -172,6 +172,15 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     against macOS's own PSD reader (sips reads our files) and 20 real
     Photoshop files shipped with macOS (all read). This completes the
     painting plan agreed with the user.
+44. Layers restack by dragging their names in the timeline
+    (`Drag::Reorder`, `Document::move_layer_to`). The window is now a
+    Blender-style layout of areas (`layout.rs`): any editor kind in any
+    area, split/join/swap from corners, resize borders, Ctrl+Space to
+    maximise, saved to `~/Library/Application Support/Inkframe/
+    layout.json` (Windows: `%APPDATA%\Inkframe`). Each stage, timeline and
+    exposure-sheet area has its own view (`Views` in app.rs); commands act
+    on the last stage pointed at. Screenshots always use the default
+    layout (`INKFRAME_SCREENSHOT_LAYOUT=custom` shows a rearranged one).
 
 ## Not yet verified by hand
 

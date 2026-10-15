@@ -27,6 +27,43 @@ const FRAME_WIDTH: f32 = 12.0;
 const PROPERTY_INDENT: f32 = 44.0;
 /// Columns drawn past the end of the animation, so the end is visible.
 const TRAILING_FRAMES: u32 = 20;
+/// How far a layer's name must be dragged before it starts to move.
+const REORDER_THRESHOLD: f32 = 4.0;
+
+/// The index (into `rows`) of each layer's summary row, top to bottom.
+fn layer_starts(rows: &[Row]) -> Vec<usize> {
+    rows.iter().enumerate().filter(|(_, row)| row.property.is_none()).map(|(i, _)| i).collect()
+}
+
+/// The height on screen of the gap before the `gap`th layer from the top
+/// (or after the last one).
+fn gap_y(layout: &Layout, rows: &[Row], gap: usize) -> f32 {
+    let starts = layer_starts(rows);
+    let row = starts.get(gap).copied().unwrap_or(rows.len());
+    layout.row_top(row)
+}
+
+/// The gap between layers nearest the height `y`.
+fn nearest_gap(layout: &Layout, rows: &[Row], y: f32) -> usize {
+    let layers = layer_starts(rows).len();
+    (0..=layers)
+        .min_by(|&a, &b| (gap_y(layout, rows, a) - y).abs().total_cmp(&(gap_y(layout, rows, b) - y).abs()))
+        .unwrap_or(0)
+}
+
+/// Moves `layer` into `gap`, counted from the top as the timeline shows
+/// layers (the reverse of the document's bottom-first order).
+fn restack(editor: &mut Editor, layer: LayerId, gap: usize) {
+    let count = editor.layers().len();
+    let Some(from_top) = editor.layers().iter().rev().position(|l| l.id == layer) else { return };
+    // Dropping just above or just below itself leaves it where it was.
+    if gap == from_top || gap == from_top + 1 {
+        return;
+    }
+    let to_top = if gap > from_top { gap - 1 } else { gap };
+    editor.doc.move_layer_to(layer, count - 1 - to_top);
+}
+
 /// How close to the end of a layer's bar a press must land to grab it, in points.
 const EDGE_GRAB: f32 = 3.0;
 
@@ -58,6 +95,10 @@ enum Drag {
     /// Dragging the left or right end of a layer's bar changes the frames
     /// the layer appears on.
     SpanEdge { layer: LayerId, edge: Edge },
+    /// Dragging a layer's name up or down the list to restack it. `gap` is
+    /// where it would land: before the `gap`th layer from the top (or
+    /// after the last), once the pointer has moved far enough to mean it.
+    Reorder { layer: LayerId, start_y: f32, gap: Option<usize> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -339,6 +380,13 @@ impl TimelineView {
             &audio_rows,
         );
 
+        // Where a dragged layer would land.
+        if let Some(Drag::Reorder { gap: Some(gap), .. }) = self.drag {
+            let y = gap_y(&layout, &rows, gap);
+            let across = layout.names.left()..=layout.frames.right();
+            painter.hline(across, y, (2.0, ui.visuals().selection.stroke.color));
+        }
+
         // Header for the names column, in the corner left of the ruler.
         let corner = Rect::from_min_max(rect.min, pos2(layout.names.right(), layout.ruler.bottom()));
         painter.rect_filled(corner, 0.0, ui.visuals().panel_fill);
@@ -448,6 +496,13 @@ impl TimelineView {
                         }
                     }
                 }
+                Drag::Reorder { start_y, gap, .. } => {
+                    // A few points of movement first, so a click still just
+                    // selects.
+                    if gap.is_some() || (p.y - *start_y).abs() > REORDER_THRESHOLD {
+                        *gap = Some(nearest_gap(layout, rows, p.y));
+                    }
+                }
                 Drag::Key { row, frame: from } => {
                     let moved = editor.doc.layer_mut(row.layer).is_some_and(|l| match row.property {
                         None => l.move_key(*from, frame),
@@ -462,6 +517,9 @@ impl TimelineView {
         }
 
         if !ui.input(|i| i.pointer.primary_down()) {
+            if let Some(Drag::Reorder { layer, gap: Some(gap), .. }) = self.drag {
+                restack(editor, layer, gap);
+            }
             self.drag = None;
         }
     }
@@ -526,10 +584,16 @@ impl TimelineView {
             }
             if adding && row.property.is_none() {
                 editor.toggle_selected(row.layer);
-            } else {
-                select_row(editor, row);
+                return None;
             }
-            return None;
+            select_row(editor, row);
+            // Pressing a layer's name may also be the start of dragging it
+            // to another place in the stack.
+            return row.property.is_none().then_some(Drag::Reorder {
+                layer: row.layer,
+                start_y: p.y,
+                gap: None,
+            });
         }
 
         if layout.frames.contains(p) {
@@ -1236,6 +1300,48 @@ mod tests {
         drag(&mut h, from, to);
 
         assert_eq!(h.state().1.doc.layer(id).unwrap().end, None);
+    }
+
+    /// Screen position of a layer's name, `row` rows down.
+    fn name(h: &Harness<'_, State>, row: usize) -> Pos2 {
+        let timeline = &h.state().0;
+        let layout = Layout::new(timeline.grid_rect.unwrap(), timeline.scroll);
+        // Right of the eye and lock, over the name itself.
+        layout.row_rect(row, layout.names).right_center() - vec2(30.0, 0.0)
+    }
+
+    fn layer_names(h: &Harness<'_, State>) -> Vec<String> {
+        h.state().1.layers().iter().rev().map(|l| l.name.clone()).collect()
+    }
+
+    #[test]
+    fn dragging_a_layer_name_restacks_it() {
+        let (mut h, _) = harness();
+        for name in ["B", "C"] {
+            h.state_mut().1.doc.add_layer(name, vec![], 0, Transform::default());
+        }
+        h.run();
+        // Top to bottom: C, B, A. Drag A (bottom) above C.
+        assert_eq!(layer_names(&h), ["C", "B", "A"]);
+        let (from, to) = (name(&h, 2), name(&h, 0) - vec2(0.0, 8.0));
+        h.drag_at(from);
+        h.step();
+        h.hover_at(from - vec2(0.0, 10.0));
+        h.step();
+        h.hover_at(to);
+        h.step();
+        h.drop_at(to);
+        h.run();
+        assert_eq!(layer_names(&h), ["A", "C", "B"]);
+
+        // A plain click on a name just selects it.
+        let b = name(&h, 2);
+        h.drag_at(b);
+        h.step();
+        h.drop_at(b);
+        h.run();
+        assert_eq!(layer_names(&h), ["A", "C", "B"]);
+        assert_eq!(h.state().1.selected_layer().map(|l| l.name.as_str()), Some("B"));
     }
 
     #[test]

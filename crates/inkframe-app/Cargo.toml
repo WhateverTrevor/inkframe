@@ -21,6 +21,8 @@ egui.workspace = true
 rfd.workspace = true
 # Reads Rhubarb's progress log.
 serde_json.workspace = true
+# Saves the window layout (see src/layout.rs).
+serde.workspace = true
 tiny-skia.workspace = true
 
 # Reads pen pressure and tilt from AppKit (see src/tablet.rs). The versions

@@ -382,6 +382,15 @@ impl Document {
         layers.insert(to, layer);
     }
 
+    /// Moves a layer to position `index` in its timeline's stack (0 is the
+    /// bottom), shifting the others along.
+    pub fn move_layer_to(&mut self, id: LayerId, index: usize) {
+        let Some((timeline, from)) = self.locate(id) else { return };
+        let Some(layers) = self.layers_of_mut(timeline) else { return };
+        let layer = layers.remove(from);
+        layers.insert(index.min(layers.len()), layer);
+    }
+
     /// A layer's position in its own timeline's stack.
     pub fn layer_index(&self, id: LayerId) -> Option<usize> {
         self.locate(id).map(|(_, index)| index)
