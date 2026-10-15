@@ -1,18 +1,18 @@
 # Handoff: where Inkframe stands
 
 A checkpoint for picking development back up. Last updated 2026-10-15,
-after shape tweens.
+after the camera.
 
 ## State
 
 - **Branch:** `main`, clean. Every feature is built on its own branch,
   then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (476 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (483 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
-- **File format:** version 20. Older versions load and upgrade automatically
+- **File format:** version 21. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -233,6 +233,18 @@ after shape tweens.
     `INKFRAME_SCREENSHOT_SHAPE_TWEEN=1` adds a square-to-ellipse demo layer
     with one hint. Next from the Animate comparison: a camera layer, then
     filters and colour effects.
+
+50. Camera (format v21; `camera.rs`): a `Layer` with `camera` set, kept
+    on top of the main timeline; its pose (position looked at, rotation,
+    `scale.x` zoom) is applied to every top-level main-timeline layer in
+    `Document::parent_matrix`, so rendering, hit testing, handles and
+    export all go through it. `Layer::depth` gives parallax
+    (`F / (F + depth)`, `FOCAL_LENGTH` 1000). Camera tool (`C`): drag
+    pans, Shift turns, Alt zooms, with an orange frame overlay; Camera
+    section in Properties; Timeline › Add Camera and a timeline-bar
+    button. One camera only (duplicates and pastes become plain layers;
+    it can't become a symbol). `INKFRAME_SCREENSHOT_CAMERA=1` shows one.
+    Next from the Animate comparison: filters and colour effects.
 
 ## Not yet verified by hand
 

@@ -362,6 +362,51 @@ fn tablet_hint_needed() -> bool {
     crate::tablet::current().is_none()
 }
 
+/// The camera: where it looks, how far it's zoomed and how it's turned on
+/// this frame (each keyed as it's changed, like a layer's transform), and
+/// whether it's on.
+fn camera_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    let frame = editor.frame;
+    let Some(camera) = editor.doc.layer(id) else { return };
+    let mut pose = editor.doc.pose(camera, frame);
+    let mut on = camera.visible;
+    ui.heading("Camera");
+    if ui.checkbox(&mut on, "On").on_hover_text("Off, the stage shows the scene without the camera").changed()
+    {
+        editor.set_visible(id, on);
+    }
+    let before = pose;
+    let mut zoom = pose.scale.x * 100.0;
+    egui::Grid::new("camera").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        ui.label("Looks at").on_hover_text("The point of the scene in the middle of the stage");
+        ui.horizontal(|ui| {
+            ui.add(DragValue::new(&mut pose.position.x).prefix("x ").speed(1.0));
+            ui.add(DragValue::new(&mut pose.position.y).prefix("y ").speed(1.0));
+        });
+        ui.end_row();
+        ui.label("Zoom");
+        ui.add(DragValue::new(&mut zoom).range(5.0..=5000.0).suffix("%").speed(1.0));
+        ui.end_row();
+        ui.label("Rotation");
+        ui.add(DragValue::new(&mut pose.rotation).suffix("°").speed(0.5));
+        ui.end_row();
+    });
+    pose.scale = inkframe_core::Point::new(zoom / 100.0, zoom / 100.0);
+    if pose != before {
+        editor.set_pose(id, pose);
+    }
+    if ui
+        .button("Reset Camera")
+        .on_hover_text("Back to looking straight at the stage, on this frame")
+        .clicked()
+    {
+        let centre = editor.doc.stage_rect().center();
+        editor.set_pose(id, inkframe_core::Transform::at(centre));
+    }
+    ui.add_space(4.0);
+    ui.weak("With the Camera tool (C): drag to pan, Shift-drag to turn, Alt-drag to zoom. Set each layer's Depth for parallax.");
+}
+
 /// A folder: its name, and showing or locking everything in it.
 fn folder_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let Some(folder) = editor.doc.layer_mut(id) else { return };
@@ -387,8 +432,13 @@ fn folder_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
     let last_frame = editor.last_frame();
+    let editor_timeline_is_main = editor.doc.timeline_of(id) == Some(inkframe_core::TimelineId::Main);
     if editor.doc.layer(id).is_some_and(|l| l.folder) {
         folder_section(ui, editor, id);
+        return;
+    }
+    if editor.doc.layer(id).is_some_and(|l| l.camera) {
+        camera_section(ui, editor, id);
         return;
     }
     let Some(layer) = editor.doc.layer_mut(id) else { return };
@@ -407,6 +457,18 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         );
     });
     span_editor(ui, layer, last_frame);
+    // Depth, for the camera's parallax: only layers at the top of a rig on
+    // the main timeline sit at a depth; the rest go with them.
+    let top_level = layer.parent.is_none() && editor_timeline_is_main;
+    if top_level {
+        ui.horizontal(|ui| {
+            ui.label("Depth").on_hover_text(
+                "How far behind the stage the layer sits, for the camera: deeper layers look smaller \
+                 and move less as the camera pans. Negative comes forward.",
+            );
+            ui.add(DragValue::new(&mut layer.depth).range(-900.0..=100_000.0).speed(5.0));
+        });
+    }
     ui.horizontal(|ui| {
         ui.label("Blend").on_hover_text("How the layer mixes with what's beneath it");
         egui::ComboBox::from_id_salt("blend").selected_text(layer.blend.label()).show_ui(ui, |ui| {

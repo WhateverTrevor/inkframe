@@ -154,6 +154,14 @@ fn rotate(v: Vec2, angle: f32) -> Vec2 {
 }
 
 /// An in-progress mouse interaction on the stage.
+/// What a drag with the Camera tool does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CameraDrag {
+    Pan,
+    Turn,
+    Zoom,
+}
+
 enum Gesture {
     /// Dragging the selected layers, each from where it started. Each
     /// position is in its layer's parent's space, with the map there from
@@ -193,6 +201,10 @@ enum Gesture {
     Rotate { layer: LayerId, drag: RotateDrag, group: Vec<GroupMember>, into_space: Affine },
     /// Dragging a layer's pivot to a new spot on the layer.
     Pivot { layer: LayerId },
+    /// Moving the camera with the Camera tool: panning, or with Shift
+    /// turning, or with Alt zooming. `grab` is where the drag began, on
+    /// screen, and `start` the camera's pose then.
+    Camera { camera: LayerId, how: CameraDrag, grab: Pos2, start: Transform },
     /// Dragging shape hint `index` of one of a layer's drawings along its
     /// outline.
     Hint { layer: LayerId, drawing: usize, index: usize },
@@ -495,6 +507,27 @@ impl Handles {
             painter.rect_stroke(square, 0.0, (1.0, SELECTION), StrokeKind::Middle);
         }
     }
+}
+
+/// The Camera tool's view of things: the stage's edge, which is the
+/// camera's frame, and how far it's zoomed and turned.
+fn draw_camera_frame(painter: &egui::Painter, editor: &Editor, view: View) {
+    const CAMERA: Color32 = Color32::from_rgb(0xff, 0xa0, 0x3c);
+    let corners = editor.doc.stage_rect().corners().map(|c| view.to_screen(c));
+    painter.add(egui::Shape::closed_line(corners.to_vec(), (2.0, CAMERA)));
+    let label = match editor.doc.camera_layer() {
+        Some(camera) if !camera.visible => "Camera off: show its layer to use it".to_owned(),
+        Some(camera) => {
+            let pose = editor.doc.pose(camera, editor.frame);
+            format!("Camera  {:.0}%  {:.0}°", pose.scale.x * 100.0, pose.rotation)
+        }
+        None => "Drag to add a camera and pan it; Shift turns, Alt zooms".to_owned(),
+    };
+    let at = corners[0] + vec2(6.0, 6.0);
+    let galley = painter.layout_no_wrap(label, egui::FontId::proportional(12.0), Color32::BLACK);
+    let back = Rect::from_min_size(at, galley.size()).expand(4.0);
+    painter.rect_filled(back, 3.0, CAMERA);
+    painter.galley(at, galley, Color32::BLACK);
 }
 
 /// How near a shape hint the pointer must be to grab it, in points.
@@ -931,6 +964,34 @@ impl StageView {
                     {
                         deformer.point_bone_at(*bone, to_local.apply(p), frame);
                     }
+                }
+                Some(Gesture::Camera { camera, how, grab, start }) => {
+                    let pose = match how {
+                        // The scene follows the pointer, so the camera moves
+                        // the other way, measured in its own turned and
+                        // zoomed view.
+                        CameraDrag::Pan => {
+                            let moved = p - view.to_local(*grab);
+                            let turned = Affine::rotate(start.rotation.to_radians()).apply(moved);
+                            let zoom = start.scale.x.max(0.01);
+                            Transform { position: start.position - turned * (1.0 / zoom), ..*start }
+                        }
+                        // Round the middle of the stage: the scene turns with
+                        // the pointer, so the camera turns the other way.
+                        CameraDrag::Turn => {
+                            let centre = view.to_screen(editor.doc.stage_rect().center());
+                            let turned = angle_around(centre, pointer) - angle_around(centre, *grab);
+                            Transform { rotation: start.rotation - turned.to_degrees(), ..*start }
+                        }
+                        // Up zooms in, down out, by the same factor for the
+                        // same distance whatever the zoom.
+                        CameraDrag::Zoom => {
+                            let factor = ((grab.y - pointer.y) / 200.0).exp();
+                            let zoom = (start.scale.x * factor).clamp(0.05, 50.0);
+                            Transform { scale: Point::new(zoom, zoom), ..*start }
+                        }
+                    };
+                    editor.doc.set_pose(*camera, editor.frame, pose);
                 }
                 Some(Gesture::Hint { layer, drawing, index }) => {
                     let frame = editor.frame;
@@ -1543,6 +1604,20 @@ impl StageView {
                 Some(Gesture::DrawShape { tool, start: p, current: p })
             }
             Tool::Pencil => Some(Gesture::Pencil { points: vec![p] }),
+            Tool::Camera => {
+                // The first drag adds a camera, if there isn't one.
+                let camera = editor.doc.add_camera();
+                editor.select(Some(camera));
+                let start = editor.doc.layer(camera).map(|l| editor.doc.pose(l, editor.frame))?;
+                let how = if shift {
+                    CameraDrag::Turn
+                } else if alt {
+                    CameraDrag::Zoom
+                } else {
+                    CameraDrag::Pan
+                };
+                Some(Gesture::Camera { camera, how, grab: press, start })
+            }
             Tool::Bone => {
                 // A deformer's joints first: they sit on top of the drawing.
                 if let Some((layer, bone)) = deformer_joint_at(editor, view, press) {
@@ -2097,6 +2172,10 @@ impl StageView {
     }
 
     fn draw_overlays(&self, painter: &egui::Painter, editor: &Editor, view: View, handles: Option<&Handles>) {
+        if editor.tool == Tool::Camera {
+            draw_camera_frame(painter, editor, view);
+            return;
+        }
         // Painting needs a clear view of the picture, not a box around it.
         if editor.tool.on_pixels() {
             return;
@@ -2214,6 +2293,7 @@ impl StageView {
             Some(Gesture::Marquee { .. }) => CursorIcon::Crosshair,
             Some(Gesture::Rotate { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Pivot { .. } | Gesture::Hint { .. }) => CursorIcon::Crosshair,
+            Some(Gesture::Camera { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Reach { .. } | Gesture::Bend { .. }) => CursorIcon::Grabbing,
             Some(Gesture::EditAnchor { .. }) => CursorIcon::Move,
             Some(Gesture::BendPath { .. } | Gesture::PathHandle { .. }) => CursorIcon::Grabbing,
@@ -2235,6 +2315,7 @@ impl StageView {
                         CursorIcon::Grab
                     }
                     (None, Tool::Select) => CursorIcon::Default,
+                    (None, Tool::Camera) => CursorIcon::Move,
                     (None, Tool::Subselect) => {
                         let on_anchor =
                             response.hover_pos().is_some_and(|p| self.anchor_hit(editor, view, p).is_some());
@@ -2486,6 +2567,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
         | Gesture::Rotate { .. }
         | Gesture::Pivot { .. }
         | Gesture::Hint { .. }
+        | Gesture::Camera { .. }
         | Gesture::Reach { .. }
         | Gesture::Bend { .. }
         | Gesture::MovePixels { .. }
@@ -3053,6 +3135,32 @@ mod tests {
         assert!((width - 400.0).abs() < 3.0 && (height - 200.0).abs() < 3.0, "{width}×{height}");
         assert!(layer.transform_at(0).position.distance(Point::new(300.0, 200.0)) < 3.0);
         assert_eq!(editor.selection, Some(layer.id));
+    }
+
+    #[test]
+    fn the_camera_tool_adds_a_camera_and_pans_it_so_the_scene_follows() {
+        let mut doc = Document::default();
+        let dot = doc.add_layer(
+            "Dot",
+            vec![Element {
+                shape: Shape::Rect { width: 20.0, height: 20.0, corner_radius: 0.0 },
+                style: Style { fill: Some(Color::BLACK), stroke: None },
+            }],
+            0,
+            Transform::at(Point::new(500.0, 500.0)),
+        );
+        let mut editor = Editor::new(doc);
+        editor.tool = Tool::Camera;
+        let mut h = harness(editor);
+        let (from, to) = (screen(&h, 960.0, 540.0), screen(&h, 1060.0, 540.0));
+        drag(&mut h, from, &[to]);
+
+        let doc = &h.state().1.doc;
+        assert!(doc.camera().is_some(), "added");
+        // Dragged 100 right: the dot appears 100 further right.
+        let layer = doc.layer(dot).unwrap();
+        let seen = doc.layer_matrix(layer, 0).apply(Point::ZERO);
+        assert!(seen.distance(Point::new(600.0, 500.0)) < 3.0, "{seen:?}");
     }
 
     fn text_content(h: &Harness<'_, State>, id: LayerId) -> String {

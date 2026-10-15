@@ -250,6 +250,9 @@ impl Document {
         if let Some(stack) = self.layers_of_mut(timeline) {
             *stack = ordered;
         }
+        if timeline == TimelineId::Main {
+            self.keep_camera_on_top();
+        }
     }
 
     fn next_folder_name(&self, timeline: TimelineId) -> String {

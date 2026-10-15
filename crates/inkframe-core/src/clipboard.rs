@@ -275,6 +275,8 @@ impl Document {
             .map(|layer| {
                 let mut copy = layer.clone();
                 copy.id = ids[&layer.id];
+                // There's only ever one camera: a pasted one is a plain layer.
+                copy.camera = false;
                 if names.contains(&copy.name) {
                     copy.name = format!("{} copy", copy.name);
                 }

@@ -829,9 +829,16 @@ impl TimelineView {
                         THUMBNAIL,
                     );
                     let mut name_pos = pos2(picture.right() + 8.0, rect.center().y);
-                    if layer.folder {
-                        let icon =
-                            if self.collapsed.contains(&layer.id) { Icon::Folder } else { Icon::FolderOpen };
+                    // Folders and the camera draw nothing, so they get an
+                    // icon rather than a thumbnail.
+                    let icon = if layer.camera {
+                        Some(Icon::Camera)
+                    } else if layer.folder {
+                        Some(if self.collapsed.contains(&layer.id) { Icon::Folder } else { Icon::FolderOpen })
+                    } else {
+                        None
+                    };
+                    if let Some(icon) = icon {
                         let at = Rect::from_center_size(
                             pos2(picture.left() + 11.0, picture.center().y),
                             Vec2::splat(18.0),
@@ -947,6 +954,7 @@ fn select_row(editor: &mut Editor, row: Row) {
 /// order, or reversed for a right-to-left layout.
 fn layer_buttons(ui: &mut egui::Ui, editor: &mut Editor, right_to_left: bool) {
     enum Action {
+        Camera,
         Folder,
         Duplicate,
         Up,
@@ -954,6 +962,7 @@ fn layer_buttons(ui: &mut egui::Ui, editor: &mut Editor, right_to_left: bool) {
         Delete,
     }
     let mut buttons = [
+        (Icon::Camera, "Add a camera, or select the one there is", Action::Camera),
         (Icon::Folder, "New folder: put the selected layers in a folder", Action::Folder),
         (Icon::Duplicate, "Duplicate layer", Action::Duplicate),
         (Icon::Up, "Move layer up", Action::Up),
@@ -965,8 +974,10 @@ fn layer_buttons(ui: &mut egui::Ui, editor: &mut Editor, right_to_left: bool) {
     }
     let has_selection = editor.selection.is_some();
     for (icon, hover, action) in buttons {
-        if ui.add_enabled(has_selection, IconButton::new(icon, hover)).clicked() {
+        let enabled = has_selection || matches!(action, Action::Camera);
+        if ui.add_enabled(enabled, IconButton::new(icon, hover)).clicked() {
             match action {
+                Action::Camera => editor.add_camera(),
                 Action::Folder => editor.new_folder(),
                 Action::Duplicate => editor.duplicate_selected_layer(),
                 Action::Up => editor.move_selected_layer(1),

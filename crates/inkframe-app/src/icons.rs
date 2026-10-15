@@ -47,6 +47,7 @@ pub enum Icon {
     FolderOpen,
     Swatches,
     History,
+    Camera,
     Plus,
     // The Align panel.
     AlignLeft,
@@ -325,6 +326,21 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             fill(&[(0.02, 0.18), (0.28, 0.2), (0.12, 0.4)]);
             line(&[(0.5, 0.28), (0.5, 0.52), (0.68, 0.62)]);
         }
+        Icon::Camera => {
+            // A film camera from the side, as on the toolbar.
+            painter.rect_stroke(
+                Rect::from_min_max(at(0.0, 0.42), at(0.7, 0.92)),
+                1.5,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
+            painter.add(Shape::closed_line(
+                vec![at(0.7, 0.55), at(1.0, 0.42), at(1.0, 0.92), at(0.7, 0.8)],
+                stroke,
+            ));
+            painter.circle_stroke(at(0.18, 0.2), side * 0.16, stroke);
+            painter.circle_stroke(at(0.52, 0.2), side * 0.16, stroke);
+        }
         Icon::Plus => {
             line(&[(0.5, 0.15), (0.5, 0.85)]);
             line(&[(0.15, 0.5), (0.85, 0.5)]);
@@ -490,6 +506,7 @@ mod tests {
             FolderOpen,
             Swatches,
             History,
+            Camera,
             Plus,
             AlignLeft,
             AlignCenterX,

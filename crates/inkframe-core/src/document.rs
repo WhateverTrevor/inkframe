@@ -30,7 +30,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 20;
+pub const FORMAT_VERSION: u32 = 21;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -168,6 +168,13 @@ pub struct Layer {
     /// The folder this layer is in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub in_folder: Option<LayerId>,
+    /// This layer is the camera (see `camera.rs`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub camera: bool,
+    /// How far behind the stage the layer sits, for the camera's parallax:
+    /// 0 is on the stage, positive further away (see `camera.rs`).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub depth: f32,
 }
 
 fn is_origin(p: &Point) -> bool {
@@ -370,7 +377,12 @@ impl Document {
             color: None,
             folder: false,
             in_folder: None,
+            camera: false,
+            depth: 0.0,
         });
+        if timeline == TimelineId::Main {
+            self.keep_camera_on_top();
+        }
         Some(id)
     }
 
@@ -383,6 +395,8 @@ impl Document {
         let mut copy = layers[index].clone();
         copy.id = new_id;
         copy.name = format!("{} copy", copy.name);
+        // There's only ever one camera.
+        copy.camera = false;
         // Painting on the copy mustn't paint on the original.
         for drawing in &mut copy.drawings {
             self.separate_canvases(&mut drawing.elements, false);
@@ -403,6 +417,7 @@ impl Document {
         let to = from.saturating_add_signed(delta).min(layers.len() - 1);
         let layer = layers.remove(from);
         layers.insert(to, layer);
+        self.keep_camera_on_top();
     }
 
     /// Moves a layer to position `index` in its timeline's stack (0 is the
@@ -412,6 +427,7 @@ impl Document {
         let Some(layers) = self.layers_of_mut(timeline) else { return };
         let layer = layers.remove(from);
         layers.insert(index.min(layers.len()), layer);
+        self.keep_camera_on_top();
     }
 
     /// A layer's position in its own timeline's stack.
@@ -616,6 +632,10 @@ impl Layer {
     pub fn shape_bounds(&self, frame: u32) -> Option<Rect> {
         self.shown_elements(frame).iter().map(Element::bounds).reduce(Rect::union)
     }
+}
+
+fn is_zero(value: &f32) -> bool {
+    *value == 0.0
 }
 
 fn default_true() -> bool {

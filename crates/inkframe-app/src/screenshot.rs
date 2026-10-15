@@ -123,6 +123,12 @@ impl AutoScreenshot {
         crate::layout::Workspace::ALL.into_iter().find(|w| w.name().eq_ignore_ascii_case(&name))
     }
 
+    /// Whether to add a camera, zoomed in and turned a little, and show it
+    /// with the Camera tool.
+    pub fn camera() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_CAMERA").is_some()
+    }
+
     /// Whether to add a layer morphing from a square into a circle.
     pub fn shape_tween() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_SHAPE_TWEEN").is_some()
