@@ -519,6 +519,66 @@ impl Editor {
         }
     }
 
+    /// Undoes or redoes several steps at once (the History panel).
+    pub fn jump_history(&mut self, steps: isize) {
+        self.history.commit(&self.doc);
+        if self.history.jump(&mut self.doc, steps) {
+            self.after_document_replaced();
+        }
+    }
+
+    // -------------------------------------------------------------- align
+
+    pub fn align(&mut self, how: inkframe_core::Align, to_stage: bool) {
+        let ids = self.selected_ids();
+        self.doc.align_layers(&ids, self.frame, how, to_stage);
+    }
+
+    pub fn distribute(&mut self, axis: inkframe_core::Axis, to_stage: bool) {
+        let ids = self.selected_ids();
+        self.doc.distribute_layers(&ids, self.frame, axis, to_stage);
+    }
+
+    pub fn match_size(&mut self, axis: inkframe_core::Axis, to_stage: bool) {
+        let ids = self.selected_ids();
+        self.doc.match_size(&ids, self.frame, axis, to_stage);
+    }
+
+    /// Uses a colour picked from the Swatches panel: for the paint tools,
+    /// the paint colour; otherwise the fill (or stroke) for new shapes and,
+    /// as in Animate, for the shapes of the selected layers on this frame.
+    pub fn use_color(&mut self, color: Color, stroke: bool) {
+        if self.tool.paints() {
+            self.paint_color = color;
+            return;
+        }
+        if self.tool == Tool::Pencil {
+            self.pencil_stroke.color = color;
+            return;
+        }
+        let width = self.draw_style.stroke.map_or(2.0, |s| s.width);
+        if stroke {
+            self.draw_style.stroke = Some(Stroke { color, width });
+        } else {
+            self.draw_style.fill = Some(color);
+        }
+        let frame = self.frame;
+        for id in self.selected_ids() {
+            let Some(layer) = self.doc.layer_mut(id).filter(|l| !l.locked) else { continue };
+            for element in layer.elements_at_mut(frame) {
+                if matches!(element.shape, Shape::Paint { .. } | Shape::Image { .. }) {
+                    continue;
+                }
+                if stroke {
+                    let width = element.style.stroke.map_or(width, |s| s.width);
+                    element.style.stroke = Some(Stroke { color, width });
+                } else {
+                    element.style.fill = Some(color);
+                }
+            }
+        }
+    }
+
     /// Undo can remove layers or shorten the animation; make sure the editor
     /// isn't left pointing at things that no longer exist.
     fn after_document_replaced(&mut self) {

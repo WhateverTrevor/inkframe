@@ -69,7 +69,8 @@ The data model and the math behind animation.
 | `image.rs` | `ImageAsset`: an image file the document links to, and its size in pixels |
 | `audio.rs` | `AudioTrack`: a sound file laid against the timeline; how linked files are found |
 | `clipboard.rs` | Copying layers (with the symbols, images and fonts they need) and keyframes, and pasting them into the same or another project |
-| `history.rs` | Snapshot-based undo/redo |
+| `history.rs` | Snapshot-based undo/redo; each step is named by comparing it with the one before (`describe`), for the History panel, which can `jump` several steps |
+| `align.rs` | The Align panel's work: `stage_bounds`, `align_layers`, `distribute_layers`, `match_size`, moving layers in their parents' space |
 | `geometry.rs` | `Point`, `Rect`, `Affine` |
 
 **The animation model.** A layer is a group of shapes that animate together,
@@ -211,7 +212,8 @@ callback returns `ControlFlow::Break` to cancel.
 | `pen.rs` | State of the pen path being drawn, which lasts across many clicks |
 | `subselect.rs` | The math for moving, deleting and converting anchors with the Subselection tool |
 | `timeline.rs` | Transport bar and the hand-painted layer × frame grid |
-| `inspector.rs` | The properties panel |
+| `inspector.rs` | The properties panel, with Tool, Layer and Document tabs that follow the selection and tool |
+| `panels.rs` | The Swatches, Align and History panels |
 | `value_graph.rs` | The timeline's Graph mode: a property's values over time, with draggable keys and easing handles |
 | `easing_editor.rs` | The easing curve in the properties panel, with draggable Bézier handles |
 | `toolbar.rs` | Tool buttons with vector-drawn icons |
@@ -224,7 +226,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `theme.rs` | The look: Inter as the interface font, a palette of greys with one blue accent (constants other modules draw with), spacing and corner radii |
 | `icons.rs` | The interface's small icons (playback, layer toggles, area kinds), drawn as lines in the theme's colours, and `IconButton` |
 | `layer_thumbnails.rs` | The timeline's per-layer thumbnails (`render_layer_thumbnail` in the render crate), cached and redrawn only when what shows in them changes, a few per UI frame |
-| `layout.rs` | The window's areas, Blender-style: a binary tree of splits whose leaves are areas, each showing a `Kind` of editor, picked from a grouped menu in its header (`Kind::GROUPS`); the timeline and graph editor are one `TimelineView` whose mode follows the area's kind; resizing, splitting, joining, swapping and maximising, and saving the layout to the settings folder. `app.rs` keeps a view per stage, timeline and exposure-sheet area (`Views`), menu commands acting on the stage last pointed at |
+| `layout.rs` | The window's areas, Blender-style: a binary tree of splits whose leaves are areas, each holding tabs (at most one per `Kind`; views are kept per area and kind, so a hidden tab keeps its state) and showing one `Kind` of editor, picked from a grouped menu in its header (`Kind::GROUPS`); the timeline and graph editor are one `TimelineView` whose mode follows the area's kind; resizing, splitting, joining, swapping and maximising, and saving the layout to the settings folder. `Workspace` presets build whole layouts. `app.rs` keeps a view per stage, timeline and exposure-sheet area (`Views`), menu commands acting on the stage last pointed at |
 | `adjust_dialog.rs` | The Adjustments window: live preview from the canvas as it was, OK or Cancel, and the Curves editor |
 | `xsheet.rs` | The Exposure Sheet window: `column` turns a layer's exposure into cells (starts and holds), `enter` exposes a typed drawing name, making the drawing if it's new |
 | `shortcuts.rs` | Every keyboard shortcut in one place |

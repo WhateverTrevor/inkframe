@@ -30,7 +30,7 @@ use std::path::PathBuf;
 use egui::{Align2, Color32, CursorIcon, FontId, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2};
 use serde::{Deserialize, Serialize};
 
-use crate::icons::{self, Icon};
+use crate::icons::{self, Icon, IconButton};
 use crate::theme;
 
 /// The kinds of editor an area can show.
@@ -49,14 +49,18 @@ pub enum Kind {
     ToolSettings,
     Audio,
     Document,
+    Swatches,
+    Align,
+    History,
 }
 
 impl Kind {
     /// Every kind, grouped as the area menu lists them, Blender-style.
-    pub const GROUPS: [(&'static str, &'static [Kind]); 3] = [
+    pub const GROUPS: [(&'static str, &'static [Kind]); 4] = [
         ("General", &[Kind::Stage, Kind::Tools, Kind::ToolSettings, Kind::Properties]),
         ("Animation", &[Kind::Timeline, Kind::GraphEditor, Kind::ExposureSheet]),
-        ("Project", &[Kind::Library, Kind::Audio, Kind::Document]),
+        ("Design", &[Kind::Swatches, Kind::Align]),
+        ("Project", &[Kind::Library, Kind::Audio, Kind::Document, Kind::History]),
     ];
 
     pub fn name(self) -> &'static str {
@@ -71,6 +75,9 @@ impl Kind {
             Kind::ToolSettings => "Tool Settings",
             Kind::Audio => "Audio",
             Kind::Document => "Document",
+            Kind::Swatches => "Swatches",
+            Kind::Align => "Align",
+            Kind::History => "History",
         }
     }
 
@@ -86,13 +93,26 @@ impl Kind {
             Kind::ToolSettings => Icon::ToolSettings,
             Kind::Audio => Icon::Speaker,
             Kind::Document => Icon::Document,
+            Kind::Swatches => Icon::Swatches,
+            Kind::Align => Icon::AlignLeft,
+            Kind::History => Icon::History,
         }
     }
 
     /// Whether the area holds a column of settings, which wants a margin,
     /// rather than an editor drawn edge to edge (the stage, the timeline).
     pub fn is_panel(self) -> bool {
-        matches!(self, Kind::Properties | Kind::ToolSettings | Kind::Library | Kind::Audio | Kind::Document)
+        matches!(
+            self,
+            Kind::Properties
+                | Kind::ToolSettings
+                | Kind::Library
+                | Kind::Audio
+                | Kind::Document
+                | Kind::Swatches
+                | Kind::Align
+                | Kind::History
+        )
     }
 
     /// The timeline and the graph editor are one editor in two modes, so
@@ -111,15 +131,16 @@ pub struct AreaId(u64);
 enum Node {
     /// Two parts, side by side (`across`) or one above the other, the first
     /// taking `fraction` of the space.
-    Split {
-        across: bool,
-        fraction: f32,
-        first: Box<Node>,
-        second: Box<Node>,
-    },
+    Split { across: bool, fraction: f32, first: Box<Node>, second: Box<Node> },
+    /// An area. `kind` is the tab showing; `tabs` lists them all in order
+    /// (empty in layouts saved before areas had tabs, meaning just `kind`).
+    /// An area never holds two tabs of one kind, so each kind's editor in
+    /// it keeps its own state while another tab is showing.
     Area {
         id: AreaId,
         kind: Kind,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tabs: Vec<Kind>,
     },
 }
 
@@ -136,6 +157,9 @@ pub enum Direction {
 pub struct Layout {
     root: Node,
     next_id: u64,
+    /// The workspace this layout started as.
+    #[serde(default)]
+    workspace: Workspace,
     /// The area filling the window, if one is maximised.
     #[serde(skip)]
     maximized: Option<AreaId>,
@@ -169,22 +193,108 @@ const CORNER: f32 = 12.0;
 /// The smallest an area can be made, in points.
 const MIN_SIZE: f32 = 60.0;
 
+/// Ready-made arrangements of areas, as Animate's workspaces. Picking one
+/// replaces the layout; the name stays with it as it's changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Workspace {
+    /// Tools, stage and properties, with the timeline across the bottom.
+    #[default]
+    Essentials,
+    /// A tall timeline with the graph editor and exposure sheet as tabs.
+    Animator,
+    /// Swatches and Align beside the properties, and a short timeline.
+    Designer,
+    /// Tool settings and swatches up front, and the history, for painting.
+    Painter,
+}
+
+impl Workspace {
+    pub const ALL: [Workspace; 4] =
+        [Workspace::Essentials, Workspace::Animator, Workspace::Designer, Workspace::Painter];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Workspace::Essentials => "Essentials",
+            Workspace::Animator => "Animator",
+            Workspace::Designer => "Designer",
+            Workspace::Painter => "Painter",
+        }
+    }
+}
+
 impl Default for Layout {
-    /// Inkframe's usual arrangement: tools down the left, the stage in the
-    /// middle, properties on the right, and the timeline across the bottom.
     fn default() -> Self {
-        let mut next_id = 0;
-        let mut area = |kind| {
-            next_id += 1;
-            Box::new(Node::Area { id: AreaId(next_id), kind })
-        };
-        let (tools, stage, properties, timeline) =
-            (area(Kind::Tools), area(Kind::Stage), area(Kind::Properties), area(Kind::Timeline));
-        let middle = Node::Split { across: true, fraction: 0.76, first: stage, second: properties };
+        Self::workspace(Workspace::Essentials)
+    }
+}
+
+/// Builds layout trees with fresh area ids.
+struct Builder {
+    next_id: u64,
+}
+
+impl Builder {
+    /// An area with these tabs, the first showing.
+    fn area(&mut self, tabs: &[Kind]) -> Box<Node> {
+        self.next_id += 1;
+        // One tab is stored as none: just the area's kind.
+        let kind = tabs[0];
+        let tabs = if tabs.len() > 1 { tabs.to_vec() } else { Vec::new() };
+        Box::new(Node::Area { id: AreaId(self.next_id), kind, tabs })
+    }
+
+    fn single(&mut self, kind: Kind) -> Box<Node> {
+        self.area(&[kind])
+    }
+}
+
+fn across(fraction: f32, first: Box<Node>, second: Box<Node>) -> Box<Node> {
+    Box::new(Node::Split { across: true, fraction, first, second })
+}
+
+fn down(fraction: f32, first: Box<Node>, second: Box<Node>) -> Box<Node> {
+    Box::new(Node::Split { across: false, fraction, first, second })
+}
+
+impl Layout {
+    /// A workspace's arrangement.
+    pub fn workspace(workspace: Workspace) -> Self {
+        let mut b = Builder { next_id: 0 };
         // Room for the tools in two columns on a laptop-sized window.
-        let top = Node::Split { across: true, fraction: 0.075, first: tools, second: Box::new(middle) };
-        let root = Node::Split { across: false, fraction: 0.72, first: Box::new(top), second: timeline };
-        Self { root, next_id, maximized: None, gesture: None }
+        const TOOLS: f32 = 0.075;
+        let root = match workspace {
+            Workspace::Essentials => {
+                let (tools, stage) = (b.single(Kind::Tools), b.single(Kind::Stage));
+                let right = b.area(&[Kind::Properties, Kind::Library]);
+                let timeline = b.single(Kind::Timeline);
+                down(0.72, across(TOOLS, tools, across(0.76, stage, right)), timeline)
+            }
+            Workspace::Animator => {
+                let (tools, stage) = (b.single(Kind::Tools), b.single(Kind::Stage));
+                let right = b.area(&[Kind::Properties, Kind::Library, Kind::Swatches]);
+                let timeline = b.area(&[Kind::Timeline, Kind::GraphEditor, Kind::ExposureSheet]);
+                down(0.6, across(TOOLS, tools, across(0.76, stage, right)), timeline)
+            }
+            Workspace::Designer => {
+                let (tools, stage) = (b.single(Kind::Tools), b.single(Kind::Stage));
+                let upper = b.area(&[Kind::Properties, Kind::Library]);
+                let lower = b.area(&[Kind::Swatches, Kind::Align]);
+                let timeline = b.single(Kind::Timeline);
+                down(0.8, across(TOOLS, tools, across(0.74, stage, down(0.6, upper, lower))), timeline)
+            }
+            Workspace::Painter => {
+                let (tools, stage) = (b.single(Kind::Tools), b.single(Kind::Stage));
+                let upper = b.area(&[Kind::ToolSettings, Kind::Swatches]);
+                let lower = b.area(&[Kind::Properties, Kind::History, Kind::Library]);
+                let timeline = b.single(Kind::Timeline);
+                down(0.82, across(TOOLS, tools, across(0.74, stage, down(0.5, upper, lower))), timeline)
+            }
+        };
+        Self { root: *root, next_id: b.next_id, workspace, maximized: None, gesture: None }
+    }
+
+    pub fn workspace_name(&self) -> Workspace {
+        self.workspace
     }
 }
 
@@ -221,10 +331,88 @@ impl Layout {
         }
     }
 
+    /// Changes what the showing tab of an area shows. If the area has a tab
+    /// of that kind already, it shows that tab instead.
     pub fn set_kind(&mut self, area: AreaId, kind: Kind) {
-        if let Some(Node::Area { kind: k, .. }) = find_mut(&mut self.root, area) {
+        if let Some(Node::Area { kind: k, tabs, .. }) = find_mut(&mut self.root, area) {
+            if tabs.contains(&kind) {
+                *k = kind;
+                return;
+            }
+            if let Some(tab) = tabs.iter_mut().find(|t| **t == *k) {
+                *tab = kind;
+            }
             *k = kind;
         }
+    }
+
+    /// An area's tabs, in order.
+    pub fn tabs_of(&self, area: AreaId) -> Vec<Kind> {
+        match find(&self.root, area) {
+            Some(Node::Area { kind, tabs, .. }) if tabs.is_empty() => vec![*kind],
+            Some(Node::Area { tabs, .. }) => tabs.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Every area's every tab: the editors that need keeping, showing or not.
+    pub fn all_tabs(&self) -> Vec<(AreaId, Kind)> {
+        self.areas_unmaximized()
+            .into_iter()
+            .flat_map(|(id, _)| self.tabs_of(id).into_iter().map(move |kind| (id, kind)))
+            .collect()
+    }
+
+    /// Adds a tab to an area and shows it (or shows the one it has).
+    pub fn add_tab(&mut self, area: AreaId, kind: Kind) {
+        let mut tabs = self.tabs_of(area);
+        if !tabs.contains(&kind) {
+            tabs.push(kind);
+        }
+        if let Some(Node::Area { kind: k, tabs: t, .. }) = find_mut(&mut self.root, area) {
+            *t = tabs;
+            *k = kind;
+        }
+    }
+
+    /// Shows one of an area's tabs.
+    pub fn show_tab(&mut self, area: AreaId, kind: Kind) {
+        if self.tabs_of(area).contains(&kind) {
+            self.add_tab(area, kind);
+        }
+    }
+
+    /// Closes a tab, showing the one beside it. An area's last tab stays.
+    pub fn close_tab(&mut self, area: AreaId, kind: Kind) -> bool {
+        let mut tabs = self.tabs_of(area);
+        let Some(at) = tabs.iter().position(|&t| t == kind).filter(|_| tabs.len() > 1) else { return false };
+        tabs.remove(at);
+        let showing = self.kind_of(area);
+        if let Some(Node::Area { kind: k, tabs: t, .. }) = find_mut(&mut self.root, area) {
+            if showing == Some(kind) {
+                *k = tabs[at.min(tabs.len() - 1)];
+            }
+            *t = tabs;
+        }
+        true
+    }
+
+    /// Moves a tab from one area to another, as dragging it there does.
+    /// Moving an area's last tab closes that area, if it can be closed;
+    /// otherwise nothing moves. Returns whether it moved.
+    pub fn move_tab(&mut self, from: AreaId, kind: Kind, to: AreaId) -> bool {
+        if from == to || !self.tabs_of(from).contains(&kind) || self.tabs_of(to).is_empty() {
+            return false;
+        }
+        if self.tabs_of(from).len() == 1 {
+            if !self.close(from) {
+                return false;
+            }
+        } else {
+            self.close_tab(from, kind);
+        }
+        self.add_tab(to, kind);
+        true
     }
 
     /// Splits an area in two, the new half showing the same editor, and
@@ -241,7 +429,8 @@ impl Layout {
         let node = find_mut(&mut self.root, area)?;
         let Node::Area { kind, .. } = *node else { return None };
         self.next_id += 1;
-        let (old, fresh) = (Box::new(node.clone()), Box::new(Node::Area { id: new, kind }));
+        let fresh = Node::Area { id: new, kind, tabs: Vec::new() };
+        let (old, fresh) = (Box::new(node.clone()), Box::new(fresh));
         let (first, second) = if new_first { (fresh, old) } else { (old, fresh) };
         *node = Node::Split {
             across: direction == Direction::Across,
@@ -279,20 +468,41 @@ impl Layout {
         true
     }
 
-    /// Closes an area, its neighbour taking its space. The last area can't
-    /// be closed.
+    /// Closes an area, whatever shares its split taking its space (one
+    /// area, or several). The last area can't be closed.
     pub fn close(&mut self, area: AreaId) -> bool {
-        match self.sibling(area) {
-            Some(neighbour) => self.join(neighbour, area),
-            None => false,
+        fn remove(node: &mut Node, area: AreaId) -> bool {
+            let Node::Split { first, second, .. } = node else { return false };
+            let is = |n: &Node| matches!(n, Node::Area { id, .. } if *id == area);
+            let other = if is(first) {
+                second.as_ref().clone()
+            } else if is(second) {
+                first.as_ref().clone()
+            } else {
+                return remove(first, area) || remove(second, area);
+            };
+            *node = other;
+            true
         }
+        let closed = remove(&mut self.root, area);
+        if closed && self.maximized == Some(area) {
+            self.maximized = None;
+        }
+        closed
     }
 
-    /// Swaps what two areas show.
+    /// Swaps what two areas show, tabs and all.
     pub fn swap(&mut self, a: AreaId, b: AreaId) {
-        let (Some(ka), Some(kb)) = (self.kind_of(a), self.kind_of(b)) else { return };
-        self.set_kind(a, kb);
-        self.set_kind(b, ka);
+        let take = |layout: &mut Self, id| match find_mut(&mut layout.root, id) {
+            Some(Node::Area { kind, tabs, .. }) => Some((*kind, std::mem::take(tabs))),
+            _ => None,
+        };
+        let (Some(ta), Some(tb)) = (take(self, a), take(self, b)) else { return };
+        for (id, (kind, tabs)) in [(a, tb), (b, ta)] {
+            if let Some(Node::Area { kind: k, tabs: t, .. }) = find_mut(&mut self.root, id) {
+                (*k, *t) = (kind, tabs);
+            }
+        }
     }
 
     /// Two stages side by side, and an exposure sheet beside the timeline:
@@ -375,15 +585,64 @@ impl Layout {
         let mut header = ui.new_child(
             egui::UiBuilder::new().max_rect(rect.shrink2(vec2(6.0, 1.0))).id_salt(("header", id.0)),
         );
+        let tabs = self.tabs_of(id);
+        // When the tabs don't all fit with their names, the ones not
+        // showing shrink to their icons.
+        let font = egui::TextStyle::Button.resolve(ui.style());
+        let full: f32 =
+            tabs.iter().map(|&tab| tab_width(ui, tab, tab == kind, false, &font) + 2.0).sum::<f32>() + 30.0;
+        let compact = full > rect.width() - 12.0;
         header.horizontal_centered(|ui| {
-            let button = kind_button(ui, kind);
-            egui::Popup::menu(&button).show(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for &tab in &tabs {
+                let showing = tab == kind;
+                let button = tab_button(ui, tab, showing, compact && !showing);
+                // Tabs can be dragged to another area's header.
+                button.dnd_set_drag_payload(TabDrag { area: id, kind: tab });
+                if showing {
+                    // The showing tab's menu changes what it shows. It has an
+                    // id of its own: the default one is shared with the
+                    // right-click menu, which closes on a left click.
+                    egui::Popup::menu(&button).id(editors_menu_id(&button)).show(|ui| {
+                        if let Some(chosen) = kind_menu(ui, kind) {
+                            self.set_kind(id, chosen);
+                            ui.close();
+                        }
+                    });
+                } else if button.clicked() {
+                    self.show_tab(id, tab);
+                }
+                if button.middle_clicked() {
+                    self.close_tab(id, tab);
+                }
+                button.context_menu(|ui| {
+                    if ui.add_enabled(tabs.len() > 1, egui::Button::new("Close Tab")).clicked() {
+                        self.close_tab(id, tab);
+                        ui.close();
+                    }
+                });
+            }
+            let add = ui.add(IconButton::new(Icon::Plus, "Add a tab"));
+            egui::Popup::menu(&add).show(|ui| {
                 if let Some(chosen) = kind_menu(ui, kind) {
-                    self.set_kind(id, chosen);
+                    self.add_tab(id, chosen);
                     ui.close();
                 }
             });
         });
+        // A tab dragged here from another area moves here when let go.
+        let pointer = ui.input(|i| i.pointer.hover_pos());
+        if let Some(dragged) = egui::DragAndDrop::payload::<TabDrag>(ui.ctx())
+            && dragged.area != id
+            && pointer.is_some_and(|p| rect.contains(p))
+        {
+            ui.painter().rect_stroke(rect.shrink(1.0), 2.0, (2.0, theme::ACCENT), egui::StrokeKind::Inside);
+            if ui.input(|i| i.pointer.any_released())
+                && let Some(dragged) = egui::DragAndDrop::take_payload::<TabDrag>(ui.ctx())
+            {
+                self.move_tab(dragged.area, dragged.kind, id);
+            }
+        }
         response.on_hover_text("Right-click for the area menu").context_menu(|ui| {
             let half = 0.5;
             if ui.button("Split Side by Side").clicked() {
@@ -401,7 +660,8 @@ impl Layout {
                 self.join(id, other);
                 ui.close();
             }
-            if ui.add_enabled(sibling.is_some(), egui::Button::new("Close Area")).clicked() {
+            let alone = matches!(self.root, Node::Area { .. });
+            if ui.add_enabled(!alone, egui::Button::new("Close Area")).clicked() {
                 self.close(id);
                 ui.close();
             }
@@ -558,8 +818,24 @@ impl Layout {
     pub fn load() -> Self {
         Self::file()
             .and_then(|path| std::fs::read_to_string(path).ok())
-            .and_then(|json| serde_json::from_str(&json).ok())
+            .and_then(|json| serde_json::from_str::<Layout>(&json).ok())
+            .map(Layout::upgraded)
             .unwrap_or_default()
+    }
+
+    /// A layout saved by an older version, brought up to date: the Library
+    /// used to be part of the Properties panel, so a layout without one
+    /// gets it as a tab beside Properties.
+    fn upgraded(mut self) -> Self {
+        let tabs = self.all_tabs();
+        if !tabs.iter().any(|(_, kind)| *kind == Kind::Library)
+            && let Some(&(area, _)) = tabs.iter().find(|(_, kind)| *kind == Kind::Properties)
+        {
+            let showing = self.kind_of(area).unwrap_or(Kind::Properties);
+            self.add_tab(area, Kind::Library);
+            self.show_tab(area, showing);
+        }
+        self
     }
 
     /// Keeps the layout for next time. Failing is harmless: next time just
@@ -607,31 +883,76 @@ fn corner_action(
     Some(CornerAction::Split { area: drag.area, direction, fraction, new_first })
 }
 
-/// The header's editor button: the kind's icon and name and a chevron,
-/// flat until hovered.
-fn kind_button(ui: &mut egui::Ui, kind: Kind) -> egui::Response {
+/// How wide a tab is: its icon, its name unless `icon_only`, and room for
+/// the chevron on the showing one.
+fn tab_width(ui: &egui::Ui, kind: Kind, showing: bool, icon_only: bool, font: &egui::FontId) -> f32 {
+    if icon_only {
+        return 28.0;
+    }
+    let text = ui.fonts_mut(|f| f.layout_no_wrap(kind.name().to_owned(), font.clone(), theme::TEXT).size().x);
+    text + 32.0 + if showing { 18.0 } else { 6.0 }
+}
+
+/// The id of a tab's menu of editors.
+fn editors_menu_id(tab: &egui::Response) -> egui::Id {
+    tab.id.with("editors")
+}
+
+/// A tab being dragged to another area's header.
+#[derive(Debug, Clone, Copy)]
+struct TabDrag {
+    area: AreaId,
+    kind: Kind,
+}
+
+/// One tab in an area's header: the kind's icon and name. The showing tab
+/// is raised, with a chevron for its menu of editors; the others are flat
+/// until hovered.
+fn tab_button(ui: &mut egui::Ui, kind: Kind, showing: bool, icon_only: bool) -> egui::Response {
     let font = egui::TextStyle::Button.resolve(ui.style());
-    let galley = ui.painter().layout_no_wrap(kind.name().to_owned(), font, theme::TEXT);
-    let size = vec2(galley.size().x + 50.0, HEADER - 4.0);
-    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    let popup = egui::Popup::default_response_id(&response);
-    if kind == Kind::Stage
+    let galley = ui.painter().layout_no_wrap(kind.name().to_owned(), font.clone(), theme::TEXT);
+    let size = vec2(tab_width(ui, kind, showing, icon_only, &font), HEADER - 4.0);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
+    let popup = editors_menu_id(&response);
+    if showing
+        && kind == Kind::Stage
         && crate::screenshot::AutoScreenshot::area_menu()
         && ui.ctx().cumulative_frame_nr() == 2
     {
         egui::Popup::open_id(ui.ctx(), popup);
     }
     let open = egui::Popup::is_id_open(ui.ctx(), popup);
-    if response.hovered() || open {
-        ui.painter().rect_filled(rect, 4.0, if open { theme::CONTROL_HOVER } else { theme::CONTROL });
+    let fill = if open {
+        Some(theme::CONTROL_HOVER)
+    } else if showing {
+        Some(theme::CONTROL)
+    } else if response.hovered() {
+        Some(theme::RAISED.gamma_multiply(1.6))
+    } else {
+        None
+    };
+    if let Some(fill) = fill {
+        ui.painter().rect_filled(rect, 4.0, fill);
     }
+    let color = if showing { theme::TEXT } else { theme::TEXT_WEAK };
     let painter = ui.painter();
     let icon = Rect::from_center_size(pos2(rect.left() + 14.0, rect.center().y), Vec2::splat(14.0));
-    icons::paint(painter, kind.icon(), icon, theme::TEXT);
-    painter.galley(pos2(icon.right() + 7.0, rect.center().y - galley.size().y / 2.0), galley, theme::TEXT);
-    let chevron = Rect::from_center_size(pos2(rect.right() - 10.0, rect.center().y), Vec2::splat(9.0));
-    icons::paint(painter, Icon::Chevron, chevron, theme::TEXT_WEAK);
-    response.on_hover_text("Change what this area shows")
+    icons::paint(painter, kind.icon(), icon, color);
+    if !icon_only {
+        painter.galley(pos2(icon.right() + 7.0, rect.center().y - galley.size().y / 2.0), galley, color);
+    }
+    if showing {
+        let chevron = Rect::from_center_size(pos2(rect.right() - 10.0, rect.center().y), Vec2::splat(9.0));
+        icons::paint(painter, Icon::Chevron, chevron, theme::TEXT_WEAK);
+    }
+    let hint = if icon_only {
+        kind.name()
+    } else if showing {
+        "Click to change what this tab shows; drag it to another area's header to move it"
+    } else {
+        "Click to show; drag to another area's header to move it; middle-click to close"
+    };
+    response.on_hover_text(hint)
 }
 
 /// One editor in the menu: icon and name, highlighted if it's the
@@ -682,7 +1003,7 @@ fn kind_menu(ui: &mut egui::Ui, current: Kind) -> Option<Kind> {
 
 fn collect_areas(node: &Node, rect: Rect, out: &mut Vec<(AreaId, Kind, Rect)>) {
     match node {
-        Node::Area { id, kind } => out.push((*id, *kind, rect)),
+        Node::Area { id, kind, .. } => out.push((*id, *kind, rect)),
         Node::Split { across, fraction, first, second } => {
             let (a, b) = divide(rect, *across, *fraction);
             collect_areas(first, a, out);
@@ -723,6 +1044,14 @@ fn divide(rect: Rect, across: bool, fraction: f32) -> (Rect, Rect) {
             Rect::from_min_max(rect.min, pos2(rect.right(), y)),
             Rect::from_min_max(pos2(rect.left(), y), rect.max),
         )
+    }
+}
+
+fn find(node: &Node, area: AreaId) -> Option<&Node> {
+    match node {
+        Node::Area { id, .. } if *id == area => Some(node),
+        Node::Area { .. } => None,
+        Node::Split { first, second, .. } => find(first, area).or_else(|| find(second, area)),
     }
 }
 
@@ -815,6 +1144,14 @@ mod tests {
         vec![egui::Event::PointerMoved(at), press(true), press(false)]
     }
 
+    /// A click spread over frames, as a real one is: press, then release.
+    fn click_slowly(ctx: &egui::Context, layout: &mut Layout, at: Pos2) {
+        let mut events = click(at);
+        let release = events.pop().unwrap();
+        frame(ctx, layout, events);
+        frame(ctx, layout, vec![release]);
+    }
+
     #[test]
     fn the_header_menu_changes_what_an_area_shows() {
         let ctx = egui::Context::default();
@@ -825,7 +1162,7 @@ mod tests {
             texts.iter().find(|(text, _)| text.contains(name)).map(|(_, rect)| rect.center())
         };
         let button = find(&texts, "Stage").expect("the stage's header");
-        frame(&ctx, &mut layout, click(button));
+        click_slowly(&ctx, &mut layout, button);
         let texts = frame(&ctx, &mut layout, Vec::new());
         // Every editor is listed.
         for (_, kinds) in Kind::GROUPS {
@@ -843,7 +1180,7 @@ mod tests {
         let listed: Vec<Kind> = Kind::GROUPS.iter().flat_map(|(_, kinds)| kinds.iter().copied()).collect();
         let unique: std::collections::HashSet<Kind> = listed.iter().copied().collect();
         assert_eq!(listed.len(), unique.len());
-        assert_eq!(listed.len(), 10);
+        assert_eq!(listed.len(), 13);
     }
 
     #[test]
@@ -938,5 +1275,78 @@ mod tests {
         layout.split(stage, Direction::Down, 0.3, false);
         let json = serde_json::to_string(&layout).unwrap();
         assert_eq!(serde_json::from_str::<Layout>(&json).unwrap(), layout);
+    }
+
+    #[test]
+    fn tabs_are_added_shown_closed_and_moved() {
+        let mut layout = Layout::default();
+        let (stage, timeline) = (id_of(&layout, Kind::Stage), id_of(&layout, Kind::Timeline));
+        layout.add_tab(timeline, Kind::GraphEditor);
+        assert_eq!(layout.tabs_of(timeline), [Kind::Timeline, Kind::GraphEditor]);
+        assert_eq!(layout.kind_of(timeline), Some(Kind::GraphEditor));
+        // No second tab of a kind: adding it again just shows it.
+        layout.add_tab(timeline, Kind::Timeline);
+        assert_eq!(layout.tabs_of(timeline).len(), 2);
+        assert_eq!(layout.kind_of(timeline), Some(Kind::Timeline));
+
+        assert!(layout.move_tab(timeline, Kind::GraphEditor, stage));
+        assert_eq!(layout.tabs_of(stage), [Kind::Stage, Kind::GraphEditor]);
+        assert_eq!(layout.tabs_of(timeline), [Kind::Timeline]);
+        assert!(layout.close_tab(stage, Kind::GraphEditor));
+        assert!(!layout.close_tab(stage, Kind::Stage), "an area's last tab stays");
+    }
+
+    #[test]
+    fn moving_an_areas_last_tab_away_closes_the_area() {
+        let mut layout = Layout::default();
+        let (tools, stage) = (id_of(&layout, Kind::Tools), id_of(&layout, Kind::Stage));
+        let count = layout.areas(window()).len();
+        assert!(layout.move_tab(tools, Kind::Tools, stage));
+        assert_eq!(layout.areas(window()).len(), count - 1);
+        assert!(layout.tabs_of(stage).contains(&Kind::Tools));
+    }
+
+    #[test]
+    fn changing_a_tab_to_a_kind_the_area_has_shows_that_tab() {
+        let mut layout = Layout::default();
+        let right = id_of(&layout, Kind::Properties);
+        assert_eq!(layout.tabs_of(right), [Kind::Properties, Kind::Library]);
+        layout.set_kind(right, Kind::Library);
+        assert_eq!(layout.tabs_of(right), [Kind::Properties, Kind::Library]);
+        layout.set_kind(right, Kind::Swatches);
+        assert_eq!(layout.tabs_of(right), [Kind::Properties, Kind::Swatches]);
+    }
+
+    #[test]
+    fn every_workspace_has_a_stage_and_a_timeline_and_round_trips() {
+        for workspace in Workspace::ALL {
+            let layout = Layout::workspace(workspace);
+            let tabs: Vec<Kind> = layout.all_tabs().into_iter().map(|(_, k)| k).collect();
+            assert!(tabs.contains(&Kind::Stage) && tabs.contains(&Kind::Timeline), "{workspace:?}");
+            let ids: std::collections::HashSet<AreaId> =
+                layout.all_tabs().into_iter().map(|(id, _)| id).collect();
+            assert_eq!(ids.len(), layout.areas(window()).len(), "{workspace:?}: unique ids");
+            let json = serde_json::to_string(&layout).unwrap();
+            let back: Layout = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, layout);
+            assert_eq!(back.workspace_name(), workspace);
+        }
+    }
+
+    #[test]
+    fn layouts_saved_before_tabs_still_load() {
+        let json = r#"{"root":{"Area":{"id":1,"kind":"Stage"}},"next_id":1}"#;
+        let layout: Layout = serde_json::from_str(json).unwrap();
+        assert_eq!(layout.tabs_of(AreaId(1)), [Kind::Stage]);
+        assert_eq!(layout.workspace_name(), Workspace::Essentials);
+
+        // One from before the Library left the Properties panel gets it
+        // back as a tab there.
+        let mut old = Layout::default();
+        let right = id_of(&old, Kind::Properties);
+        old.close_tab(right, Kind::Library);
+        let upgraded = old.upgraded();
+        assert_eq!(upgraded.tabs_of(right), [Kind::Properties, Kind::Library]);
+        assert_eq!(upgraded.kind_of(right), Some(Kind::Properties));
     }
 }

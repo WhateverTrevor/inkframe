@@ -117,6 +117,12 @@ impl AutoScreenshot {
         std::env::var("INKFRAME_SCREENSHOT_LAYOUT").is_ok_and(|v| v == "custom")
     }
 
+    /// A workspace to show instead of the usual one, by name.
+    pub fn workspace() -> Option<crate::layout::Workspace> {
+        let name = std::env::var("INKFRAME_SCREENSHOT_WORKSPACE").ok()?;
+        crate::layout::Workspace::ALL.into_iter().find(|w| w.name().eq_ignore_ascii_case(&name))
+    }
+
     /// Whether to put the arm's layers (in examples/rig.inkf) in a folder.
     pub fn folder() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_FOLDER").is_some()

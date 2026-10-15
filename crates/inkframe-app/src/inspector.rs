@@ -12,16 +12,67 @@ use crate::convert::color_button;
 use crate::easing_editor;
 use crate::editor::Editor;
 
-/// Shows the panel's contents. The caller provides the scroll area, so the
-/// library can share it.
-pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
-    if editor.tool.paints() {
-        brush_section(ui, editor);
-        ui.add_space(8.0);
-    } else if editor.tool.selects() {
-        selection_section(ui, editor);
-        ui.add_space(8.0);
+/// The Properties panel's tabs, as Animate's: the current tool, the
+/// selected layer, and the document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Tool,
+    Layer,
+    Document,
+}
+
+/// What the tabs last saw, so picking a new layer or tool can bring its tab
+/// forward, as Animate does, while a tab chosen by hand stays put otherwise.
+#[derive(Clone, Copy, PartialEq)]
+struct Seen {
+    selection: Option<LayerId>,
+    tool: crate::editor::Tool,
+}
+
+/// Shows the Properties panel: a row of tabs, then the chosen one in a
+/// scroll area. Returns an action from the audio section for the app.
+pub fn show(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) -> Option<AudioAction> {
+    let tab_id = ui.id().with("properties_tab");
+    let seen_id = ui.id().with("properties_seen");
+    let now = Seen { selection: editor.selection, tool: editor.tool };
+    let mut tab = ui.data(|d| d.get_temp::<Tab>(tab_id)).unwrap_or(Tab::Layer);
+    let seen = ui.data(|d| d.get_temp::<Seen>(seen_id));
+    if seen != Some(now) {
+        if seen.is_some_and(|s| s.tool != now.tool) && (now.tool.paints() || now.tool.selects()) {
+            tab = Tab::Tool;
+        } else if seen.is_some_and(|s| s.selection != now.selection) {
+            tab = if now.selection.is_some() { Tab::Layer } else { Tab::Document };
+        } else if seen.is_none() && now.selection.is_none() {
+            tab = Tab::Document;
+        }
     }
+
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        for (choice, label) in [(Tab::Tool, "Tool"), (Tab::Layer, "Layer"), (Tab::Document, "Document")] {
+            ui.selectable_value(&mut tab, choice, label);
+        }
+    });
+    ui.data_mut(|d| {
+        d.insert_temp(tab_id, tab);
+        d.insert_temp(seen_id, now);
+    });
+    ui.separator();
+
+    let mut action = None;
+    egui::ScrollArea::vertical().id_salt("properties_scroll").show(ui, |ui| match tab {
+        Tab::Tool => tool_settings(ui, editor),
+        Tab::Layer => layer_tab(ui, editor),
+        Tab::Document => {
+            document_section(ui, editor);
+            ui.add_space(8.0);
+            action = audio_section(ui, editor, audio);
+        }
+    });
+    action
+}
+
+fn layer_tab(ui: &mut egui::Ui, editor: &mut Editor) {
     // With several layers selected, the panel shows the one picked last.
     let count = editor.selected_ids().len();
     if count > 1 {
@@ -30,24 +81,69 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
         ));
         ui.add_space(4.0);
     }
-    if let Some(id) = editor.selection {
-        layer_section(ui, editor, id);
-        ui.add_space(8.0);
+    match editor.selection {
+        Some(id) => layer_section(ui, editor, id),
+        None => {
+            ui.weak("Select a layer on the stage or in the timeline to see its properties.");
+        }
     }
-    egui::CollapsingHeader::new("Document")
-        .default_open(editor.selection.is_none())
-        .show(ui, |ui| document_section(ui, editor));
 }
 
-/// The current tool's settings on their own, for a Tool Settings area.
+/// The current tool's settings: the brush or selection options, or the
+/// colours and line width new shapes get.
 pub fn tool_settings(ui: &mut egui::Ui, editor: &mut Editor) {
+    use crate::editor::Tool;
     if editor.tool.paints() {
         brush_section(ui, editor);
     } else if editor.tool.selects() {
         selection_section(ui, editor);
+    } else if editor.tool == Tool::Pencil {
+        ui.heading(editor.tool.name());
+        egui::Grid::new("pencil").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            ui.label("Line");
+            color_button(ui, &mut editor.pencil_stroke.color);
+            ui.end_row();
+            ui.label("Width");
+            ui.add(DragValue::new(&mut editor.pencil_stroke.width).range(0.5..=100.0).speed(0.1));
+            ui.end_row();
+        });
+    } else if matches!(editor.tool, Tool::Rectangle | Tool::Ellipse | Tool::Pen | Tool::Text) {
+        ui.heading(editor.tool.name());
+        shape_style(ui, editor);
     } else {
         ui.weak(format!("The {} tool has no settings.", editor.tool.name()));
     }
+}
+
+/// Fill, stroke and stroke width for the shapes the drawing tools make.
+fn shape_style(ui: &mut egui::Ui, editor: &mut Editor) {
+    let style = &mut editor.draw_style;
+    egui::Grid::new("shape_style").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        ui.label("Fill");
+        ui.horizontal(|ui| {
+            let mut on = style.fill.is_some();
+            if ui.checkbox(&mut on, "").changed() {
+                style.fill = on.then_some(style.fill.unwrap_or(Color::BLACK));
+            }
+            if let Some(fill) = &mut style.fill {
+                color_button(ui, fill);
+            }
+        });
+        ui.end_row();
+        ui.label("Stroke");
+        ui.horizontal(|ui| {
+            let mut on = style.stroke.is_some();
+            if ui.checkbox(&mut on, "").changed() {
+                style.stroke =
+                    on.then_some(style.stroke.unwrap_or(Stroke { color: Color::BLACK, width: 2.0 }));
+            }
+            if let Some(stroke) = &mut style.stroke {
+                color_button(ui, &mut stroke.color);
+                ui.add(DragValue::new(&mut stroke.width).range(0.1..=200.0).speed(0.1).suffix(" px"));
+            }
+        });
+        ui.end_row();
+    });
 }
 
 /// The document settings on their own, for a Document area.
