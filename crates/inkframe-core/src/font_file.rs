@@ -41,7 +41,7 @@ impl FontFile {
 
     /// Whether any text in `doc` is set in one of this file's families.
     pub fn in_use(&self, doc: &Document) -> bool {
-        doc.all_layers().flat_map(|layer| &layer.elements).any(|element| match &element.shape {
+        doc.all_layers().flat_map(|layer| layer.all_elements()).any(|element| match &element.shape {
             Shape::Text(text) => self.families.contains(&text.font.family),
             _ => false,
         })

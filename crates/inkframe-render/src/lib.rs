@@ -377,7 +377,7 @@ fn draw_layer(
         let corners = element.bounds().corners().map(|c| matrix.apply(c));
         inkframe_core::Rect::bounding(corners).is_some_and(|b| overlaps(b, image))
     };
-    for element in layer.elements.iter().filter(|e| visible(e)) {
+    for element in layer.elements_at(frame).iter().filter(|e| visible(e)) {
         draw_element(pixmap, element, skia_matrix, style);
     }
     // `instance_view` stops at the nesting limit, so a malformed file can't
@@ -528,6 +528,26 @@ mod tests {
     }
 
     #[test]
+    fn renders_the_drawing_exposed_on_each_frame() {
+        let mut doc = red_square_doc();
+        let layer = &mut doc.layers[0];
+        let mut blue = layer.drawings[0].clone();
+        blue.elements[0].style.fill = Some(Color::rgb(0, 0, 255));
+        let index = layer.add_drawing(blue);
+        layer.expose(5, index);
+
+        let options = RenderOptions::default();
+        let at = |frame| {
+            // The square tweens from x 20 to 80 over frames 0–10.
+            let x = 20 + frame * 6;
+            pixel(&render_frame(&doc, frame, &options).unwrap(), x, 50)
+        };
+        assert_eq!(at(4), [255, 0, 0, 255]);
+        assert_eq!(at(5), [0, 0, 255, 255]);
+        assert_eq!(at(9), [0, 0, 255, 255]);
+    }
+
+    #[test]
     fn renders_the_tweened_position() {
         let doc = red_square_doc();
         let start = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
@@ -598,7 +618,7 @@ mod tests {
         // A rotated, stroked, half-transparent square: the case where the
         // scratch buffer covers only part of the image.
         let mut doc = red_square_doc();
-        doc.layers[0].elements[0].style.stroke =
+        doc.layers[0].drawings[0].elements[0].style.stroke =
             Some(inkframe_core::Stroke { color: Color::BLACK, width: 3.0 });
         doc.layers[0].track.rotation.set(0, 30.0);
         let mut opaque = doc.clone();
@@ -813,7 +833,8 @@ mod tests {
         let layer = &mut doc.layers[0];
         layer.track.opacity.set(0, 0.5);
         // A second, overlapping shape: it must not show through the first.
-        layer.elements.push(layer.elements[0].clone());
+        let elements = &mut layer.drawings[0].elements;
+        elements.push(elements[0].clone());
 
         let options = RenderOptions { draw_background: false, ..RenderOptions::default() };
         let pixmap = render_frame(&doc, 0, &options).unwrap();

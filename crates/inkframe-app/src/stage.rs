@@ -496,9 +496,7 @@ impl StageView {
     /// would still have enough points left.
     pub fn delete_selected_anchor(&mut self, editor: &mut Editor) {
         let Some(target) = self.anchor_selection.take() else { return };
-        let Some(element) =
-            editor.doc.layer_mut(target.layer).and_then(|l| l.elements.get_mut(target.element))
-        else {
+        let Some(element) = editor.element_mut(target.layer, target.element) else {
             return;
         };
         let (anchors, closed) = element.shape.to_anchors();
@@ -730,8 +728,7 @@ impl StageView {
                     let local = to_local.apply(p);
                     let goal = part.position(&start[target.index]) + (local - *grab);
                     let anchors = move_part(start, target.index, *part, goal, alt);
-                    let element =
-                        editor.doc.layer_mut(target.layer).and_then(|l| l.elements.get_mut(target.element));
+                    let element = editor.element_mut(target.layer, target.element);
                     if let (Some(element), Some(path)) = (element, path_from_anchors(&anchors, *closed)) {
                         // Rectangles and ovals become paths here, on the first
                         // real edit, rather than as soon as they're clicked.
@@ -1262,7 +1259,7 @@ impl StageView {
                 self.anchor_selection = Some(target);
                 let layer = editor.doc.layer(target.layer)?;
                 let to_local = editor.doc.layer_matrix(layer, editor.frame).inverse()?;
-                let (start, closed) = layer.elements.get(target.element)?.shape.to_anchors();
+                let (start, closed) = layer.elements_at(editor.frame).get(target.element)?.shape.to_anchors();
                 Some(Gesture::EditAnchor { target, part, start, closed, grab: to_local.apply(p), to_local })
             }
         }
@@ -1284,7 +1281,7 @@ impl StageView {
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
 
         let mut best: Option<OutlineHit> = None;
-        for (element, e) in layer.elements.iter().enumerate() {
+        for (element, e) in layer.elements_at(editor.frame).iter().enumerate() {
             let (anchors, closed) = e.shape.to_anchors();
             let Some(hit) = nearest_on_anchors(&anchors, closed, local) else { continue };
             // Measure on screen, so the target is the same size at any zoom
@@ -1314,9 +1311,7 @@ impl StageView {
         let still_valid = editor.tool == Tool::Subselect
             && editor.selection == Some(target.layer)
             && editor
-                .doc
-                .layer(target.layer)
-                .and_then(|l| l.elements.get(target.element))
+                .element(target.layer, target.element)
                 .is_some_and(|e| target.index < e.shape.to_anchors().0.len());
         if !still_valid {
             self.anchor_selection = None;
@@ -1338,7 +1333,7 @@ impl StageView {
 
         let mut handles = Vec::new();
         let mut points = Vec::new();
-        for (element, e) in layer.elements.iter().enumerate() {
+        for (element, e) in layer.elements_at(editor.frame).iter().enumerate() {
             for (index, anchor) in e.shape.to_anchors().0.iter().enumerate() {
                 let target = AnchorRef { layer: layer.id, element, index };
                 points.push((target, AnchorPart::Point, screen(anchor.point)));
@@ -1369,7 +1364,7 @@ impl StageView {
         let to_stage = editor.doc.layer_matrix(layer, editor.frame);
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
 
-        for (element, e) in layer.elements.iter().enumerate() {
+        for (element, e) in layer.elements_at(editor.frame).iter().enumerate() {
             let (anchors, closed) = e.shape.to_anchors();
             if let Some(path) = path_from_anchors(&anchors, closed) {
                 painter.line(path.flatten().into_iter().map(screen).collect(), (1.0, SELECTION));
@@ -1779,7 +1774,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
                 ),
             };
             let element = Element { shape, style: editor.draw_style };
-            editor.add_drawn_layer(name, element, rect.center());
+            editor.add_drawn_shape(name, element, rect.center());
         }
         Gesture::Pencil { points } => {
             // Simplify relative to the screen, so a stroke drawn while zoomed
@@ -1842,8 +1837,7 @@ fn draw_registration_point(painter: &egui::Painter, at: Pos2) {
 /// Switches an anchor between corner and smooth. Rectangles and ovals
 /// become paths.
 fn convert_point(editor: &mut Editor, target: AnchorRef) {
-    let Some(element) = editor.doc.layer_mut(target.layer).and_then(|l| l.elements.get_mut(target.element))
-    else {
+    let Some(element) = editor.element_mut(target.layer, target.element) else {
         return;
     };
     let (anchors, closed) = element.shape.to_anchors();
@@ -1855,7 +1849,7 @@ fn convert_point(editor: &mut Editor, target: AnchorRef) {
 
 /// Adds a point to a shape's outline. Rectangles and ovals become paths.
 fn insert_point(editor: &mut Editor, hit: OutlineHit) {
-    let Some(element) = editor.doc.layer_mut(hit.layer).and_then(|l| l.elements.get_mut(hit.element)) else {
+    let Some(element) = editor.element_mut(hit.layer, hit.element) else {
         return;
     };
     let (anchors, closed) = element.shape.to_anchors();
@@ -1876,7 +1870,7 @@ fn add_path_layer(editor: &mut Editor, prefix: &str, mut path: Path, style: Styl
     };
     let center = bounds.center();
     path.translate(-center);
-    editor.add_drawn_layer(prefix, Element { shape: Shape::Path(path), style }, center);
+    editor.add_drawn_shape(prefix, Element { shape: Shape::Path(path), style }, center);
 }
 
 /// Text being typed into on the stage.
@@ -1972,18 +1966,18 @@ fn follows_guide(editor: &Editor, layer: &inkframe_core::Layer) -> bool {
 
 /// The index of the first text element on a layer.
 fn text_element(editor: &Editor, layer: LayerId) -> Option<usize> {
-    editor.doc.layer(layer)?.elements.iter().position(|e| matches!(e.shape, Shape::Text(_)))
+    editor.doc.layer(layer)?.elements_at(editor.frame).iter().position(|e| matches!(e.shape, Shape::Text(_)))
 }
 
 fn text_of(editor: &Editor, layer: LayerId, element: usize) -> Option<&Text> {
-    match &editor.doc.layer(layer)?.elements.get(element)?.shape {
+    match &editor.element(layer, element)?.shape {
         Shape::Text(text) => Some(text),
         _ => None,
     }
 }
 
 fn text_of_mut(editor: &mut Editor, layer: LayerId, element: usize) -> Option<&mut Text> {
-    match &mut editor.doc.layer_mut(layer)?.elements.get_mut(element)?.shape {
+    match &mut editor.element_mut(layer, element)?.shape {
         Shape::Text(text) => Some(text),
         _ => None,
     }
@@ -2091,7 +2085,9 @@ mod tests {
         let editor = &h.state().1;
         assert_eq!(editor.doc.layers.len(), 1);
         let layer = &editor.doc.layers[0];
-        let Shape::Rect { width, height, .. } = layer.elements[0].shape else { panic!("not a rect") };
+        let Shape::Rect { width, height, .. } = layer.drawings[0].elements[0].shape else {
+            panic!("not a rect")
+        };
         // Allow a pixel of slack for screen-to-stage rounding.
         assert!((width - 400.0).abs() < 3.0 && (height - 200.0).abs() < 3.0, "{width}×{height}");
         assert!(layer.transform_at(0).position.distance(Point::new(300.0, 200.0)) < 3.0);
@@ -2099,7 +2095,7 @@ mod tests {
     }
 
     fn text_content(h: &Harness<'_, State>, id: LayerId) -> String {
-        match &h.state().1.doc.layer(id).unwrap().elements[0].shape {
+        match &h.state().1.doc.layer(id).unwrap().drawings[0].elements[0].shape {
             Shape::Text(text) => text.content.clone(),
             _ => panic!("not text"),
         }
@@ -2128,7 +2124,9 @@ mod tests {
         assert_eq!(text_content(&h, id), "Hell\nthere");
         // The app does this every frame; the stage alone doesn't.
         h.state_mut().1.remeasure_text();
-        let Shape::Text(text) = &h.state().1.doc.layer(id).unwrap().elements[0].shape else { unreachable!() };
+        let Shape::Text(text) = &h.state().1.doc.layer(id).unwrap().drawings[0].elements[0].shape else {
+            unreachable!()
+        };
         assert!(text.measured.width() > 0.0, "it was measured, so it can be selected");
 
         // Typing keys that are also shortcuts (V is the Selection tool)
@@ -2259,7 +2257,7 @@ mod tests {
         drag(&mut h, start, &path);
 
         let layer = &h.state().1.doc.layers[0];
-        let Shape::Path(stroke) = &layer.elements[0].shape else { panic!("not a path") };
+        let Shape::Path(stroke) = &layer.drawings[0].elements[0].shape else { panic!("not a path") };
         assert!(stroke.segments.len() >= 2, "a wavy stroke should keep several segments");
         // The path was recentered, so its local bounds straddle the origin.
         let bounds = h.state().1.doc.layer_bounds(layer, 0).unwrap();
@@ -2305,7 +2303,7 @@ mod tests {
         // bottom-right handle belongs at (520, 520), not on the outline at
         // (500, 500), which is now inside the painted stroke.
         let (mut editor, id) = editor_with_selected_box();
-        editor.doc.layer_mut(id).unwrap().elements[0].style.stroke =
+        editor.doc.layer_mut(id).unwrap().drawings[0].elements[0].style.stroke =
             Some(Stroke { color: Color::BLACK, width: 40.0 });
         let mut h = harness(editor);
 
@@ -2655,7 +2653,7 @@ mod tests {
 
         let (stage, editor) = h.state();
         assert!(!stage.is_drawing_path());
-        let element = &editor.doc.layers[0].elements[0];
+        let element = &editor.doc.layers[0].drawings[0].elements[0];
         let Shape::Path(path) = &element.shape else { panic!("not a path") };
         assert!(path.closed);
         assert_eq!(path.segments.len(), 3);
@@ -2679,7 +2677,7 @@ mod tests {
 
         let (stage, editor) = h.state_mut();
         stage.finish_path(editor, false);
-        let element = &editor.doc.layers[0].elements[0];
+        let element = &editor.doc.layers[0].drawings[0].elements[0];
         let Shape::Path(path) = &element.shape else { panic!("not a path") };
         assert!(matches!(path.segments[0], inkframe_core::Segment::Cubic { .. }));
         assert!(element.style.fill.is_none(), "open paths are only stroked");
@@ -2709,7 +2707,7 @@ mod tests {
     }
 
     fn shape(harness: &Harness<'_, State>, id: LayerId) -> Shape {
-        harness.state().1.doc.layer(id).unwrap().elements[0].shape.clone()
+        harness.state().1.doc.layer(id).unwrap().drawings[0].elements[0].shape.clone()
     }
 
     #[test]
@@ -2742,7 +2740,7 @@ mod tests {
     #[test]
     fn dragging_a_handle_reshapes_the_curve_smoothly() {
         let (mut editor, id) = editor_with_selected_box();
-        editor.doc.layer_mut(id).unwrap().elements[0].shape =
+        editor.doc.layer_mut(id).unwrap().drawings[0].elements[0].shape =
             Shape::Ellipse { radius_x: 100.0, radius_y: 100.0 };
         editor.tool = Tool::Subselect;
         let mut h = harness(editor);
@@ -2932,7 +2930,9 @@ mod tests {
         // axis and 30 against its y axis: a 60×30 box centered at (30, -15).
         let layers = h.state().1.doc.layers_of(TimelineId::Symbol(symbol));
         let drawn = layers.last().unwrap();
-        let Shape::Rect { width, height, .. } = drawn.elements[0].shape else { panic!("not a rect") };
+        let Shape::Rect { width, height, .. } = drawn.drawings[0].elements[0].shape else {
+            panic!("not a rect")
+        };
         assert!((width - 60.0).abs() < 1.5 && (height - 30.0).abs() < 1.5, "{width}×{height}");
         let center = drawn.transform_at(0).position;
         assert!(center.distance(Point::new(30.0, -15.0)) < 1.5, "{center:?}");

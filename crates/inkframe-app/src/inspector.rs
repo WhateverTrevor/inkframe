@@ -58,6 +58,7 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     easing_section(ui, editor, id, frame);
     ui.add_space(8.0);
     instance_section(ui, editor, id);
+    drawings_section(ui, editor, id);
     shapes_section(ui, editor, id);
 }
 
@@ -271,6 +272,64 @@ fn rig_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) 
     }
 }
 
+/// The layer's drawings, for swapping between them over time: click one
+/// to show it from the current frame on.
+fn drawings_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    let frame = editor.frame;
+    let Some(layer) = editor.doc.layer(id).filter(|l| l.instance.is_none()) else { return };
+    let showing = layer.drawing_index_at(frame);
+    let names: Vec<String> = layer.drawings.iter().map(|d| d.name.clone()).collect();
+
+    ui.horizontal(|ui| {
+        ui.strong("Drawings");
+        ui.weak("[ ] to flip through");
+    });
+    if names.len() == 1 {
+        ui.weak("Add drawings to swap between, like mouth shapes or hand poses.");
+    }
+    let mut picked = None;
+    ui.horizontal_wrapped(|ui| {
+        for (index, name) in names.iter().enumerate() {
+            if ui.selectable_label(index == showing, name).clicked() {
+                picked = Some(index);
+            }
+        }
+    });
+    let (mut add, mut copy, mut delete) = (false, false, false);
+    ui.horizontal(|ui| {
+        add = ui
+            .button("New")
+            .on_hover_text("A blank drawing, shown from this frame. Draw into it on the stage.")
+            .clicked();
+        copy = ui
+            .button("Duplicate")
+            .on_hover_text("A copy of the drawing showing now, to change a little")
+            .clicked();
+        let can_delete = names.len() > 1;
+        delete = ui
+            .add_enabled(can_delete, egui::Button::new("Delete"))
+            .on_hover_text("Remove the drawing showing now")
+            .clicked();
+    });
+    if let Some(drawing) = editor.doc.layer_mut(id).and_then(|l| l.drawings.get_mut(showing)) {
+        ui.horizontal(|ui| {
+            ui.label("Name");
+            ui.text_edit_singleline(&mut drawing.name);
+        });
+    }
+
+    if let Some(index) = picked {
+        editor.show_drawing(index);
+    }
+    if add || copy {
+        editor.new_drawing(copy);
+    }
+    if delete {
+        editor.delete_shown_drawing();
+    }
+    ui.add_space(8.0);
+}
+
 /// Which mask, if any, the layer is seen through.
 fn mask_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let masks: Vec<(LayerId, String)> =
@@ -464,9 +523,11 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         })
         .flat_map(|(families, problem)| families.iter().map(move |family| (family.clone(), problem.clone())))
         .collect();
+    let frame = editor.frame;
     let Some(layer) = editor.doc.layer_mut(id) else { return };
-    let count = layer.elements.len();
-    for (i, element) in layer.elements.iter_mut().enumerate() {
+    let elements = layer.elements_at_mut(frame);
+    let count = elements.len();
+    for (i, element) in elements.iter_mut().enumerate() {
         ui.push_id(i, |ui| {
             let title = match &element.shape {
                 Shape::Rect { .. } => "Rectangle",

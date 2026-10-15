@@ -12,6 +12,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::document::{Document, Layer, LayerId, TimelineId};
+use crate::drawing::Drawing;
 use crate::geometry::{Point, Rect};
 use crate::transform::Transform;
 
@@ -149,7 +150,9 @@ impl Document {
 
         // The original layer becomes the instance. Its first frame lines the
         // symbol's time up with the main timeline's, so keys stay put.
-        layer.elements.clear();
+        // Its drawings, and the exposure swapping between them, went inside.
+        layer.drawings = vec![Drawing::new("1", Vec::new())];
+        layer.exposure.clear();
         layer.instance =
             Some(Instance { symbol: symbol_id, playback: Playback::Loop, first_frame: layer.start });
         layer.track = crate::track::Track::new(0, Transform::at(pivot));
@@ -217,7 +220,7 @@ impl Document {
     }
 
     fn layer_bounds_at_depth(&self, layer: &Layer, frame: u32, depth: usize) -> Option<Rect> {
-        let shapes = layer.shape_bounds();
+        let shapes = layer.shape_bounds(frame);
         let nested = self.instance_view(layer, frame, depth).and_then(|(symbol, local_frame)| {
             symbol
                 .layers
@@ -266,7 +269,7 @@ impl Document {
         let scale = matrix.average_scale().max(1e-6);
         let local_tolerance = tolerance / scale;
 
-        layer.elements.iter().any(|e| e.shape.hit_test(local, &e.style, local_tolerance))
+        layer.elements_at(frame).iter().any(|e| e.shape.hit_test(local, &e.style, local_tolerance))
             || self.instance_view(layer, frame, depth).is_some_and(|(symbol, local_frame)| {
                 symbol.layers.iter().filter(|inner| inner.is_shown_at(local_frame)).any(|inner| {
                     self.layer_hit_at_depth(inner, local, local_frame, local_tolerance, depth + 1)
@@ -322,7 +325,7 @@ mod tests {
         let after: Vec<Rect> = (0..30).map(|f| stage_bounds(&doc, id, f)).collect();
 
         assert_eq!(doc.symbol_use_count(symbol), 1);
-        assert!(doc.layer(id).unwrap().elements.is_empty());
+        assert!(doc.layer(id).unwrap().all_elements().next().is_none());
         for (a, b) in before.iter().zip(&after) {
             assert!(a.min.distance(b.min) < 1e-3 && a.max.distance(b.max) < 1e-3, "{a:?} vs {b:?}");
         }
@@ -350,7 +353,7 @@ mod tests {
 
         // Making the symbol's square bigger affects both instances.
         let inner = &mut doc.symbol_mut(symbol).unwrap().layers[0];
-        inner.elements[0].shape = Shape::Rect { width: 300.0, height: 100.0, corner_radius: 0.0 };
+        inner.drawings[0].elements[0].shape = Shape::Rect { width: 300.0, height: 100.0, corner_radius: 0.0 };
         assert_eq!(doc.hit_test(Point::new(620.0, 100.0), 5, 0.0), Some(copy));
         assert_eq!(doc.hit_test(Point::new(220.0, 100.0), 5, 0.0), Some(id));
     }
