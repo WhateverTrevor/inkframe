@@ -21,6 +21,8 @@
 //!   `=apply` also applies it from loudness once the sound has loaded.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
+//! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
+//!   beside the timeline, to show the layout's areas.
 //! * `INKFRAME_SCREENSHOT_PAINT=1` paints a few strokes on a new paint layer, as a pen
 //!   would (pressing harder through the middle of each), to show the brushes; `=tools`
 //!   also uses the bucket, gradient and retouching tools on them; `=select` then selects
@@ -108,6 +110,11 @@ impl AutoScreenshot {
     /// Whether to open the Lip Sync window.
     pub fn lip_sync() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_LIPSYNC").is_some()
+    }
+
+    /// Whether to rearrange the areas.
+    pub fn custom_layout() -> bool {
+        std::env::var("INKFRAME_SCREENSHOT_LAYOUT").is_ok_and(|v| v == "custom")
     }
 
     /// How far to turn the view, in degrees.

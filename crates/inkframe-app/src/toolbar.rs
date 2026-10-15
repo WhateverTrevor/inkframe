@@ -14,20 +14,16 @@ const BUTTON_SIZE: f32 = 36.0;
 /// Room below the tools for the colours.
 const COLOURS_HEIGHT: f32 = 190.0;
 
-/// How many columns of tools fit `height`: one, or, when the window is too
-/// short for them all in a row, two, as Photoshop's toolbar does.
-fn columns(height: f32) -> usize {
+/// How many columns of tools to show in `space`: one, or two when one
+/// column is too tall for it and there's room across, as Photoshop's
+/// toolbar does. Otherwise the area scrolls.
+fn columns(space: Vec2) -> usize {
     let one_column = Tool::GROUPS.len() as f32 * (BUTTON_SIZE + 4.0) + COLOURS_HEIGHT;
-    if one_column <= height { 1 } else { 2 }
-}
-
-/// The toolbar's width for a window `height` tall.
-pub fn width(height: f32) -> f32 {
-    if columns(height) == 1 { 60.0 } else { 100.0 }
+    if one_column > space.y && space.x >= BUTTON_SIZE * 2.0 + 16.0 { 2 } else { 1 }
 }
 
 pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
-    let columns = columns(ui.available_height());
+    let columns = columns(ui.available_size());
     ui.vertical_centered(|ui| {
         ui.add_space(4.0);
         for row in Tool::GROUPS.chunks(columns) {

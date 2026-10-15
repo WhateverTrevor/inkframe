@@ -220,6 +220,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `lip_sync_dialog.rs` | The Lip Sync window: picks the dialogue and timing source, maps drawings to mouth shapes, applies `Layer::apply_lip_sync` |
 | `tablet.rs` | Pen pressure: from Windows Ink pens via egui's touch events with force, and on macOS from an AppKit local event monitor that notes each pen event's pressure and tilt. `samples` gives every pointer position since the last frame with its pressure |
 | `rhubarb.rs` | Finding and running Rhubarb Lip Sync on a background thread (`Job`): decodes the dialogue to a temporary WAV, reads progress from its `--machineReadable` log, parses its TSV output |
+| `layout.rs` | The window's areas, Blender-style: a binary tree of splits whose leaves are areas, each showing a `Kind` of editor; resizing, splitting, joining, swapping and maximising, and saving the layout to the settings folder. `app.rs` keeps a view per stage, timeline and exposure-sheet area (`Views`), menu commands acting on the stage last pointed at |
 | `adjust_dialog.rs` | The Adjustments window: live preview from the canvas as it was, OK or Cancel, and the Curves editor |
 | `xsheet.rs` | The Exposure Sheet window: `column` turns a layer's exposure into cells (starts and holds), `enter` exposes a typed drawing name, making the drawing if it's new |
 | `shortcuts.rs` | Every keyboard shortcut in one place |

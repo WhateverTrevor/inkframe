@@ -15,6 +15,7 @@ mod editor;
 mod export_dialog;
 mod handles;
 mod inspector;
+mod layout;
 mod library;
 mod lip_sync_dialog;
 mod motion_path;

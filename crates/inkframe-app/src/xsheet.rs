@@ -118,7 +118,7 @@ impl ExposureSheet {
         self.open = open;
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) {
+    pub fn contents(&mut self, ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) {
         let layers: Vec<LayerId> =
             editor.layers().iter().rev().filter(|l| l.drawings.len() > 1).map(|l| l.id).collect();
         let sounds = if editor.timeline() == inkframe_core::TimelineId::Main {

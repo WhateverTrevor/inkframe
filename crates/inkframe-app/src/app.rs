@@ -1,5 +1,6 @@
 //! The top-level application: window layout, menus, shortcuts and files.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use egui::{Key, Modifiers};
@@ -10,6 +11,7 @@ use crate::adjust_dialog::{AdjustDialog, AdjustmentKind};
 use crate::audio_engine::AudioEngine;
 use crate::editor::{Editor, Tool};
 use crate::export_dialog::ExportDialog;
+use crate::layout::{AreaId, Kind, Layout};
 use crate::library::LibraryView;
 use crate::lip_sync_dialog::LipSyncDialog;
 use crate::screenshot::AutoScreenshot;
@@ -39,6 +41,10 @@ enum Command {
     LayerViaCopy,
     LayerViaCut,
     MergeDown,
+    /// The area under the pointer fills the window, or goes back.
+    ToggleMaximize,
+    /// Puts the window's areas back the way Inkframe starts.
+    ResetLayout,
     /// Writes the current frame as a layered Photoshop file.
     ExportPsd,
     /// Opens the Adjustments window with this adjustment.
@@ -114,8 +120,14 @@ const AUDIO_EXTENSIONS: [&str; 9] = ["wav", "mp3", "m4a", "aac", "flac", "ogg", 
 
 pub struct InkframeApp {
     editor: Editor,
-    stage: StageView,
-    timeline: TimelineView,
+    /// How the window is divided into areas (see `layout.rs`), and the
+    /// layout as last saved, to save again only when it changes.
+    layout: Layout,
+    saved_layout: Layout,
+    /// The editors in the areas that keep state of their own.
+    views: Views,
+    /// The area under the pointer last frame, for Ctrl+Space.
+    hovered_area: Option<AreaId>,
     export: ExportDialog,
     lip_sync: LipSyncDialog,
     xsheet: ExposureSheet,
@@ -152,8 +164,10 @@ impl InkframeApp {
 
         let mut app = Self {
             editor,
-            stage: StageView::default(),
-            timeline: TimelineView::default(),
+            layout: Layout::load(),
+            saved_layout: Layout::default(),
+            views: Views::default(),
+            hovered_area: None,
             export: ExportDialog::default(),
             lip_sync: LipSyncDialog::default(),
             xsheet: ExposureSheet::default(),
@@ -166,22 +180,36 @@ impl InkframeApp {
             clipboard: None,
             ctx: cc.egui_ctx.clone(),
         };
+        // Screenshots always use the usual layout, so they look the same
+        // on every machine.
+        if app.screenshot.is_some() {
+            app.layout = Layout::default();
+            if AutoScreenshot::custom_layout() {
+                app.layout.arrange_for_screenshot();
+            }
+        }
+        app.saved_layout = app.layout.clone();
+        app.views.prepare(&app.layout);
         if app.screenshot.is_some() {
             AutoScreenshot::set_up_scene(&mut app.editor);
             if let Some(name) = AutoScreenshot::type_into() {
-                app.stage.type_into(&mut app.editor, &name);
+                app.views.stage().type_into(&mut app.editor, &name);
             }
-            app.timeline.set_graph_mode(AutoScreenshot::graph());
+            for timeline in app.views.timelines.values_mut() {
+                timeline.set_graph_mode(AutoScreenshot::graph());
+            }
             app.xsheet.open = AutoScreenshot::exposure_sheet();
             if let Some(degrees) = AutoScreenshot::view_rotation() {
-                app.stage.rotate_view(degrees);
+                app.views.stage().rotate_view(degrees);
             }
             if AutoScreenshot::lip_sync() {
                 app.lip_sync.open(&app.editor);
             }
             if AutoScreenshot::expand_timeline() {
                 for layer in app.editor.doc.all_layers() {
-                    app.timeline.set_expanded(layer.id, true);
+                    for timeline in app.views.timelines.values_mut() {
+                        timeline.set_expanded(layer.id, true);
+                    }
                 }
             }
         }
@@ -208,6 +236,12 @@ impl InkframeApp {
             }
             Command::Export => self.export.open(&self.editor.doc),
             Command::ExportPsd => self.export_psd(),
+            Command::ToggleMaximize => {
+                if let Some(area) = self.hovered_area {
+                    self.layout.toggle_maximized(area);
+                }
+            }
+            Command::ResetLayout => self.layout = Layout::default(),
             // With a painting or selection tool, Select All and Deselect
             // work on pixels, as in Photoshop; otherwise on layers.
             Command::SelectAll if editor.tool.on_pixels() && editor.paint_target().is_some() => {
@@ -230,7 +264,7 @@ impl InkframeApp {
             Command::Copy => self.copy(false),
             Command::CopyFrames => self.copy(true),
             Command::Paste => {
-                let center = self.stage.visible_center(&self.editor);
+                let center = self.views.stage().visible_center(&self.editor);
                 if let Some(clipboard) = &self.clipboard {
                     self.editor.paste(clipboard, Some(center));
                 }
@@ -284,17 +318,17 @@ impl InkframeApp {
             Command::StepForward => editor.step(1),
             Command::FirstFrame => editor.set_frame(0),
             Command::LastFrame => editor.set_frame(editor.last_frame()),
-            Command::ZoomIn => self.stage.zoom_by(&editor.doc, 1.25),
-            Command::ZoomOut => self.stage.zoom_by(&editor.doc, 0.8),
-            Command::ZoomFit => self.stage.zoom_to_fit(),
-            Command::ZoomActualSize => self.stage.zoom_to_actual_size(&editor.doc),
-            Command::RotateViewLeft => self.stage.rotate_view(-15.0),
-            Command::RotateViewRight => self.stage.rotate_view(15.0),
-            Command::ResetRotation => self.stage.reset_rotation(),
+            Command::ZoomIn => self.views.stage().zoom_by(&editor.doc, 1.25),
+            Command::ZoomOut => self.views.stage().zoom_by(&editor.doc, 0.8),
+            Command::ZoomFit => self.views.stage().zoom_to_fit(),
+            Command::ZoomActualSize => self.views.stage().zoom_to_actual_size(&editor.doc),
+            Command::RotateViewLeft => self.views.stage().rotate_view(-15.0),
+            Command::RotateViewRight => self.views.stage().rotate_view(15.0),
+            Command::ResetRotation => self.views.stage().reset_rotation(),
             Command::UseSlot { group, cycle } => editor.use_slot(group, cycle),
-            Command::FinishPath => self.stage.finish_path(editor, false),
-            Command::RemovePathPoint => self.stage.remove_last_path_point(),
-            Command::DeleteAnchor => self.stage.delete_selected_anchor(editor),
+            Command::FinishPath => self.views.stage().finish_path(editor, false),
+            Command::RemovePathPoint => self.views.stage().remove_last_path_point(),
+            Command::DeleteAnchor => self.views.stage().delete_selected_anchor(editor),
         }
     }
 
@@ -345,8 +379,8 @@ impl InkframeApp {
         // While a text field has focus, keys like ⌘Z and Delete belong to
         // the text field. File shortcuts still work everywhere.
         let typing = ctx.egui_wants_keyboard_input();
-        let drawing_path = self.stage.is_drawing_path();
-        let anchor_selected = self.stage.has_anchor_selection();
+        let drawing_path = self.views.stage().is_drawing_path();
+        let anchor_selected = self.views.stage().has_anchor_selection();
         let in_symbol = self.editor.timeline() != TimelineId::Main;
         ctx.input_mut(|input| {
             for (shortcut, command) in file_shortcuts {
@@ -428,6 +462,11 @@ impl InkframeApp {
                 (Key::Num5, Command::ResetRotation),
                 (Key::Backspace, Command::DeleteLayer),
             ];
+            // Ctrl+Space: the area under the pointer fills the window, or
+            // goes back, as in Blender.
+            if input.consume_key(Modifiers::CTRL, Key::Space) {
+                commands.push(Command::ToggleMaximize);
+            }
             for (key, command) in plain_keys {
                 if input.consume_key(Modifiers::NONE, key) {
                     commands.push(command);
@@ -447,7 +486,7 @@ impl InkframeApp {
             self.execute(command);
         }
         if let Some(text) = pasted_text {
-            let center = self.stage.visible_center(&self.editor);
+            let center = self.views.stage().visible_center(&self.editor);
             self.editor.paste_text(&text, center);
         }
     }
@@ -648,10 +687,13 @@ impl InkframeApp {
                 ui.weak("Or Shift+Space and drag to turn it freely.");
                 ui.separator();
                 ui.checkbox(&mut self.editor.onion.enabled, "Onion Skin");
+                ui.separator();
+                item(ui, "Reset Layout", None, Command::ResetLayout, true);
+                ui.weak("Drag an area's corner to split or join it,\nCtrl+Space to fill the window with it.");
             });
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.weak(format!("{:.0}%", self.stage.zoom_percent(&self.editor.doc)));
+                ui.weak(format!("{:.0}%", self.views.stage().zoom_percent(&self.editor.doc)));
             });
         });
 
@@ -666,7 +708,7 @@ impl InkframeApp {
         let tool = self.editor.tool;
         self.editor = editor;
         self.editor.tool = tool;
-        self.stage.zoom_to_fit();
+        self.views.stage().zoom_to_fit();
     }
 
     fn open(&mut self) {
@@ -849,6 +891,53 @@ impl InkframeApp {
         }
     }
 
+    /// One area's editor.
+    fn show_area(&mut self, ui: &mut egui::Ui, area: AreaId, kind: Kind) {
+        match kind {
+            Kind::Stage => {
+                if self.editor.timeline() != TimelineId::Main {
+                    breadcrumbs(ui, &mut self.editor);
+                }
+                if let Some(stage) = self.views.stages.get_mut(&area) {
+                    stage.show(ui, &mut self.editor);
+                }
+            }
+            Kind::Timeline => {
+                if let Some(timeline) = self.views.timelines.get_mut(&area) {
+                    timeline.show(ui, &mut self.editor, &mut self.audio);
+                }
+            }
+            Kind::Properties => {
+                egui::ScrollArea::vertical().id_salt(("properties", area)).show(ui, |ui| {
+                    inspector::show(ui, &mut self.editor);
+                    ui.add_space(8.0);
+                    self.library.show(ui, &mut self.editor);
+                    ui.add_space(8.0);
+                    if let Some(inspector::AudioAction::Import) =
+                        inspector::audio_section(ui, &mut self.editor, &mut self.audio)
+                    {
+                        self.import_audio();
+                    }
+                });
+            }
+            Kind::Tools => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("tools", area))
+                    .show(ui, |ui| toolbar::show(ui, &mut self.editor));
+            }
+            Kind::Library => {
+                egui::ScrollArea::vertical().id_salt(("library", area)).show(ui, |ui| {
+                    self.library.show(ui, &mut self.editor);
+                });
+            }
+            Kind::ExposureSheet => {
+                if let Some(sheet) = self.views.sheets.get_mut(&area) {
+                    sheet.contents(ui, &mut self.editor, &mut self.audio);
+                }
+            }
+        }
+    }
+
     fn update_title(&mut self, ctx: &egui::Context) {
         let dirty = if self.editor.has_unsaved_changes() { " •" } else { "" };
         let title = format!("{}{dirty} — Inkframe", self.editor.display_name());
@@ -872,41 +961,33 @@ impl eframe::App for InkframeApp {
             inkframe_render::sync_project_fonts(&self.editor.doc, project_dir.as_deref());
         self.editor.remeasure_text();
 
-        // Panel order decides who owns the corners: the timeline is added
-        // before the side panels so it spans the full window width.
         egui::Panel::top("menu_bar").show(ui, |ui| self.menu_bar(ui));
-        egui::Panel::bottom("timeline")
-            .resizable(true)
-            .default_size(230.0)
-            .min_size(140.0)
-            .show(ui, |ui| self.timeline.show(ui, &mut self.editor, &mut self.audio));
-        let toolbar_width = toolbar::width(ui.available_height());
-        egui::Panel::left("tools")
-            .resizable(false)
-            .exact_size(toolbar_width)
-            .show(ui, |ui| toolbar::show(ui, &mut self.editor));
-        egui::Panel::right("inspector").resizable(true).default_size(290.0).show(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                inspector::show(ui, &mut self.editor);
-                ui.add_space(8.0);
-                self.library.show(ui, &mut self.editor);
-                ui.add_space(8.0);
-                if let Some(inspector::AudioAction::Import) =
-                    inspector::audio_section(ui, &mut self.editor, &mut self.audio)
-                {
-                    self.import_audio();
-                }
-            });
-        });
+        // The rest of the window is the layout's areas (see `layout.rs`).
+        // It's taken out while it draws, since the areas' editors need the
+        // rest of the app.
+        let mut layout = std::mem::take(&mut self.layout);
+        self.views.prepare(&layout);
         egui::CentralPanel::no_frame().show(ui, |ui| {
-            if self.editor.timeline() != TimelineId::Main {
-                breadcrumbs(ui, &mut self.editor);
-            }
-            self.stage.show(ui, &mut self.editor);
-            if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
-                drop_hint(ui);
-            }
+            self.hovered_area = layout.show(ui, |ui, area, kind| self.show_area(ui, area, kind));
         });
+        if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
+            drop_hint(&ctx);
+        }
+        self.layout = layout;
+        // The last stage pointed at is the one menu commands (zoom, turn)
+        // act on.
+        if let Some(area) = self.hovered_area
+            && self.layout.kind_of(area) == Some(Kind::Stage)
+        {
+            self.views.active_stage = Some(area);
+        }
+        if self.layout != self.saved_layout
+            && !ctx.input(|i| i.pointer.any_down())
+            && self.screenshot.is_none()
+        {
+            self.layout.save();
+            self.saved_layout = self.layout.clone();
+        }
 
         let name = self.editor.display_name();
         self.export.show(&ctx, &self.editor.doc, &name, self.editor.project_dir());
@@ -923,10 +1004,8 @@ impl eframe::App for InkframeApp {
 
         // Record an undo step once the user has let go of the mouse and
         // finished typing, so each gesture or edit is a single step.
-        let interacting = self.stage.is_busy()
-            || self.timeline.is_busy()
-            || ctx.input(|i| i.pointer.any_down())
-            || ctx.egui_wants_keyboard_input();
+        let interacting =
+            self.views.is_busy() || ctx.input(|i| i.pointer.any_down()) || ctx.egui_wants_keyboard_input();
         if !interacting {
             self.editor.commit_history();
         }
@@ -945,6 +1024,58 @@ impl eframe::App for InkframeApp {
 
 /// The "Scene ▸ Symbol ▸ …" bar shown while editing a symbol. Clicking an
 /// earlier step goes back out to it.
+/// The editors that keep state of their own, one per area showing them, and
+/// which stage menu commands act on.
+#[derive(Default)]
+struct Views {
+    stages: BTreeMap<AreaId, StageView>,
+    timelines: BTreeMap<AreaId, TimelineView>,
+    sheets: BTreeMap<AreaId, ExposureSheet>,
+    /// The stage last pointed at.
+    active_stage: Option<AreaId>,
+    /// Stands in when no area shows the stage, so commands still have one.
+    spare_stage: StageView,
+}
+
+impl Views {
+    /// Makes views for areas that need one, and forgets those of areas
+    /// that have gone or changed kind.
+    fn prepare(&mut self, layout: &Layout) {
+        let areas = layout.areas(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 1000.0)));
+        let of = |kind: Kind| areas.iter().filter(move |a| a.1 == kind).map(|a| a.0).collect::<Vec<_>>();
+        let (stages, timelines, sheets) = (of(Kind::Stage), of(Kind::Timeline), of(Kind::ExposureSheet));
+        self.stages.retain(|id, _| stages.contains(id));
+        self.timelines.retain(|id, _| timelines.contains(id));
+        self.sheets.retain(|id, _| sheets.contains(id));
+        for id in stages {
+            self.stages.entry(id).or_default();
+        }
+        for id in timelines {
+            self.timelines.entry(id).or_default();
+        }
+        for id in sheets {
+            self.sheets.entry(id).or_default();
+        }
+        if self.active_stage.is_none_or(|id| !self.stages.contains_key(&id)) {
+            self.active_stage = self.stages.keys().next().copied();
+        }
+    }
+
+    /// The stage menu commands act on.
+    fn stage(&mut self) -> &mut StageView {
+        match self.active_stage.and_then(|id| self.stages.get_mut(&id)) {
+            Some(stage) => stage,
+            None => &mut self.spare_stage,
+        }
+    }
+
+    /// Whether a gesture is under way in any stage or timeline, which
+    /// holds off recording an undo step.
+    fn is_busy(&self) -> bool {
+        self.stages.values().any(StageView::is_busy) || self.timelines.values().any(TimelineView::is_busy)
+    }
+}
+
 fn breadcrumbs(ui: &mut egui::Ui, editor: &mut Editor) {
     let path: Vec<(SymbolId, String)> = editor
         .open_symbols()
@@ -980,10 +1111,10 @@ fn breadcrumbs(ui: &mut egui::Ui, editor: &mut Editor) {
     }
 }
 
-/// Shown over the stage while files are dragged over the window.
-fn drop_hint(ui: &egui::Ui) {
-    let area = ui.max_rect();
-    let painter = ui.painter();
+/// Shown over the window while files are dragged over it.
+fn drop_hint(ctx: &egui::Context) {
+    let area = ctx.content_rect();
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("drop_hint")));
     painter.rect_filled(area, 0.0, egui::Color32::from_black_alpha(140));
     painter.text(
         area.center(),
