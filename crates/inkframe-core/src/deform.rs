@@ -235,7 +235,7 @@ impl Layer {
         // Part way through a shape tween, the morph; otherwise the drawing.
         let elements: Cow<'_, [Element]> = match self.morph_at(frame) {
             Some(morphed) => Cow::Owned(morphed),
-            None => Cow::Borrowed(self.elements_at(frame)),
+            None => self.drawings.get(self.drawing_index_at(frame)).map_or(Cow::Borrowed(&[]), |d| d.shown()),
         };
         match &self.deformer {
             Some(deformer) if !deformer.is_at_rest(frame) => Cow::Owned(deformer.deform(&elements, frame)),

@@ -208,6 +208,43 @@ impl InkframeApp {
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
             }
+            if AutoScreenshot::ink_and_paint() {
+                use inkframe_core::{Color, Element, Path, Point, Segment, Shape, Stroke, Style, Transform};
+                let ink =
+                    Style { fill: None, stroke: Some(Stroke { color: Color::rgb(30, 30, 40), width: 6.0 }) };
+                // An outline as straight pieces round an ellipse, leaving
+                // out the last few: a gap the bucket has to close.
+                let ring = |rx: f32, ry: f32, cx: f32, cy: f32, gap: usize| {
+                    let points: Vec<Point> = (0..=(96 - gap))
+                        .map(|i| {
+                            let a = i as f32 / 96.0 * std::f32::consts::TAU;
+                            Point::new(cx + rx * a.cos(), cy + ry * a.sin())
+                        })
+                        .collect();
+                    Element {
+                        shape: Shape::Path(Path {
+                            start: points[0],
+                            segments: points[1..].iter().map(|&to| Segment::Line { to }).collect(),
+                            closed: false,
+                        }),
+                        style: ink,
+                    }
+                };
+                let lines = vec![
+                    ring(220.0, 180.0, 0.0, 0.0, 1),
+                    ring(40.0, 50.0, -70.0, -30.0, 0),
+                    ring(40.0, 50.0, 70.0, -30.0, 0),
+                ];
+                let doc = &mut app.editor.doc;
+                let id = doc.add_layer("Ink", lines, 0, Transform::at(Point::new(1450.0, 600.0)));
+                if let Some(layer) = doc.layer_mut(id) {
+                    layer.fill_enclosed(0, Point::new(0.0, 100.0), Color::rgb(0xf2, 0xb8, 0x8a), 14.0);
+                    layer.fill_enclosed(0, Point::new(-70.0, -30.0), Color::rgb(0xff, 0xff, 0xff), 14.0);
+                    layer.fill_enclosed(0, Point::new(70.0, -30.0), Color::rgb(0xff, 0xff, 0xff), 14.0);
+                }
+                app.editor.select(Some(id));
+                app.editor.tool = crate::editor::Tool::PaintBucket;
+            }
             if AutoScreenshot::palette() {
                 let doc = &mut app.editor.doc;
                 let mut colours: Vec<inkframe_core::Color> = Vec::new();

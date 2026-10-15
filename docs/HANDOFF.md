@@ -8,11 +8,11 @@ after animated effects.
 - **Branch:** `main`, clean. Every feature is built on its own branch,
   then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (501 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (508 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
-- **File format:** version 23. Older versions load and upgrade automatically
+- **File format:** version 24. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -275,6 +275,17 @@ after animated effects.
     lists the palette with names, a right-click colour picker that
     recolours live, and a version menu. `INKFRAME_SCREENSHOT_PALETTE=1`
     builds a palette of the rig's colours with a Night version on.
+
+54. Ink and paint (format v24; `vector_fill.rs`): `Drawing::colour_art`
+    beneath the line art (`Drawing::shown`, used by `shown_elements` and
+    morphs); `Layer::fill_enclosed` and `enclosed_area` (grid flood,
+    gap closing by thickening lines, grow back, trace, Douglas–Peucker).
+    Areas inside a filled one aren't cut out of it; filling them adds a
+    fill on top. The paint bucket fills vector layers (the selected one,
+    or the one clicked) and only makes a paint layer when there's none.
+    Editor options `draw_into_layer` and `colour_art` let the drawing
+    tools draw into one drawing. `INKFRAME_SCREENSHOT_INK=1` shows a
+    gapped, filled head.
 
 ## Not yet verified by hand
 

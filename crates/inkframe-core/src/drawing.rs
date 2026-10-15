@@ -26,7 +26,12 @@ use crate::document::{Element, Layer};
 pub struct Drawing {
     /// What the animator calls it: "1", "2", or for a mouth, "A" or "O".
     pub name: String,
+    /// The line art: the inked lines and shapes.
     pub elements: Vec<Element>,
+    /// The colour art: fills made by the paint bucket (or drawn there), drawn
+    /// beneath the line art (see `vector_fill.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub colour_art: Vec<Element>,
     /// Shape hints, in the layer's coordinates: hint `i` here goes to hint
     /// `i` on the drawing a shape tween morphs into (see `morph.rs`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -34,8 +39,18 @@ pub struct Drawing {
 }
 
 impl Drawing {
+    /// Everything the drawing shows, bottom first: the colour art, then the
+    /// line art over it.
+    pub fn shown(&self) -> std::borrow::Cow<'_, [Element]> {
+        if self.colour_art.is_empty() {
+            std::borrow::Cow::Borrowed(&self.elements)
+        } else {
+            std::borrow::Cow::Owned(self.colour_art.iter().chain(&self.elements).cloned().collect())
+        }
+    }
+
     pub fn new(name: impl Into<String>, elements: Vec<Element>) -> Self {
-        Self { name: name.into(), elements, hints: Vec::new() }
+        Self { name: name.into(), elements, colour_art: Vec::new(), hints: Vec::new() }
     }
 }
 
@@ -70,11 +85,11 @@ impl Layer {
     /// Every shape in every drawing, for questions like "is this image used
     /// anywhere?".
     pub fn all_elements(&self) -> impl Iterator<Item = &Element> {
-        self.drawings.iter().flat_map(|d| &d.elements)
+        self.drawings.iter().flat_map(|d| d.colour_art.iter().chain(&d.elements))
     }
 
     pub fn all_elements_mut(&mut self) -> impl Iterator<Item = &mut Element> {
-        self.drawings.iter_mut().flat_map(|d| &mut d.elements)
+        self.drawings.iter_mut().flat_map(|d| d.colour_art.iter_mut().chain(&mut d.elements))
     }
 
     /// Shows `drawing` from `frame` on, until the next exposure key.

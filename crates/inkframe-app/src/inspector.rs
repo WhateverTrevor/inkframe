@@ -107,12 +107,34 @@ pub fn tool_settings(ui: &mut egui::Ui, editor: &mut Editor) {
             ui.add(DragValue::new(&mut editor.pencil_stroke.width).range(0.5..=100.0).speed(0.1));
             ui.end_row();
         });
+        drawing_target(ui, editor);
     } else if matches!(editor.tool, Tool::Rectangle | Tool::Ellipse | Tool::Pen | Tool::Text) {
         ui.heading(editor.tool.name());
         shape_style(ui, editor);
+        if editor.tool != Tool::Text {
+            drawing_target(ui, editor);
+        }
     } else {
         ui.weak(format!("The {} tool has no settings.", editor.tool.name()));
     }
+}
+
+/// Where the drawing tools put new shapes: each on a layer of its own (as
+/// in Animate), or into the selected layer's drawing (as in Harmony), and
+/// then into its line art or the colour art beneath.
+fn drawing_target(ui: &mut egui::Ui, editor: &mut Editor) {
+    ui.add_space(6.0);
+    ui.checkbox(&mut editor.draw_into_layer, "Draw into the selected layer").on_hover_text(
+        "Strokes go into the selected layer's drawing, for inking and painting a drawing together. \
+         Off, each shape gets a layer of its own.",
+    );
+    ui.add_enabled_ui(editor.draw_into_layer, |ui| {
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut editor.colour_art, false, "Line Art");
+            ui.selectable_value(&mut editor.colour_art, true, "Colour Art")
+                .on_hover_text("Beneath the lines, where the paint bucket's fills go");
+        });
+    });
 }
 
 /// Fill, stroke and stroke width for the shapes the drawing tools make.
@@ -188,6 +210,19 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
                 ui.end_row();
                 ui.label("Opacity");
                 ui.add(percent(&mut editor.bucket.opacity));
+                ui.end_row();
+                // On a vector layer the bucket fills between lines instead.
+                ui.label("Close gaps").on_hover_text(
+                    "On a vector layer: how wide a gap between lines still counts as closed when filling",
+                );
+                let sizes = [(0.0, "None"), (4.0, "Small"), (10.0, "Medium"), (20.0, "Large")];
+                let current =
+                    sizes.iter().find(|(v, _)| *v == editor.close_gaps).map_or("Custom", |(_, n)| n);
+                egui::ComboBox::from_id_salt("close_gaps").selected_text(current).show_ui(ui, |ui| {
+                    for (value, name) in sizes {
+                        ui.selectable_value(&mut editor.close_gaps, value, name);
+                    }
+                });
                 ui.end_row();
             }
             Tool::Gradient => {

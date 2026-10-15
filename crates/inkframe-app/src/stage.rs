@@ -2750,7 +2750,27 @@ fn lay_gradient(painting: &Painting, editor: &mut Editor, view: View, from: Pos2
 
 /// The Paint Bucket: fills on the selected paint layer (made if needed).
 fn fill_at(editor: &mut Editor, view: View, press: Pos2) {
+    // On a vector layer, ink and paint: fill the area its lines enclose.
+    // The selected layer if it's one, or else the one clicked.
     if editor.paint_target().is_none() {
+        let point = view.to_local(press);
+        let frame = editor.frame;
+        let vector = |id: LayerId| {
+            editor
+                .doc
+                .layer(id)
+                .filter(|l| l.draws_vectors() && !l.locked && l.is_shown_at(frame))
+                .map(|l| l.id)
+        };
+        let target = editor
+            .selection
+            .and_then(vector)
+            .or_else(|| editor.hit_test(point, HIT_TOLERANCE / view.zoom).and_then(vector));
+        if let Some(id) = target {
+            editor.select(Some(id));
+            editor.fill_vector(id, point);
+            return;
+        }
         editor.add_paint_layer();
     }
     let Some((layer, canvas, width, height)) = editor.paint_target() else { return };
@@ -3161,6 +3181,40 @@ mod tests {
         let layer = doc.layer(dot).unwrap();
         let seen = doc.layer_matrix(layer, 0).apply(Point::ZERO);
         assert!(seen.distance(Point::new(600.0, 500.0)) < 3.0, "{seen:?}");
+    }
+
+    #[test]
+    fn the_paint_bucket_fills_between_a_vector_layers_lines() {
+        // An inked square: four strokes in one drawing, with no fill.
+        let mut doc = Document::default();
+        let line = |a: Point, b: Point| Element {
+            shape: Shape::Path(Path {
+                start: a,
+                segments: vec![inkframe_core::Segment::Line { to: b }],
+                closed: false,
+            }),
+            style: Style { fill: None, stroke: Some(Stroke { color: Color::BLACK, width: 3.0 }) },
+        };
+        let p = Point::new;
+        let lines = vec![
+            line(p(-100.0, -100.0), p(100.0, -100.0)),
+            line(p(100.0, -100.0), p(100.0, 100.0)),
+            line(p(100.0, 100.0), p(-100.0, 100.0)),
+            line(p(-100.0, 100.0), p(-100.0, -100.0)),
+        ];
+        let id = doc.add_layer("Ink", lines, 0, Transform::at(p(500.0, 400.0)));
+        let mut editor = Editor::new(doc);
+        editor.select(Some(id));
+        editor.tool = Tool::PaintBucket;
+        editor.paint_color = Color::rgb(255, 0, 0);
+        let mut h = harness(editor);
+        let inside = screen(&h, 520.0, 410.0);
+        drag(&mut h, inside, &[inside]);
+
+        let layer = h.state().1.doc.layer(id).unwrap();
+        assert_eq!(layer.drawings[0].colour_art.len(), 1, "filled");
+        assert_eq!(layer.drawings[0].colour_art[0].style.fill, Some(Color::rgb(255, 0, 0)));
+        assert!(h.state().1.paint_target().is_none(), "no paint layer was made");
     }
 
     fn text_content(h: &Harness<'_, State>, id: LayerId) -> String {

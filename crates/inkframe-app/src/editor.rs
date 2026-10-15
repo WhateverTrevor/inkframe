@@ -260,6 +260,15 @@ pub struct Editor {
     /// Which tones Dodge and Burn work on most.
     pub tone_range: ToneRange,
     pub bucket: BucketSettings,
+    /// How wide a gap the paint bucket closes on a vector layer, in stage
+    /// units (see `vector_fill.rs`).
+    pub close_gaps: f32,
+    /// Draw new shapes into the selected layer's drawing, as Harmony does,
+    /// rather than each onto a layer of its own, as Animate does.
+    pub draw_into_layer: bool,
+    /// Which part of the drawing new shapes go in: the line art, or the
+    /// colour art beneath it.
+    pub colour_art: bool,
     pub gradient_shape: GradientShape,
     /// Fade the gradient to transparent rather than to `second_color`.
     pub gradient_to_clear: bool,
@@ -315,6 +324,9 @@ impl Editor {
             },
             pencil_stroke: Stroke { color: Color::rgb(0x1a, 0x1a, 0x1a), width: 4.0 },
             paint_color: Color::rgb(0x1a, 0x1a, 0x1a),
+            close_gaps: 4.0,
+            draw_into_layer: false,
+            colour_art: false,
             brush: BrushSettings::default(),
             eraser: BrushSettings {
                 size: 40.0,
@@ -761,10 +773,10 @@ impl Editor {
     /// since a turned or scaled layer would otherwise turn or scale it too.
     fn add_to_shown_drawing(&mut self, element: &Element, position: Point) -> bool {
         let frame = self.frame;
-        let Some(layer) = self
-            .selected_layer()
-            .filter(|l| l.drawings.len() > 1 && !l.locked && l.is_shown_at(frame) && l.instance.is_none())
-        else {
+        let into = self.draw_into_layer;
+        let Some(layer) = self.selected_layer().filter(|l| {
+            (l.drawings.len() > 1 || into) && l.draws_vectors() && !l.locked && l.is_shown_at(frame)
+        }) else {
             return false;
         };
         let to_local = self.doc.layer_matrix(layer, frame).inverse();
@@ -782,10 +794,31 @@ impl Editor {
             .collect();
         let Some(path) = path_from_anchors(&moved, closed) else { return false };
         let id = layer.id;
+        let colour_art = self.colour_art;
         if let Some(layer) = self.doc.layer_mut(id) {
-            layer.elements_at_mut(frame).push(Element { shape: Shape::Path(path), style: element.style });
+            let element = Element { shape: Shape::Path(path), style: element.style };
+            let index = layer.drawing_index_at(frame);
+            let drawing = &mut layer.drawings[index];
+            if colour_art { drawing.colour_art.push(element) } else { drawing.elements.push(element) }
         }
         true
+    }
+
+    /// Fills the area enclosed by a vector layer's line art at `point` (on
+    /// the stage) with the paint colour, or recolours the fill there. See
+    /// `vector_fill.rs`.
+    pub fn fill_vector(&mut self, id: LayerId, point: Point) -> inkframe_core::FillResult {
+        let frame = self.frame;
+        let (color, gap) = (self.paint_color, self.close_gaps);
+        let local = self
+            .doc
+            .layer(id)
+            .and_then(|l| self.doc.layer_matrix(l, frame).inverse())
+            .map(|to_local| to_local.apply(point));
+        match (local, self.doc.layer_mut(id)) {
+            (Some(local), Some(layer)) => layer.fill_enclosed(frame, local, color, gap),
+            _ => inkframe_core::FillResult::NotEnclosed,
+        }
     }
 
     /// Adds a layer holding `element` to the timeline being edited, starting
@@ -1004,7 +1037,9 @@ impl Editor {
             // A copy keeps its shape hints, so a shape tween between the
             // two lines up from the start.
             if copy {
-                drawing.hints = layer.drawings[layer.drawing_index_at(frame)].hints.clone();
+                let showing = &layer.drawings[layer.drawing_index_at(frame)];
+                drawing.hints = showing.hints.clone();
+                drawing.colour_art = showing.colour_art.clone();
             }
             let index = layer.add_drawing(drawing);
             layer.expose(frame, index);

@@ -47,6 +47,7 @@ mod symbol;
 mod text;
 mod track;
 mod transform;
+mod vector_fill;
 
 pub use adjust::{Adjustment, adjust};
 pub use align::{Align, Axis};
@@ -90,3 +91,4 @@ pub use symbol::{Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId};
 pub use text::{DEFAULT_FAMILY, Font, Text, TextAlign};
 pub use track::{Property, Track};
 pub use transform::Transform;
+pub use vector_fill::{FillResult, enclosed_area};

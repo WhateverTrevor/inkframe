@@ -84,7 +84,7 @@ impl Layer {
         let from = &self.drawings[self.drawing_index_at(start)];
         let to = &self.drawings[self.drawing_index_at(end)];
         let t = tween.easing.apply((frame - start) as f32 / (end - start) as f32);
-        Some(morph(&from.elements, &to.elements, (&from.hints, &to.hints), t))
+        Some(morph(&from.shown(), &to.shown(), (&from.hints, &to.hints), t))
     }
 }
 
