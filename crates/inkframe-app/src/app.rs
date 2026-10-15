@@ -10,6 +10,7 @@ use crate::audio_engine::AudioEngine;
 use crate::editor::{Editor, Tool};
 use crate::export_dialog::ExportDialog;
 use crate::library::LibraryView;
+use crate::lip_sync_dialog::LipSyncDialog;
 use crate::screenshot::AutoScreenshot;
 use crate::stage::StageView;
 use crate::timeline::TimelineView;
@@ -62,6 +63,8 @@ enum Command {
     DeleteDrawing,
     PreviousDrawing,
     NextDrawing,
+    /// Opens the Lip Sync window for the selected layer.
+    LipSync,
     PlayPause,
     StepBackward,
     StepForward,
@@ -91,6 +94,7 @@ pub struct InkframeApp {
     stage: StageView,
     timeline: TimelineView,
     export: ExportDialog,
+    lip_sync: LipSyncDialog,
     library: LibraryView,
     audio: AudioEngine,
     /// The window title we last set, so we only send changes.
@@ -125,6 +129,7 @@ impl InkframeApp {
             stage: StageView::default(),
             timeline: TimelineView::default(),
             export: ExportDialog::default(),
+            lip_sync: LipSyncDialog::default(),
             library: LibraryView::default(),
             audio: AudioEngine::default(),
             title: String::new(),
@@ -139,6 +144,9 @@ impl InkframeApp {
                 app.stage.type_into(&mut app.editor, &name);
             }
             app.timeline.set_graph_mode(AutoScreenshot::graph());
+            if AutoScreenshot::lip_sync() {
+                app.lip_sync.open(&app.editor);
+            }
             if AutoScreenshot::expand_timeline() {
                 for layer in app.editor.doc.all_layers() {
                     app.timeline.set_expanded(layer.id, true);
@@ -213,6 +221,7 @@ impl InkframeApp {
             Command::DeleteDrawing => editor.delete_shown_drawing(),
             Command::PreviousDrawing => editor.cycle_drawing(-1),
             Command::NextDrawing => editor.cycle_drawing(1),
+            Command::LipSync => self.lip_sync.open(editor),
             Command::PlayPause => editor.toggle_playback(),
             Command::StepBackward => editor.step(-1),
             Command::StepForward => editor.step(1),
@@ -480,6 +489,7 @@ impl InkframeApp {
                     swaps,
                 );
                 item(ui, "Next Drawing", Some(shortcuts::NEXT_DRAWING), Command::NextDrawing, swaps);
+                item(ui, "Lip Sync…", None, Command::LipSync, swaps);
             });
             ui.menu_button("Timeline", |ui| {
                 let play = if self.editor.playback.playing { "Pause" } else { "Play" };
@@ -768,6 +778,7 @@ impl eframe::App for InkframeApp {
 
         let name = self.editor.display_name();
         self.export.show(&ctx, &self.editor.doc, &name, self.editor.project_dir());
+        self.lip_sync.show(&ctx, &mut self.editor, &mut self.audio);
 
         let dt = ctx.input(|i| i.stable_dt) as f64;
         let project_dir = self.editor.project_dir();
@@ -789,6 +800,10 @@ impl eframe::App for InkframeApp {
         self.update_title(&ctx);
         self.handle_close_request(&ctx);
         if let Some(screenshot) = &mut self.screenshot {
+            // Once the sound is ready, so loudness can be measured.
+            if AutoScreenshot::lip_sync_apply() && !self.audio.is_busy() {
+                self.lip_sync.apply_once(&mut self.editor, &mut self.audio);
+            }
             screenshot.update(&ctx, self.audio.is_busy());
         }
     }

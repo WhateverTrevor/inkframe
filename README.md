@@ -31,6 +31,10 @@ planned (the code is already cross-platform and CI builds it on Windows).
 - **Swap drawings** for mouths, hands and blinks: a layer can hold several
   named drawings ("closed", "A", "O") and show a different one from any
   frame on, the way Toon Boom Harmony's drawing substitution works.
+- **Lip sync** a mouth to dialogue: from the sound's loudness, or from a
+  [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-lip-sync) or
+  Papagayo timing file for the actual sounds. Its drawings are matched to
+  the standard mouth shapes by name.
 - **Motion paths:** a moving layer's path is drawn on the stage, with a dot
   per frame showing its spacing. Drag the path to curve it, then fine-tune
   the curve handles; "Orient to path" turns the layer to face where it's going.
@@ -108,6 +112,7 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Move the pivot | Option/Alt-drag the ring in the middle of the selected layer. It snaps to the corners, edge midpoints and center; or type it in the properties panel. The layer stays where it is, and from then on turns and scales around the new spot |
 | Attach to a parent | Pick a **Parent** in the properties panel. The layer stays where it is and from then on follows its parent; the timeline indents it under the parent's name. Deleting a parent hands its children to the parent above |
 | Swap drawings | In the properties panel's **Drawings** section, **New** adds a blank drawing (or **Duplicate** a copy of the one showing) from the current frame on. Click a drawing's name to show it from the current frame on, or press `[` and `]` to flip through them. With a layer that has several drawings selected, new shapes are drawn into the drawing that's showing. The timeline marks each swap with the drawing's name |
+| Lip sync | Give a mouth layer a drawing per mouth shape, named with Rhubarb's letters (A closed, B, C, D wide open, E, F, G, H, X at rest) or Papagayo's (MBP, etc, E, AI, O, U, FV, L, rest); a few are enough, the rest borrow a similar shape's. Import the dialogue, select the mouth, then Modify › Lip Sync…: pick the sound, loudness or a timing file, check the drawings, and Apply. The swaps land under the sound, replacing any there |
 | Draw | Rectangle (`R`), Oval (`O`), Pencil (`Y`). Hold Shift for squares and circles |
 | Reshape | Subselection tool (`A`): drag a shape's points, or a selected point's handles. Alt/Option moves one handle alone for a sharp corner; Alt/Option-click a point to switch it between corner and smooth; Delete removes the point. Rectangles and ovals become editable paths on the first edit |
 | Pen (`P`) | Click for corners, drag for curves. Click the first point to close the shape; Enter, Esc or clicking the last point ends an open line. Backspace removes the last point, Shift snaps to 45°. Click a selected shape's outline to add a point without changing its curve |

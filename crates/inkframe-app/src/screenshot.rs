@@ -17,6 +17,8 @@
 //! * `INKFRAME_SCREENSHOT_OPEN=Ball` opens the named instance layer's symbol in place (after `_FRAME`).
 //! * `INKFRAME_SCREENSHOT_TYPE=Title` starts typing into the named text layer, with its text selected.
 //! * `INKFRAME_SCREENSHOT_GRAPH=1` shows the value graph in the timeline.
+//! * `INKFRAME_SCREENSHOT_LIPSYNC=1` opens the Lip Sync window for the selected layer;
+//!   `=apply` also applies it from loudness once the sound has loaded.
 
 use std::path::PathBuf;
 
@@ -76,6 +78,16 @@ impl AutoScreenshot {
     /// The text layer to start typing into, if any.
     pub fn type_into() -> Option<String> {
         std::env::var("INKFRAME_SCREENSHOT_TYPE").ok()
+    }
+
+    /// Whether to open the Lip Sync window.
+    pub fn lip_sync() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_LIPSYNC").is_some()
+    }
+
+    /// Whether to also press its Apply button.
+    pub fn lip_sync_apply() -> bool {
+        std::env::var("INKFRAME_SCREENSHOT_LIPSYNC").is_ok_and(|v| v == "apply")
     }
 
     /// Whether the timeline should show the value graph.
