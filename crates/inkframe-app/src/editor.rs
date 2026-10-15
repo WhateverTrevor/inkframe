@@ -25,11 +25,22 @@ pub enum Tool {
     Ellipse,
     Pencil,
     Text,
+    /// Poses a rig by dragging: the joints above the dragged layer turn so
+    /// it follows the pointer (inverse kinematics).
+    Bone,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 7] =
-        [Tool::Select, Tool::Subselect, Tool::Pen, Tool::Rectangle, Tool::Ellipse, Tool::Pencil, Tool::Text];
+    pub const ALL: [Tool; 8] = [
+        Tool::Select,
+        Tool::Subselect,
+        Tool::Bone,
+        Tool::Pen,
+        Tool::Rectangle,
+        Tool::Ellipse,
+        Tool::Pencil,
+        Tool::Text,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -40,6 +51,7 @@ impl Tool {
             Tool::Ellipse => "Oval",
             Tool::Pencil => "Pencil",
             Tool::Text => "Text",
+            Tool::Bone => "Bone",
         }
     }
 }

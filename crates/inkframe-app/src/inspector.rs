@@ -3,8 +3,8 @@
 
 use egui::{Color32, DragValue, Sense, Stroke as EguiStroke, vec2};
 use inkframe_core::{
-    Color, Easing, FrameRate, ImageId, Layer, LayerId, Playback, Property, Shape, Stroke, Style, SymbolId,
-    Text, TextAlign, Tween,
+    Color, Easing, FrameRate, ImageId, Layer, LayerId, Playback, Property, RotationLimits, Shape, Stroke,
+    Style, SymbolId, Text, TextAlign, Tween,
 };
 
 use crate::audio_engine::AudioEngine;
@@ -225,8 +225,9 @@ fn rig_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) 
         .filter(|other| editor.doc.can_parent(id, other.id))
         .map(|other| (other.id, other.name.clone()))
         .collect();
-    let (old_parent, old_pivot) = (layer.parent, layer.pivot);
-    let (mut parent, mut pivot) = (old_parent, old_pivot);
+    let (old_parent, old_pivot, old_limits) = (layer.parent, layer.pivot, layer.rotation_limits);
+    let (mut parent, mut pivot, mut limits) = (old_parent, old_pivot, old_limits);
+    let rotation = editor.doc.pose(layer, frame).rotation;
     let bounds = editor.doc.layer_bounds(layer, frame);
 
     egui::Grid::new("rig").num_columns(2).spacing([6.0, 4.0]).show(ui, |ui| {
@@ -260,6 +261,32 @@ fn rig_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) 
             }
         });
         ui.end_row();
+
+        // Only joints bend, so only attached layers have limits.
+        if parent.is_some() {
+            ui.label("Bends").on_hover_text(
+                "How far the Bone tool may turn this joint, as the lowest and highest rotation, \
+                 so an elbow or knee only bends one way.",
+            );
+            ui.horizontal(|ui| {
+                let mut limited = limits.is_some();
+                if ui.checkbox(&mut limited, "").changed() {
+                    // Start from a range around where it is now.
+                    limits = limited.then_some(RotationLimits { min: rotation - 45.0, max: rotation + 45.0 });
+                }
+                match &mut limits {
+                    Some(range) => {
+                        ui.add(DragValue::new(&mut range.min).suffix("°").speed(1.0));
+                        ui.label("to");
+                        ui.add(DragValue::new(&mut range.max).suffix("°").speed(1.0));
+                    }
+                    None => {
+                        ui.weak("freely");
+                    }
+                }
+            });
+            ui.end_row();
+        }
     });
 
     // Both keep the layer where it is on screen: attaching it re-measures
@@ -269,6 +296,11 @@ fn rig_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) 
     }
     if pivot != old_pivot {
         editor.doc.set_pivot(id, pivot);
+    }
+    if limits != old_limits
+        && let Some(layer) = editor.doc.layer_mut(id)
+    {
+        layer.rotation_limits = limits;
     }
 }
 

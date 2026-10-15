@@ -97,8 +97,8 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     `into_parent_space`). Option/Alt-drag moves the pivot (a plain drag
     still moves the layer). Selecting a parent and child together only
     transforms the parent (`Document::hangs_from`). The rest of the plan,
-    after drawing substitution (34) and lip sync (35): bones/IK, deformers
-    and an exposure sheet.
+    after drawing substitution (34), lip sync (35) and bones/IK (36):
+    deformers and an exposure sheet.
 34. Drawing substitution (format v14): `Layer::drawings` (never empty)
     and `Layer::exposure` hold keys, in `drawing.rs`. Everything that
     draws, hits or edits a layer reads `elements_at(frame)`; the editor's
@@ -114,6 +114,12 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     MohoSwitch1. The user chose "built-in, then Rhubarb": bundling Rhubarb
     (MIT) to run it from inside the app, like ffmpeg, is the agreed next
     step for lip sync, needing their OK for the download.
+36. Bones and IK (format v15): the Bone tool (`B`, `Tool::Bone`) draws
+    each rig's skeleton (`draw_skeleton` in stage.rs) and drags with
+    `Gesture::Reach`, calling `Document::reach` in `ik.rs` (CCD, root
+    joint first, nudging out of the straight-arm stall). Roots move the
+    rig. `Layer::rotation_limits` is set in the inspector's rig section
+    ("Bends").
 
 ## Not yet verified by hand
 

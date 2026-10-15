@@ -21,6 +21,7 @@ mod freehand;
 mod geometry;
 mod guide;
 mod history;
+mod ik;
 mod image;
 mod lip_sync;
 mod mask;
@@ -46,6 +47,7 @@ pub use freehand::fit_freehand_path;
 pub use geometry::{Affine, Point, Rect};
 pub use guide::GuidePath;
 pub use history::History;
+pub use ik::RotationLimits;
 pub use image::{ImageAsset, ImageId};
 pub use lip_sync::{
     LipSyncError, MouthCue, MouthMap, MouthShape, cues_from_loudness, parse_papagayo, parse_rhubarb,

@@ -8,6 +8,7 @@ use crate::color::Color;
 use crate::drawing::{Drawing, Exposure};
 use crate::font_file::FontFile;
 use crate::geometry::{Point, Rect};
+use crate::ik::RotationLimits;
 use crate::image::ImageAsset;
 use crate::shape::{Shape, Style};
 use crate::symbol::{Instance, Symbol, SymbolId};
@@ -25,7 +26,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 14;
+pub const FORMAT_VERSION: u32 = 15;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -131,6 +132,9 @@ pub struct Layer {
     /// scales around; its position is where this point sits.
     #[serde(default, skip_serializing_if = "is_origin")]
     pub pivot: Point,
+    /// How far IK may turn this joint (see `ik.rs`). `None` is free.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation_limits: Option<RotationLimits>,
 }
 
 fn is_origin(p: &Point) -> bool {
@@ -321,6 +325,7 @@ impl Document {
             masked_by: None,
             parent: None,
             pivot: Point::ZERO,
+            rotation_limits: None,
         });
         Some(id)
     }
