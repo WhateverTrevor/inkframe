@@ -123,6 +123,11 @@ impl AutoScreenshot {
         crate::layout::Workspace::ALL.into_iter().find(|w| w.name().eq_ignore_ascii_case(&name))
     }
 
+    /// Whether to add a layer morphing from a square into a circle.
+    pub fn shape_tween() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_SHAPE_TWEEN").is_some()
+    }
+
     /// Whether to put the arm's layers (in examples/rig.inkf) in a folder.
     pub fn folder() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_FOLDER").is_some()

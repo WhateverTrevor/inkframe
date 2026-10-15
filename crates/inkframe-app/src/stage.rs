@@ -193,6 +193,9 @@ enum Gesture {
     Rotate { layer: LayerId, drag: RotateDrag, group: Vec<GroupMember>, into_space: Affine },
     /// Dragging a layer's pivot to a new spot on the layer.
     Pivot { layer: LayerId },
+    /// Dragging shape hint `index` of one of a layer's drawings along its
+    /// outline.
+    Hint { layer: LayerId, drawing: usize, index: usize },
     /// Posing a rig with the Bone tool: the joints above `layer` turn so
     /// the point grabbed on it (`local`, in its own coordinates) follows
     /// the pointer.
@@ -491,6 +494,58 @@ impl Handles {
             painter.rect_filled(square, 0.0, Color32::WHITE);
             painter.rect_stroke(square, 0.0, (1.0, SELECTION), StrokeKind::Middle);
         }
+    }
+}
+
+/// How near a shape hint the pointer must be to grab it, in points.
+const HINT_RADIUS: f32 = 8.0;
+
+/// The shape hints to show and edit on this frame: the selected layer's,
+/// when it's on the first frame of a shape tween (the drawing it morphs
+/// from) or on the swap it ends at (the one it morphs into). Returns the
+/// layer, the drawing, and whether that's the end.
+fn shown_hints(editor: &Editor) -> Option<(LayerId, usize, bool)> {
+    let (from, to) = editor.shape_tween_drawings()?;
+    let layer = editor.selected_layer()?;
+    if layer.morph_at(editor.frame).is_some() {
+        return None;
+    }
+    match layer.drawing_index_at(editor.frame) {
+        showing if showing == from => Some((layer.id, from, false)),
+        showing if showing == to => Some((layer.id, to, true)),
+        _ => None,
+    }
+}
+
+/// The shape hint under the pointer: its layer, drawing and index.
+fn hint_at(editor: &Editor, view: View, pointer: Pos2) -> Option<(LayerId, usize, usize)> {
+    let (id, drawing, _) = shown_hints(editor)?;
+    let layer = editor.doc.layer(id)?;
+    let to_stage = editor.doc.layer_matrix(layer, editor.frame);
+    let hints = &layer.drawings.get(drawing)?.hints;
+    let index =
+        hints.iter().position(|h| view.to_screen(to_stage.apply(*h)).distance(pointer) <= HINT_RADIUS)?;
+    Some((id, drawing, index))
+}
+
+/// Shape hints as Animate shows them: lettered circles, yellow on the
+/// drawing a tween starts from and green on the one it ends at.
+fn draw_hints(painter: &egui::Painter, editor: &Editor, view: View) {
+    let Some((id, drawing, end)) = shown_hints(editor) else { return };
+    let Some(layer) = editor.doc.layer(id) else { return };
+    let to_stage = editor.doc.layer_matrix(layer, editor.frame);
+    let color = if end { Color32::from_rgb(0x6c, 0xd0, 0x7a) } else { Color32::from_rgb(0xf2, 0xc9, 0x4c) };
+    for (i, hint) in layer.drawings[drawing].hints.iter().enumerate() {
+        let at = view.to_screen(to_stage.apply(*hint));
+        painter.circle(at, HINT_RADIUS, color, (1.0, Color32::from_black_alpha(160)));
+        let letter = char::from(b'a' + (i % 26) as u8).to_string();
+        painter.text(
+            at,
+            egui::Align2::CENTER_CENTER,
+            letter,
+            egui::FontId::proportional(11.0),
+            Color32::BLACK,
+        );
     }
 }
 
@@ -877,6 +932,30 @@ impl StageView {
                         deformer.point_bone_at(*bone, to_local.apply(p), frame);
                     }
                 }
+                Some(Gesture::Hint { layer, drawing, index }) => {
+                    let frame = editor.frame;
+                    let Some(to_local) =
+                        editor.doc.layer(*layer).and_then(|l| editor.doc.layer_matrix(l, frame).inverse())
+                    else {
+                        return;
+                    };
+                    let local = to_local.apply(p);
+                    if let Some(d) = editor.doc.layer_mut(*layer).and_then(|l| l.drawings.get_mut(*drawing)) {
+                        // Hints sit on an outline: the nearest one.
+                        let snapped = d
+                            .elements
+                            .iter()
+                            .filter_map(|e| {
+                                let (anchors, closed) = e.shape.to_anchors();
+                                inkframe_core::nearest_on_anchors(&anchors, closed, local)
+                            })
+                            .min_by(|a, b| a.distance.total_cmp(&b.distance))
+                            .map_or(local, |hit| hit.point);
+                        if let Some(hint) = d.hints.get_mut(*index) {
+                            *hint = snapped;
+                        }
+                    }
+                }
                 Some(Gesture::Pivot { layer }) => {
                     let frame = editor.frame;
                     let Some(layer) = editor.doc.layer(*layer) else { return };
@@ -1016,10 +1095,25 @@ impl StageView {
                 }
             }
         }
+        // Right-clicking a shape hint removes it from both drawings.
+        if response.secondary_clicked()
+            && editor.tool == Tool::Select
+            && let Some(pointer) = response.interact_pointer_pos()
+            && let Some((layer, _, index)) = hint_at(editor, view, pointer)
+            && let Some((from, to)) = editor.shape_tween_drawings()
+            && let Some(layer) = editor.doc.layer_mut(layer)
+        {
+            for drawing in [from, to] {
+                if index < layer.drawings[drawing].hints.len() {
+                    layer.drawings[drawing].hints.remove(index);
+                }
+            }
+        }
         if response.clicked() && editor.tool == Tool::Select {
             let alt = ui.input(|i| i.modifiers.alt);
             let on_handle = |pointer| {
-                Handles::for_selection(editor, view).and_then(|h| h.hit(pointer, view, alt)).is_some()
+                hint_at(editor, view, pointer).is_some()
+                    || Handles::for_selection(editor, view).and_then(|h| h.hit(pointer, view, alt)).is_some()
             };
             if let Some(pointer) = response.interact_pointer_pos().filter(|p| !on_handle(*p)) {
                 let tolerance = HIT_TOLERANCE / view.zoom;
@@ -1354,6 +1448,9 @@ impl StageView {
         }
         let p = view.to_local(press);
         match editor.tool {
+            Tool::Select if let Some((layer, drawing, index)) = hint_at(editor, view, press) => {
+                Some(Gesture::Hint { layer, drawing, index })
+            }
             Tool::Select => {
                 // Inside a pixel selection on the paint layer: move those
                 // pixels, as Photoshop's Move tool does.
@@ -2048,6 +2145,10 @@ impl StageView {
             }
             handles.draw(painter);
         }
+        // Over the handles: a hint is grabbed before a handle beneath it.
+        if editor.tool == Tool::Select {
+            draw_hints(painter, editor, view);
+        }
 
         let preview = (1.0, SELECTION);
         if let Some(Gesture::Marquee { start, current, .. }) = &self.gesture {
@@ -2112,7 +2213,7 @@ impl StageView {
             Some(Gesture::Move { .. } | Gesture::MovePixels { .. }) => CursorIcon::Move,
             Some(Gesture::Marquee { .. }) => CursorIcon::Crosshair,
             Some(Gesture::Rotate { .. }) => CursorIcon::Grabbing,
-            Some(Gesture::Pivot { .. }) => CursorIcon::Crosshair,
+            Some(Gesture::Pivot { .. } | Gesture::Hint { .. }) => CursorIcon::Crosshair,
             Some(Gesture::Reach { .. } | Gesture::Bend { .. }) => CursorIcon::Grabbing,
             Some(Gesture::EditAnchor { .. }) => CursorIcon::Move,
             Some(Gesture::BendPath { .. } | Gesture::PathHandle { .. }) => CursorIcon::Grabbing,
@@ -2384,6 +2485,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
         | Gesture::Skew { .. }
         | Gesture::Rotate { .. }
         | Gesture::Pivot { .. }
+        | Gesture::Hint { .. }
         | Gesture::Reach { .. }
         | Gesture::Bend { .. }
         | Gesture::MovePixels { .. }

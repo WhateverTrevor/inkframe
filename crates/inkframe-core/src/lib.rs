@@ -33,6 +33,7 @@ mod ik;
 mod image;
 mod lip_sync;
 mod mask;
+mod morph;
 mod paint;
 mod psd;
 mod retouch;
@@ -71,6 +72,7 @@ pub use image::{ImageAsset, ImageId};
 pub use lip_sync::{
     LipSyncError, MouthCue, MouthMap, MouthShape, cues_from_loudness, parse_papagayo, parse_rhubarb,
 };
+pub use morph::{ShapeTween, morph};
 pub use paint::{Canvas, CanvasId, TILE, premultiply, unpremultiply};
 pub use psd::{Psd, PsdError, PsdLayer};
 pub use retouch::{Retouch, RetouchStroke, ToneRange};

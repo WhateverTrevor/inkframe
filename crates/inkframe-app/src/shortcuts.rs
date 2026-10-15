@@ -61,6 +61,10 @@ pub const REMOVE_KEYFRAME: KeyboardShortcut = KeyboardShortcut::new(Modifiers::S
 pub const LAYER_START_HERE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::OpenBracket);
 pub const LAYER_END_HERE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::CloseBracket);
 
+/// Animate's shortcut for adding a shape hint.
+pub const ADD_SHAPE_HINT: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::H);
+
 // Flipping a layer through its drawings (mouth shapes, hand poses) from the
 // current frame on: plain [ and ], as in Toon Boom Harmony's drawing
 // substitution.

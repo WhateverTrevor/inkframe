@@ -996,8 +996,77 @@ impl Editor {
             elements.clear();
         }
         if let Some(layer) = self.doc.layer_mut(id) {
-            let index = layer.add_drawing(Drawing::new(layer.next_drawing_name(), elements));
+            let mut drawing = Drawing::new(layer.next_drawing_name(), elements);
+            // A copy keeps its shape hints, so a shape tween between the
+            // two lines up from the start.
+            if copy {
+                drawing.hints = layer.drawings[layer.drawing_index_at(frame)].hints.clone();
+            }
+            let index = layer.add_drawing(drawing);
             layer.expose(frame, index);
+        }
+    }
+
+    // --------------------------------------------------------- shape tweens
+
+    /// Whether the selected layer morphs through the current frame's span:
+    /// `None` if it can't, there being no later swap to morph into.
+    pub fn shape_tween_here(&self) -> Option<bool> {
+        let layer = self.selected_layer()?;
+        layer.exposure.iter().find(|key| key.frame > self.frame)?;
+        Some(layer.shape_tween_at(self.frame).is_some())
+    }
+
+    /// Makes the selected layer morph (or stop morphing) through the
+    /// current frame's span into the next swap, as Animate's Create Shape
+    /// Tween.
+    pub fn set_shape_tween(&mut self, on: bool) {
+        let frame = self.frame;
+        if let Some(layer) = self.selected_layer_mut() {
+            layer.set_shape_tween(frame, on);
+        }
+    }
+
+    /// The drawings a shape tween through the current frame runs between:
+    /// (from, to), as indices into the selected layer's drawings.
+    pub fn shape_tween_drawings(&self) -> Option<(usize, usize)> {
+        let layer = self.selected_layer()?;
+        // On a swap, the tween that ends there (the drawing showing is the
+        // one it morphs into), or else the one that starts there.
+        let on_swap = layer.exposure.iter().any(|k| k.frame == self.frame);
+        let ending =
+            on_swap.then(|| self.frame.checked_sub(1)).flatten().and_then(|f| layer.shape_tween_at(f));
+        let (start, end, _) = ending.or_else(|| layer.shape_tween_at(self.frame))?;
+        Some((layer.drawing_index_at(start), layer.drawing_index_at(end)))
+    }
+
+    /// Adds a shape hint to both drawings of the shape tween here, on the
+    /// outline of each drawing's first shape, ready to be dragged into
+    /// place. Each new hint goes a little further round than the last, from
+    /// the upper left, so they don't pile up on one spot.
+    pub fn add_shape_hint(&mut self) {
+        let Some((from, to)) = self.shape_tween_drawings() else { return };
+        let Some(layer) = self.selected_layer_mut() else { return };
+        for index in [from, to] {
+            let drawing = &mut layer.drawings[index];
+            let Some(first) = drawing.elements.first() else { continue };
+            let bounds = first.shape.bounds();
+            let (anchors, closed) = first.shape.to_anchors();
+            let angle = -2.4 + 0.7 * drawing.hints.len() as f32;
+            let reach = bounds.width().max(bounds.height());
+            let toward = bounds.center() + Point::new(angle.cos(), angle.sin()) * reach;
+            let on_outline =
+                inkframe_core::nearest_on_anchors(&anchors, closed, toward).map_or(toward, |hit| hit.point);
+            drawing.hints.push(on_outline);
+        }
+    }
+
+    /// Removes every shape hint from both drawings of the shape tween here.
+    pub fn clear_shape_hints(&mut self) {
+        let Some((from, to)) = self.shape_tween_drawings() else { return };
+        if let Some(layer) = self.selected_layer_mut() {
+            layer.drawings[from].hints.clear();
+            layer.drawings[to].hints.clear();
         }
     }
 
@@ -1778,5 +1847,37 @@ mod tests {
         editor.selection = Some(id);
         editor.undo();
         assert_eq!(editor.selection, None);
+    }
+
+    #[test]
+    fn shape_tweens_and_hints_through_the_editor() {
+        use inkframe_core::{Color, Element, Style};
+        let square = Element {
+            shape: Shape::Rect { width: 100.0, height: 100.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::BLACK), stroke: None },
+        };
+        let mut doc = Document::default();
+        let id = doc.add_layer("Morph", vec![square], 0, inkframe_core::Transform::default());
+        let mut editor = Editor::new(doc);
+        editor.select(Some(id));
+        assert_eq!(editor.shape_tween_here(), None, "nothing to morph into yet");
+
+        // A copy of the drawing from frame 10 on, then a tween into it.
+        editor.set_frame(10);
+        editor.new_drawing(true);
+        editor.set_frame(4);
+        assert_eq!(editor.shape_tween_here(), Some(false));
+        editor.set_shape_tween(true);
+        assert_eq!(editor.shape_tween_here(), Some(true));
+        assert_eq!(editor.shape_tween_drawings(), Some((0, 1)));
+
+        // A hint lands on both drawings, on the square's outline.
+        editor.add_shape_hint();
+        let layer = editor.selected_layer().unwrap();
+        let hint = layer.drawings[0].hints[0];
+        assert!((hint.x.abs() - 50.0).abs() < 1e-3 || (hint.y.abs() - 50.0).abs() < 1e-3);
+        assert_eq!(layer.drawings[1].hints.len(), 1);
+        editor.clear_shape_hints();
+        assert!(editor.selected_layer().unwrap().drawings.iter().all(|d| d.hints.is_empty()));
     }
 }
