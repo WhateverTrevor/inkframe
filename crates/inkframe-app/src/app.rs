@@ -87,6 +87,7 @@ enum Command {
     NewPaintLayer,
     NewFolder,
     CreateShapeTween,
+    AddCamera,
     RemoveShapeTween,
     AddShapeHint,
     RemoveShapeHints,
@@ -206,6 +207,17 @@ impl InkframeApp {
             }
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
+            }
+            if AutoScreenshot::camera() {
+                let camera = app.editor.doc.add_camera();
+                let pose = inkframe_core::Transform {
+                    rotation: -8.0,
+                    scale: inkframe_core::Point::new(1.4, 1.4),
+                    ..inkframe_core::Transform::at(inkframe_core::Point::new(900.0, 500.0))
+                };
+                app.editor.doc.set_pose(camera, 0, pose);
+                app.editor.select(Some(camera));
+                app.editor.tool = crate::editor::Tool::Camera;
             }
             if AutoScreenshot::shape_tween() {
                 use inkframe_core::{Color, Drawing, Element, Point, Shape, Style, Transform};
@@ -352,6 +364,7 @@ impl InkframeApp {
             }
             Command::NewFolder => editor.new_folder(),
             Command::CreateShapeTween => editor.set_shape_tween(true),
+            Command::AddCamera => editor.add_camera(),
             Command::RemoveShapeTween => editor.set_shape_tween(false),
             Command::AddShapeHint => editor.add_shape_hint(),
             Command::RemoveShapeHints => editor.clear_shape_hints(),
@@ -723,6 +736,10 @@ impl InkframeApp {
                 let tween = self.editor.shape_tween_here();
                 item(ui, "Create Shape Tween", None, Command::CreateShapeTween, tween == Some(false));
                 item(ui, "Remove Shape Tween", None, Command::RemoveShapeTween, tween == Some(true));
+                ui.separator();
+                let label =
+                    if self.editor.doc.camera_layer().is_some() { "Select Camera" } else { "Add Camera" };
+                item(ui, label, None, Command::AddCamera, true);
                 ui.separator();
                 item(ui, "First Frame", None, Command::FirstFrame, true);
                 item(ui, "Last Frame", None, Command::LastFrame, true);

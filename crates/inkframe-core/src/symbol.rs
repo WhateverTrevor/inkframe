@@ -134,6 +134,10 @@ impl Document {
     /// This works for layers inside symbols too (`frame` is then a symbol
     /// frame); the new symbol is as long as the timeline the layer was in.
     pub fn convert_layer_to_symbol(&mut self, id: LayerId, frame: u32) -> Option<SymbolId> {
+        // The camera and folders have nothing to put in a symbol.
+        if self.layer(id).is_some_and(|l| l.camera || l.folder) {
+            return None;
+        }
         let timeline = self.timeline_of(id)?;
         let duration = self.duration_of(timeline);
         let inner_id = self.allocate_layer_id();

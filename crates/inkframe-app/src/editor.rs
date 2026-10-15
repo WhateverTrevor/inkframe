@@ -29,6 +29,8 @@ pub enum Tool {
     /// Poses a rig by dragging: the joints above the dragged layer turn so
     /// it follows the pointer (inverse kinematics).
     Bone,
+    /// Pans, zooms and turns the camera (see `camera.rs` in the core).
+    Camera,
     /// Paints pixels on a paint layer (see `paint.rs` and `brush.rs`).
     Brush,
     Eraser,
@@ -54,10 +56,11 @@ impl Tool {
     /// The toolbar, top to bottom. Tools that do similar jobs share a
     /// slot, as in Photoshop: the slot shows whichever was used last, its
     /// key picks that one, and Shift with the key steps through the rest.
-    pub const GROUPS: [&'static [Tool]; 18] = [
+    pub const GROUPS: [&'static [Tool]; 19] = [
         &[Tool::Select],
         &[Tool::Subselect],
         &[Tool::Bone],
+        &[Tool::Camera],
         &[Tool::Pen],
         &[Tool::Rectangle],
         &[Tool::Ellipse],
@@ -95,6 +98,7 @@ impl Tool {
             Tool::Pencil => "Pencil",
             Tool::Text => "Text",
             Tool::Bone => "Bone",
+            Tool::Camera => "Camera",
             Tool::Brush => "Brush",
             Tool::Eraser => "Eraser",
             Tool::Eyedropper => "Eyedropper",
@@ -1005,6 +1009,13 @@ impl Editor {
             let index = layer.add_drawing(drawing);
             layer.expose(frame, index);
         }
+    }
+
+    /// Adds a camera to the main timeline (or finds the one there is) and
+    /// selects it.
+    pub fn add_camera(&mut self) {
+        let camera = self.doc.add_camera();
+        self.select(Some(camera));
     }
 
     // --------------------------------------------------------- shape tweens

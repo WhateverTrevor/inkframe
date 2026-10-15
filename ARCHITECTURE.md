@@ -39,6 +39,7 @@ The data model and the math behind animation.
 | File | What's in it |
 |---|---|
 | `document.rs` | `Document` (stage settings plus layers), `Layer`, `Element`, loading and saving |
+| `camera.rs` | The camera: a layer with `camera` set, kept on top of the main timeline (`keep_camera_on_top`), whose pose is the view (`camera_matrix`). Top-level main-timeline layers are placed through it in `parent_matrix`, so everything that draws or edits sees the camera's view; `Layer::depth` gives parallax (`FOCAL_LENGTH`) |
 | `channel.rs` | `Channel<T>`, one property's sorted keys, and `sample()`, which tweens between them; `AnyChannel` for type-independent editing; `Bend` and `MotionCurve`, which curve position tweens and travel them at an even speed |
 | `track.rs` | `Track`: a layer's four channels, auto-keying (`set_pose`), and loading older file formats |
 | `transform.rs` | `Transform`, the animatable properties: position, rotation, scale, skew, opacity; `from_affine` turns any matrix back into a pose |
@@ -118,7 +119,7 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 20. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 21. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
@@ -130,7 +131,7 @@ drawing; `drawing::drawings_or_elements` reads either), version 15
 joint rotation limits, version 16 deformers, version 17 paint layers,
 when project files became zips (see `container.rs`), version 18
 layer blend modes, version 19 layer folders and colours, and version 20
-shape tweens and shape hints;
+shape tweens and shape hints, and version 21 the camera and layer depth;
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 

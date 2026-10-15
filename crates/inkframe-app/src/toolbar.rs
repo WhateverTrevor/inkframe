@@ -211,6 +211,17 @@ fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) {
             painter.line_segment([at(0.0, 1.0), at(0.3, 0.95)], stroke);
             painter.line_segment([at(0.6, 0.15), at(0.85, 0.4)], Stroke::new(1.0, Color32::from_gray(140)));
         }
+        Tool::Camera => {
+            // A film camera from the side: body, lens and two reels.
+            let body = Rect::from_min_max(at(0.0, 0.42), at(0.7, 0.92));
+            painter.rect_stroke(body, 2.0, stroke, StrokeKind::Middle);
+            painter.add(egui::Shape::closed_line(
+                vec![at(0.7, 0.55), at(1.0, 0.42), at(1.0, 0.92), at(0.7, 0.8)],
+                stroke,
+            ));
+            painter.circle_stroke(at(0.18, 0.2), r.width() * 0.16, stroke);
+            painter.circle_stroke(at(0.52, 0.2), r.width() * 0.16, stroke);
+        }
         Tool::Bone => {
             // Two bones meeting at a joint, like an arm bent at the elbow.
             let (shoulder, elbow, hand) = (at(0.15, 0.2), at(0.45, 0.7), at(0.9, 0.35));

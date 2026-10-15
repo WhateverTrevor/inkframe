@@ -38,9 +38,9 @@ impl Document {
     }
 
     /// The part of [`Document::layer_matrix`] that comes from the layer's
-    /// parents: it maps the space the layer's pose is in (its parent's
-    /// coordinates) into the timeline's. The identity for a layer with no
-    /// parent.
+    /// parents and the camera: it maps the space the layer's pose is in
+    /// (its parent's coordinates) into the timeline's as shown. The
+    /// identity for a layer with no parent and no camera.
     pub fn parent_matrix(&self, layer: &Layer, frame: u32) -> Affine {
         let mut matrix = Affine::IDENTITY;
         let mut current = layer;
@@ -49,7 +49,8 @@ impl Document {
             matrix = self.own_matrix(parent, frame).pre_concat(matrix);
             current = parent;
         }
-        matrix
+        // Above the top of the chain, the camera's view (see `camera.rs`).
+        self.camera_for(current, frame).pre_concat(matrix)
     }
 
     /// A layer's pose and pivot, without its parents.
@@ -82,7 +83,7 @@ impl Document {
         }
         // Folders only group layers in the timeline; they have no place on
         // the stage to hang from or to hang.
-        if [child, parent].iter().any(|&id| self.layer(id).is_some_and(|l| l.folder)) {
+        if [child, parent].iter().any(|&id| self.layer(id).is_some_and(|l| l.folder || l.camera)) {
             return false;
         }
         let mut current = self.layer(parent);

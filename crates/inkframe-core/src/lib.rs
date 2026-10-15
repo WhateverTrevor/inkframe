@@ -14,6 +14,7 @@ mod anchor;
 mod audio;
 mod blend;
 mod brush;
+mod camera;
 mod channel;
 mod clipboard;
 mod color;
@@ -53,6 +54,7 @@ pub use anchor::{
 pub use audio::{AudioId, AudioTrack};
 pub use blend::BlendMode;
 pub use brush::{BrushMode, BrushSettings, BrushStroke, DabPath};
+pub use camera::FOCAL_LENGTH;
 pub use channel::{Animatable, AnyChannel, Bend, Channel, Key, MotionCurve, Tween};
 pub use clipboard::{Clipboard, CopiedKeyframe, CopiedLayers};
 pub use color::{Color, ParseColorError};
