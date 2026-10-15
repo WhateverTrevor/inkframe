@@ -73,8 +73,10 @@ impl LibraryView {
                                 }
                                 let tip = if uses == 0 { "Delete this symbol" } else { "Still in use" };
                                 if ui
-                                    .add_enabled(uses == 0, egui::Button::new("🗑").small())
-                                    .on_hover_text(tip)
+                                    .add_enabled(
+                                        uses == 0,
+                                        crate::icons::IconButton::new(crate::icons::Icon::Trash, tip),
+                                    )
                                     .on_disabled_hover_text(tip)
                                     .clicked()
                                 {

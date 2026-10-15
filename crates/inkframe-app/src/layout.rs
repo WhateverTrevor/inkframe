@@ -30,6 +30,9 @@ use std::path::PathBuf;
 use egui::{Align2, Color32, CursorIcon, FontId, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2};
 use serde::{Deserialize, Serialize};
 
+use crate::icons::{self, Icon};
+use crate::theme;
+
 /// The kinds of editor an area can show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Kind {
@@ -71,20 +74,25 @@ impl Kind {
         }
     }
 
-    /// A small symbol beside the name, from egui's built-in emoji font.
-    pub fn icon(self) -> &'static str {
+    pub fn icon(self) -> Icon {
         match self {
-            Kind::Stage => "🖼",
-            Kind::Timeline => "⏱",
-            Kind::Properties => "☰",
-            Kind::Tools => "🛠",
-            Kind::Library => "📚",
-            Kind::ExposureSheet => "📋",
-            Kind::GraphEditor => "📈",
-            Kind::ToolSettings => "⚙",
-            Kind::Audio => "🔊",
-            Kind::Document => "📄",
+            Kind::Stage => Icon::Stage,
+            Kind::Timeline => Icon::Timeline,
+            Kind::Properties => Icon::Properties,
+            Kind::Tools => Icon::Tools,
+            Kind::Library => Icon::Library,
+            Kind::ExposureSheet => Icon::ExposureSheet,
+            Kind::GraphEditor => Icon::Graph,
+            Kind::ToolSettings => Icon::ToolSettings,
+            Kind::Audio => Icon::Speaker,
+            Kind::Document => Icon::Document,
         }
+    }
+
+    /// Whether the area holds a column of settings, which wants a margin,
+    /// rather than an editor drawn edge to edge (the stage, the timeline).
+    pub fn is_panel(self) -> bool {
+        matches!(self, Kind::Properties | Kind::ToolSettings | Kind::Library | Kind::Audio | Kind::Document)
     }
 
     /// The timeline and the graph editor are one editor in two modes, so
@@ -172,7 +180,7 @@ impl Default for Layout {
         };
         let (tools, stage, properties, timeline) =
             (area(Kind::Tools), area(Kind::Stage), area(Kind::Properties), area(Kind::Timeline));
-        let middle = Node::Split { across: true, fraction: 0.79, first: stage, second: properties };
+        let middle = Node::Split { across: true, fraction: 0.76, first: stage, second: properties };
         // Room for the tools in two columns on a laptop-sized window.
         let top = Node::Split { across: true, fraction: 0.075, first: tools, second: Box::new(middle) };
         let root = Node::Split { across: false, fraction: 0.72, first: Box::new(top), second: timeline };
@@ -339,6 +347,7 @@ impl Layout {
             let body = Rect::from_min_max(pos2(area_rect.left(), header.bottom()), area_rect.max).shrink(1.0);
             // Each area on the usual panel colour, as the fixed panels were.
             ui.painter().rect_filled(area_rect, 0.0, ui.visuals().panel_fill);
+            let body = if kind.is_panel() { body.shrink2(vec2(10.0, 6.0)) } else { body };
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body).id_salt(("area", id.0)));
             child.set_clip_rect(body);
             content(&mut child, id, kind);
@@ -367,15 +376,13 @@ impl Layout {
             egui::UiBuilder::new().max_rect(rect.shrink2(vec2(6.0, 1.0))).id_salt(("header", id.0)),
         );
         header.horizontal_centered(|ui| {
-            let title = format!("{} {}  ⏷", kind.icon(), kind.name());
-            ui.menu_button(title, |ui| {
+            let button = kind_button(ui, kind);
+            egui::Popup::menu(&button).show(|ui| {
                 if let Some(chosen) = kind_menu(ui, kind) {
                     self.set_kind(id, chosen);
                     ui.close();
                 }
-            })
-            .response
-            .on_hover_text("Change what this area shows");
+            });
         });
         response.on_hover_text("Right-click for the area menu").context_menu(|ui| {
             let half = 0.5;
@@ -600,6 +607,59 @@ fn corner_action(
     Some(CornerAction::Split { area: drag.area, direction, fraction, new_first })
 }
 
+/// The header's editor button: the kind's icon and name and a chevron,
+/// flat until hovered.
+fn kind_button(ui: &mut egui::Ui, kind: Kind) -> egui::Response {
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let galley = ui.painter().layout_no_wrap(kind.name().to_owned(), font, theme::TEXT);
+    let size = vec2(galley.size().x + 50.0, HEADER - 4.0);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let popup = egui::Popup::default_response_id(&response);
+    if kind == Kind::Stage
+        && crate::screenshot::AutoScreenshot::area_menu()
+        && ui.ctx().cumulative_frame_nr() == 2
+    {
+        egui::Popup::open_id(ui.ctx(), popup);
+    }
+    let open = egui::Popup::is_id_open(ui.ctx(), popup);
+    if response.hovered() || open {
+        ui.painter().rect_filled(rect, 4.0, if open { theme::CONTROL_HOVER } else { theme::CONTROL });
+    }
+    let painter = ui.painter();
+    let icon = Rect::from_center_size(pos2(rect.left() + 14.0, rect.center().y), Vec2::splat(14.0));
+    icons::paint(painter, kind.icon(), icon, theme::TEXT);
+    painter.galley(pos2(icon.right() + 7.0, rect.center().y - galley.size().y / 2.0), galley, theme::TEXT);
+    let chevron = Rect::from_center_size(pos2(rect.right() - 10.0, rect.center().y), Vec2::splat(9.0));
+    icons::paint(painter, Icon::Chevron, chevron, theme::TEXT_WEAK);
+    response.on_hover_text("Change what this area shows")
+}
+
+/// One editor in the menu: icon and name, highlighted if it's the
+/// area's current one or under the pointer.
+fn kind_item(ui: &mut egui::Ui, kind: Kind, current: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(150.0, 24.0), Sense::click());
+    let fill = if current {
+        Some(theme::ACCENT_DIM)
+    } else if response.hovered() {
+        Some(theme::CONTROL_HOVER)
+    } else {
+        None
+    };
+    if let Some(fill) = fill {
+        ui.painter().rect_filled(rect, 4.0, fill);
+    }
+    let icon = Rect::from_center_size(pos2(rect.left() + 14.0, rect.center().y), Vec2::splat(14.0));
+    icons::paint(ui.painter(), kind.icon(), icon, theme::TEXT);
+    ui.painter().text(
+        pos2(icon.right() + 9.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        kind.name(),
+        egui::TextStyle::Button.resolve(ui.style()),
+        theme::TEXT,
+    );
+    response
+}
+
 /// The list of editors, a column per group, with the area's current one
 /// marked. Returns the one clicked.
 fn kind_menu(ui: &mut egui::Ui, current: Kind) -> Option<Kind> {
@@ -607,11 +667,10 @@ fn kind_menu(ui: &mut egui::Ui, current: Kind) -> Option<Kind> {
     ui.horizontal_top(|ui| {
         for (group, kinds) in Kind::GROUPS {
             ui.vertical(|ui| {
-                ui.set_min_width(130.0);
-                ui.weak(group);
+                ui.spacing_mut().item_spacing.y = 2.0;
+                ui.label(egui::RichText::new(group.to_uppercase()).small().color(theme::TEXT_WEAK));
                 for &kind in kinds {
-                    let label = format!("{}  {}", kind.icon(), kind.name());
-                    if ui.selectable_label(kind == current, label).clicked() {
+                    if kind_item(ui, kind, kind == current).clicked() {
                         chosen = Some(kind);
                     }
                 }

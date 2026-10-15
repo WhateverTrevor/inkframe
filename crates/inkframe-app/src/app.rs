@@ -148,7 +148,7 @@ pub struct InkframeApp {
 
 impl InkframeApp {
     pub fn new(cc: &eframe::CreationContext<'_>, open_path: Option<PathBuf>) -> Self {
-        cc.egui_ctx.set_theme(egui::Theme::Dark);
+        crate::theme::apply(&cc.egui_ctx);
         // Indexing the system's fonts takes a moment; do it now, off the UI
         // thread, so the first text drawn doesn't pause the app.
         std::thread::spawn(inkframe_render::load_fonts);
@@ -871,6 +871,13 @@ impl InkframeApp {
 
     fn handle_close_request(&mut self, ctx: &egui::Context) {
         if !ctx.input(|i| i.viewport().close_requested()) || self.allow_close {
+            return;
+        }
+        // A screenshot run quits without asking: nobody is there to
+        // answer, and an unanswered dialog can take its default and save
+        // the file that was opened.
+        if self.screenshot.is_some() {
+            self.allow_close = true;
             return;
         }
         let export_ok = !self.export.is_running() || {
