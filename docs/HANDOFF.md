@@ -96,9 +96,9 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     gestures convert the pointer into that space (`Handles::space`,
     `into_parent_space`). Option/Alt-drag moves the pivot (a plain drag
     still moves the layer). Selecting a parent and child together only
-    transforms the parent (`Document::hangs_from`). The rest of the plan,
-    after drawing substitution (34), lip sync (35), bones/IK (36) and
-    deformers (37): an exposure sheet.
+    transforms the parent (`Document::hangs_from`). The rest of the plan
+    is drawing substitution (34), lip sync (35), bones/IK (36), deformers
+    (37) and the exposure sheet (38).
 34. Drawing substitution (format v14): `Layer::drawings` (never empty)
     and `Layer::exposure` hold keys, in `drawing.rs`. Everything that
     draws, hits or edits a layer reads `elements_at(frame)`; the editor's
@@ -127,6 +127,13 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     so Subselection points show where the drawing is at rest. Bone tool
     drags green joints (`Gesture::Bend`). Images and text don't bend.
     F6/⇧F6 and dragging summary keys include the deformer's keys.
+38. Exposure sheet: `xsheet.rs`, a window opened from the Timeline menu
+    (no format change). Columns for layers with several drawings and for
+    sounds; double-click to type a drawing name (Enter moves down a row,
+    a new name makes a blank drawing), right-click to pick or clear.
+    `Layer::clear_exposure` and `Layer::drawing_named` in `drawing.rs`.
+    This completes the Harmony/OpenToonz character plan; bundling
+    Rhubarb for lip sync is the agreed follow-up (needs download OK).
 
 ## Not yet verified by hand
 

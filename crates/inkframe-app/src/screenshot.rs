@@ -19,6 +19,7 @@
 //! * `INKFRAME_SCREENSHOT_GRAPH=1` shows the value graph in the timeline.
 //! * `INKFRAME_SCREENSHOT_LIPSYNC=1` opens the Lip Sync window for the selected layer;
 //!   `=apply` also applies it from loudness once the sound has loaded.
+//! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 
 use std::path::PathBuf;
 
@@ -30,13 +31,23 @@ const SETTLE_FRAMES: u32 = 10;
 pub struct AutoScreenshot {
     path: PathBuf,
     frames_until_capture: u32,
+    /// When the app started. Windows fade in over a moment of real time,
+    /// however fast frames come, so capture also waits for `SETTLE_TIME`.
+    started: std::time::Instant,
     requested: bool,
 }
+
+const SETTLE_TIME: std::time::Duration = std::time::Duration::from_millis(600);
 
 impl AutoScreenshot {
     pub fn from_env() -> Option<Self> {
         let path = std::env::var_os("INKFRAME_SCREENSHOT")?;
-        Some(Self { path: path.into(), frames_until_capture: SETTLE_FRAMES, requested: false })
+        Some(Self {
+            path: path.into(),
+            frames_until_capture: SETTLE_FRAMES,
+            started: std::time::Instant::now(),
+            requested: false,
+        })
     }
 
     /// Applies the optional scene-setup variables to the editor.
@@ -85,6 +96,11 @@ impl AutoScreenshot {
         std::env::var_os("INKFRAME_SCREENSHOT_LIPSYNC").is_some()
     }
 
+    /// Whether to open the exposure sheet.
+    pub fn exposure_sheet() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_XSHEET").is_some()
+    }
+
     /// Whether to also press its Apply button.
     pub fn lip_sync_apply() -> bool {
         std::env::var("INKFRAME_SCREENSHOT_LIPSYNC").is_ok_and(|v| v == "apply")
@@ -127,11 +143,11 @@ impl AutoScreenshot {
             ctx.request_repaint();
             return;
         }
-        if self.frames_until_capture == 0 {
+        if self.frames_until_capture == 0 && self.started.elapsed() >= SETTLE_TIME {
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
             self.requested = true;
         } else {
-            self.frames_until_capture -= 1;
+            self.frames_until_capture = self.frames_until_capture.saturating_sub(1);
             // egui only repaints on input; keep frames coming until we capture.
             ctx.request_repaint();
         }

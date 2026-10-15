@@ -26,6 +26,7 @@ mod text_edit;
 mod timeline;
 mod toolbar;
 mod value_graph;
+mod xsheet;
 
 use std::path::PathBuf;
 
