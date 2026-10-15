@@ -84,9 +84,11 @@ pub fn scale_pose(
     // the height of a perfectly straight horizontal pencil line).
     const MIN_SPAN: f32 = 1e-3;
 
-    let radians = start.rotation.to_radians();
-    let into_rotated_frame = Affine::rotate(-radians);
-    let q = into_rotated_frame.apply(pointer - start.position);
+    // The layer's frame with scale left in: rotation and skew undone. (With
+    // no skew this is just the rotation.)
+    let frame = turn_and_slant(start);
+    let Some(into_frame) = frame.inverse() else { return *start };
+    let q = into_frame.apply(pointer - start.position);
 
     let h = handle.local_position(bounds);
     let a = if options.from_pivot { Point::ZERO } else { handle.opposite().local_position(bounds) };
@@ -116,8 +118,54 @@ pub fn scale_pose(
     }
 
     let anchor_drift = Point::new((s.x - scale.x) * a.x, (s.y - scale.y) * a.y);
-    let position = start.position + Affine::rotate(radians).apply(anchor_drift);
+    let position = start.position + frame.apply(anchor_drift);
     Transform { position, scale, ..*start }
+}
+
+/// A layer's rotation and skew together, without its scale or position.
+fn turn_and_slant(pose: &Transform) -> Affine {
+    let skew = Point::new(pose.skew.x.to_radians(), pose.skew.y.to_radians());
+    Affine::rotate(pose.rotation.to_radians()).pre_concat(Affine::skew(skew))
+}
+
+/// The pose that slants the layer by dragging the edge `edge` (an edge
+/// handle: top, bottom, left or right) from `grab` to `pointer`, both in
+/// stage coordinates, starting from `start`. The opposite edge stays put,
+/// as with Animate's Free Transform.
+///
+/// Working in the layer's rotated frame, a point `p` on the layer sits at
+/// `(sx·px − tan(kx)·sy·py, tan(ky)·sx·px + sy·py)`. So sliding the top edge
+/// sideways by `d` relative to the bottom one changes `tan(kx)` by
+/// `−d / (sy·(top − bottom))`, and likewise for the side edges and `ky`.
+/// Then, as for scaling, the position shifts so the opposite edge's middle
+/// lands back where it was.
+pub fn skew_pose(
+    start: &Transform,
+    bounds: Rect,
+    edge: ScaleHandle,
+    grab: Point,
+    pointer: Point,
+) -> Transform {
+    // Beyond this a layer would slant into a line.
+    const LIMIT: f32 = 89.0;
+    let into_rotated = Affine::rotate(-start.rotation.to_radians());
+    let moved = into_rotated.apply(pointer - grab);
+    let (e, o) = (edge.local_position(bounds), edge.opposite().local_position(bounds));
+    let s = start.scale;
+
+    let mut skew = start.skew;
+    if edge.y != 0 && (s.y * (e.y - o.y)).abs() > 1e-3 {
+        let tan = start.skew.x.to_radians().tan() - moved.x / (s.y * (e.y - o.y));
+        skew.x = tan.atan().to_degrees().clamp(-LIMIT, LIMIT);
+    } else if edge.x != 0 && (s.x * (e.x - o.x)).abs() > 1e-3 {
+        let tan = start.skew.y.to_radians().tan() + moved.y / (s.x * (e.x - o.x));
+        skew.y = tan.atan().to_degrees().clamp(-LIMIT, LIMIT);
+    }
+
+    let slanted = Transform { skew, ..*start };
+    let pinned = Point::new(s.x * o.x, s.y * o.y);
+    let drift = turn_and_slant(start).apply(pinned) - turn_and_slant(&slanted).apply(pinned);
+    Transform { position: start.position + drift, ..slanted }
 }
 
 /// Tracks a rotation drag around a layer's pivot.
@@ -193,6 +241,37 @@ mod tests {
 
     const BOTTOM_RIGHT: ScaleHandle = ScaleHandle { x: 1, y: 1 };
     const RIGHT: ScaleHandle = ScaleHandle { x: 1, y: 0 };
+
+    #[test]
+    fn dragging_the_top_edge_slants_with_the_bottom_pinned() {
+        // The 100×50 box around its pivot; drag the top edge 50 px right,
+        // as far as the box is tall.
+        let start = Transform::at(Point::new(200.0, 200.0));
+        let top = ScaleHandle { x: 0, y: -1 };
+        let grab = Point::new(200.0, 175.0);
+        let pose = skew_pose(&start, bounds(), top, grab, grab + Point::new(50.0, 0.0));
+
+        let to_stage = pose.to_affine();
+        let bottom_middle = to_stage.apply(Point::new(0.0, 25.0));
+        let top_middle = to_stage.apply(Point::new(0.0, -25.0));
+        assert!(close(bottom_middle, Point::new(200.0, 225.0)), "bottom stays: {bottom_middle:?}");
+        assert!(close(top_middle, Point::new(250.0, 175.0)), "top follows: {top_middle:?}");
+        assert!((pose.skew.x - 45.0).abs() < 0.01, "a 50 px lean over 50 px of height: {}", pose.skew.x);
+    }
+
+    #[test]
+    fn scaling_a_skewed_layer_keeps_the_opposite_corner_pinned() {
+        let start = Transform {
+            skew: Point::new(20.0, 0.0),
+            rotation: 15.0,
+            ..Transform::at(Point::new(100.0, 100.0))
+        };
+        let pinned = stage_point(&start, ScaleHandle { x: -1, y: -1 }.local_position(bounds()));
+        let pointer = stage_point(&start, BOTTOM_RIGHT.local_position(bounds())) + Point::new(30.0, 20.0);
+        let pose = scale_pose(&start, bounds(), BOTTOM_RIGHT, pointer, ScaleOptions::default());
+        assert!(close(stage_point(&pose, ScaleHandle { x: -1, y: -1 }.local_position(bounds())), pinned));
+        assert!(close(stage_point(&pose, BOTTOM_RIGHT.local_position(bounds())), pointer));
+    }
 
     #[test]
     fn corner_drag_pins_the_opposite_corner() {

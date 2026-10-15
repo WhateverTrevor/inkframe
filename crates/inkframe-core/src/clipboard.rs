@@ -69,6 +69,7 @@ pub struct CopiedKeyframe {
     pub position: Key<Point>,
     pub rotation: Key<f32>,
     pub scale: Key<Point>,
+    pub skew: Key<Point>,
     pub opacity: Key<f32>,
 }
 
@@ -80,6 +81,7 @@ impl CopiedKeyframe {
             position: track.position.key_or_sample(frame)?,
             rotation: track.rotation.key_or_sample(frame)?,
             scale: track.scale.key_or_sample(frame)?,
+            skew: track.skew.key_or_sample(frame)?,
             opacity: track.opacity.key_or_sample(frame)?,
         })
     }
@@ -89,6 +91,7 @@ impl CopiedKeyframe {
         track.position.put(Key { frame, ..self.position });
         track.rotation.put(Key { frame, ..self.rotation });
         track.scale.put(Key { frame, ..self.scale });
+        track.skew.put(Key { frame, ..self.skew });
         track.opacity.put(Key { frame, ..self.opacity });
     }
 }

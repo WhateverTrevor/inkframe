@@ -15,7 +15,7 @@ use inkframe_render::{RenderOptions, output_size, render_timeline_into};
 
 use crate::convert::{to_color32, to_point};
 use crate::editor::{Editor, OnionSkin, Surrounding, Tool};
-use crate::handles::{RotateDrag, ScaleHandle, ScaleOptions, scale_pose};
+use crate::handles::{RotateDrag, ScaleHandle, ScaleOptions, scale_pose, skew_pose};
 use crate::motion_path;
 use crate::pen::PenPath;
 use crate::subselect::{AnchorPart, move_part, remove_anchor, toggle_smooth};
@@ -28,6 +28,9 @@ const FIT_MARGIN: f32 = 24.0;
 const MAX_TEXTURE_SIDE: f32 = 4096.0;
 const MIN_ZOOM: f32 = 0.02;
 const MAX_ZOOM: f32 = 64.0;
+/// How close to a selection box edge a press skews instead of moving, in
+/// screen points.
+const SKEW_REACH: f32 = 3.0;
 /// How far from a shape a click still counts as hitting it, in screen points.
 const HIT_TOLERANCE: f32 = 4.0;
 /// Side length of the square scale handles, in screen points.
@@ -135,6 +138,9 @@ enum Gesture {
         bounds: StageRect,
         group: Vec<(LayerId, Transform)>,
     },
+    /// Dragging an edge of the selection box to slant the layer. `grab` is
+    /// where the drag started, in the timeline's coordinates.
+    Skew { layer: LayerId, edge: ScaleHandle, start: Transform, bounds: StageRect, grab: Point },
     /// Dragging the rotation knob or a corner's rotate zone.
     Rotate { layer: LayerId, drag: RotateDrag, group: Vec<(LayerId, Transform)> },
     /// Dragging an anchor point or one of its handles with the Subselection
@@ -190,6 +196,9 @@ struct OutlineHit {
 enum HandleHit {
     Scale(ScaleHandle),
     Rotate,
+    /// An edge of the box, between its handles, which slants the layer.
+    /// Named by the edge's middle handle.
+    Skew(ScaleHandle),
 }
 
 /// Screen positions of the transform handles around the selected layer.
@@ -282,6 +291,24 @@ impl Handles {
         if let Some((handle, _)) = self.scale.iter().find(|(_, pos)| near(pos)) {
             return Some(HandleHit::Scale(*handle));
         }
+        // Along an edge between the handles: skew, as in Animate's Free
+        // Transform. One layer at a time, like the skew setting itself.
+        if self.group.is_empty() {
+            let corner = |x, y| self.scale.iter().find(|(h, _)| h.x == x && h.y == y).map(|(_, pos)| *pos);
+            let edges = [
+                ((0, -1), (-1, -1), (1, -1)),
+                ((1, 0), (1, -1), (1, 1)),
+                ((0, 1), (1, 1), (-1, 1)),
+                ((-1, 0), (-1, 1), (-1, -1)),
+            ];
+            for ((x, y), from, to) in edges {
+                if let (Some(a), Some(b)) = (corner(from.0, from.1), corner(to.0, to.1))
+                    && distance_to_segment(p, a, b) <= SKEW_REACH
+                {
+                    return Some(HandleHit::Skew(ScaleHandle { x, y }));
+                }
+            }
+        }
         let inside = self
             .pose
             .to_affine()
@@ -292,8 +319,12 @@ impl Handles {
     }
 
     fn cursor(&self, hit: HandleHit) -> CursorIcon {
-        let HandleHit::Scale(handle) = hit else {
-            return CursorIcon::Grab;
+        let handle = match hit {
+            HandleHit::Scale(handle) => handle,
+            HandleHit::Rotate => return CursorIcon::Grab,
+            // Top and bottom edges slide sideways; the sides slide up and down.
+            HandleHit::Skew(edge) if edge.y != 0 => return CursorIcon::ResizeColumn,
+            HandleHit::Skew(_) => return CursorIcon::ResizeRow,
         };
         let Some((_, pos)) = self.scale.iter().find(|(h, _)| *h == handle) else {
             return CursorIcon::Default;
@@ -611,6 +642,9 @@ impl StageView {
                     } else {
                         transform_group(editor, group, start, &pose);
                     }
+                }
+                Some(Gesture::Skew { layer, edge, start, bounds, grab }) => {
+                    editor.set_pose(*layer, skew_pose(start, *bounds, *edge, *grab, p));
                 }
                 Some(Gesture::Rotate { layer, drag, group }) => {
                     let pose = drag.update(p, shift);
@@ -1073,6 +1107,10 @@ impl StageView {
                             let drag = RotateDrag::new(handles.pose, p);
                             return Some(Gesture::Rotate { layer, drag, group: handles.group });
                         }
+                        Some(HandleHit::Skew(edge)) => {
+                            let (start, bounds) = (handles.pose, handles.bounds);
+                            return Some(Gesture::Skew { layer, edge, start, bounds, grab: p });
+                        }
                         None => {}
                     }
                 }
@@ -1453,6 +1491,7 @@ impl StageView {
             Some(Gesture::EditAnchor { .. }) => CursorIcon::Move,
             Some(Gesture::BendPath { .. } | Gesture::PathHandle { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Scale { handle, .. }) => handle_cursor(HandleHit::Scale(*handle)),
+            Some(Gesture::Skew { edge, .. }) => handle_cursor(HandleHit::Skew(*edge)),
             Some(Gesture::DrawShape { .. } | Gesture::Pencil { .. }) => CursorIcon::Crosshair,
             None => {
                 let hovered = handles.zip(response.hover_pos()).and_then(|(h, p)| h.hit(p, view));
@@ -1681,6 +1720,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
         }
         Gesture::Move { .. }
         | Gesture::Scale { .. }
+        | Gesture::Skew { .. }
         | Gesture::Rotate { .. }
         | Gesture::EditAnchor { .. }
         | Gesture::BendPath { .. }
@@ -1754,10 +1794,13 @@ struct TextEditing {
 ///
 /// Each layer's position, relative to the group's middle, is scaled and
 /// turned the same way the group was, and its own scale and rotation change
-/// by the same amounts. That's exact for uniform scaling and any rotation.
-/// Stretching a rotated layer along the group's axes would need a skew,
-/// which layers don't have, so it stretches along the layer's own axes:
-/// close, though not the same.
+/// by the same amounts. That's exact for even scaling, any rotation, and
+/// layers that aren't turned.
+///
+/// Stretching a turned (or skewed) layer unevenly along the group's axes
+/// slants it, which its own scale can't express. For those, the layer's new
+/// matrix is worked out directly and turned back into a pose, skew included
+/// (`Transform::from_affine`).
 fn transform_group(
     editor: &mut Editor,
     group: &[(LayerId, Transform)],
@@ -1767,18 +1810,38 @@ fn transform_group(
     let factor = Point::new(after.scale.x / before.scale.x, after.scale.y / before.scale.y);
     let turn = (after.rotation - before.rotation).to_radians();
     let (sin, cos) = turn.sin_cos();
+    let uneven = (factor.x - factor.y).abs() > 1e-4;
+    let group_change = before.to_affine().inverse().map(|undo| after.to_affine().pre_concat(undo));
     for &(id, start) in group {
-        let offset = start.position - before.position;
-        let scaled = Point::new(offset.x * factor.x, offset.y * factor.y);
-        let turned = Point::new(scaled.x * cos - scaled.y * sin, scaled.x * sin + scaled.y * cos);
-        let pose = Transform {
-            position: after.position + turned,
-            rotation: start.rotation + (after.rotation - before.rotation),
-            scale: Point::new(start.scale.x * factor.x, start.scale.y * factor.y),
-            opacity: start.opacity,
+        let slanted = start.rotation % 90.0 != 0.0 || start.skew != Point::ZERO;
+        let pose = match group_change {
+            Some(change) if uneven && slanted => {
+                let mut pose = start.from_affine(change.pre_concat(start.to_affine()));
+                // The matrix only knows the angle modulo a full turn; keep the
+                // layer's own count of turns, so a tween through it still spins
+                // the way it did.
+                let intended = start.rotation + (after.rotation - before.rotation);
+                pose.rotation += 360.0 * ((intended - pose.rotation) / 360.0).round();
+                pose
+            }
+            _ => {
+                let offset = start.position - before.position;
+                let scaled = Point::new(offset.x * factor.x, offset.y * factor.y);
+                let turned = Point::new(scaled.x * cos - scaled.y * sin, scaled.x * sin + scaled.y * cos);
+                Transform {
+                    position: after.position + turned,
+                    rotation: start.rotation + (after.rotation - before.rotation),
+                    scale: Point::new(start.scale.x * factor.x, start.scale.y * factor.y),
+                    ..start
+                }
+            }
         };
         editor.set_pose(id, pose);
     }
+}
+
+fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
+    to_point(p).distance_to_segment(to_point(a), to_point(b))
 }
 
 fn overlaps(a: StageRect, b: StageRect) -> bool {
@@ -2240,6 +2303,23 @@ mod tests {
         assert!(pose(a).position.distance(Point::new(400.0, 0.0)) < 1e-3, "{:?}", pose(a).position);
         assert!(pose(b).position.distance(Point::new(400.0, 400.0)) < 1e-3);
         assert_eq!(pose(a).rotation, 90.0);
+    }
+
+    #[test]
+    fn dragging_the_top_edge_skews_the_layer() {
+        // The box spans 300–500 both ways. Grab the top edge away from its
+        // middle handle and slide it 100 px right.
+        let (editor, id) = editor_with_selected_box();
+        let mut h = harness(editor);
+        let edge = screen(&h, 350.0, 300.0);
+        let target = screen(&h, 450.0, 300.0);
+        drag(&mut h, edge, &[edge + vec2(5.0, 0.0), target]);
+
+        let pose = pose(&h, id);
+        assert!((pose.skew.x - 26.565).abs() < 1.0, "atan(100 / 200): {}", pose.skew.x);
+        // The bottom edge's middle didn't move.
+        let bottom = pose.to_affine().apply(Point::new(0.0, 100.0));
+        assert!(bottom.distance(Point::new(400.0, 500.0)) < 2.0, "{bottom:?}");
     }
 
     #[test]

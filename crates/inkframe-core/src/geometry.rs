@@ -174,6 +174,14 @@ impl Affine {
         Affine { a: sx, d: sy, ..Self::IDENTITY }
     }
 
+    /// Slanting by the angles in `skew` (radians), as in Animate: a positive
+    /// x skew leans vertical lines to the right at the top (y points down,
+    /// so the top is negative y), and a positive y skew tilts horizontal
+    /// lines downward to the right.
+    pub fn skew(skew: Point) -> Self {
+        Affine { b: skew.y.tan(), c: -skew.x.tan(), ..Self::IDENTITY }
+    }
+
     /// Rotation by `radians`. Because y points down, positive angles turn
     /// clockwise on screen.
     pub fn rotate(radians: f32) -> Self {

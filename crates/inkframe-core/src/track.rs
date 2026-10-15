@@ -13,18 +13,20 @@ pub enum Property {
     Position,
     Rotation,
     Scale,
+    Skew,
     Opacity,
 }
 
 impl Property {
-    pub const ALL: [Property; 4] =
-        [Property::Position, Property::Rotation, Property::Scale, Property::Opacity];
+    pub const ALL: [Property; 5] =
+        [Property::Position, Property::Rotation, Property::Scale, Property::Skew, Property::Opacity];
 
     pub fn name(self) -> &'static str {
         match self {
             Property::Position => "Position",
             Property::Rotation => "Rotation",
             Property::Scale => "Scale",
+            Property::Skew => "Skew",
             Property::Opacity => "Opacity",
         }
     }
@@ -45,6 +47,7 @@ pub struct Track {
     pub position: Channel<Point>,
     pub rotation: Channel<f32>,
     pub scale: Channel<Point>,
+    pub skew: Channel<Point>,
     pub opacity: Channel<f32>,
     /// Turn the layer to face the way it's moving, as with Animate's
     /// "Orient to path": the direction of travel is added to its rotation.
@@ -60,6 +63,7 @@ impl Track {
             position: Channel::new(frame, pose.position),
             rotation: Channel::new(frame, pose.rotation),
             scale: Channel::new(frame, pose.scale),
+            skew: Channel::new(frame, pose.skew),
             opacity: Channel::new(frame, pose.opacity),
             orient_to_path: false,
         }
@@ -70,6 +74,7 @@ impl Track {
             Property::Position => &self.position,
             Property::Rotation => &self.rotation,
             Property::Scale => &self.scale,
+            Property::Skew => &self.skew,
             Property::Opacity => &self.opacity,
         }
     }
@@ -79,15 +84,16 @@ impl Track {
             Property::Position => &mut self.position,
             Property::Rotation => &mut self.rotation,
             Property::Scale => &mut self.scale,
+            Property::Skew => &mut self.skew,
             Property::Opacity => &mut self.opacity,
         }
     }
 
-    fn channels_mut(&mut self) -> [&mut dyn AnyChannel; 4] {
-        [&mut self.position, &mut self.rotation, &mut self.scale, &mut self.opacity]
+    fn channels_mut(&mut self) -> [&mut dyn AnyChannel; 5] {
+        [&mut self.position, &mut self.rotation, &mut self.scale, &mut self.skew, &mut self.opacity]
     }
 
-    fn channels(&self) -> [&dyn AnyChannel; 4] {
+    fn channels(&self) -> [&dyn AnyChannel; 5] {
         Property::ALL.map(|p| self.channel(p))
     }
 
@@ -104,6 +110,7 @@ impl Track {
             position: self.position.sample(frame).unwrap_or(identity.position),
             rotation,
             scale: self.scale.sample(frame).unwrap_or(identity.scale),
+            skew: self.skew.sample(frame).unwrap_or(identity.skew),
             opacity: self.opacity.sample(frame).unwrap_or(identity.opacity),
         }
     }
@@ -149,6 +156,7 @@ impl Track {
         update(&mut self.position, frame, current.position, pose.position);
         update(&mut self.rotation, frame, current.rotation, pose.rotation);
         update(&mut self.scale, frame, current.scale, pose.scale);
+        update(&mut self.skew, frame, current.skew, pose.skew);
         update(&mut self.opacity, frame, current.opacity, pose.opacity);
     }
 
@@ -251,6 +259,9 @@ enum TrackFormat {
         position: Vec<Key<Point>>,
         rotation: Vec<Key<f32>>,
         scale: Vec<Key<Point>>,
+        /// Missing in files from before skew existed (format 11 and older).
+        #[serde(default)]
+        skew: Vec<Key<Point>>,
         opacity: Vec<Key<f32>>,
         #[serde(default)]
         orient_to_path: bool,
@@ -271,13 +282,21 @@ struct KeyframeV1 {
 impl From<TrackFormat> for Track {
     fn from(format: TrackFormat) -> Self {
         match format {
-            TrackFormat::Current { position, rotation, scale, opacity, orient_to_path } => Track {
-                position: Channel::from_keys(position),
-                rotation: Channel::from_keys(rotation),
-                scale: Channel::from_keys(scale),
-                opacity: Channel::from_keys(opacity),
-                orient_to_path,
-            },
+            TrackFormat::Current { position, rotation, scale, skew, opacity, orient_to_path } => {
+                // Older files have no skew keys; give them one unskewed key
+                // on the same frame as their first position key.
+                let first = position.iter().map(|k| k.frame).min().unwrap_or(0);
+                let skew =
+                    if skew.is_empty() { Channel::new(first, Point::ZERO) } else { Channel::from_keys(skew) };
+                Track {
+                    position: Channel::from_keys(position),
+                    rotation: Channel::from_keys(rotation),
+                    scale: Channel::from_keys(scale),
+                    skew,
+                    opacity: Channel::from_keys(opacity),
+                    orient_to_path,
+                }
+            }
             // Each old keyframe becomes a key on every property, with the
             // same easing, so the animation plays back exactly as before.
             TrackFormat::Version1(keys) => {
@@ -300,6 +319,7 @@ impl From<TrackFormat> for Track {
                     position: channel(&keys, |t| t.position),
                     rotation: channel(&keys, |t| t.rotation),
                     scale: channel(&keys, |t| t.scale),
+                    skew: channel(&keys, |t| t.skew),
                     opacity: channel(&keys, |t| t.opacity),
                     orient_to_path: false,
                 }
@@ -420,6 +440,16 @@ mod tests {
         track.set_pose(5, pose);
         assert_eq!(track.rotation.key_at(5).unwrap().value, 10.0);
         assert!((track.sample(5.0).rotation - 100.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn tracks_saved_before_skew_load_unskewed() {
+        let mut track = Track::new(3, at_x(5.0));
+        let mut json: serde_json::Value = serde_json::to_value(&track).unwrap();
+        json.as_object_mut().unwrap().remove("skew");
+        track = serde_json::from_value(json).unwrap();
+        assert_eq!(track.skew.key_frames(), [3]);
+        assert_eq!(track.sample(3.0).skew, Point::ZERO);
     }
 
     #[test]

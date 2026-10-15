@@ -12,7 +12,7 @@ A checkpoint for picking development back up. Last updated 2026-10-14
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
-- **File format:** version 11. Older versions load and upgrade automatically
+- **File format:** version 12. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -81,6 +81,10 @@ A checkpoint for picking development back up. Last updated 2026-10-14
 30. Input methods when typing on the stage: the stage reports its caret
     (`PlatformOutput::ime`), composing text is shown underlined and
     replaced on commit (`TextCursor::composing`).
+31. Skew (format v12): a fifth animatable property (`Property::Skew`),
+    applied as scale → skew → rotate; drag a selection box edge to slant.
+    Uneven group stretching of rotated layers is now exact
+    (`Transform::from_affine`).
 
 ## Not yet verified by hand
 
@@ -110,16 +114,13 @@ more features, since real use will show what matters. Open items:
    project feels slow.
 3. **Color emoji** would need bitmap glyph support in the text renderer;
    emoji are black and white (bundled Noto Emoji) for now.
-4. **Skew** on the layer transform, which would also make uneven group
-   scaling of rotated layers exact.
-5. **Verify by hand:** the Windows installer has never been run on a real
+4. **Verify by hand:** the Windows installer has never been run on a real
    PC; copy/paste between two windows; on-stage typing feel.
 
 Smaller ideas noted along the way:
 
 - With several layers selected, the properties panel edits only the
-  last-picked layer. Stretching a group unevenly stretches rotated layers
-  along their own axes (layers have no skew), so it's close, not exact.
+  last-picked layer. Groups scale and rotate but can't be skewed together.
 - ⌘Z while typing on the stage does nothing; the whole typing session
   undoes as one step afterwards. Input methods have only been tested with
   simulated events, not with a real Chinese/Japanese/Korean keyboard.

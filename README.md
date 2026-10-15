@@ -95,6 +95,7 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Select several | Shift-click shapes, or drag a box over empty stage; Shift- or ⌘-click layer names in the timeline; `⌘A` selects all, `⌘⇧A` none. Dragging any of them moves them all, the handles around them scale and rotate them as a group, and delete, duplicate, copy/cut and F6 keyframes apply to every selected layer |
 | Scale | Drag a square handle. Shift keeps proportions, Option/Alt scales from the pivot |
 | Rotate | Drag the round knob, or just outside a corner. Shift snaps to 15° |
+| Skew | Drag an edge of the selection box between its handles to slant the layer, the opposite edge staying put; or type skew angles in the properties panel. Skew animates like any property |
 | Draw | Rectangle (`R`), Oval (`O`), Pencil (`Y`). Hold Shift for squares and circles |
 | Reshape | Subselection tool (`A`): drag a shape's points, or a selected point's handles. Alt/Option moves one handle alone for a sharp corner; Alt/Option-click a point to switch it between corner and smooth; Delete removes the point. Rectangles and ovals become editable paths on the first edit |
 | Pen (`P`) | Click for corners, drag for curves. Click the first point to close the shape; Enter, Esc or clicking the last point ends an open line. Backspace removes the last point, Shift snaps to 45°. Click a selected shape's outline to add a point without changing its curve |

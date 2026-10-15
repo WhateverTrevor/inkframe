@@ -1211,16 +1211,16 @@ mod tests {
         expand(&mut h);
         let (timeline, editor, _) = h.state();
         let rows = timeline.rows(editor);
-        assert_eq!(rows.len(), 5);
-        assert_eq!(rows[4].property, Some(Property::Opacity));
+        assert_eq!(rows.len(), 6);
+        assert_eq!(rows[5].property, Some(Property::Opacity));
     }
 
     #[test]
     fn dragging_a_property_key_moves_only_that_property() {
         let (mut h, id) = harness();
         expand(&mut h);
-        // Rows: layer, Position, Rotation, Scale, Opacity.
-        let (from, to) = (cell(&h, 4, 10), cell(&h, 4, 15));
+        // Rows: layer, Position, Rotation, Scale, Skew, Opacity.
+        let (from, to) = (cell(&h, 5, 10), cell(&h, 5, 15));
         drag(&mut h, from, to);
 
         let track = &h.state().1.doc.layer(id).unwrap().track;

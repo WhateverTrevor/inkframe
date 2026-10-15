@@ -183,6 +183,14 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
                             ui.add(DragValue::new(value).prefix(axis).suffix("%").speed(1.0)).changed();
                     }
                 }
+                Property::Skew => {
+                    // At ±90° a layer would slant into a line.
+                    for (axis, value) in ["x ", "y "].into_iter().zip([&mut pose.skew.x, &mut pose.skew.y]) {
+                        let drag =
+                            DragValue::new(value).prefix(axis).suffix("°").speed(0.5).range(-89.0..=89.0);
+                        changed |= ui.add(drag).changed();
+                    }
+                }
                 Property::Opacity => {
                     changed |= ui.add(egui::Slider::new(&mut opacity_pct, 0.0..=100.0).suffix("%")).changed();
                 }

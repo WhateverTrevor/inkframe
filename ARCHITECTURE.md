@@ -41,7 +41,7 @@ The data model and the math behind animation.
 | `document.rs` | `Document` (stage settings plus layers), `Layer`, `Element`, loading and saving |
 | `channel.rs` | `Channel<T>`, one property's sorted keys, and `sample()`, which tweens between them; `AnyChannel` for type-independent editing; `Bend` and `MotionCurve`, which curve position tweens and travel them at an even speed |
 | `track.rs` | `Track`: a layer's four channels, auto-keying (`set_pose`), and loading older file formats |
-| `transform.rs` | `Transform`, the animatable properties: position, rotation, scale, opacity |
+| `transform.rs` | `Transform`, the animatable properties: position, rotation, scale, skew, opacity; `from_affine` turns any matrix back into a pose |
 | `easing.rs` | Easing curves, including a CSS-style cubic-Bézier solver |
 | `shape.rs` | Rectangles, ellipses, Bézier paths, images, styles, and hit-testing |
 | `freehand.rs` | Turns jittery pointer samples into a smooth path |
@@ -101,13 +101,13 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 11. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 12. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
 symbols, version 5 audio tracks, version 6 images, version 7 text and
 version 8 project font files, version 9 curved motion paths, version 10
-motion guides and version 11 masks;
+motion guides, version 11 masks and version 12 skew;
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 

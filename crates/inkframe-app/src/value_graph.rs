@@ -213,6 +213,7 @@ impl Curves {
             Property::Position => &["x", "y"],
             Property::Rotation => &["°"],
             Property::Scale => &["x %", "y %"],
+            Property::Skew => &["x °", "y °"],
             Property::Opacity => &["%"],
         };
         Self { names, keys, samples: Box::new(move |frame| values(&track, property, frame)) }
@@ -251,6 +252,7 @@ fn values(track: &Track, property: Property, frame: f32) -> Vec<f32> {
         Property::Position => vec![pose.position.x, pose.position.y],
         Property::Rotation => vec![track.rotation.sample(frame).unwrap_or_default()],
         Property::Scale => vec![pose.scale.x * 100.0, pose.scale.y * 100.0],
+        Property::Skew => vec![pose.skew.x, pose.skew.y],
         Property::Opacity => vec![pose.opacity * 100.0],
     }
 }
@@ -280,6 +282,16 @@ fn set_component(track: &mut Track, property: Property, frame: u32, component: u
                 s.y = value / 100.0
             }
             track.scale.set(frame, s);
+        }
+        Property::Skew => {
+            let mut k = track.skew.sample(frame as f32).unwrap_or(Point::ZERO);
+            let value = value.clamp(-89.0, 89.0);
+            if component == 0 {
+                k.x = value
+            } else {
+                k.y = value
+            }
+            track.skew.set(frame, k);
         }
         Property::Opacity => track.opacity.set(frame, (value / 100.0).clamp(0.0, 1.0)),
     }
@@ -427,6 +439,7 @@ pub fn curve_names(property: Property) -> &'static [&'static str] {
         Property::Position => &["x", "y"],
         Property::Rotation => &["rotation"],
         Property::Scale => &["x scale", "y scale"],
+        Property::Skew => &["x skew", "y skew"],
         Property::Opacity => &["opacity"],
     }
 }
