@@ -39,6 +39,22 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
         .show(ui, |ui| document_section(ui, editor));
 }
 
+/// The current tool's settings on their own, for a Tool Settings area.
+pub fn tool_settings(ui: &mut egui::Ui, editor: &mut Editor) {
+    if editor.tool.paints() {
+        brush_section(ui, editor);
+    } else if editor.tool.selects() {
+        selection_section(ui, editor);
+    } else {
+        ui.weak(format!("The {} tool has no settings.", editor.tool.name()));
+    }
+}
+
+/// The document settings on their own, for a Document area.
+pub fn document(ui: &mut egui::Ui, editor: &mut Editor) {
+    document_section(ui, editor);
+}
+
 /// The painting tool's settings, while one is in use, as Photoshop's
 /// options bar shows them: just the ones that tool has.
 fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {

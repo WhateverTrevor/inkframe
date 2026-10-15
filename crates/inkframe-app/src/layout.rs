@@ -39,11 +39,22 @@ pub enum Kind {
     Tools,
     Library,
     ExposureSheet,
+    /// The timeline's value graph on its own.
+    GraphEditor,
+    /// The current tool's options (the brush, the selection), which the
+    /// Properties area also shows.
+    ToolSettings,
+    Audio,
+    Document,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 6] =
-        [Kind::Stage, Kind::Timeline, Kind::Properties, Kind::Tools, Kind::Library, Kind::ExposureSheet];
+    /// Every kind, grouped as the area menu lists them, Blender-style.
+    pub const GROUPS: [(&'static str, &'static [Kind]); 3] = [
+        ("General", &[Kind::Stage, Kind::Tools, Kind::ToolSettings, Kind::Properties]),
+        ("Animation", &[Kind::Timeline, Kind::GraphEditor, Kind::ExposureSheet]),
+        ("Project", &[Kind::Library, Kind::Audio, Kind::Document]),
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -53,7 +64,33 @@ impl Kind {
             Kind::Tools => "Tools",
             Kind::Library => "Library",
             Kind::ExposureSheet => "Exposure Sheet",
+            Kind::GraphEditor => "Graph Editor",
+            Kind::ToolSettings => "Tool Settings",
+            Kind::Audio => "Audio",
+            Kind::Document => "Document",
         }
+    }
+
+    /// A small symbol beside the name, from egui's built-in emoji font.
+    pub fn icon(self) -> &'static str {
+        match self {
+            Kind::Stage => "🖼",
+            Kind::Timeline => "⏱",
+            Kind::Properties => "☰",
+            Kind::Tools => "🛠",
+            Kind::Library => "📚",
+            Kind::ExposureSheet => "📋",
+            Kind::GraphEditor => "📈",
+            Kind::ToolSettings => "⚙",
+            Kind::Audio => "🔊",
+            Kind::Document => "📄",
+        }
+    }
+
+    /// The timeline and the graph editor are one editor in two modes, so
+    /// an area switches between them and keeps its scroll and zoom.
+    pub fn is_timeline(self) -> bool {
+        matches!(self, Kind::Timeline | Kind::GraphEditor)
     }
 }
 
@@ -167,6 +204,15 @@ impl Layout {
         areas.into_iter().map(|(id, kind, _)| (id, kind)).collect()
     }
 
+    /// Turns every timeline into a graph editor (for screenshots).
+    pub fn timelines_to_graphs(&mut self) {
+        for (id, kind) in self.areas_unmaximized() {
+            if kind == Kind::Timeline {
+                self.set_kind(id, Kind::GraphEditor);
+            }
+        }
+    }
+
     pub fn set_kind(&mut self, area: AreaId, kind: Kind) {
         if let Some(Node::Area { kind: k, .. }) = find_mut(&mut self.root, area) {
             *k = kind;
@@ -255,6 +301,16 @@ impl Layout {
         {
             self.set_kind(sheet, Kind::ExposureSheet);
         }
+        if let Some(timeline) = find(self, Kind::Timeline)
+            && let Some(graph) = self.split(timeline, Direction::Across, 0.5, false)
+        {
+            self.set_kind(graph, Kind::GraphEditor);
+        }
+        if let Some(properties) = find(self, Kind::Properties)
+            && let Some(settings) = self.split(properties, Direction::Down, 0.4, true)
+        {
+            self.set_kind(settings, Kind::ToolSettings);
+        }
     }
 
     pub fn toggle_maximized(&mut self, area: AreaId) {
@@ -304,24 +360,23 @@ impl Layout {
     /// the area menu on right-click.
     fn header(&mut self, ui: &mut egui::Ui, id: AreaId, kind: Kind, rect: Rect) {
         ui.painter().rect_filled(rect, 0.0, ui.visuals().faint_bg_color);
+        // The right-click target goes in first, so the editor menu drawn
+        // over it gets its clicks: in egui the widget added last is on top.
+        let response = ui.interact(rect, ui.id().with(("header_menu", id.0)), Sense::click());
         let mut header = ui.new_child(
             egui::UiBuilder::new().max_rect(rect.shrink2(vec2(6.0, 1.0))).id_salt(("header", id.0)),
         );
         header.horizontal_centered(|ui| {
-            let mut chosen = kind;
-            egui::ComboBox::from_id_salt(("kind", id.0)).selected_text(kind.name()).width(130.0).show_ui(
-                ui,
-                |ui| {
-                    for k in Kind::ALL {
-                        ui.selectable_value(&mut chosen, k, k.name());
-                    }
-                },
-            );
-            if chosen != kind {
-                self.set_kind(id, chosen);
-            }
+            let title = format!("{} {}  ⏷", kind.icon(), kind.name());
+            ui.menu_button(title, |ui| {
+                if let Some(chosen) = kind_menu(ui, kind) {
+                    self.set_kind(id, chosen);
+                    ui.close();
+                }
+            })
+            .response
+            .on_hover_text("Change what this area shows");
         });
-        let response = ui.interact(rect, ui.id().with(("header_menu", id.0)), Sense::click());
         response.on_hover_text("Right-click for the area menu").context_menu(|ui| {
             let half = 0.5;
             if ui.button("Split Side by Side").clicked() {
@@ -545,6 +600,27 @@ fn corner_action(
     Some(CornerAction::Split { area: drag.area, direction, fraction, new_first })
 }
 
+/// The list of editors, a column per group, with the area's current one
+/// marked. Returns the one clicked.
+fn kind_menu(ui: &mut egui::Ui, current: Kind) -> Option<Kind> {
+    let mut chosen = None;
+    ui.horizontal_top(|ui| {
+        for (group, kinds) in Kind::GROUPS {
+            ui.vertical(|ui| {
+                ui.set_min_width(130.0);
+                ui.weak(group);
+                for &kind in kinds {
+                    let label = format!("{}  {}", kind.icon(), kind.name());
+                    if ui.selectable_label(kind == current, label).clicked() {
+                        chosen = Some(kind);
+                    }
+                }
+            });
+        }
+    });
+    chosen
+}
+
 fn collect_areas(node: &Node, rect: Rect, out: &mut Vec<(AreaId, Kind, Rect)>) {
     match node {
         Node::Area { id, kind } => out.push((*id, *kind, rect)),
@@ -648,6 +724,67 @@ mod tests {
 
     fn id_of(layout: &Layout, kind: Kind) -> AreaId {
         layout.areas(window()).into_iter().find(|(_, k, _)| *k == kind).unwrap().0
+    }
+
+    /// Draws the layout for one frame with `events`, returning where each
+    /// piece of text was drawn.
+    fn frame(ctx: &egui::Context, layout: &mut Layout, events: Vec<egui::Event>) -> Vec<(String, Rect)> {
+        let input = egui::RawInput { screen_rect: Some(window()), events, ..Default::default() };
+        let mut output = ctx.run_ui(input, |ui| {
+            egui::CentralPanel::no_frame().show(ui, |ui| {
+                layout.show(ui, |_, _, _| {});
+            });
+        });
+        // No renderer here to upload egui's font textures to.
+        output.textures_delta.clear();
+        let mut texts = Vec::new();
+        for clipped in output.shapes {
+            if let egui::Shape::Text(text) = clipped.shape {
+                texts.push((text.galley.text().to_owned(), text.visual_bounding_rect()));
+            }
+        }
+        texts
+    }
+
+    fn click(at: Pos2) -> Vec<egui::Event> {
+        let press = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        vec![egui::Event::PointerMoved(at), press(true), press(false)]
+    }
+
+    #[test]
+    fn the_header_menu_changes_what_an_area_shows() {
+        let ctx = egui::Context::default();
+        let mut layout = Layout::default();
+        let stage = id_of(&layout, Kind::Stage);
+        let texts = frame(&ctx, &mut layout, Vec::new());
+        let find = |texts: &[(String, Rect)], name: &str| {
+            texts.iter().find(|(text, _)| text.contains(name)).map(|(_, rect)| rect.center())
+        };
+        let button = find(&texts, "Stage").expect("the stage's header");
+        frame(&ctx, &mut layout, click(button));
+        let texts = frame(&ctx, &mut layout, Vec::new());
+        // Every editor is listed.
+        for (_, kinds) in Kind::GROUPS {
+            for kind in kinds {
+                assert!(find(&texts, kind.name()).is_some(), "{} listed", kind.name());
+            }
+        }
+        let item = find(&texts, "Graph Editor").unwrap();
+        frame(&ctx, &mut layout, click(item));
+        assert_eq!(layout.kind_of(stage), Some(Kind::GraphEditor));
+    }
+
+    #[test]
+    fn every_kind_is_in_the_menu_once() {
+        let listed: Vec<Kind> = Kind::GROUPS.iter().flat_map(|(_, kinds)| kinds.iter().copied()).collect();
+        let unique: std::collections::HashSet<Kind> = listed.iter().copied().collect();
+        assert_eq!(listed.len(), unique.len());
+        assert_eq!(listed.len(), 10);
     }
 
     #[test]
