@@ -96,7 +96,7 @@ impl Shape {
                 (rect_anchors(bounds, radius), true)
             }
             Shape::Ellipse { radius_x, radius_y } => (ellipse_anchors(*radius_x, *radius_y), true),
-            Shape::Image { .. } | Shape::Text(_) => (Vec::new(), false),
+            Shape::Image { .. } | Shape::Text(_) | Shape::Paint { .. } => (Vec::new(), false),
         }
     }
 }

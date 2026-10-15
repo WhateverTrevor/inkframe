@@ -9,6 +9,9 @@
 //! Pasting into the same project reuses its symbols rather than making
 //! copies of them, so a pasted instance stays an instance of the same symbol.
 //!
+//! Painted canvases come along as their tiles, PNG-encoded and then
+//! base64 text, since the clipboard holds text.
+//!
 //! On the system clipboard it's JSON with a first line that marks it as
 //! Inkframe's, so it can travel between windows (or two copies of the app)
 //! without being mistaken for ordinary text.
@@ -16,6 +19,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::{Deserialize, Serialize};
 
 use crate::channel::Key;
@@ -23,6 +28,7 @@ use crate::document::{Document, Layer, LayerId, TimelineId};
 use crate::font_file::FontFile;
 use crate::geometry::Point;
 use crate::image::{ImageAsset, ImageId};
+use crate::paint::{CanvasId, decode_tile, encode_tile};
 use crate::shape::Shape;
 use crate::symbol::{Symbol, SymbolId};
 use crate::track::Track;
@@ -62,6 +68,18 @@ pub struct CopiedLayers {
     pub images: Vec<ImageAsset>,
     /// The project font files their text uses, with full paths.
     pub fonts: Vec<FontFile>,
+    /// The canvases their paint shapes use, with the pixels.
+    #[serde(default)]
+    pub canvases: Vec<CopiedCanvas>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CopiedCanvas {
+    pub id: CanvasId,
+    pub width: u32,
+    pub height: u32,
+    /// Each painted tile: its column, row, and PNG as base64.
+    pub tiles: Vec<(u32, u32, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -138,7 +156,23 @@ impl Document {
             .filter(|f| f.families.iter().any(|family| families.contains(family.as_str())))
             .map(|f| FontFile { path: f.resolve(project_dir), ..f.clone() })
             .collect();
-        Some(CopiedLayers { layers, symbols, images, fonts })
+        let canvas_ids: BTreeSet<CanvasId> = shapes()
+            .filter_map(|s| if let Shape::Paint { canvas, .. } = s { Some(*canvas) } else { None })
+            .collect();
+        let canvases = canvas_ids
+            .into_iter()
+            .filter_map(|id| {
+                let canvas = self.canvas(id)?;
+                let tiles = canvas
+                    .tiles()
+                    .filter_map(|((column, row), pixels)| {
+                        Some((column, row, BASE64.encode(encode_tile(pixels).ok()?)))
+                    })
+                    .collect();
+                Some(CopiedCanvas { id, width: canvas.width, height: canvas.height, tiles })
+            })
+            .collect();
+        Some(CopiedLayers { layers, symbols, images, fonts, canvases })
     }
 
     /// Adds copied layers to the top of `timeline`, moved by `offset`, and
@@ -161,6 +195,23 @@ impl Document {
         for font in &copied.fonts {
             self.add_font_file(&font.path, project_dir, font.families.clone());
         }
+        // Canvases: always new ones, so painting on the pasted layer leaves
+        // the original alone.
+        let canvases: BTreeMap<CanvasId, CanvasId> = copied
+            .canvases
+            .iter()
+            .map(|copy| {
+                let id = self.add_canvas(copy.width, copy.height);
+                let canvas = self.canvas_mut(id).expect("just added");
+                for (column, row, png) in &copy.tiles {
+                    let pixels = BASE64.decode(png).ok().and_then(|bytes| decode_tile(&bytes).ok());
+                    if let Some(pixels) = pixels {
+                        canvas.set_tile((*column, *row), pixels);
+                    }
+                }
+                (copy.id, id)
+            })
+            .collect();
 
         // Symbols: reuse ones this project already has, unchanged, under the
         // same id (pasting into the project they came from). Everything else
@@ -183,11 +234,11 @@ impl Document {
             }
             let taken = self.symbols.iter().any(|s| s.name == symbol.name);
             let name = if taken { format!("{} copy", symbol.name) } else { symbol.name.clone() };
-            let layers = self.fresh_layers(&symbol.layers, &images, &symbols, None, Point::ZERO);
+            let layers = self.fresh_layers(&symbol.layers, &images, &canvases, &symbols, None, Point::ZERO);
             self.symbols.push(Symbol { id, name, duration: symbol.duration, layers });
         }
 
-        let layers = self.fresh_layers(&copied.layers, &images, &symbols, Some(timeline), offset);
+        let layers = self.fresh_layers(&copied.layers, &images, &canvases, &symbols, Some(timeline), offset);
         let ids: Vec<LayerId> = layers.iter().map(|l| l.id).collect();
         if let Some(stack) = self.layers_of_mut(timeline) {
             stack.extend(layers);
@@ -203,6 +254,7 @@ impl Document {
         &mut self,
         layers: &[Layer],
         images: &BTreeMap<ImageId, ImageId>,
+        canvases: &BTreeMap<CanvasId, CanvasId>,
         symbols: &BTreeMap<SymbolId, SymbolId>,
         timeline: Option<TimelineId>,
         offset: Point,
@@ -232,8 +284,12 @@ impl Document {
                     instance.symbol = symbols.get(&instance.symbol).copied().unwrap_or(instance.symbol);
                 }
                 for element in copy.all_elements_mut() {
-                    if let Shape::Image { image, .. } = &mut element.shape {
-                        *image = images.get(image).copied().unwrap_or(*image);
+                    match &mut element.shape {
+                        Shape::Image { image, .. } => *image = images.get(image).copied().unwrap_or(*image),
+                        Shape::Paint { canvas, .. } => {
+                            *canvas = canvases.get(canvas).copied().unwrap_or(*canvas)
+                        }
+                        _ => {}
                     }
                 }
                 if offset != Point::ZERO {

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::color::Color;
 use crate::geometry::{Point, Rect};
 use crate::image::ImageId;
+use crate::paint::CanvasId;
 use crate::text::Text;
 
 /// Geometry of a drawable shape, in the owning layer's local coordinates.
@@ -35,6 +36,14 @@ pub enum Shape {
     },
     /// Lines of text, painted with the element's fill and stroke.
     Text(Text),
+    /// Painted pixels: one of the document's canvases (see `paint.rs`),
+    /// one pixel per unit, centered on the origin. Its element's style is
+    /// ignored.
+    Paint {
+        canvas: CanvasId,
+        width: u32,
+        height: u32,
+    },
 }
 
 /// A sequence of connected line and curve segments.
@@ -167,6 +176,9 @@ impl Shape {
             Shape::Path(path) => path.tight_bounds(),
             Shape::Image { width, height, .. } => Rect::from_center_size(Point::ZERO, *width, *height),
             Shape::Text(text) => text.measured,
+            Shape::Paint { width, height, .. } => {
+                Rect::from_center_size(Point::ZERO, *width as f32, *height as f32)
+            }
         }
     }
 
@@ -189,6 +201,11 @@ impl Shape {
             // having to find an opaque pixel would just get in the way.
             Shape::Image { width, height, .. } => {
                 Rect::from_center_size(Point::ZERO, *width, *height).expand(tolerance).contains(p)
+            }
+            // The whole canvas. The document checks the actual pixels (see
+            // `Document::element_hit`), which a shape can't see.
+            Shape::Paint { width, height, .. } => {
+                Rect::from_center_size(Point::ZERO, *width as f32, *height as f32).contains(p)
             }
             // Anywhere in the block selects it, gaps between letters
             // included; aiming for the inside of an "o" would be maddening.

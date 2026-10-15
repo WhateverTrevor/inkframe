@@ -66,6 +66,7 @@ enum Command {
     NextDrawing,
     /// Opens the Lip Sync window for the selected layer.
     LipSync,
+    NewPaintLayer,
     PlayPause,
     StepBackward,
     StepForward,
@@ -85,6 +86,8 @@ enum Command {
 }
 
 const FILE_EXTENSION: &str = "inkf";
+/// How much `[` and `]` shrink or grow the brush.
+const BRUSH_STEP: f32 = 1.2;
 /// Font files Inkframe can import.
 const FONT_EXTENSIONS: [&str; 3] = ["ttf", "otf", "ttc"];
 /// Sound files Inkframe can import (see `inkframe-audio`).
@@ -117,6 +120,7 @@ impl InkframeApp {
         // Indexing the system's fonts takes a moment; do it now, off the UI
         // thread, so the first text drawn doesn't pause the app.
         std::thread::spawn(inkframe_render::load_fonts);
+        crate::tablet::install();
 
         let editor = match open_path {
             Some(path) => Editor::open(&path).unwrap_or_else(|err| {
@@ -223,8 +227,15 @@ impl InkframeApp {
             Command::NewDrawing => editor.new_drawing(false),
             Command::DuplicateDrawing => editor.new_drawing(true),
             Command::DeleteDrawing => editor.delete_shown_drawing(),
+            // While painting, [ and ] change the brush size instead, as in
+            // Photoshop.
+            Command::PreviousDrawing if editor.tool.paints() => editor.resize_brush(1.0 / BRUSH_STEP),
+            Command::NextDrawing if editor.tool.paints() => editor.resize_brush(BRUSH_STEP),
             Command::PreviousDrawing => editor.cycle_drawing(-1),
             Command::NextDrawing => editor.cycle_drawing(1),
+            Command::NewPaintLayer => {
+                editor.add_paint_layer();
+            }
             Command::LipSync => self.lip_sync.open(editor),
             Command::PlayPause => editor.toggle_playback(),
             Command::StepBackward => editor.step(-1),
@@ -478,6 +489,7 @@ impl InkframeApp {
                     .is_some_and(|id| self.editor.layers().first().is_some_and(|bottom| bottom.id != id));
                 item(ui, "Mask", None, Command::MaskLayerBelow, below);
                 ui.separator();
+                item(ui, "New Paint Layer", None, Command::NewPaintLayer, true);
                 // Drawing substitution: only for layers with their own
                 // artwork, not symbol instances.
                 let drawn = self.editor.selected_layer().filter(|l| l.instance.is_none());

@@ -72,6 +72,11 @@ pub fn tool_key(tool: Tool) -> Key {
         Tool::Ellipse => Key::O,
         Tool::Pencil => Key::Y,
         Tool::Text => Key::T,
-        Tool::Bone => Key::B,
+        // Photoshop's keys for its painting tools; Bone, which had B
+        // before painting arrived, takes K.
+        Tool::Bone => Key::K,
+        Tool::Brush => Key::B,
+        Tool::Eraser => Key::E,
+        Tool::Eyedropper => Key::I,
     }
 }

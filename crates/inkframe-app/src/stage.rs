@@ -7,9 +7,9 @@
 
 use egui::{Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{
-    Affine, Anchor, Bend, Document, Element, LayerId, MotionCurve, Path, Point, Rect as StageRect, Shape,
-    Style, Text, TimelineId, Transform, fit_freehand_path, insert_anchor, nearest_on_anchors,
-    path_from_anchors,
+    Affine, Anchor, Bend, BrushMode, BrushStroke, CanvasId, Color, Document, Element, LayerId, MotionCurve,
+    Path, Point, Rect as StageRect, Shape, Style, Text, TimelineId, Transform, fit_freehand_path,
+    insert_anchor, nearest_on_anchors, path_from_anchors,
 };
 use inkframe_render::{RenderOptions, output_size, render_timeline_into};
 
@@ -19,6 +19,7 @@ use crate::handles::{RotateDrag, ScaleHandle, ScaleOptions, scale_pose, skew_pos
 use crate::motion_path;
 use crate::pen::PenPath;
 use crate::subselect::{AnchorPart, move_part, remove_anchor, toggle_smooth};
+use crate::tablet;
 use crate::text_edit::{TextCursor, caret_position, position_at, selection_boxes, word_at};
 
 /// Gap kept around the stage when it's zoomed to fit the window, in points.
@@ -184,6 +185,21 @@ enum Gesture {
     PathHandle { layer: LayerId, frame: u32, out: bool },
     /// Space + drag scrolls the view, like the hand tool in Animate.
     Pan,
+}
+
+/// A brush or eraser stroke being painted.
+struct Painting {
+    layer: LayerId,
+    canvas: CanvasId,
+    /// The canvas's size, to find its pixels from the layer's coordinates.
+    size: (u32, u32),
+    stroke: BrushStroke,
+    /// Where the smoothed stroke has got to, on screen. It trails the pen
+    /// by `Editor::smoothing`, which steadies a shaky line.
+    smoothed: Pos2,
+    /// Where the pen really is, and how hard it's pressed, for the stroke
+    /// to catch up to when it lifts.
+    pen: tablet::Sample,
 }
 
 /// Something on a motion path under the pointer.
@@ -436,6 +452,8 @@ pub struct StageView {
     anchor_selection: Option<AnchorRef>,
     /// Text being typed into on the stage.
     text_editing: Option<TextEditing>,
+    /// A brush or eraser stroke in progress.
+    painting: Option<Painting>,
     texture: Option<egui::TextureHandle>,
     rendered: Option<RenderKey>,
     /// The viewport from the last frame, for zoom commands that come from menus.
@@ -451,6 +469,7 @@ impl Default for StageView {
             pen: None,
             anchor_selection: None,
             text_editing: None,
+            painting: None,
             texture: None,
             rendered: None,
             last_area: Rect::NOTHING,
@@ -586,6 +605,9 @@ impl StageView {
         if editor.tool == Tool::Pen {
             self.handle_pen(ui, &response, editor, view);
         }
+        if editor.tool.paints() || editor.tool == Tool::Eyedropper {
+            self.handle_painting(ui, &response, editor, view);
+        }
         // No transform handles on text being typed into: dragging would
         // fight with selecting.
         let handles = if self.text_editing.is_some() { None } else { Handles::for_selection(editor, view) };
@@ -601,6 +623,11 @@ impl StageView {
         }
         self.draw_text_editing(ui, &overlay, editor, view);
         self.draw_pen_preview(&overlay, view, response.hover_pos());
+        if editor.tool.paints()
+            && let Some(pointer) = response.hover_pos()
+        {
+            draw_brush_outline(&overlay, editor, view, pointer);
+        }
         if let Some(hit) = response.hover_pos().and_then(|p| self.outline_hit(editor, view, p)) {
             // Show where the new point would land: a hollow anchor with a plus.
             overlay.circle(hit.screen, 5.0, Color32::WHITE, (1.0, SELECTION));
@@ -1290,9 +1317,10 @@ impl StageView {
                 let local = editor.doc.layer_matrix(layer, editor.frame).inverse()?.apply(p);
                 Some(Gesture::Reach { layer: layer.id, local })
             }
-            // The pen handles its own presses and drags; see `handle_pen`.
-            // The Text tool only clicks.
-            Tool::Pen | Tool::Text => None,
+            // The pen and the painting tools handle their own presses and
+            // drags; see `handle_pen` and `handle_painting`. The Text tool
+            // only clicks.
+            Tool::Pen | Tool::Text | Tool::Brush | Tool::Eraser | Tool::Eyedropper => None,
             Tool::Subselect => {
                 let Some((target, part)) = self.anchor_hit(editor, view, press) else {
                     // Dragging off the anchors selects a layer, but doesn't move it.
@@ -1436,6 +1464,57 @@ impl StageView {
     /// Pen tool input. Each press places an anchor; dragging before release
     /// pulls out its curve handles. Pressing on the first anchor closes the
     /// path, and pressing on the last one again ends it open.
+    /// The Brush, Eraser and Eyedropper. Painting starts the moment the pen
+    /// touches (not after it has moved a little, as dragging does), so a
+    /// tap leaves a dot, and paints through every pointer event, not just
+    /// one per frame, so quick strokes stay smooth.
+    fn handle_painting(&mut self, ui: &egui::Ui, response: &egui::Response, editor: &mut Editor, view: View) {
+        let (pressed, down, alt, space_held) = ui.input(|i| {
+            (
+                i.pointer.primary_pressed(),
+                i.pointer.primary_down(),
+                i.modifiers.alt,
+                i.key_down(egui::Key::Space),
+            )
+        });
+        let press = ui.input(|i| i.pointer.press_origin());
+        if pressed
+            && response.is_pointer_button_down_on()
+            && !space_held
+            && let Some(press) = press
+        {
+            // Alt picks a colour with the brush, as in Photoshop.
+            if editor.tool == Tool::Eyedropper || (alt && editor.tool == Tool::Brush) {
+                pick_color(editor, view.to_local(press));
+                return;
+            }
+            self.painting = start_painting(editor);
+            if let Some(painting) = &mut self.painting {
+                let pressure = tablet::current().map_or(1.0, |pen| pen.pressure);
+                painting.smoothed = press;
+                painting.pen = tablet::Sample { pos: press, pressure };
+                paint_to(painting, editor, view, press, pressure);
+            }
+        }
+        let Some(painting) = &mut self.painting else { return };
+        if down {
+            let samples = ui.input(tablet::samples);
+            for sample in samples {
+                // Smoothing: each point moves the stroke only part of the
+                // way toward the pen.
+                let follow = 1.0 - editor.smoothing.clamp(0.0, 0.95);
+                painting.smoothed += (sample.pos - painting.smoothed) * follow;
+                painting.pen = sample;
+                paint_to(painting, editor, view, painting.smoothed, sample.pressure);
+            }
+        } else {
+            // Lifted: finish where the pen actually is.
+            let pen = painting.pen;
+            paint_to(painting, editor, view, pen.pos, pen.pressure);
+            self.painting = None;
+        }
+    }
+
     fn handle_pen(&mut self, ui: &egui::Ui, response: &egui::Response, editor: &mut Editor, view: View) {
         let (pressed, button_down, space_held, shift) = ui.input(|i| {
             (
@@ -1521,6 +1600,10 @@ impl StageView {
     }
 
     fn draw_overlays(&self, painter: &egui::Painter, editor: &Editor, view: View, handles: Option<&Handles>) {
+        // Painting needs a clear view of the picture, not a box around it.
+        if editor.tool.paints() || editor.tool == Tool::Eyedropper {
+            return;
+        }
         // The path tools show the selected shape's own outline and points;
         // the others outline the layer's bounds, following its rotation and scale.
         let shows_points = matches!(editor.tool, Tool::Subselect | Tool::Pen);
@@ -1672,6 +1755,9 @@ impl StageView {
                     }
                     (None, Tool::Rectangle | Tool::Ellipse | Tool::Pencil) => CursorIcon::Crosshair,
                     (None, Tool::Text) => CursorIcon::Text,
+                    // The brush's outline shows its size (`draw_brush_outline`);
+                    // the crosshair marks its centre.
+                    (None, Tool::Brush | Tool::Eraser | Tool::Eyedropper) => CursorIcon::Crosshair,
                     (None, Tool::Bone)
                         if response
                             .hover_pos()
@@ -1919,6 +2005,72 @@ fn draw_skeleton(painter: &egui::Painter, editor: &Editor, view: View) {
         } else {
             painter.circle(at, 4.5, fill, (1.5, BONE));
         }
+    }
+}
+
+/// A circle the size the brush (or eraser) paints at full pressure, around
+/// the pointer, scaled like the canvas it would paint on.
+fn draw_brush_outline(painter: &egui::Painter, editor: &Editor, view: View, pointer: Pos2) {
+    let settings = if editor.tool == Tool::Eraser { editor.eraser } else { editor.brush };
+    let canvas_scale = editor
+        .paint_target()
+        .and_then(|(layer, ..)| editor.doc.layer(layer))
+        .map_or(1.0, |layer| editor.doc.layer_matrix(layer, editor.frame).average_scale());
+    let radius = settings.size / 2.0 * canvas_scale * view.zoom;
+    // Dark and light rings, so it shows on any colour.
+    painter.circle_stroke(pointer, radius, (2.0, Color32::from_black_alpha(140)));
+    painter.circle_stroke(pointer, radius, (1.0, Color32::WHITE));
+}
+
+/// Gets a stroke ready on the selected paint layer, first adding a paint
+/// layer if the selected layer isn't one (as Photoshop would ask for).
+fn start_painting(editor: &mut Editor) -> Option<Painting> {
+    if editor.paint_target().is_none() {
+        editor.add_paint_layer();
+    }
+    let (layer, canvas, width, height) = editor.paint_target()?;
+    let (settings, mode) = match editor.tool {
+        Tool::Eraser => (editor.eraser, BrushMode::Erase),
+        _ => (editor.brush, BrushMode::Paint(editor.paint_color)),
+    };
+    Some(Painting {
+        layer,
+        canvas,
+        size: (width, height),
+        stroke: BrushStroke::new(settings, mode),
+        smoothed: Pos2::ZERO,
+        pen: tablet::Sample { pos: Pos2::ZERO, pressure: 1.0 },
+    })
+}
+
+/// Carries the stroke on to `screen` (a point on screen), in the canvas's
+/// pixels, which follow the layer wherever it's been moved, turned or
+/// scaled.
+fn paint_to(painting: &mut Painting, editor: &mut Editor, view: View, screen: Pos2, pressure: f32) {
+    let frame = editor.frame;
+    let Some(layer) = editor.doc.layer(painting.layer) else { return };
+    let Some(to_local) = editor.doc.layer_matrix(layer, frame).inverse() else { return };
+    let local = to_local.apply(view.to_local(screen));
+    let (width, height) = painting.size;
+    let at = Point::new(local.x + width as f32 / 2.0, local.y + height as f32 / 2.0);
+    if let Some(canvas) = editor.doc.canvas_mut(painting.canvas) {
+        painting.stroke.add_point(canvas, at, pressure);
+    }
+}
+
+/// Sets the paint colour to what the stage shows at `at` (in the
+/// coordinates of the timeline being edited).
+fn pick_color(editor: &mut Editor, at: Point) {
+    let stage = editor.timeline_transform().apply(at);
+    let options = inkframe_render::RenderOptions { images: Some(&editor.images), ..Default::default() };
+    let Some(image) = inkframe_render::render_frame(&editor.doc, editor.frame, &options) else { return };
+    let (x, y) = (stage.x.floor(), stage.y.floor());
+    if x < 0.0 || y < 0.0 {
+        return;
+    }
+    if let Some(pixel) = image.pixel(x as u32, y as u32) {
+        let c = pixel.demultiply();
+        editor.paint_color = Color::rgb(c.red(), c.green(), c.blue());
     }
 }
 
@@ -2823,6 +2975,84 @@ mod tests {
         assert_eq!(pose(&h, id), Transform::at(Point::new(400.0, 400.0)));
         assert_eq!(editor.hit_test(Point::new(400.0, 480.0), 1.0), Some(id));
         assert_eq!(editor.hit_test(Point::new(480.0, 400.0), 1.0), None, "nothing left where the end was");
+    }
+
+    /// The colour of stage pixel (`x`, `y`) on the selected paint layer.
+    fn painted_at(harness: &Harness<'_, State>, x: i64, y: i64) -> [u8; 4] {
+        let editor = &harness.state().1;
+        let (_, canvas, ..) = editor.paint_target().expect("a paint layer is selected");
+        editor.doc.canvas(canvas).unwrap().pixel(x, y)
+    }
+
+    #[test]
+    fn the_brush_paints_a_new_paint_layer_along_the_stroke() {
+        let mut editor = Editor::new(Document::default());
+        editor.tool = Tool::Brush;
+        editor.smoothing = 0.0;
+        editor.paint_color = Color::rgb(200, 0, 0);
+        let mut h = harness(editor);
+        let (from, middle, to) =
+            (screen(&h, 300.0, 500.0), screen(&h, 600.0, 500.0), screen(&h, 900.0, 500.0));
+        drag(&mut h, from, &[middle, to]);
+
+        assert_eq!(h.state().1.layers().len(), 1, "a paint layer was made for the stroke");
+        for x in [300, 450, 600, 750, 900] {
+            assert_eq!(painted_at(&h, x, 500), [200, 0, 0, 255], "at x = {x}");
+        }
+        assert_eq!(painted_at(&h, 600, 560), [0; 4], "the stroke is only as wide as the brush");
+    }
+
+    #[test]
+    fn a_tap_with_the_brush_leaves_a_dot() {
+        let mut editor = Editor::new(Document::default());
+        editor.tool = Tool::Brush;
+        let mut h = harness(editor);
+        let at = screen(&h, 400.0, 300.0);
+        click(&mut h, at);
+        assert_eq!(painted_at(&h, 400, 300)[3], 255);
+    }
+
+    #[test]
+    fn the_eraser_takes_paint_away() {
+        let mut editor = Editor::new(Document::default());
+        editor.tool = Tool::Brush;
+        editor.smoothing = 0.0;
+        let mut h = harness(editor);
+        let (from, to) = (screen(&h, 300.0, 500.0), screen(&h, 900.0, 500.0));
+        drag(&mut h, from, &[to]);
+        h.state_mut().1.tool = Tool::Eraser;
+        let (from, to) = (screen(&h, 600.0, 300.0), screen(&h, 600.0, 700.0));
+        drag(&mut h, from, &[to]);
+        assert_eq!(painted_at(&h, 600, 500), [0; 4]);
+        assert_eq!(painted_at(&h, 400, 500)[3], 255);
+    }
+
+    #[test]
+    fn the_eyedropper_picks_up_a_colour_from_the_stage() {
+        let (mut editor, _) = editor_with_selected_box();
+        editor.tool = Tool::Eyedropper;
+        let fill = editor.draw_style.fill.unwrap();
+        let mut h = harness(editor);
+        let at = screen(&h, 400.0, 400.0);
+        click(&mut h, at);
+        assert_eq!(h.state().1.paint_color, fill);
+    }
+
+    #[test]
+    fn a_new_drawing_on_a_paint_layer_is_a_blank_canvas_of_its_own() {
+        let mut editor = Editor::new(Document::default());
+        editor.tool = Tool::Brush;
+        let mut h = harness(editor);
+        let at = screen(&h, 400.0, 300.0);
+        click(&mut h, at);
+        let editor = &mut h.state_mut().1;
+        let (_, first, ..) = editor.paint_target().unwrap();
+        editor.set_frame(5);
+        editor.new_drawing(false);
+        let (_, second, ..) = editor.paint_target().unwrap();
+        assert_ne!(first, second);
+        assert!(editor.doc.canvas(second).unwrap().is_empty());
+        assert!(!editor.doc.canvas(first).unwrap().is_empty());
     }
 
     #[test]

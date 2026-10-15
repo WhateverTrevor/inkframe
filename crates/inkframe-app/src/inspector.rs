@@ -15,6 +15,10 @@ use crate::editor::Editor;
 /// Shows the panel's contents. The caller provides the scroll area, so the
 /// library can share it.
 pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
+    if editor.tool.paints() {
+        brush_section(ui, editor);
+        ui.add_space(8.0);
+    }
     // With several layers selected, the panel shows the one picked last.
     let count = editor.selected_ids().len();
     if count > 1 {
@@ -30,6 +34,69 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
     egui::CollapsingHeader::new("Document")
         .default_open(editor.selection.is_none())
         .show(ui, |ui| document_section(ui, editor));
+}
+
+/// The brush's (or eraser's) settings, while one is in use, as Photoshop's
+/// options bar shows them.
+fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
+    let erasing = editor.tool == crate::editor::Tool::Eraser;
+    ui.heading(if erasing { "Eraser" } else { "Brush" });
+    let settings = if erasing { &mut editor.eraser } else { &mut editor.brush };
+    egui::Grid::new("brush").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        if !erasing {
+            ui.label("Colour");
+            color_button(ui, &mut editor.paint_color);
+            ui.end_row();
+        }
+        ui.label("Size").on_hover_text("[ and ] make it smaller and bigger");
+        ui.add(egui::Slider::new(&mut settings.size, 1.0..=500.0).logarithmic(true).suffix(" px"));
+        ui.end_row();
+        ui.label("Hardness")
+            .on_hover_text("How crisp the edge is: 100% is a hard disc, 0% fades from the middle");
+        ui.add(percent(&mut settings.hardness));
+        ui.end_row();
+        ui.label("Opacity").on_hover_text("The most a single stroke covers, however often it crosses itself");
+        ui.add(percent(&mut settings.opacity));
+        ui.end_row();
+        ui.label("Flow")
+            .on_hover_text("How much each touch of the brush adds: low flow builds up like an airbrush");
+        ui.add(percent(&mut settings.flow));
+        ui.end_row();
+        ui.label("Spacing").on_hover_text("Distance between dabs, as a share of the brush's size");
+        ui.add(
+            egui::Slider::new(&mut settings.spacing, 0.02..=1.0)
+                .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
+        );
+        ui.end_row();
+        ui.label("Pressure").on_hover_text("What pressing harder with a pen does");
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut settings.pressure_size, "Size");
+            ui.checkbox(&mut settings.pressure_flow, "Flow");
+        });
+        ui.end_row();
+        if settings.pressure_size {
+            ui.label("Lightest").on_hover_text("The size at the lightest touch, as a share of the full size");
+            ui.add(percent(&mut settings.min_size));
+            ui.end_row();
+        }
+        ui.label("Smoothing").on_hover_text("Steadies the line by letting it trail behind the pen");
+        ui.add(percent(&mut editor.smoothing));
+        ui.end_row();
+    });
+    if tablet_hint_needed() {
+        ui.weak("Pen pressure is used when drawing with a tablet.");
+    }
+}
+
+/// A slider for a 0–1 setting, shown as a percentage.
+fn percent(value: &mut f32) -> egui::Slider<'_> {
+    egui::Slider::new(value, 0.0..=1.0).custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+}
+
+/// Whether to mention that a tablet changes the stroke: until a pen has
+/// been seen, people with only a mouse may wonder what Pressure does.
+fn tablet_hint_needed() -> bool {
+    crate::tablet::current().is_none()
 }
 
 fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
@@ -345,7 +412,7 @@ fn deformer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         }
     });
     ui.horizontal(|ui| {
-        ui.weak("Drag its joints with the Bone tool (B).");
+        ui.weak("Drag its joints with the Bone tool (K).");
         remove = ui.small_button("Remove").clicked();
     });
     if bones != deformer.bone_count()
@@ -622,9 +689,14 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 Shape::Path(_) => "Stroke",
                 Shape::Image { .. } => "Image",
                 Shape::Text(_) => "Text",
+                Shape::Paint { .. } => "Painting",
             };
             ui.strong(if count > 1 { format!("{title} {}", i + 1) } else { title.to_owned() });
-            if let Shape::Image { image, width, height } = &mut element.shape {
+            if let Shape::Paint { width, height, .. } = element.shape {
+                // Painted with the brush tools, so nothing to set here
+                // beyond saying how big the canvas is.
+                ui.weak(format!("{width} × {height} px canvas. Paint with the Brush (B) and Eraser (E)."));
+            } else if let Shape::Image { image, width, height } = &mut element.shape {
                 // An image paints its own pixels, so it has no fill or stroke.
                 if let Some(info) = images.iter().find(|info| info.id == *image) {
                     image_editor(ui, info, width, height);
@@ -769,7 +841,7 @@ fn shape_size_editor(ui: &mut egui::Ui, shape: &mut Shape) {
         }
         // Freehand paths are edited by redrawing, for now. Images and text
         // have their own editors.
-        Shape::Path(_) | Shape::Image { .. } | Shape::Text(_) => {}
+        Shape::Path(_) | Shape::Image { .. } | Shape::Text(_) | Shape::Paint { .. } => {}
     });
 }
 
