@@ -86,6 +86,10 @@ enum Command {
     LipSync,
     NewPaintLayer,
     NewFolder,
+    CreateShapeTween,
+    RemoveShapeTween,
+    AddShapeHint,
+    RemoveShapeHints,
     PlayPause,
     StepBackward,
     StepForward,
@@ -202,6 +206,27 @@ impl InkframeApp {
             }
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
+            }
+            if AutoScreenshot::shape_tween() {
+                use inkframe_core::{Color, Drawing, Element, Point, Shape, Style, Transform};
+                let fill = |r, g, b| Style { fill: Some(Color::rgb(r, g, b)), stroke: None };
+                let square = Element {
+                    shape: Shape::Rect { width: 300.0, height: 300.0, corner_radius: 0.0 },
+                    style: fill(0xe8, 0x4a, 0x5f),
+                };
+                let circle = Element {
+                    shape: Shape::Ellipse { radius_x: 220.0, radius_y: 140.0 },
+                    style: fill(0x3d, 0x8b, 0xfd),
+                };
+                let doc = &mut app.editor.doc;
+                let id = doc.add_layer("Morph", vec![square], 0, Transform::at(Point::new(1500.0, 760.0)));
+                if let Some(layer) = doc.layer_mut(id) {
+                    let circle = layer.add_drawing(Drawing::new("circle", vec![circle]));
+                    layer.expose(24, circle);
+                    layer.set_shape_tween(0, true);
+                }
+                app.editor.select(Some(id));
+                app.editor.add_shape_hint();
             }
             if AutoScreenshot::folder() {
                 let arm: Vec<_> = ["Upper arm", "Forearm", "Hand"]
@@ -326,6 +351,10 @@ impl InkframeApp {
                 editor.add_paint_layer();
             }
             Command::NewFolder => editor.new_folder(),
+            Command::CreateShapeTween => editor.set_shape_tween(true),
+            Command::RemoveShapeTween => editor.set_shape_tween(false),
+            Command::AddShapeHint => editor.add_shape_hint(),
+            Command::RemoveShapeHints => editor.clear_shape_hints(),
             Command::LipSync => self.lip_sync.open(editor),
             Command::PlayPause => editor.toggle_playback(),
             Command::StepBackward => editor.step(-1),
@@ -374,6 +403,7 @@ impl InkframeApp {
             (LAYER_VIA_CUT, Command::LayerViaCut),
             (LAYER_VIA_COPY, Command::LayerViaCopy),
             (CONVERT_TO_SYMBOL, Command::ConvertToSymbol),
+            (ADD_SHAPE_HINT, Command::AddShapeHint),
             (ZOOM_FIT, Command::ZoomFit),
             (ZOOM_100, Command::ZoomActualSize),
             (ZOOM_IN, Command::ZoomIn),
@@ -605,6 +635,10 @@ impl InkframeApp {
                 ui.separator();
                 item(ui, "New Paint Layer", None, Command::NewPaintLayer, true);
                 item(ui, "New Folder", None, Command::NewFolder, true);
+                ui.separator();
+                let hints = self.editor.shape_tween_drawings().is_some();
+                item(ui, "Add Shape Hint", Some(shortcuts::ADD_SHAPE_HINT), Command::AddShapeHint, hints);
+                item(ui, "Remove All Hints", None, Command::RemoveShapeHints, hints);
                 let below_is_paint = self.editor.selection.is_some_and(|id| {
                     let Some(timeline) = self.editor.doc.timeline_of(id) else { return false };
                     let layers = self.editor.doc.layers_of(timeline);
@@ -684,6 +718,11 @@ impl InkframeApp {
                     Command::LayerEndHere,
                     has_selection,
                 );
+                ui.separator();
+                // Morphing into the next drawing swap; see `morph.rs`.
+                let tween = self.editor.shape_tween_here();
+                item(ui, "Create Shape Tween", None, Command::CreateShapeTween, tween == Some(false));
+                item(ui, "Remove Shape Tween", None, Command::RemoveShapeTween, tween == Some(true));
                 ui.separator();
                 item(ui, "First Frame", None, Command::FirstFrame, true);
                 item(ui, "Last Frame", None, Command::LastFrame, true);

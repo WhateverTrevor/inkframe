@@ -1,18 +1,18 @@
 # Handoff: where Inkframe stands
 
 A checkpoint for picking development back up. Last updated 2026-10-15,
-after UI round 3 (tabs, workspaces and panels).
+after shape tweens.
 
 ## State
 
 - **Branch:** `main`, clean. Every feature is built on its own branch,
   then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (469 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (476 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
-- **File format:** version 19. Older versions load and upgrade automatically
+- **File format:** version 20. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -220,6 +220,18 @@ after UI round 3 (tabs, workspaces and panels).
     layouts get a Library tab beside Properties (`Layout::upgraded`).
     `INKFRAME_SCREENSHOT_WORKSPACE=animator` (etc.) screenshots a workspace.
     Next, from the Animate comparison: shape tweens, a camera layer,
+    filters and colour effects.
+
+49. Shape tweens (format v20; `morph.rs`): `Layer::shape_tweens`
+    (`ShapeTween { end, easing }`, keyed by the exposure swap it morphs
+    into, dropped by `tidy_exposure` if that swap goes), `morph_at` inside
+    `shown_elements`, and `Drawing::hints` (shape hints, paired by index).
+    Timeline › Create/Remove Shape Tween, Modify › Add Shape Hint (⌘⇧H) /
+    Remove All Hints, controls in the Drawings section, a green band in
+    the timeline, lettered hints on the stage (Selection tool; yellow on
+    the start drawing, green on the end; right-click removes).
+    `INKFRAME_SCREENSHOT_SHAPE_TWEEN=1` adds a square-to-ellipse demo layer
+    with one hint. Next from the Animate comparison: a camera layer, then
     filters and colour effects.
 
 ## Not yet verified by hand

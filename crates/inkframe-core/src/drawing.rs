@@ -5,8 +5,8 @@
 //! one shows. Harmony and OpenToonz build their characters this way, and
 //! call the frame-by-frame choice of drawing the **exposure**. Here each
 //! layer holds a list of named [`Drawing`]s, and [`Exposure`] keys say "from
-//! this frame on, show that drawing". Nothing tweens between drawings: a
-//! swap is instant, like a hold key.
+//! this frame on, show that drawing". A swap is instant, like a hold
+//! key, unless a shape tween morphs into it (see `morph.rs`).
 //!
 //! Most layers have a single drawing and no exposure keys at all, which is
 //! exactly how layers worked before drawings existed. Files from before
@@ -27,11 +27,15 @@ pub struct Drawing {
     /// What the animator calls it: "1", "2", or for a mouth, "A" or "O".
     pub name: String,
     pub elements: Vec<Element>,
+    /// Shape hints, in the layer's coordinates: hint `i` here goes to hint
+    /// `i` on the drawing a shape tween morphs into (see `morph.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hints: Vec<crate::geometry::Point>,
 }
 
 impl Drawing {
     pub fn new(name: impl Into<String>, elements: Vec<Element>) -> Self {
-        Self { name: name.into(), elements }
+        Self { name: name.into(), elements, hints: Vec::new() }
     }
 }
 
@@ -141,6 +145,9 @@ impl Layer {
             showing = key.drawing;
             changes
         });
+        // A shape tween goes with the swap it morphs into.
+        let swaps: Vec<u32> = self.exposure.iter().map(|key| key.frame).collect();
+        self.shape_tweens.retain(|tween| swaps.contains(&tween.end));
     }
 }
 

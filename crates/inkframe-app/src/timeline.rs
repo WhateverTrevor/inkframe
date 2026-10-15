@@ -89,6 +89,8 @@ const CURRENT_KEY: Color32 = crate::theme::ACCENT;
 const HOLD: Color32 = Color32::from_gray(150);
 /// Drawing swaps: warm, to stand apart from the tweens' purple.
 const SWAP: Color32 = Color32::from_rgb(0xf0, 0xb0, 0x5a);
+/// Shape tweens, green as in Animate.
+const SHAPE_TWEEN: Color32 = Color32::from_rgb(0x6c, 0xd0, 0x7a);
 const AUDIO: Color32 = Color32::from_rgb(0x4c, 0xc2, 0x8a);
 
 /// One line of the grid: a layer's summary row, or one of its properties.
@@ -1135,6 +1137,18 @@ fn context_menu(response: &egui::Response, editor: &mut Editor, row: Option<Row>
             editor.set_layer_end_here();
             ui.close();
         }
+        // Shape tweens morph into the layer's next drawing swap.
+        match editor.shape_tween_here() {
+            Some(false) if ui.button("Create Shape Tween").clicked() => {
+                editor.set_shape_tween(true);
+                ui.close();
+            }
+            Some(true) if ui.button("Remove Shape Tween").clicked() => {
+                editor.set_shape_tween(false);
+                ui.close();
+            }
+            _ => {}
+        }
         ui.separator();
         if ui.button("New Folder").on_hover_text("Put the selected layers in a new folder").clicked() {
             editor.new_folder();
@@ -1346,6 +1360,25 @@ fn paint_drawing_swaps(
 ) {
     if layer.drawings.len() < 2 {
         return;
+    }
+    // Shape tweens first, under the swap marks: a green band from the
+    // span's start to the swap it morphs into, with Animate's arrow.
+    let band = row.shrink2(vec2(0.0, 5.0));
+    for tween in &layer.shape_tweens {
+        let Some((start, end, _)) = layer.shape_tween_at(tween.end.saturating_sub(1)) else { continue };
+        let x_range = layout.frame_center_x(start)..=layout.frame_center_x(end);
+        painter.rect_filled(
+            Rect::from_x_y_ranges(x_range.clone(), band.y_range()),
+            0.0,
+            dim(SHAPE_TWEEN.gamma_multiply(0.35)),
+        );
+        arrow(
+            painter,
+            *x_range.start() + 6.0,
+            *x_range.end() - 6.0,
+            band.center().y,
+            dim(Color32::from_white_alpha(170)),
+        );
     }
     let font = FontId::proportional(9.0);
     let color = dim(SWAP);

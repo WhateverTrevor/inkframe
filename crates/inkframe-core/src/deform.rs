@@ -227,15 +227,19 @@ impl Deformer {
 }
 
 impl Layer {
-    /// What the layer draws on `frame`: the drawing showing then, bent by
-    /// its deformer if it has one. Use this for anything that should match
+    /// What the layer draws on `frame`: the drawing showing then (or a
+    /// shape tween's morph), bent by its deformer if it has one. Use this for anything that should match
     /// what's seen (drawing, hit testing, bounds), and `elements_at` for
     /// editing the drawing itself.
     pub fn shown_elements(&self, frame: u32) -> Cow<'_, [Element]> {
-        let elements = self.elements_at(frame);
+        // Part way through a shape tween, the morph; otherwise the drawing.
+        let elements: Cow<'_, [Element]> = match self.morph_at(frame) {
+            Some(morphed) => Cow::Owned(morphed),
+            None => Cow::Borrowed(self.elements_at(frame)),
+        };
         match &self.deformer {
-            Some(deformer) if !deformer.is_at_rest(frame) => Cow::Owned(deformer.deform(elements, frame)),
-            _ => Cow::Borrowed(elements),
+            Some(deformer) if !deformer.is_at_rest(frame) => Cow::Owned(deformer.deform(&elements, frame)),
+            _ => elements,
         }
     }
 

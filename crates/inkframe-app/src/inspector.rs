@@ -779,7 +779,50 @@ fn drawings_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     if delete {
         editor.delete_shown_drawing();
     }
+    shape_tween_controls(ui, editor);
     ui.add_space(8.0);
+}
+
+/// The shape tween through this frame's span: whether it morphs into the
+/// next swap, its easing, and its shape hints.
+fn shape_tween_controls(ui: &mut egui::Ui, editor: &mut Editor) {
+    let Some(mut on) = editor.shape_tween_here() else { return };
+    ui.add_space(4.0);
+    if ui
+        .checkbox(&mut on, "Shape tween into the next drawing")
+        .on_hover_text("Morph from the drawing showing here into the next one, instead of swapping at once")
+        .changed()
+    {
+        editor.set_shape_tween(on);
+    }
+    let frame = editor.frame;
+    let Some(tween) = editor.selected_layer_mut().and_then(|l| l.shape_tween_mut(frame)) else { return };
+    ui.horizontal(|ui| {
+        ui.label("Easing");
+        egui::ComboBox::from_id_salt("shape_tween_easing").selected_text(tween.easing.label()).show_ui(
+            ui,
+            |ui| {
+                for preset in Easing::PRESETS {
+                    ui.selectable_value(&mut tween.easing, preset, preset.label());
+                }
+            },
+        );
+    });
+    let hints = editor
+        .shape_tween_drawings()
+        .map_or(0, |(from, _)| editor.selected_layer().map_or(0, |l| l.drawings[from].hints.len()));
+    ui.horizontal(|ui| {
+        if ui
+            .button("Add Shape Hint")
+            .on_hover_text("⌘⇧H. Drag the lettered marks onto matching points of the two drawings")
+            .clicked()
+        {
+            editor.add_shape_hint();
+        }
+        if ui.add_enabled(hints > 0, egui::Button::new("Remove Hints")).clicked() {
+            editor.clear_shape_hints();
+        }
+    });
 }
 
 /// Which mask, if any, the layer is seen through.
