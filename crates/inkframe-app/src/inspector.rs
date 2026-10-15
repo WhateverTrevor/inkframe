@@ -266,9 +266,35 @@ fn tablet_hint_needed() -> bool {
     crate::tablet::current().is_none()
 }
 
+/// A folder: its name, and showing or locking everything in it.
+fn folder_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    let Some(folder) = editor.doc.layer_mut(id) else { return };
+    ui.heading("Folder");
+    ui.text_edit_singleline(&mut folder.name);
+    let (mut visible, mut locked) = (folder.visible, folder.locked);
+    ui.horizontal_wrapped(|ui| {
+        if ui.checkbox(&mut visible, "Visible").changed() {
+            editor.set_visible(id, visible);
+        }
+        if ui.checkbox(&mut locked, "Locked").changed() {
+            editor.set_locked(id, locked);
+        }
+    });
+    let count = editor.doc.folder_block(id).len() - 1;
+    ui.weak(match count {
+        0 => "Empty. Drag layers just under the folder's name in the timeline to put them in it.".to_owned(),
+        1 => "Holds 1 layer.".to_owned(),
+        n => format!("Holds {n} layers."),
+    });
+}
+
 fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
     let last_frame = editor.last_frame();
+    if editor.doc.layer(id).is_some_and(|l| l.folder) {
+        folder_section(ui, editor, id);
+        return;
+    }
     let Some(layer) = editor.doc.layer_mut(id) else { return };
 
     ui.heading("Layer");

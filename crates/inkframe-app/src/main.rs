@@ -16,6 +16,7 @@ mod export_dialog;
 mod handles;
 mod icons;
 mod inspector;
+mod layer_thumbnails;
 mod layout;
 mod library;
 mod lip_sync_dialog;

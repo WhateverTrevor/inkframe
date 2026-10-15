@@ -117,6 +117,11 @@ impl AutoScreenshot {
         std::env::var("INKFRAME_SCREENSHOT_LAYOUT").is_ok_and(|v| v == "custom")
     }
 
+    /// Whether to put the arm's layers (in examples/rig.inkf) in a folder.
+    pub fn folder() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_FOLDER").is_some()
+    }
+
     /// Whether to show the Stage area's editor menu open.
     pub fn area_menu() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_AREA_MENU").is_some()

@@ -43,6 +43,8 @@ pub enum Icon {
     Graph,
     ToolSettings,
     Document,
+    Folder,
+    FolderOpen,
     /// A circle struck through: no fill or no stroke.
     NoColor,
     /// The little downward arrow that marks a menu.
@@ -273,6 +275,27 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
                 line(&[(0.32, y), (0.7, y)]);
             }
         }
+        Icon::Folder | Icon::FolderOpen => {
+            // A tabbed folder; open, its front leaf tips forward.
+            let back = [(0.05, 0.2), (0.38, 0.2), (0.48, 0.32), (0.95, 0.32), (0.95, 0.85), (0.05, 0.85)];
+            if icon == Icon::Folder {
+                painter.add(Shape::convex_polygon(
+                    back.iter().map(|&(x, y)| at(x, y)).collect(),
+                    color.gamma_multiply(0.25),
+                    stroke,
+                ));
+            } else {
+                line(&[(0.05, 0.85), (0.05, 0.2), (0.38, 0.2), (0.48, 0.32), (0.85, 0.32), (0.85, 0.45)]);
+                painter.add(Shape::convex_polygon(
+                    [(0.05, 0.85), (0.2, 0.45), (1.0, 0.45), (0.85, 0.85)]
+                        .iter()
+                        .map(|&(x, y)| at(x, y))
+                        .collect(),
+                    color.gamma_multiply(0.25),
+                    stroke,
+                ));
+            }
+        }
         Icon::NoColor => {
             painter.circle_stroke(r.center(), side * 0.42, stroke);
             line(&[(0.2, 0.8), (0.8, 0.2)]);
@@ -369,6 +392,8 @@ mod tests {
             Graph,
             ToolSettings,
             Document,
+            Folder,
+            FolderOpen,
             NoColor,
             Chevron,
         ];

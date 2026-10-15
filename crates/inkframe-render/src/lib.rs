@@ -217,6 +217,36 @@ pub fn render_symbol_thumbnail(
     Some(pixmap)
 }
 
+/// Renders one layer at `frame`, with the whole stage fitted into a
+/// `width`×`height` image, for the timeline's layer thumbnails. The layer
+/// is drawn where it sits on the stage, so its thumbnail shows where it is
+/// as well as what it is, and it's drawn even while hidden, since the
+/// thumbnail is how a hidden layer is found again. The background is left
+/// transparent.
+pub fn render_layer_thumbnail(
+    doc: &Document,
+    images: Option<&ImageLibrary>,
+    layer: LayerId,
+    frame: u32,
+    width: u32,
+    height: u32,
+) -> Option<Pixmap> {
+    let mut layer = doc.layer(layer)?.clone();
+    layer.visible = true;
+    let stage = doc.stage_rect();
+    let scale = (width as f32 / stage.width()).min(height as f32 / stage.height());
+    let fit = Affine::translate(Point::new(
+        (width as f32 - stage.width() * scale) / 2.0,
+        (height as f32 - stage.height() * scale) / 2.0,
+    ))
+    .pre_concat(Affine::scale(scale, scale));
+
+    let mut pixmap = Pixmap::new(width, height)?;
+    let style = Style { tint: None, images, show_guides: true, show_mask: Some(layer.id) };
+    render_layers(&mut pixmap.as_mut(), doc, std::slice::from_ref(&layer), frame, fit, 1.0, style, None, 0);
+    Some(pixmap)
+}
+
 /// Settings that apply to everything drawn in one pass, however deeply
 /// nested inside symbols.
 #[derive(Clone, Copy)]
@@ -367,7 +397,8 @@ pub fn export_psd(doc: &Document, frame: u32, images: Option<&ImageLibrary>) -> 
             blend: inkframe_core::BlendMode::Normal,
         });
     }
-    for layer in doc.layers.iter().filter(|l| !l.guide && !l.mask) {
+    // Folders hold nothing to draw; their layers are exported one by one.
+    for layer in doc.layers.iter().filter(|l| !l.guide && !l.mask && !l.folder) {
         // Drawn fully opaque and blending normally: Photoshop applies the
         // layer's own opacity and blend mode, kept as settings.
         let mut alone = layer.clone();
@@ -758,6 +789,20 @@ mod tests {
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
         let c = pixmap.pixel(x, y).unwrap().demultiply();
         [c.red(), c.green(), c.blue(), c.alpha()]
+    }
+
+    #[test]
+    fn a_layer_thumbnail_shows_the_layer_where_it_is_even_when_hidden() {
+        let mut doc = red_square_doc();
+        let id = doc.layers[0].id;
+        doc.layer_mut(id).unwrap().visible = false;
+        // The 100×100 stage fitted into 50×25: quarter size, centred across
+        // from x = 12.5.
+        let thumb = render_layer_thumbnail(&doc, None, id, 0, 50, 25).unwrap();
+        // The square, centred at (20, 50) on the stage, lands at (17.5, 12.5).
+        assert_eq!(pixel(&thumb, 17, 12), [255, 0, 0, 255]);
+        // No background: transparent elsewhere.
+        assert_eq!(pixel(&thumb, 40, 12)[3], 0);
     }
 
     #[test]

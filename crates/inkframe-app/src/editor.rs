@@ -1152,7 +1152,16 @@ impl Editor {
     /// Deletes every selected layer.
     pub fn delete_selected_layer(&mut self) {
         let frame = self.frame;
+        // A folder goes with everything in it, as in Animate.
+        let mut doomed: Vec<LayerId> = Vec::new();
         for id in self.selected_ids() {
+            for id in self.block_of(id) {
+                if !doomed.contains(&id) {
+                    doomed.push(id);
+                }
+            }
+        }
+        for id in doomed {
             // Its children stay where they are, hanging from what it hung from.
             self.doc.release_children(id, frame);
             self.doc.remove_layer(id);
@@ -1160,11 +1169,54 @@ impl Editor {
         self.select(None);
     }
 
+    /// Puts the selected layers in a new folder, where the topmost of them
+    /// was (or adds an empty folder on top), and selects it.
+    pub fn new_folder(&mut self) {
+        let timeline = self.timeline();
+        let ids: Vec<LayerId> = self
+            .selected_ids()
+            .into_iter()
+            .filter(|&id| self.doc.timeline_of(id) == Some(timeline))
+            .collect();
+        if let Some(folder) = self.doc.add_folder(timeline, &ids) {
+            self.select(Some(folder));
+        }
+    }
+
+    /// Shows or hides a layer, and with a folder, everything in it.
+    pub fn set_visible(&mut self, id: LayerId, visible: bool) {
+        for id in self.block_of(id) {
+            if let Some(layer) = self.doc.layer_mut(id) {
+                layer.visible = visible;
+            }
+        }
+    }
+
+    /// Locks or unlocks a layer, and with a folder, everything in it.
+    pub fn set_locked(&mut self, id: LayerId, locked: bool) {
+        for id in self.block_of(id) {
+            if let Some(layer) = self.doc.layer_mut(id) {
+                layer.locked = locked;
+            }
+        }
+    }
+
+    /// A layer, or a folder and its contents.
+    fn block_of(&self, id: LayerId) -> Vec<LayerId> {
+        if self.doc.layer(id).is_some_and(|l| l.folder) { self.doc.folder_block(id) } else { vec![id] }
+    }
+
     // ------------------------------------------------------------ clipboard
 
     /// The selected layers, with everything they need, for the clipboard.
     pub fn copy_selection(&self) -> Option<Clipboard> {
-        let ids = self.selected_ids();
+        // A folder is copied with everything in it.
+        let mut ids: Vec<LayerId> = Vec::new();
+        for id in self.selected_ids().into_iter().flat_map(|id| self.block_of(id)) {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
         Some(Clipboard::Layers(self.doc.copy_layers(&ids, self.project_dir().as_deref())?))
     }
 
@@ -1220,9 +1272,11 @@ impl Editor {
         self.select_many(&copies);
     }
 
+    /// Moves the selected layer up or down past its neighbours, stepping
+    /// over folders rather than into them.
     pub fn move_selected_layer(&mut self, delta: isize) {
         if let Some(id) = self.selection {
-            self.doc.move_layer(id, delta);
+            self.doc.move_among_siblings(id, delta);
         }
     }
 }

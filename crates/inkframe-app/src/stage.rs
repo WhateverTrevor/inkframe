@@ -48,7 +48,7 @@ const ANCHOR_HIT: f32 = 7.0;
 /// Pen drags shorter than this make a corner rather than a curve, in screen points.
 const MIN_HANDLE_DRAG: f32 = 2.0;
 
-const SELECTION: Color32 = Color32::from_rgb(0x2f, 0x9b, 0xff);
+const SELECTION: Color32 = crate::theme::ACCENT;
 const ONION_BEFORE: inkframe_core::Color = inkframe_core::Color::rgb(0x30, 0x60, 0xff);
 const ONION_AFTER: inkframe_core::Color = inkframe_core::Color::rgb(0x20, 0xb0, 0x40);
 /// How strongly the rest of the scene shows while a symbol is edited in place.
@@ -2018,17 +2018,20 @@ impl StageView {
             if let Some(bounds) = editor.doc.layer_bounds(layer, editor.frame) {
                 let to_stage = editor.doc.layer_matrix(layer, editor.frame);
                 let corners = bounds.corners().map(|c| view.to_screen(to_stage.apply(c))).to_vec();
-                painter.add(egui::Shape::closed_line(corners, (1.5, SELECTION)));
+                // In the layer's own colour, as in Animate, so it's plain
+                // which layer the selection belongs to.
+                let color = crate::convert::to_color32(layer.tag_color());
+                painter.add(egui::Shape::closed_line(corners, (1.5, color)));
                 // The pivot (the point the layer rotates and scales around)
                 // matters only when there's one layer to rotate or scale.
                 // It's drawn as a ring with a cross, so it reads as something
                 // to grab rather than a dot of the drawing.
                 if selected.len() == 1 {
                     let pivot = view.to_screen(to_stage.apply(layer.pivot));
-                    painter.circle(pivot, 4.5, Color32::WHITE, (1.5, SELECTION));
+                    painter.circle(pivot, 4.5, Color32::WHITE, (1.5, color));
                     let arm = vec2(3.0, 0.0);
-                    painter.line_segment([pivot - arm, pivot + arm], (1.0, SELECTION));
-                    painter.line_segment([pivot - arm.rot90(), pivot + arm.rot90()], (1.0, SELECTION));
+                    painter.line_segment([pivot - arm, pivot + arm], (1.0, color));
+                    painter.line_segment([pivot - arm.rot90(), pivot + arm.rot90()], (1.0, color));
                 }
             }
         }
