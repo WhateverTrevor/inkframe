@@ -31,7 +31,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 22;
+pub const FORMAT_VERSION: u32 = 23;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -176,12 +176,13 @@ pub struct Layer {
     /// 0 is on the stage, positive further away (see `camera.rs`).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub depth: f32,
-    /// Brightness, tint or finer colour changes (see `effects.rs`).
-    #[serde(default, skip_serializing_if = "ColorEffect::is_none")]
-    pub color_effect: ColorEffect,
-    /// Drop shadows, blurs, glows and colour adjustment, in order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub filters: Vec<Filter>,
+    /// A colour effect and filters as format 22 stored them, before they
+    /// could animate. Loading moves them into the track's Effects property
+    /// (see `validate`); they're never saved.
+    #[serde(default, rename = "color_effect", skip_serializing)]
+    pub(crate) unanimated_color_effect: ColorEffect,
+    #[serde(default, rename = "filters", skip_serializing)]
+    pub(crate) unanimated_filters: Vec<Filter>,
 }
 
 fn is_origin(p: &Point) -> bool {
@@ -386,8 +387,8 @@ impl Document {
             in_folder: None,
             camera: false,
             depth: 0.0,
-            color_effect: ColorEffect::None,
-            filters: Vec::new(),
+            unanimated_color_effect: ColorEffect::None,
+            unanimated_filters: Vec::new(),
         });
         if timeline == TimelineId::Main {
             self.keep_camera_on_top();
@@ -582,6 +583,18 @@ impl Document {
             .any(|s| s.layers.iter().filter_map(|l| l.instance).any(|i| self.symbol_contains(i.symbol, s.id)))
         {
             return Err(DocumentError::Invalid("a symbol can't contain an instance of itself"));
+        }
+        // Effects from format 22, which couldn't animate: they become the
+        // Effects property's value throughout.
+        let layers = self.layers.iter_mut().chain(self.symbols.iter_mut().flat_map(|s| s.layers.iter_mut()));
+        for layer in layers {
+            let color = std::mem::take(&mut layer.unanimated_color_effect);
+            let filters = std::mem::take(&mut layer.unanimated_filters);
+            if !color.is_none() || !filters.is_empty() {
+                let first = layer.track.key_frames().first().copied().unwrap_or(0);
+                layer.track.effects =
+                    crate::channel::Channel::new(first, crate::effects::Effects { color, filters });
+            }
         }
         // Folders that went missing or contents out of place in a
         // hand-edited file.

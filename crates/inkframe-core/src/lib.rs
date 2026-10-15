@@ -63,7 +63,9 @@ pub use deform::Deformer;
 pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, Layer, LayerId, TimelineId};
 pub use drawing::{Drawing, Exposure};
 pub use easing::Easing;
-pub use effects::{ColorEffect, Filter, FilterKind, apply_color_effect, apply_filters, filter_margin};
+pub use effects::{
+    ColorEffect, Effects, Filter, FilterKind, apply_color_effect, apply_filters, filter_margin,
+};
 pub use fill::{BucketSettings, Gradient, GradientShape, bucket_fill, gradient};
 pub use folder::TAG_COLORS;
 pub use font_file::{FontFile, FontFileId};

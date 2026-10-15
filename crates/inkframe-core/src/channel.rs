@@ -11,7 +11,7 @@ use crate::easing::Easing;
 use crate::geometry::Point;
 
 /// A value that can be tweened: anything we can blend between two keyframes.
-pub trait Animatable: Copy + PartialEq {
+pub trait Animatable: Clone + PartialEq {
     /// Blends from `self` (t = 0) to `other` (t = 1). `t` has easing already
     /// applied and may leave 0–1 for overshooting curves.
     fn lerp(self, other: Self, t: f32) -> Self;
@@ -20,7 +20,7 @@ pub trait Animatable: Copy + PartialEq {
     /// Usually a straight blend; positions override this to follow a curved
     /// motion path (see [`Bend`]).
     fn tween(from: &Key<Self>, to: &Key<Self>, t: f32) -> Self {
-        from.value.lerp(to.value, t)
+        from.value.clone().lerp(to.value.clone(), t)
     }
 
     /// Called when a key is inserted at `t` (by time) through the tween from
@@ -234,10 +234,10 @@ impl<T: Animatable> Channel<T> {
     pub fn sample(&self, frame: f32) -> Option<T> {
         let (first, last) = (self.keys.first()?, self.keys.last()?);
         if frame <= first.frame as f32 {
-            return Some(first.value);
+            return Some(first.value.clone());
         }
         if frame >= last.frame as f32 {
-            return Some(last.value);
+            return Some(last.value.clone());
         }
 
         // `partition_point` is a binary search for the first key after
@@ -267,7 +267,7 @@ impl<T: Animatable> Channel<T> {
     /// should pick up.
     pub fn key_or_sample(&self, frame: u32) -> Option<Key<T>> {
         if let Some(key) = self.key_at(frame) {
-            return Some(*key);
+            return Some(key.clone());
         }
         let value = self.sample(frame as f32)?;
         Some(Key { frame, value, easing: Easing::default(), bend: None })
@@ -285,7 +285,7 @@ impl<T: Animatable> Channel<T> {
     /// Rewrites every key's value, keeping frames and easing.
     pub fn map_values(&mut self, f: impl Fn(T) -> T) {
         for key in &mut self.keys {
-            key.value = f(key.value);
+            key.value = f(key.value.clone());
         }
     }
 

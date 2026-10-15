@@ -209,7 +209,7 @@ impl InkframeApp {
                 app.layout.timelines_to_graphs();
             }
             if AutoScreenshot::effects() {
-                use inkframe_core::{Color, ColorEffect, Filter, FilterKind};
+                use inkframe_core::{Color, ColorEffect, Effects, Filter, FilterKind};
                 let find = |editor: &crate::editor::Editor, name: &str| {
                     editor.layers().iter().find(|l| l.name == name).map(|l| l.id)
                 };
@@ -226,16 +226,30 @@ impl InkframeApp {
                     strength: 1.5,
                     inner: false,
                 };
-                for (name, kind) in [("Torso", shadow), ("Head", glow)] {
+                let tint = ColorEffect::Tint { color: Color::rgb(0x40, 0xc0, 0x80), amount: 0.6 };
+                let looks = [
+                    (
+                        "Torso",
+                        Effects {
+                            filters: vec![Filter { enabled: true, kind: shadow }],
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Head",
+                        Effects { filters: vec![Filter { enabled: true, kind: glow }], ..Default::default() },
+                    ),
+                    ("Tail", Effects { color: tint, filters: Vec::new() }),
+                ];
+                // The head's glow grows in over the first second; the rest
+                // stay as they are.
+                for (name, effects) in looks {
+                    let frame = if name == "Head" { 24 } else { 0 };
                     if let Some(layer) = find(&app.editor, name).and_then(|id| app.editor.doc.layer_mut(id)) {
-                        layer.filters.push(Filter { enabled: true, kind });
+                        layer.track.set_effects(frame, effects);
                     }
                 }
-                if let Some(layer) = find(&app.editor, "Tail").and_then(|id| app.editor.doc.layer_mut(id)) {
-                    layer.color_effect =
-                        ColorEffect::Tint { color: Color::rgb(0x40, 0xc0, 0x80), amount: 0.6 };
-                }
-                app.editor.select(find(&app.editor, "Torso"));
+                app.editor.select(find(&app.editor, "Head"));
             }
             if AutoScreenshot::camera() {
                 let camera = app.editor.doc.add_camera();

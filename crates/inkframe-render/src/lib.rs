@@ -298,7 +298,8 @@ fn render_layers(
         let matrix = parent.pre_concat(doc.layer_matrix(layer, frame));
         let mask = doc.mask_for(layer, frame).filter(|_| !layer.mask);
 
-        let effects = !layer.color_effect.is_none() || layer.filters.iter().any(|f| f.enabled);
+        let fx = layer.track.effects_at(frame as f32);
+        let effects = !fx.is_none();
         if opacity >= 1.0 && mask.is_none() && layer.blend.is_normal() && !effects {
             draw_layer(pixmap, doc, layer, frame, matrix, style, depth);
             continue;
@@ -326,7 +327,7 @@ fn render_layers(
         // the same pixels, so bands still meet seamlessly. Filter sizes
         // follow the zoom (`parent`'s scale), as the drawing does.
         let filter_scale = parent.average_scale();
-        let margin = inkframe_core::filter_margin(&layer.filters, filter_scale);
+        let margin = inkframe_core::filter_margin(&fx.filters, filter_scale);
         let Some(region) = covered_pixels(doc, layer, frame, matrix, pixmap.width(), pixmap.height(), margin)
         else {
             continue; // Empty, or entirely outside the image.
@@ -338,8 +339,8 @@ fn render_layers(
         draw_layer(&mut scratch.as_mut(), doc, layer, frame, offset.pre_concat(matrix), style, depth);
         if effects {
             let (width, height) = (scratch.width() as usize, scratch.height() as usize);
-            inkframe_core::apply_color_effect(scratch.data_mut(), &layer.color_effect);
-            inkframe_core::apply_filters(scratch.data_mut(), width, height, &layer.filters, filter_scale);
+            inkframe_core::apply_color_effect(scratch.data_mut(), &fx.color);
+            inkframe_core::apply_filters(scratch.data_mut(), width, height, &fx.filters, filter_scale);
         }
         if let Some(mask) = mask {
             let stencil = mask_stencil(doc, mask, frame, offset.pre_concat(parent), &scratch, style, depth);
@@ -828,10 +829,14 @@ mod tests {
             style: Style { fill: Some(Color::rgb(0, 0, 0)), stroke: None },
         };
         let id = doc.add_layer("Square", vec![square], 0, Pose::at(Point::new(150.0, BAND_HEIGHT as f32)));
-        doc.layer_mut(id).unwrap().filters.push(inkframe_core::Filter {
+        let blur = inkframe_core::Filter {
             enabled: true,
             kind: inkframe_core::FilterKind::Blur { x: 12.0, y: 12.0 },
-        });
+        };
+        doc.layer_mut(id)
+            .unwrap()
+            .track
+            .set_effects(0, inkframe_core::Effects { filters: vec![blur], ..Default::default() });
         let image = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
         let line = BAND_HEIGHT;
         for k in 0..40 {
@@ -850,7 +855,7 @@ mod tests {
     fn a_drop_shadow_shows_beside_the_layer() {
         let mut doc = red_square_doc();
         let id = doc.layers[0].id;
-        doc.layer_mut(id).unwrap().filters.push(inkframe_core::Filter {
+        let shadow = inkframe_core::Filter {
             enabled: true,
             kind: inkframe_core::FilterKind::DropShadow {
                 distance: 15.0,
@@ -859,7 +864,11 @@ mod tests {
                 color: Color::rgb(0, 0, 255),
                 strength: 1.0,
             },
-        });
+        };
+        doc.layer_mut(id)
+            .unwrap()
+            .track
+            .set_effects(0, inkframe_core::Effects { filters: vec![shadow], ..Default::default() });
         let image = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
         // The square spans x 10–30 at y 50; its shadow sits 15 to the right.
         assert_eq!(pixel(&image, 20, 50), [255, 0, 0, 255]);

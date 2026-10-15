@@ -31,6 +31,10 @@ const PROPERTY_ROW: f32 = 22.0;
 const AUDIO_ROW: f32 = 34.0;
 /// The box a layer's thumbnail is fitted into, in points.
 const THUMBNAIL: Vec2 = vec2(44.0, 26.0);
+/// The properties the graph editor lists: those with values to plot
+/// (effects are settings, so they're left out).
+const GRAPHED: [Property; 5] =
+    [Property::Position, Property::Rotation, Property::Scale, Property::Skew, Property::Opacity];
 /// How far each level of folder indents a layer's name.
 const FOLDER_INDENT: f32 = 14.0;
 const FRAME_WIDTH: f32 = 12.0;
@@ -316,7 +320,7 @@ impl TimelineView {
         let (response, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         let rect = response.rect;
         self.update_scroll(ui, &response, editor, rect, 0.0);
-        let layout = Layout::new(rect, self.scroll, &[PROPERTY_ROW; Property::ALL.len() + 1]);
+        let layout = Layout::new(rect, self.scroll, &[PROPERTY_ROW; GRAPHED.len() + 1]);
 
         // Pressing on the ruler scrubs, as in the timeline.
         let press = ui.input(|i| i.pointer.press_origin());
@@ -336,7 +340,7 @@ impl TimelineView {
             && let Some(p) = response.interact_pointer_pos()
             && layout.names.contains(p)
             && let Some(row) = layout.row_at(p.y)
-            && let Some(&property) = Property::ALL.get(row)
+            && let Some(&property) = GRAPHED.get(row)
         {
             editor.focused_property = property;
         }
@@ -356,7 +360,7 @@ impl TimelineView {
         let names = painter.with_clip_rect(layout.names);
         names.rect_filled(layout.names, 0.0, ui.visuals().panel_fill);
         let font = FontId::proportional(12.0);
-        for (row, property) in Property::ALL.into_iter().enumerate() {
+        for (row, property) in GRAPHED.into_iter().enumerate() {
             let cell = layout.row_rect(row, layout.names);
             if property == editor.focused_property {
                 names.rect_filled(cell, 0.0, ui.visuals().selection.bg_fill);
@@ -369,7 +373,7 @@ impl TimelineView {
                 ui.visuals().text_color(),
             );
         }
-        let legend_top = layout.row_rect(Property::ALL.len(), layout.names).top() + 6.0;
+        let legend_top = layout.row_rect(GRAPHED.len(), layout.names).top() + 6.0;
         for (i, name) in value_graph::curve_names(editor.focused_property).iter().enumerate() {
             let y = legend_top + i as f32 * 16.0 + 8.0;
             names.circle_filled(pos2(layout.names.left() + 14.0, y), 4.0, value_graph::curve_color(i));
@@ -879,7 +883,7 @@ impl TimelineView {
                         Some("mask")
                     } else if editor.doc.mask_for(layer, editor.frame).is_some() {
                         Some("masked")
-                    } else if !layer.color_effect.is_none() || layer.filters.iter().any(|f| f.enabled) {
+                    } else if layer.track.effects.keys().iter().any(|key| !key.value.is_none()) {
                         // Effects change how it looks without showing why.
                         Some("fx")
                     } else {
@@ -1761,8 +1765,9 @@ mod tests {
         expand(&mut h);
         let (timeline, editor, _) = h.state();
         let rows = timeline.rows(editor);
-        assert_eq!(rows.len(), 6);
+        assert_eq!(rows.len(), 7);
         assert_eq!(rows[5].property, Some(Property::Opacity));
+        assert_eq!(rows[6].property, Some(Property::Effects));
     }
 
     #[test]
