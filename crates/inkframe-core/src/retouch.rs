@@ -22,6 +22,7 @@
 use crate::brush::{BrushSettings, DabPath};
 use crate::geometry::Point;
 use crate::paint::Canvas;
+use crate::selection::Selection;
 
 /// Which part of the tonal range Dodge and Burn affect most.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -97,12 +98,27 @@ pub struct RetouchStroke {
     /// The canvas as it was when the stroke began, which Clone Stamp copies
     /// from, so a stroke never copies paint it has just put down.
     source: Canvas,
+    /// Where it may change pixels, if not everywhere.
+    selection: Option<Selection>,
 }
 
 impl RetouchStroke {
     pub fn new(settings: BrushSettings, kind: Retouch, canvas: &Canvas) -> Self {
         // Sharing the canvas's tiles, so this costs almost nothing.
-        Self { settings, kind, path: DabPath::default(), smudge: None, source: canvas.clone() }
+        Self {
+            settings,
+            kind,
+            path: DabPath::default(),
+            smudge: None,
+            source: canvas.clone(),
+            selection: None,
+        }
+    }
+
+    /// Changes pixels only within `selection`.
+    pub fn within(mut self, selection: Option<Selection>) -> Self {
+        self.selection = selection;
+        self
     }
 
     /// Carries the stroke on to `at` (canvas pixels) with `pressure`.
@@ -127,7 +143,8 @@ impl RetouchStroke {
         let reach = radius.ceil() as i64 + 1 + margin;
         let (cx, cy) = (at.x.floor() as i64, at.y.floor() as i64);
         let (x0, y0, size) = (cx - reach, cy - reach, (reach * 2 + 1) as u32);
-        let mut pixels = to_floats(&canvas.read_region(x0, y0, size, size));
+        let original = canvas.read_region(x0, y0, size, size);
+        let mut pixels = to_floats(&original);
 
         // How much the dab covers each pixel of the square.
         let cover: Vec<f32> = (0..size * size)
@@ -197,7 +214,11 @@ impl RetouchStroke {
                 }
             }
         }
-        canvas.write_region(x0, y0, size, size, &to_bytes(&pixels));
+        let mut changed = to_bytes(&pixels);
+        if let Some(selection) = &self.selection {
+            selection.limit(x0, y0, size, &original, &mut changed);
+        }
+        canvas.write_region(x0, y0, size, size, &changed);
     }
 }
 

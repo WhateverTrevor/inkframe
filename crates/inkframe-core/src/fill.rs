@@ -11,6 +11,7 @@
 use crate::color::Color;
 use crate::geometry::Point;
 use crate::paint::{Canvas, premultiply};
+use crate::selection::Selection;
 
 /// How the Paint Bucket chooses what to fill.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -30,19 +31,54 @@ impl Default for BucketSettings {
 }
 
 /// Fills from pixel (`x`, `y`) with `color`. Returns false if the pixel is
-/// off the canvas.
-pub fn bucket_fill(canvas: &mut Canvas, x: i64, y: i64, color: Color, settings: BucketSettings) -> bool {
+/// off the canvas. With a `selection`, only selected pixels change.
+pub fn bucket_fill(
+    canvas: &mut Canvas,
+    x: i64,
+    y: i64,
+    color: Color,
+    settings: BucketSettings,
+    selection: Option<&Selection>,
+) -> bool {
+    let Some(fill) = similar_area(canvas, x, y, settings.tolerance, settings.contiguous) else {
+        return false;
+    };
+    let before = canvas.read_region(0, 0, canvas.width, canvas.height);
+    let mut pixels = before.clone();
+    let source = premultiply(&[color.r, color.g, color.b, color.a]);
+    let alpha = settings.opacity.clamp(0.0, 1.0);
+    for (i, _) in fill.iter().enumerate().filter(|(_, f)| **f) {
+        over(&mut pixels[i * 4..i * 4 + 4], source, alpha);
+    }
+    if let Some(selection) = selection {
+        selection.limit(0, 0, canvas.width, &before, &mut pixels);
+    }
+    canvas.write_region(0, 0, canvas.width, canvas.height, &pixels);
+    true
+}
+
+/// The pixels whose colour is within `tolerance` of pixel (`x`, `y`)'s:
+/// those joined to it (`contiguous`), or all of them. One flag per pixel,
+/// row by row; `None` if the pixel is off the canvas. The Paint Bucket
+/// fills this area and the Magic Wand selects it.
+pub(crate) fn similar_area(
+    canvas: &Canvas,
+    x: i64,
+    y: i64,
+    tolerance: u8,
+    contiguous: bool,
+) -> Option<Vec<bool>> {
     let (width, height) = (canvas.width as i64, canvas.height as i64);
     if x < 0 || y < 0 || x >= width || y >= height {
-        return false;
+        return None;
     }
-    let mut pixels = canvas.read_region(0, 0, canvas.width, canvas.height);
+    let pixels = canvas.read_region(0, 0, canvas.width, canvas.height);
     let at = |x: i64, y: i64| ((y * width + x) * 4) as usize;
     let target: [u8; 4] = pixels[at(x, y)..at(x, y) + 4].try_into().expect("four bytes");
-    let similar = |p: &[u8]| p.iter().zip(target).all(|(a, b)| a.abs_diff(b) <= settings.tolerance);
+    let similar = |p: &[u8]| p.iter().zip(target).all(|(a, b)| a.abs_diff(b) <= tolerance);
 
     let mut fill = vec![false; (width * height) as usize];
-    if settings.contiguous {
+    if contiguous {
         // Scanline flood fill: from each seed, run left and right along
         // the row, then queue the rows above and below.
         let mut seeds = vec![(x, y)];
@@ -74,14 +110,7 @@ pub fn bucket_fill(canvas: &mut Canvas, x: i64, y: i64, color: Color, settings: 
             *filled = similar(&pixels[i * 4..i * 4 + 4]);
         }
     }
-
-    let source = premultiply(&[color.r, color.g, color.b, color.a]);
-    let alpha = settings.opacity.clamp(0.0, 1.0);
-    for (i, _) in fill.iter().enumerate().filter(|(_, f)| **f) {
-        over(&mut pixels[i * 4..i * 4 + 4], source, alpha);
-    }
-    canvas.write_region(0, 0, canvas.width, canvas.height, &pixels);
-    true
+    Some(fill)
 }
 
 /// The shape of a gradient.
@@ -94,18 +123,24 @@ pub enum GradientShape {
     Radial,
 }
 
-/// Lays a gradient over the whole canvas: `start` at `from`, blending to
-/// `end` at `to` (canvas pixels), at `opacity`.
-pub fn gradient(
-    canvas: &mut Canvas,
-    from: Point,
-    to: Point,
-    start: Color,
-    end: Color,
-    shape: GradientShape,
-    opacity: f32,
-) {
-    let mut pixels = canvas.read_region(0, 0, canvas.width, canvas.height);
+/// A gradient: `start` at `from`, blending to `end` at `to` (canvas
+/// pixels), laid at `opacity`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Gradient {
+    pub from: Point,
+    pub to: Point,
+    pub start: Color,
+    pub end: Color,
+    pub shape: GradientShape,
+    pub opacity: f32,
+}
+
+/// Lays a gradient over the whole canvas (or, with a `selection`, over
+/// what's selected).
+pub fn gradient(canvas: &mut Canvas, gradient: &Gradient, selection: Option<&Selection>) {
+    let Gradient { from, to, start, end, shape, opacity } = *gradient;
+    let before = canvas.read_region(0, 0, canvas.width, canvas.height);
+    let mut pixels = before.clone();
     let axis = to - from;
     let length_sq = axis.dot(axis).max(1e-6);
     let alpha = opacity.clamp(0.0, 1.0);
@@ -126,6 +161,9 @@ pub fn gradient(
             channel(start.a, end.a),
         ];
         over(pixel, premultiply(&straight), alpha);
+    }
+    if let Some(selection) = selection {
+        selection.limit(0, 0, canvas.width, &before, &mut pixels);
     }
     canvas.write_region(0, 0, canvas.width, canvas.height, &pixels);
 }
@@ -161,7 +199,7 @@ mod tests {
     fn the_bucket_fills_inside_an_outline() {
         let mut canvas = outlined();
         let red = Color::rgb(255, 0, 0);
-        assert!(bucket_fill(&mut canvas, 20, 10, red, BucketSettings::default()));
+        assert!(bucket_fill(&mut canvas, 20, 10, red, BucketSettings::default(), None));
         assert_eq!(canvas.pixel(20, 10), [255, 0, 0, 255]);
         assert_eq!(canvas.pixel(11, 6), [255, 0, 0, 255]);
         assert_eq!(canvas.pixel(10, 10), [0, 0, 0, 255], "the outline stays");
@@ -172,7 +210,7 @@ mod tests {
     fn not_contiguous_fills_every_match() {
         let mut canvas = outlined();
         let settings = BucketSettings { contiguous: false, ..BucketSettings::default() };
-        bucket_fill(&mut canvas, 20, 10, Color::rgb(0, 0, 255), settings);
+        bucket_fill(&mut canvas, 20, 10, Color::rgb(0, 0, 255), settings, None);
         assert_eq!(canvas.pixel(40, 10), [0, 0, 255, 255]);
         assert_eq!(canvas.pixel(10, 10), [0, 0, 0, 255]);
     }
@@ -183,7 +221,7 @@ mod tests {
         let row: Vec<u8> = (0..10).flat_map(|x| [x * 20, 0, 0, 255]).collect();
         canvas.write_region(0, 0, 10, 1, &row);
         let settings = BucketSettings { tolerance: 45, ..BucketSettings::default() };
-        bucket_fill(&mut canvas, 0, 0, Color::rgb(0, 255, 0), settings);
+        bucket_fill(&mut canvas, 0, 0, Color::rgb(0, 255, 0), settings, None);
         // 0, 20 and 40 are within 45 of 0; 60 isn't.
         assert_eq!(canvas.pixel(2, 0), [0, 255, 0, 255]);
         assert_eq!(canvas.pixel(3, 0), [60, 0, 0, 255]);
@@ -193,15 +231,15 @@ mod tests {
     fn a_linear_gradient_blends_along_its_line() {
         let mut canvas = Canvas::new(101, 3);
         let (black, white) = (Color::rgb(0, 0, 0), Color::rgb(255, 255, 255));
-        gradient(
-            &mut canvas,
-            Point::new(0.0, 0.0),
-            Point::new(100.0, 0.0),
-            black,
-            white,
-            GradientShape::Linear,
-            1.0,
-        );
+        let linear = Gradient {
+            from: Point::new(0.0, 0.0),
+            to: Point::new(100.0, 0.0),
+            start: black,
+            end: white,
+            shape: GradientShape::Linear,
+            opacity: 1.0,
+        };
+        gradient(&mut canvas, &linear, None);
         assert_eq!(canvas.pixel(0, 1)[0], 1);
         assert!((canvas.pixel(50, 1)[0] as i32 - 128).abs() <= 2);
         assert_eq!(canvas.pixel(100, 1), [255, 255, 255, 255]);
@@ -212,7 +250,15 @@ mod tests {
         let mut canvas = Canvas::new(100, 1);
         let red = Color::rgb(200, 0, 0);
         let clear = Color { a: 0, ..red };
-        gradient(&mut canvas, Point::ZERO, Point::new(100.0, 0.0), red, clear, GradientShape::Radial, 1.0);
+        let radial = Gradient {
+            from: Point::ZERO,
+            to: Point::new(100.0, 0.0),
+            start: red,
+            end: clear,
+            shape: GradientShape::Radial,
+            opacity: 1.0,
+        };
+        gradient(&mut canvas, &radial, None);
         let middle = crate::paint::unpremultiply(&canvas.pixel(50, 0));
         assert_eq!(middle[0], 200, "still red, just thinner: {middle:?}");
         assert!((100..=155).contains(&middle[3]));

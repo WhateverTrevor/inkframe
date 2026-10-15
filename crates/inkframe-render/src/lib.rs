@@ -17,8 +17,8 @@ mod text;
 
 use inkframe_core::{Affine, Color, Document, Element, Layer, LayerId, Point, Shape, SymbolId, TimelineId};
 use tiny_skia::{
-    FillRule, FilterQuality, IntRect, LineCap, LineJoin, Mask, MaskType, Paint, PathBuilder, Pattern, Pixmap,
-    PixmapMut, PixmapPaint, SpreadMode, Transform,
+    BlendMode, FillRule, FilterQuality, IntRect, LineCap, LineJoin, Mask, MaskType, Paint, PathBuilder,
+    Pattern, Pixmap, PixmapMut, PixmapPaint, SpreadMode, Transform,
 };
 
 pub use images::{IMAGE_EXTENSIONS, ImageLibrary, image_size};
@@ -268,7 +268,7 @@ fn render_layers(
         let matrix = parent.pre_concat(doc.layer_matrix(layer, frame));
         let mask = doc.mask_for(layer, frame).filter(|_| !layer.mask);
 
-        if opacity >= 1.0 && mask.is_none() {
+        if opacity >= 1.0 && mask.is_none() && layer.blend.is_normal() {
             draw_layer(pixmap, doc, layer, frame, matrix, style, depth);
             continue;
         }
@@ -279,7 +279,8 @@ fn render_layers(
         // into a scratch buffer, then blend that buffer down in one go.
         // Symbols nest, so each translucent layer needs a buffer of its own.
         // A masked layer goes through a scratch buffer too, so the mask can
-        // be cut out of it before it's blended down.
+        // be cut out of it before it's blended down, and so does one with a
+        // blend mode, which mixes the layer as a whole with what's beneath.
         //
         // The buffer only needs to cover the pixels the layer can touch.
         // A whole-image buffer would cost a full-screen allocation and blend
@@ -297,8 +298,73 @@ fn render_layers(
             let stencil = mask_stencil(doc, mask, frame, offset.pre_concat(parent), &scratch, style, depth);
             scratch.apply_mask(&stencil);
         }
-        let paint = PixmapPaint { opacity, ..PixmapPaint::default() };
+        let paint = PixmapPaint { opacity, blend_mode: blend_mode(layer.blend), ..PixmapPaint::default() };
         pixmap.draw_pixmap(region.x(), region.y(), scratch.as_ref(), &paint, Transform::identity(), None);
+    }
+}
+
+/// Photoshop's "Merge Down": paints `upper` into the paint layer directly
+/// beneath it (as `upper` shows on `frame`, with its placement, opacity and
+/// blend mode) and removes it. Any kind of layer can be merged down, so
+/// this also turns vector drawing into pixels. Returns false (changing
+/// nothing) if the layer below isn't a paint layer.
+pub fn merge_down(doc: &mut Document, upper: LayerId, frame: u32, images: Option<&ImageLibrary>) -> bool {
+    let Some(timeline) = doc.timeline_of(upper) else { return false };
+    let layers = doc.layers_of(timeline);
+    let Some(index) = layers.iter().position(|l| l.id == upper).filter(|&i| i > 0) else { return false };
+    let (lower, top) = (layers[index - 1].id, &layers[index]);
+    let Some((canvas_id, width, height)) = doc.paint_canvas_at(lower, frame) else { return false };
+    let (Some(lower_layer), Some(canvas)) = (doc.layer(lower), doc.canvas(canvas_id)) else { return false };
+
+    // The upper layer's coordinates, into the lower canvas's pixels.
+    let Some(into_lower) = doc.layer_matrix(lower_layer, frame).inverse() else { return false };
+    let matrix = Affine::translate(Point::new(width as f32 / 2.0, height as f32 / 2.0))
+        .pre_concat(into_lower)
+        .pre_concat(doc.layer_matrix(top, frame));
+    let (Some(mut below), Some(mut above)) = (Pixmap::new(width, height), Pixmap::new(width, height)) else {
+        return false;
+    };
+    below.data_mut().copy_from_slice(&canvas.to_pixels());
+    let style = Style { tint: None, images, show_guides: false, show_mask: None };
+    draw_layer(&mut above.as_mut(), doc, top, frame, matrix, style, 0);
+    let paint = PixmapPaint {
+        opacity: doc.pose(top, frame).opacity.clamp(0.0, 1.0),
+        blend_mode: blend_mode(top.blend),
+        ..PixmapPaint::default()
+    };
+    below.draw_pixmap(0, 0, above.as_ref(), &paint, Transform::identity(), None);
+
+    let merged = below.data().to_vec();
+    if let Some(canvas) = doc.canvas_mut(canvas_id) {
+        canvas.write_region(0, 0, width, height, &merged);
+    }
+    doc.release_children(upper, frame);
+    doc.remove_layer(upper);
+    true
+}
+
+/// tiny-skia's version of a layer blend mode. Onion skins and the like are
+/// tinted ghosts, so they always blend normally regardless.
+fn blend_mode(mode: inkframe_core::BlendMode) -> BlendMode {
+    use inkframe_core::BlendMode as B;
+    match mode {
+        B::Normal => BlendMode::SourceOver,
+        B::Multiply => BlendMode::Multiply,
+        B::Screen => BlendMode::Screen,
+        B::Overlay => BlendMode::Overlay,
+        B::Darken => BlendMode::Darken,
+        B::Lighten => BlendMode::Lighten,
+        B::ColorDodge => BlendMode::ColorDodge,
+        B::ColorBurn => BlendMode::ColorBurn,
+        B::Add => BlendMode::Plus,
+        B::HardLight => BlendMode::HardLight,
+        B::SoftLight => BlendMode::SoftLight,
+        B::Difference => BlendMode::Difference,
+        B::Exclusion => BlendMode::Exclusion,
+        B::Hue => BlendMode::Hue,
+        B::Saturation => BlendMode::Saturation,
+        B::Color => BlendMode::Color,
+        B::Luminosity => BlendMode::Luminosity,
     }
 }
 
@@ -597,6 +663,42 @@ mod tests {
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
         let c = pixmap.pixel(x, y).unwrap().demultiply();
         [c.red(), c.green(), c.blue(), c.alpha()]
+    }
+
+    #[test]
+    fn blend_modes_mix_a_layer_with_whats_beneath() {
+        let mut doc = Document::default();
+        (doc.width, doc.height, doc.background) = (10, 10, Color::WHITE);
+        let fill = |r, g, b| Element {
+            shape: Shape::Rect { width: 10.0, height: 10.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::rgb(r, g, b)), stroke: None },
+        };
+        doc.add_layer("Below", vec![fill(200, 100, 50)], 0, Pose::at(Point::new(5.0, 5.0)));
+        let top = doc.add_layer("Shade", vec![fill(128, 128, 128)], 0, Pose::at(Point::new(5.0, 5.0)));
+        doc.layer_mut(top).unwrap().blend = inkframe_core::BlendMode::Multiply;
+        let pixmap = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        let [r, g, b, _] = pixel(&pixmap, 5, 5);
+        // Multiply: each channel times grey's half.
+        assert!(r.abs_diff(100) <= 1 && g.abs_diff(50) <= 1 && b.abs_diff(25) <= 1, "{:?}", [r, g, b]);
+    }
+
+    #[test]
+    fn merging_down_paints_a_vector_layer_into_the_paint_layer_below() {
+        let mut doc = Document::default();
+        (doc.width, doc.height, doc.background) = (100, 100, Color::WHITE);
+        let paint = doc.add_paint_layer(inkframe_core::TimelineId::Main, "Paint", 0).unwrap();
+        let square = Element {
+            shape: Shape::Rect { width: 20.0, height: 20.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::rgb(0, 0, 255)), stroke: None },
+        };
+        let shape = doc.add_layer("Square", vec![square], 0, Pose::at(Point::new(30.0, 70.0)));
+        assert!(merge_down(&mut doc, shape, 0, None));
+        assert!(doc.layer(shape).is_none(), "the merged layer is gone");
+        let (canvas, ..) = doc.paint_canvas_at(paint, 0).unwrap();
+        assert_eq!(doc.canvas(canvas).unwrap().pixel(30, 70), [0, 0, 255, 255]);
+        assert_eq!(doc.canvas(canvas).unwrap().pixel(60, 70), [0; 4]);
+        // Nothing below to merge into.
+        assert!(!merge_down(&mut doc, paint, 0, None));
     }
 
     #[test]

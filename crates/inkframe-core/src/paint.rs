@@ -221,6 +221,35 @@ impl Canvas {
         }
     }
 
+    /// The canvas moved by whole pixels; what moves off the edge is lost.
+    pub fn shifted(&self, dx: i64, dy: i64) -> Canvas {
+        let mut moved = Canvas::new(self.width, self.height);
+        let (columns, rows) = self.tile_counts();
+        for ty in 0..rows {
+            for tx in 0..columns {
+                let (x, y) = ((tx * TILE) as i64, (ty * TILE) as i64);
+                let pixels = self.read_region(x - dx, y - dy, TILE, TILE);
+                moved.write_region(x, y, TILE, TILE, &pixels);
+            }
+        }
+        moved
+    }
+
+    /// Draws `top` over this canvas ("source over", premultiplied); both
+    /// the same size.
+    pub fn draw_over(&mut self, top: &Canvas) {
+        for (at, above) in top.tiles() {
+            let mut pixels = self.tile(at).map_or_else(|| vec![0; TILE_BYTES], <[u8]>::to_vec);
+            for (below, above) in pixels.chunks_exact_mut(4).zip(above.chunks_exact(4)) {
+                let keep = 255 - above[3] as u32;
+                for c in 0..4 {
+                    below[c] = (above[c] as u32 + (below[c] as u32 * keep + 127) / 255).min(255) as u8;
+                }
+            }
+            self.set_tile(at, pixels);
+        }
+    }
+
     /// The whole canvas as one premultiplied RGBA image, row by row.
     pub fn to_pixels(&self) -> Vec<u8> {
         let mut pixels = vec![0; (self.width * self.height * 4) as usize];
@@ -386,6 +415,44 @@ impl Document {
         Some(id)
     }
 
+    /// The canvas a layer shows on `frame`, with its size, if it's a paint
+    /// layer.
+    pub fn paint_canvas_at(&self, layer: LayerId, frame: u32) -> Option<(CanvasId, u32, u32)> {
+        self.layer(layer)?.elements_at(frame).iter().find_map(|e| match e.shape {
+            Shape::Paint { canvas, width, height } => Some((canvas, width, height)),
+            _ => None,
+        })
+    }
+
+    /// Photoshop's "Layer via Copy" (or, with `cut`, "via Cut"): a new paint
+    /// layer just above `layer`, placed the same, holding the selected
+    /// pixels of the drawing it shows on `frame`. Cutting takes them out of
+    /// the original. The new layer can then be moved, scaled and turned
+    /// with the usual handles.
+    pub fn layer_via_copy(
+        &mut self,
+        layer: LayerId,
+        frame: u32,
+        selection: &crate::Selection,
+        cut: bool,
+    ) -> Option<LayerId> {
+        let (canvas, ..) = self.paint_canvas_at(layer, frame)?;
+        let original = self.canvas(canvas)?.clone();
+        let copy = self.duplicate_layer(layer)?;
+        let (copy_canvas, ..) = self.paint_canvas_at(copy, frame)?;
+        // Just the drawing showing now, holding just the selection.
+        if let Some(new) = self.layer_mut(copy) {
+            let shown = new.drawing_index_at(frame);
+            new.drawings = vec![new.drawings.swap_remove(shown)];
+            new.exposure.clear();
+        }
+        *self.canvas_mut(copy_canvas)? = selection.keep(&original);
+        if cut {
+            *self.canvas_mut(canvas)? = selection.clear(&original);
+        }
+        Some(copy)
+    }
+
     /// Every canvas some layer's drawing uses. Others (left behind by a
     /// deleted drawing, say) aren't saved.
     pub fn used_canvases(&self) -> Vec<CanvasId> {
@@ -508,6 +575,32 @@ mod tests {
         // Writing transparency clears the tiles away again.
         canvas.write_region(246, 246, 20, 20, &vec![0; 20 * 20 * 4]);
         assert!(canvas.is_empty());
+    }
+
+    #[test]
+    fn shifting_and_layering_canvases() {
+        let mut canvas = Canvas::new(600, 10);
+        canvas.write_region(250, 0, 4, 1, &[10, 0, 0, 255].repeat(4));
+        let moved = canvas.shifted(10, 2);
+        assert_eq!(moved.pixel(262, 2), [10, 0, 0, 255]);
+        assert_eq!(moved.pixel(252, 0), [0; 4]);
+        let mut base = Canvas::new(600, 10);
+        base.write_region(0, 0, 600, 10, &[0, 0, 100, 255].repeat(6000));
+        base.draw_over(&moved);
+        assert_eq!(base.pixel(262, 2), [10, 0, 0, 255]);
+        assert_eq!(base.pixel(5, 5), [0, 0, 100, 255]);
+    }
+
+    #[test]
+    fn layer_via_cut_moves_the_selected_pixels_to_a_new_layer() {
+        let (mut doc, layer, canvas) = painted();
+        let selection =
+            crate::Selection::rectangle(1920, 1080, Point::new(290.0, 0.0), Point::new(310.0, 20.0));
+        let new = doc.layer_via_copy(layer, 0, &selection, true).unwrap();
+        assert_eq!(doc.canvas(canvas).unwrap().pixel(300, 10), [0; 4], "cut from the original");
+        let (copy, ..) = doc.paint_canvas_at(new, 0).unwrap();
+        assert_eq!(doc.canvas(copy).unwrap().pixel(300, 10), [255, 0, 0, 255]);
+        assert_eq!(doc.layer_index(new), doc.layer_index(layer).map(|i| i + 1), "just above");
     }
 
     #[test]

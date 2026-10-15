@@ -22,7 +22,8 @@
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_PAINT=1` paints a few strokes on a new paint layer, as a pen
 //!   would (pressing harder through the middle of each), to show the brushes; `=tools`
-//!   also uses the bucket, gradient and retouching tools on them.
+//!   also uses the bucket, gradient and retouching tools on them; `=select` then selects
+//!   an ellipse, shifts the hue inside it, and sets the strokes to Multiply.
 
 use std::path::PathBuf;
 
@@ -83,8 +84,11 @@ impl AutoScreenshot {
         }
         if let Some(paint) = var("INKFRAME_SCREENSHOT_PAINT") {
             paint_demo(editor);
-            if paint == "tools" {
+            if paint == "tools" || paint == "select" {
                 retouch_demo(editor);
+            }
+            if paint == "select" {
+                selection_demo(editor);
             }
         }
         if let Some(name) = var("INKFRAME_SCREENSHOT_TOOL") {
@@ -221,15 +225,15 @@ fn retouch_demo(editor: &mut Editor) {
     {
         if let Some(c) = editor.doc.canvas_mut(sky_canvas) {
             let (top, bottom) = (Color::rgb(0x9c, 0xc8, 0xf0), Color::rgb(0xfb, 0xf4, 0xe6));
-            inkframe_core::gradient(
-                c,
-                Point::new(0.0, 0.0),
-                Point::new(0.0, 1080.0),
-                top,
-                bottom,
-                GradientShape::Linear,
-                1.0,
-            );
+            let sky = inkframe_core::Gradient {
+                from: Point::new(0.0, 0.0),
+                to: Point::new(0.0, 1080.0),
+                start: top,
+                end: bottom,
+                shape: GradientShape::Linear,
+                opacity: 1.0,
+            };
+            inkframe_core::gradient(c, &sky, None);
         }
         editor.doc.move_layer(sky, -1);
         editor.select(Some(strokes));
@@ -244,7 +248,7 @@ fn retouch_demo(editor: &mut Editor) {
         let t = i as f32 / 90.0 * std::f32::consts::TAU;
         stroke.add_point(c, Point::new(1700.0 + t.cos() * 110.0, 880.0 + t.sin() * 110.0), 1.0);
     }
-    inkframe_core::bucket_fill(c, 1700, 880, Color::rgb(0x6c, 0xc0, 0x6c), BucketSettings::default());
+    inkframe_core::bucket_fill(c, 1700, 880, Color::rgb(0x6c, 0xc0, 0x6c), BucketSettings::default(), None);
 
     // Each retouching tool once, on the strokes.
     let soft =
@@ -280,4 +284,23 @@ fn retouch_demo(editor: &mut Editor) {
             stroke.add_point(c, Point::new(x, y), 1.0);
         }
     }
+}
+
+/// After `retouch_demo`: an elliptical selection across the strokes, their
+/// hue turned inside it only, and the strokes layer set to Multiply.
+fn selection_demo(editor: &mut Editor) {
+    use inkframe_core::{Adjustment, BlendMode, Point, Selection, adjust};
+    let Some((layer, canvas, width, height)) = editor.paint_target() else { return };
+    let selection = Selection::ellipse(width, height, Point::new(620.0, 250.0), Point::new(1100.0, 650.0));
+    if let Some(pixels) = editor.doc.canvas(canvas) {
+        let hue = Adjustment::HueSaturation { hue: 140.0, saturation: 0.2, lightness: 0.0 };
+        let shifted = adjust(pixels, &hue, Some(&selection));
+        if let Some(c) = editor.doc.canvas_mut(canvas) {
+            *c = shifted;
+        }
+    }
+    if let Some(layer) = editor.doc.layer_mut(layer) {
+        layer.blend = BlendMode::Multiply;
+    }
+    editor.pixel_selection = Some((canvas, selection));
 }

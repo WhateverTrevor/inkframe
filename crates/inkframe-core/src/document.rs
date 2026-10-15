@@ -4,6 +4,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::audio::AudioTrack;
+use crate::blend::BlendMode;
 use crate::color::Color;
 use crate::deform::Deformer;
 use crate::drawing::{Drawing, Exposure};
@@ -28,7 +29,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 17;
+pub const FORMAT_VERSION: u32 = 18;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -146,6 +147,9 @@ pub struct Layer {
     /// Bones that bend the drawing itself (see `deform.rs`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deformer: Option<Deformer>,
+    /// How the layer mixes with what's beneath it (see `blend.rs`).
+    #[serde(default, skip_serializing_if = "BlendMode::is_normal")]
+    pub blend: BlendMode,
 }
 
 fn is_origin(p: &Point) -> bool {
@@ -342,6 +346,7 @@ impl Document {
             pivot: Point::ZERO,
             rotation_limits: None,
             deformer: None,
+            blend: BlendMode::Normal,
         });
         Some(id)
     }

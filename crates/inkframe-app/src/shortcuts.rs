@@ -26,6 +26,11 @@ pub const REDO_ALT: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::Y);
 pub const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::D);
 pub const SELECT_ALL: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::A);
 pub const DESELECT_ALL: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::A);
+// Photoshop's selection and layer shortcuts, for painting. (Merge Down's
+// ⌘E is Export here, so it has none.)
+pub const INVERT_SELECTION: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::I);
+pub const LAYER_VIA_COPY: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::J);
+pub const LAYER_VIA_CUT: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::J);
 
 // Copy and paste arrive from the system as clipboard events rather than
 // keys (see `InkframeApp::handle_shortcuts`); these are only for showing in
@@ -73,6 +78,9 @@ pub fn tool_key(tool: Tool) -> Key {
         // O, Photoshop's, is the Oval here.
         Tool::Dodge | Tool::Burn => Key::D,
         Tool::CloneStamp => Key::S,
+        Tool::RectMarquee | Tool::EllipseMarquee => Key::M,
+        Tool::Lasso | Tool::PolygonLasso => Key::L,
+        Tool::MagicWand => Key::W,
         Tool::Select => Key::V,
         Tool::Subselect => Key::A,
         Tool::Pen => Key::P,

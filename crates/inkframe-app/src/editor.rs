@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use inkframe_core::FontFileId;
 use inkframe_core::{
     Affine, Anchor, BrushSettings, BucketSettings, CanvasId, Color, Document, DocumentError, Drawing,
-    Element, GradientShape, History, Layer, LayerId, Point, Property, Shape, Stroke, Style, SymbolId, Text,
-    TimelineId, ToneRange, Transform, path_from_anchors,
+    Element, GradientShape, History, Layer, LayerId, Point, Property, Selection, Shape, Stroke, Style,
+    SymbolId, Text, TimelineId, ToneRange, Transform, path_from_anchors,
 };
 use inkframe_core::{Clipboard, CopiedKeyframe};
 use inkframe_render::ImageLibrary;
@@ -42,13 +42,19 @@ pub enum Tool {
     Dodge,
     Burn,
     CloneStamp,
+    /// The selection tools: what the painting tools may change.
+    RectMarquee,
+    EllipseMarquee,
+    Lasso,
+    PolygonLasso,
+    MagicWand,
 }
 
 impl Tool {
     /// The toolbar, top to bottom. Tools that do similar jobs share a
     /// slot, as in Photoshop: the slot shows whichever was used last, its
     /// key picks that one, and Shift with the key steps through the rest.
-    pub const GROUPS: [&'static [Tool]; 15] = [
+    pub const GROUPS: [&'static [Tool]; 18] = [
         &[Tool::Select],
         &[Tool::Subselect],
         &[Tool::Bone],
@@ -57,6 +63,9 @@ impl Tool {
         &[Tool::Ellipse],
         &[Tool::Pencil],
         &[Tool::Text],
+        &[Tool::RectMarquee, Tool::EllipseMarquee],
+        &[Tool::Lasso, Tool::PolygonLasso],
+        &[Tool::MagicWand],
         &[Tool::Brush],
         &[Tool::Eraser],
         &[Tool::PaintBucket, Tool::Gradient],
@@ -97,7 +106,26 @@ impl Tool {
             Tool::Dodge => "Dodge",
             Tool::Burn => "Burn",
             Tool::CloneStamp => "Clone Stamp",
+            Tool::RectMarquee => "Rectangular Marquee",
+            Tool::EllipseMarquee => "Elliptical Marquee",
+            Tool::Lasso => "Lasso",
+            Tool::PolygonLasso => "Polygonal Lasso",
+            Tool::MagicWand => "Magic Wand",
         }
+    }
+
+    /// Whether the tool selects pixels.
+    pub fn selects(self) -> bool {
+        matches!(
+            self,
+            Tool::RectMarquee | Tool::EllipseMarquee | Tool::Lasso | Tool::PolygonLasso | Tool::MagicWand
+        )
+    }
+
+    /// Whether the tool works on a paint layer's pixels: painting or
+    /// selecting them.
+    pub fn on_pixels(self) -> bool {
+        self.paints() || self.selects()
     }
 
     /// Whether the tool works on a paint layer's pixels.
@@ -242,6 +270,14 @@ pub struct Editor {
     pub clone_offset: Option<Point>,
     /// The tool last used from each toolbar slot, by the slot's first tool.
     last_in_group: Vec<(Tool, Tool)>,
+    /// The selected pixels, on the canvas they belong to. Painting on that
+    /// canvas changes only these. Not part of the document (Photoshop
+    /// doesn't save selections either), and so not undone.
+    pub pixel_selection: Option<(CanvasId, Selection)>,
+    /// The Magic Wand's tolerance and whether it selects only connected
+    /// pixels.
+    pub wand_tolerance: u8,
+    pub wand_contiguous: bool,
     pub playback: Playback,
     pub onion: OnionSkin,
     /// The property whose easing curve the inspector is showing and editing.
@@ -298,6 +334,9 @@ impl Editor {
             clone_source: None,
             clone_offset: None,
             last_in_group: Vec::new(),
+            pixel_selection: None,
+            wand_tolerance: 32,
+            wand_contiguous: true,
             playback: Playback { looping: true, ..Playback::default() },
             onion: OnionSkin { enabled: false, before: 2, after: 2 },
             focused_property: Property::Position,
@@ -680,6 +719,77 @@ impl Editor {
             Shape::Paint { canvas, width, height } => Some((layer.id, canvas, width, height)),
             _ => None,
         })
+    }
+
+    /// The selection on `canvas`, if there's one (on another canvas doesn't
+    /// count).
+    pub fn selection_on(&self, canvas: CanvasId) -> Option<&Selection> {
+        self.pixel_selection.as_ref().filter(|(on, _)| *on == canvas).map(|(_, s)| s)
+    }
+
+    /// The selection on the paint layer being painted, if there's one.
+    pub fn active_selection(&self) -> Option<(CanvasId, &Selection)> {
+        let (_, canvas, ..) = self.paint_target()?;
+        self.selection_on(canvas).map(|s| (canvas, s))
+    }
+
+    /// Select › All: the whole of the selected paint layer's canvas.
+    pub fn select_all_pixels(&mut self) {
+        if let Some((_, canvas, width, height)) = self.paint_target() {
+            self.pixel_selection = Some((canvas, Selection::all(width, height)));
+        }
+    }
+
+    pub fn deselect_pixels(&mut self) {
+        self.pixel_selection = None;
+    }
+
+    /// Select › Inverse.
+    pub fn invert_pixel_selection(&mut self) {
+        let Some((_, canvas, width, height)) = self.paint_target() else { return };
+        let inverted = match self.selection_on(canvas) {
+            Some(selection) => selection.inverted(),
+            None => Selection::all(width, height),
+        };
+        self.pixel_selection = Some((canvas, inverted));
+    }
+
+    /// Clears the selected pixels (Delete with a selection).
+    pub fn clear_selected_pixels(&mut self) -> bool {
+        let Some((canvas, selection)) = self.active_selection().map(|(c, s)| (c, s.clone())) else {
+            return false;
+        };
+        if let Some(pixels) = self.doc.canvas_mut(canvas) {
+            *pixels = selection.clear(pixels);
+        }
+        true
+    }
+
+    /// Layer › New › Layer via Copy (or Cut): the selected pixels onto a
+    /// layer of their own, which is then selected.
+    pub fn layer_via_copy(&mut self, cut: bool) {
+        let frame = self.frame;
+        let Some((layer, ..)) = self.paint_target() else { return };
+        let Some((_, selection)) = self.active_selection().map(|(c, s)| (c, s.clone())) else { return };
+        if let Some(new) = self.doc.layer_via_copy(layer, frame, &selection, cut) {
+            self.select(Some(new));
+            self.pixel_selection = None;
+        }
+    }
+
+    /// Merge Down: paints the selected layer into the paint layer beneath.
+    pub fn merge_down(&mut self) -> bool {
+        let Some(id) = self.selection else { return false };
+        let below = self.doc.timeline_of(id).and_then(|t| {
+            let layers = self.doc.layers_of(t);
+            let index = layers.iter().position(|l| l.id == id)?;
+            index.checked_sub(1).map(|i| layers[i].id)
+        });
+        if inkframe_render::merge_down(&mut self.doc, id, self.frame, Some(&self.images)) {
+            self.select(below);
+            return true;
+        }
+        false
     }
 
     /// Makes the current tool's brush `factor` times bigger.
@@ -1266,6 +1376,28 @@ mod tests {
         assert_eq!(layer.key_frames(), [0, 8]);
         editor.remove_keyframe();
         assert_eq!(editor.doc.layer(id).unwrap().deformer.as_ref().unwrap().key_frames(), [0]);
+    }
+
+    #[test]
+    fn layer_via_cut_then_merge_down_puts_the_pixels_back_moved() {
+        let mut editor = Editor::new(Document::default());
+        let base = editor.add_paint_layer().unwrap();
+        let (_, canvas, w, h) = editor.paint_target().unwrap();
+        editor.doc.canvas_mut(canvas).unwrap().write_region(100, 100, 10, 10, &[0, 90, 0, 255].repeat(100));
+        let selection = Selection::rectangle(w, h, Point::new(90.0, 90.0), Point::new(120.0, 120.0));
+        editor.pixel_selection = Some((canvas, selection));
+
+        editor.layer_via_copy(true);
+        let cut = editor.selection.unwrap();
+        assert_ne!(cut, base);
+        assert_eq!(editor.doc.canvas(canvas).unwrap().pixel(105, 105), [0; 4]);
+        // Move the new layer 50 pixels right, then merge it back down.
+        let pose = editor.doc.pose(editor.doc.layer(cut).unwrap(), 0);
+        editor.set_pose(cut, Transform { position: pose.position + Point::new(50.0, 0.0), ..pose });
+        assert!(editor.merge_down());
+        assert_eq!(editor.selection, Some(base));
+        assert_eq!(editor.doc.canvas(canvas).unwrap().pixel(155, 105), [0, 90, 0, 255]);
+        assert_eq!(editor.layers().len(), 1);
     }
 
     #[test]
