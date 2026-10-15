@@ -215,6 +215,8 @@ impl Curves {
             Property::Scale => &["x %", "y %"],
             Property::Skew => &["x °", "y °"],
             Property::Opacity => &["%"],
+            // Effects are settings, not numbers along a curve.
+            Property::Effects => &[],
         };
         Self { names, keys, samples: Box::new(move |frame| values(&track, property, frame)) }
     }
@@ -254,6 +256,7 @@ fn values(track: &Track, property: Property, frame: f32) -> Vec<f32> {
         Property::Scale => vec![pose.scale.x * 100.0, pose.scale.y * 100.0],
         Property::Skew => vec![pose.skew.x, pose.skew.y],
         Property::Opacity => vec![pose.opacity * 100.0],
+        Property::Effects => Vec::new(),
     }
 }
 
@@ -294,6 +297,7 @@ fn set_component(track: &mut Track, property: Property, frame: u32, component: u
             track.skew.set(frame, k);
         }
         Property::Opacity => track.opacity.set(frame, (value / 100.0).clamp(0.0, 1.0)),
+        Property::Effects => {}
     }
 }
 
@@ -441,6 +445,7 @@ pub fn curve_names(property: Property) -> &'static [&'static str] {
         Property::Scale => &["x scale", "y scale"],
         Property::Skew => &["x skew", "y skew"],
         Property::Opacity => &["opacity"],
+        Property::Effects => &[],
     }
 }
 

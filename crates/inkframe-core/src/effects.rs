@@ -13,6 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::channel::Animatable;
 use crate::color::Color;
 
 /// A layer's colour effect.
@@ -114,6 +115,142 @@ impl FilterKind {
             FilterKind::AdjustColor { .. } => 0.0,
         }
     }
+}
+
+/// A layer's colour effect and filters together: what its Effects
+/// property animates (see `track.rs`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Effects {
+    #[serde(default, skip_serializing_if = "ColorEffect::is_none")]
+    pub color: ColorEffect,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub filters: Vec<Filter>,
+}
+
+impl Effects {
+    /// Whether these change nothing.
+    pub fn is_none(&self) -> bool {
+        self.color.is_none() && !self.filters.iter().any(|f| f.enabled)
+    }
+}
+
+impl Animatable for Effects {
+    /// Blends setting by setting. A colour effect or filter only one side
+    /// has fades in or out from a setting that changes nothing (no tint, a
+    /// shadow of no strength), so adding a drop shadow on a later key makes
+    /// it grow in. Where the two sides can't be matched up (a tint becoming
+    /// a brightness change, filters in a different order), the effects hold
+    /// until the next key, as a hold tween does.
+    fn lerp(self, other: Self, t: f32) -> Self {
+        let hold = |a: &Effects, b: &Effects| if t < 1.0 { a.clone() } else { b.clone() };
+        let Some(color) = lerp_color_effect(self.color, other.color, t) else { return hold(&self, &other) };
+        let mut filters = Vec::new();
+        for i in 0..self.filters.len().max(other.filters.len()) {
+            let pair = match (self.filters.get(i), other.filters.get(i)) {
+                (Some(a), Some(b)) => (live(a), live(b)),
+                (Some(a), None) => (live(a), neutral(a.kind)),
+                (None, Some(b)) => (neutral(b.kind), live(b)),
+                (None, None) => continue,
+            };
+            match lerp_filter(pair.0, pair.1, t) {
+                Some(kind) => filters.push(Filter { enabled: true, kind }),
+                None => return hold(&self, &other),
+            }
+        }
+        Effects { color, filters }
+    }
+}
+
+/// A filter's settings as they act: one switched off acts like one that
+/// changes nothing.
+fn live(filter: &Filter) -> FilterKind {
+    if filter.enabled { filter.kind } else { neutral(filter.kind) }
+}
+
+/// The same kind of filter, set to change nothing.
+fn neutral(kind: FilterKind) -> FilterKind {
+    match kind {
+        FilterKind::DropShadow { distance, angle, blur, color, .. } => {
+            FilterKind::DropShadow { distance, angle, blur, color, strength: 0.0 }
+        }
+        FilterKind::Blur { .. } => FilterKind::Blur { x: 0.0, y: 0.0 },
+        FilterKind::Glow { blur, color, inner, .. } => FilterKind::Glow { blur, color, strength: 0.0, inner },
+        FilterKind::AdjustColor { .. } => {
+            FilterKind::AdjustColor { brightness: 0.0, contrast: 0.0, saturation: 0.0, hue: 0.0 }
+        }
+    }
+}
+
+fn mix(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+fn mix_color(a: Color, b: Color, t: f32) -> Color {
+    let channel = |x: u8, y: u8| mix(x as f32, y as f32, t).round().clamp(0.0, 255.0) as u8;
+    Color { r: channel(a.r, b.r), g: channel(a.g, b.g), b: channel(a.b, b.b), a: channel(a.a, b.a) }
+}
+
+/// Two filters blended, or `None` if they're different kinds.
+fn lerp_filter(a: FilterKind, b: FilterKind, t: f32) -> Option<FilterKind> {
+    use FilterKind::*;
+    Some(match (a, b) {
+        (
+            DropShadow { distance: d1, angle: a1, blur: b1, color: c1, strength: s1 },
+            DropShadow { distance: d2, angle: a2, blur: b2, color: c2, strength: s2 },
+        ) => DropShadow {
+            distance: mix(d1, d2, t),
+            angle: mix(a1, a2, t),
+            blur: mix(b1, b2, t),
+            color: mix_color(c1, c2, t),
+            strength: mix(s1, s2, t),
+        },
+        (Blur { x: x1, y: y1 }, Blur { x: x2, y: y2 }) => Blur { x: mix(x1, x2, t), y: mix(y1, y2, t) },
+        (
+            Glow { blur: b1, color: c1, strength: s1, inner },
+            Glow { blur: b2, color: c2, strength: s2, inner: inner2 },
+        ) if inner == inner2 => {
+            Glow { blur: mix(b1, b2, t), color: mix_color(c1, c2, t), strength: mix(s1, s2, t), inner }
+        }
+        (
+            AdjustColor { brightness: br1, contrast: co1, saturation: sa1, hue: h1 },
+            AdjustColor { brightness: br2, contrast: co2, saturation: sa2, hue: h2 },
+        ) => AdjustColor {
+            brightness: mix(br1, br2, t),
+            contrast: mix(co1, co2, t),
+            saturation: mix(sa1, sa2, t),
+            hue: mix(h1, h2, t),
+        },
+        _ => return None,
+    })
+}
+
+/// Two colour effects blended, `None` standing in for "no change" of the
+/// other's kind; `None` back if they're different kinds.
+fn lerp_color_effect(a: ColorEffect, b: ColorEffect, t: f32) -> Option<ColorEffect> {
+    use ColorEffect::*;
+    let neutral = |of: ColorEffect| match of {
+        None => None,
+        Brightness { .. } => Brightness { amount: 0.0 },
+        Tint { color, .. } => Tint { color, amount: 0.0 },
+        Advanced { .. } => Advanced { multiply: [1.0; 4], add: [0.0; 4] },
+    };
+    let (a, b) = match (a, b) {
+        (None, b) => (neutral(b), b),
+        (a, None) => (a, neutral(a)),
+        pair => pair,
+    };
+    Some(match (a, b) {
+        (None, None) => None,
+        (Brightness { amount: x }, Brightness { amount: y }) => Brightness { amount: mix(x, y, t) },
+        (Tint { color: c1, amount: x }, Tint { color: c2, amount: y }) => {
+            Tint { color: mix_color(c1, c2, t), amount: mix(x, y, t) }
+        }
+        (Advanced { multiply: m1, add: a1 }, Advanced { multiply: m2, add: a2 }) => Advanced {
+            multiply: std::array::from_fn(|i| mix(m1[i], m2[i], t)),
+            add: std::array::from_fn(|i| mix(a1[i], a2[i], t)),
+        },
+        _ => return Option::None,
+    })
 }
 
 /// How far past a layer its filters can paint, in pixels at `scale`: the
@@ -507,5 +644,54 @@ mod tests {
         assert_eq!(pixels, before);
         assert_eq!(filter_margin(&[off], 1.0), 0.0);
         assert_eq!(filter_margin(&[filter(FilterKind::Blur { x: 5.0, y: 5.0 })], 2.0), 20.0);
+    }
+
+    #[test]
+    fn effects_blend_setting_by_setting_and_fade_in_from_nothing() {
+        let shadow = |strength| Filter {
+            enabled: true,
+            kind: FilterKind::DropShadow {
+                distance: 10.0,
+                angle: 45.0,
+                blur: 4.0,
+                color: Color::BLACK,
+                strength,
+            },
+        };
+        let from = Effects { color: ColorEffect::None, filters: Vec::new() };
+        let to = Effects { color: ColorEffect::Brightness { amount: 1.0 }, filters: vec![shadow(1.0)] };
+        let half = from.lerp(to, 0.5);
+        assert_eq!(half.color, ColorEffect::Brightness { amount: 0.5 });
+        assert_eq!(half.filters, vec![shadow(0.5)]);
+    }
+
+    #[test]
+    fn effects_that_cannot_be_matched_hold() {
+        let tint =
+            Effects { color: ColorEffect::Tint { color: Color::BLACK, amount: 1.0 }, filters: Vec::new() };
+        let bright = Effects { color: ColorEffect::Brightness { amount: 1.0 }, filters: Vec::new() };
+        assert_eq!(tint.clone().lerp(bright.clone(), 0.5), tint);
+        assert_eq!(tint.lerp(bright.clone(), 1.0), bright);
+    }
+
+    #[test]
+    fn effects_animate_through_a_layer_track() {
+        let mut track = crate::Track::new(0, crate::Transform::default());
+        track
+            .set_effects(10, Effects { color: ColorEffect::Brightness { amount: 1.0 }, filters: Vec::new() });
+        assert_eq!(track.effects_at(5.0).color, ColorEffect::Brightness { amount: 0.5 });
+        assert!(track.key_frames().contains(&10), "keyed like any property");
+    }
+
+    #[test]
+    fn effects_saved_before_they_could_animate_still_load() {
+        let mut doc = crate::Document::default();
+        let id = doc.add_layer("Glow", Vec::new(), 0, crate::Transform::default());
+        let mut json: serde_json::Value = serde_json::from_str(&doc.to_json().unwrap()).unwrap();
+        json["version"] = 22.into();
+        json["layers"][0]["color_effect"] = serde_json::json!({ "type": "brightness", "amount": 0.25 });
+        let doc = crate::Document::from_json(&json.to_string()).unwrap();
+        let effects = doc.layer(id).unwrap().track.effects_at(0.0);
+        assert_eq!(effects.color, ColorEffect::Brightness { amount: 0.25 });
     }
 }

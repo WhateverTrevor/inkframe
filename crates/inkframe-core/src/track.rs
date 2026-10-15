@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::channel::{AnyChannel, Channel, Key};
 use crate::easing::Easing;
+use crate::effects::Effects;
 use crate::geometry::Point;
 use crate::transform::Transform;
 
@@ -15,11 +16,19 @@ pub enum Property {
     Scale,
     Skew,
     Opacity,
+    /// The colour effect and filters (see `effects.rs`).
+    Effects,
 }
 
 impl Property {
-    pub const ALL: [Property; 5] =
-        [Property::Position, Property::Rotation, Property::Scale, Property::Skew, Property::Opacity];
+    pub const ALL: [Property; 6] = [
+        Property::Position,
+        Property::Rotation,
+        Property::Scale,
+        Property::Skew,
+        Property::Opacity,
+        Property::Effects,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -28,6 +37,7 @@ impl Property {
             Property::Scale => "Scale",
             Property::Skew => "Skew",
             Property::Opacity => "Opacity",
+            Property::Effects => "Effects",
         }
     }
 }
@@ -49,6 +59,10 @@ pub struct Track {
     pub scale: Channel<Point>,
     pub skew: Channel<Point>,
     pub opacity: Channel<f32>,
+    /// The colour effect and filters. Left out of the file while they're a
+    /// single key that changes nothing, which is most layers.
+    #[serde(skip_serializing_if = "Track::effects_unused")]
+    pub effects: Channel<Effects>,
     /// Turn the layer to face the way it's moving, as with Animate's
     /// "Orient to path": the direction of travel is added to its rotation.
     /// A layer drawn facing right then points along its motion path.
@@ -65,7 +79,26 @@ impl Track {
             scale: Channel::new(frame, pose.scale),
             skew: Channel::new(frame, pose.skew),
             opacity: Channel::new(frame, pose.opacity),
+            effects: Channel::new(frame, Effects::default()),
             orient_to_path: false,
+        }
+    }
+
+    fn effects_unused(effects: &Channel<Effects>) -> bool {
+        matches!(effects.keys(), [key] if key.value.is_none())
+    }
+
+    /// The colour effect and filters at any point in time.
+    pub fn effects_at(&self, frame: f32) -> Effects {
+        self.effects.sample(frame).unwrap_or_default()
+    }
+
+    /// Makes the layer's effects `effects` at `frame`, keying them there if
+    /// they changed or already had a key, as [`Track::set_pose`] does for
+    /// the transform.
+    pub fn set_effects(&mut self, frame: u32, effects: Effects) {
+        if self.effects_at(frame as f32) != effects || self.effects.key_at(frame).is_some() {
+            self.effects.set(frame, effects);
         }
     }
 
@@ -76,6 +109,7 @@ impl Track {
             Property::Scale => &self.scale,
             Property::Skew => &self.skew,
             Property::Opacity => &self.opacity,
+            Property::Effects => &self.effects,
         }
     }
 
@@ -86,14 +120,22 @@ impl Track {
             Property::Scale => &mut self.scale,
             Property::Skew => &mut self.skew,
             Property::Opacity => &mut self.opacity,
+            Property::Effects => &mut self.effects,
         }
     }
 
-    fn channels_mut(&mut self) -> [&mut dyn AnyChannel; 5] {
-        [&mut self.position, &mut self.rotation, &mut self.scale, &mut self.skew, &mut self.opacity]
+    fn channels_mut(&mut self) -> [&mut dyn AnyChannel; 6] {
+        [
+            &mut self.position,
+            &mut self.rotation,
+            &mut self.scale,
+            &mut self.skew,
+            &mut self.opacity,
+            &mut self.effects,
+        ]
     }
 
-    fn channels(&self) -> [&dyn AnyChannel; 5] {
+    fn channels(&self) -> [&dyn AnyChannel; 6] {
         Property::ALL.map(|p| self.channel(p))
     }
 
@@ -263,6 +305,10 @@ enum TrackFormat {
         #[serde(default)]
         skew: Vec<Key<Point>>,
         opacity: Vec<Key<f32>>,
+        /// Missing in files from before effects could animate (format 22
+        /// and older), and whenever they're unused.
+        #[serde(default)]
+        effects: Vec<Key<Effects>>,
         #[serde(default)]
         orient_to_path: bool,
     },
@@ -282,18 +328,24 @@ struct KeyframeV1 {
 impl From<TrackFormat> for Track {
     fn from(format: TrackFormat) -> Self {
         match format {
-            TrackFormat::Current { position, rotation, scale, skew, opacity, orient_to_path } => {
+            TrackFormat::Current { position, rotation, scale, skew, opacity, effects, orient_to_path } => {
                 // Older files have no skew keys; give them one unskewed key
                 // on the same frame as their first position key.
                 let first = position.iter().map(|k| k.frame).min().unwrap_or(0);
                 let skew =
                     if skew.is_empty() { Channel::new(first, Point::ZERO) } else { Channel::from_keys(skew) };
+                let effects = if effects.is_empty() {
+                    Channel::new(first, Effects::default())
+                } else {
+                    Channel::from_keys(effects)
+                };
                 Track {
                     position: Channel::from_keys(position),
                     rotation: Channel::from_keys(rotation),
                     scale: Channel::from_keys(scale),
                     skew,
                     opacity: Channel::from_keys(opacity),
+                    effects,
                     orient_to_path,
                 }
             }
@@ -321,6 +373,7 @@ impl From<TrackFormat> for Track {
                     scale: channel(&keys, |t| t.scale),
                     skew: channel(&keys, |t| t.skew),
                     opacity: channel(&keys, |t| t.opacity),
+                    effects: Channel::new(keys.first().map_or(0, |k| k.frame), Effects::default()),
                     orient_to_path: false,
                 }
             }
@@ -410,9 +463,9 @@ mod tests {
         let track: Track = serde_json::from_str(json).unwrap();
 
         assert_eq!(track.key_frames(), [0, 10]);
-        assert!(
-            Property::ALL.iter().all(|&p| track.channel(p).tween_at(0).unwrap().easing == Easing::EaseIn)
-        );
+        // Every transform property (version 1 had no effects to animate).
+        let transform = Property::ALL.iter().filter(|&&p| p != Property::Effects);
+        assert!(transform.clone().all(|&p| track.channel(p).tween_at(0).unwrap().easing == Easing::EaseIn));
         let end = track.sample(10.0);
         assert_eq!((end.position.x, end.rotation, end.opacity), (100.0, 90.0, 0.5));
         // Fields missing from a v1 transform took their defaults.

@@ -494,13 +494,31 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 /// The layer's colour effect and filters, as in Animate's Properties.
 fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     use inkframe_core::{ColorEffect, Filter, FilterKind};
-    let Some(layer) = editor.doc.layer_mut(id) else { return };
+    // The effects on this frame, edited as a copy and keyed back if they
+    // change, as dragging a layer keys its position.
+    let frame = editor.frame;
+    let Some(layer) = editor.doc.layer(id) else { return };
+    let before = layer.track.effects_at(frame as f32);
+    let keyed = layer.track.effects.key_at(frame).is_some();
+    let animated = layer.track.effects.keys().len() > 1;
+    let mut fx = before.clone();
+    ui.horizontal(|ui| {
+        if key_toggle(ui, Property::Effects, keyed).clicked() {
+            editor.toggle_property_key(id, Property::Effects);
+        }
+        ui.strong("Effects");
+        if animated {
+            ui.weak("animated");
+        }
+    })
+    .response
+    .on_hover_text("Change them on another frame to animate them, as with the transform");
 
     egui::CollapsingHeader::new("Colour Effect")
         .id_salt("color_effect")
-        .default_open(!layer.color_effect.is_none())
+        .default_open(!fx.color.is_none())
         .show(ui, |ui| {
-            let effect = &mut layer.color_effect;
+            let effect = &mut fx.color;
             egui::ComboBox::from_id_salt("color_effect_kind").selected_text(effect.label()).show_ui(
                 ui,
                 |ui| {
@@ -555,13 +573,13 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
             }
         });
 
-    egui::CollapsingHeader::new(format!("Filters ({})", layer.filters.len()))
+    egui::CollapsingHeader::new(format!("Filters ({})", fx.filters.len()))
         .id_salt("filters")
-        .default_open(!layer.filters.is_empty())
+        .default_open(!fx.filters.is_empty())
         .show(ui, |ui| {
             let mut remove = None;
             let mut raise = None;
-            for (i, filter) in layer.filters.iter_mut().enumerate() {
+            for (i, filter) in fx.filters.iter_mut().enumerate() {
                 ui.push_id(i, |ui| {
                     ui.separator();
                     ui.horizontal(|ui| {
@@ -592,20 +610,25 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 });
             }
             if let Some(i) = remove {
-                layer.filters.remove(i);
+                fx.filters.remove(i);
             }
             if let Some(i) = raise {
-                layer.filters.swap(i, i - 1);
+                fx.filters.swap(i, i - 1);
             }
             ui.menu_button("Add Filter", |ui| {
                 for kind in FilterKind::ALL {
                     if ui.button(kind.label()).clicked() {
-                        layer.filters.push(Filter { enabled: true, kind });
+                        fx.filters.push(Filter { enabled: true, kind });
                         ui.close();
                     }
                 }
             });
         });
+    if fx != before
+        && let Some(layer) = editor.doc.layer_mut(id)
+    {
+        layer.track.set_effects(frame, fx);
+    }
 }
 
 /// One filter's settings.
@@ -781,7 +804,9 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
     // on this frame. Clicking it adds or removes the key. Editing a value
     // adds one automatically.
     egui::Grid::new("transform").num_columns(3).spacing([6.0, 4.0]).show(ui, |ui| {
-        for (property, is_key) in Property::ALL.into_iter().zip(keyed) {
+        // Effects have a section of their own, further down.
+        let transform = Property::ALL.into_iter().zip(keyed).filter(|(p, _)| *p != Property::Effects);
+        for (property, is_key) in transform {
             if key_toggle(ui, property, is_key).clicked() {
                 toggled = Some(property);
             }
@@ -811,6 +836,7 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
                 Property::Opacity => {
                     changed |= ui.add(egui::Slider::new(&mut opacity_pct, 0.0..=100.0).suffix("%")).changed();
                 }
+                Property::Effects => {}
             });
             ui.end_row();
         }

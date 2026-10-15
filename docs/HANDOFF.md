@@ -1,18 +1,18 @@
 # Handoff: where Inkframe stands
 
 A checkpoint for picking development back up. Last updated 2026-10-15,
-after colour effects and filters.
+after animated effects.
 
 ## State
 
 - **Branch:** `main`, clean. Every feature is built on its own branch,
   then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (492 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (496 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
-- **File format:** version 22. Older versions load and upgrade automatically
+- **File format:** version 23. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -257,6 +257,15 @@ after colour effects and filters.
     Also: layer thumbnails now only redraw on font/image loading for
     layers that show text or pictures, which fixed a flaky test.
     This completes the Animate comparison list.
+
+52. Animated effects (format v23): `Track::effects`, a sixth channel
+    (`Property::Effects`) whose value is `Effects { color, filters }`.
+    `Animatable` now needs only `Clone`. `Effects::lerp` blends matching
+    settings, fades a one-sided colour effect or filter from a neutral
+    one, and holds where kinds differ. Format 22's fixed fields load into
+    the channel (`Layer::unanimated_*`, emptied in `validate`). The graph
+    editor leaves Effects out (`GRAPHED` in timeline.rs). The screenshot
+    hook's head glow now grows in over frames 1–25.
 
 ## Not yet verified by hand
 
