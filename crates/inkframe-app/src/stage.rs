@@ -157,6 +157,10 @@ enum Gesture {
     Rotate { layer: LayerId, drag: RotateDrag, group: Vec<GroupMember>, into_space: Affine },
     /// Dragging a layer's pivot to a new spot on the layer.
     Pivot { layer: LayerId },
+    /// Posing a rig with the Bone tool: the joints above `layer` turn so
+    /// the point grabbed on it (`local`, in its own coordinates) follows
+    /// the pointer.
+    Reach { layer: LayerId, local: Point },
     /// Dragging an anchor point or one of its handles with the Subselection
     /// tool. `start` holds the shape's anchors from when the drag began, and
     /// the pointer is converted into the layer's local space with `to_local`.
@@ -588,6 +592,9 @@ impl StageView {
         }
         self.draw_motion_path(&overlay, editor, view);
         self.draw_overlays(&overlay, editor, view, handles.as_ref());
+        if editor.tool == Tool::Bone {
+            draw_skeleton(&overlay, editor, view);
+        }
         self.draw_text_editing(ui, &overlay, editor, view);
         self.draw_pen_preview(&overlay, view, response.hover_pos());
         if let Some(hit) = response.hover_pos().and_then(|p| self.outline_hit(editor, view, p)) {
@@ -700,6 +707,9 @@ impl StageView {
                     } else {
                         transform_group(editor, group, &drag.start(), &pose);
                     }
+                }
+                Some(Gesture::Reach { layer, local }) => {
+                    editor.doc.reach(*layer, *local, p, editor.frame);
                 }
                 Some(Gesture::Pivot { layer }) => {
                     let frame = editor.frame;
@@ -1245,6 +1255,22 @@ impl StageView {
                 Some(Gesture::DrawShape { tool, start: p, current: p })
             }
             Tool::Pencil => Some(Gesture::Pencil { points: vec![p] }),
+            Tool::Bone => {
+                let tolerance = HIT_TOLERANCE / view.zoom;
+                editor.select(editor.hit_test(p, tolerance));
+                let layer = editor.selected_layer()?;
+                // A rig's root has nothing to pull against, so dragging it
+                // moves the whole rig instead.
+                if editor.doc.ik_chain(layer.id).is_empty() {
+                    let start = editor.doc.pose(layer, editor.frame).position;
+                    return Some(Gesture::Move {
+                        layers: vec![(layer.id, start, Affine::IDENTITY)],
+                        grab: p,
+                    });
+                }
+                let local = editor.doc.layer_matrix(layer, editor.frame).inverse()?.apply(p);
+                Some(Gesture::Reach { layer: layer.id, local })
+            }
             // The pen handles its own presses and drags; see `handle_pen`.
             // The Text tool only clicks.
             Tool::Pen | Tool::Text => None,
@@ -1582,6 +1608,7 @@ impl StageView {
             Some(Gesture::Marquee { .. }) => CursorIcon::Crosshair,
             Some(Gesture::Rotate { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Pivot { .. }) => CursorIcon::Crosshair,
+            Some(Gesture::Reach { .. }) => CursorIcon::Grabbing,
             Some(Gesture::EditAnchor { .. }) => CursorIcon::Move,
             Some(Gesture::BendPath { .. } | Gesture::PathHandle { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Scale { handle, .. }) => handle_cursor(HandleHit::Scale(*handle)),
@@ -1626,6 +1653,12 @@ impl StageView {
                     }
                     (None, Tool::Rectangle | Tool::Ellipse | Tool::Pencil) => CursorIcon::Crosshair,
                     (None, Tool::Text) => CursorIcon::Text,
+                    (None, Tool::Bone) => {
+                        let tolerance = HIT_TOLERANCE / view.zoom;
+                        let over =
+                            response.hover_pos().and_then(|p| editor.hit_test(view.to_local(p), tolerance));
+                        if over.is_some() { CursorIcon::Grab } else { CursorIcon::Default }
+                    }
                 }
             }
         };
@@ -1818,12 +1851,52 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
         | Gesture::Skew { .. }
         | Gesture::Rotate { .. }
         | Gesture::Pivot { .. }
+        | Gesture::Reach { .. }
         | Gesture::EditAnchor { .. }
         | Gesture::BendPath { .. }
         | Gesture::PathHandle { .. }
         | Gesture::Pan => {}
     }
 }
+
+/// The rigs in the timeline being edited, as the Bone tool shows them: a
+/// bone from each parent's joint (its pivot) to each child's, so the
+/// skeleton the layers hang from can be seen and grabbed. Roots are
+/// squares, since dragging one moves its whole rig.
+fn draw_skeleton(painter: &egui::Painter, editor: &Editor, view: View) {
+    let frame = editor.frame;
+    let joint = |layer: &inkframe_core::Layer| {
+        view.to_screen(editor.doc.layer_matrix(layer, frame).apply(layer.pivot))
+    };
+    let shown = editor.layers().iter().filter(|l| l.is_shown_at(frame));
+    let rigged: Vec<_> = shown
+        .filter(|l| {
+            editor.doc.parent_of(l).is_some() || editor.layers().iter().any(|c| c.parent == Some(l.id))
+        })
+        .collect();
+    for layer in &rigged {
+        if let Some(parent) = editor.doc.parent_of(layer) {
+            let (from, to) = (joint(parent), joint(layer));
+            painter.line_segment([from, to], (5.0, BONE.gamma_multiply(0.35)));
+            painter.line_segment([from, to], (1.5, BONE));
+        }
+    }
+    for layer in &rigged {
+        let at = joint(layer);
+        let selected = editor.is_selected(layer.id);
+        let fill = if selected { BONE } else { Color32::WHITE };
+        if editor.doc.parent_of(layer).is_none() {
+            let square = Rect::from_center_size(at, Vec2::splat(9.0));
+            painter.rect_filled(square, 1.0, fill);
+            painter.rect_stroke(square, 1.0, (1.5, BONE), StrokeKind::Middle);
+        } else {
+            painter.circle(at, 4.5, fill, (1.5, BONE));
+        }
+    }
+}
+
+/// The skeleton's color: warm, so it stands apart from the blue selection.
+const BONE: Color32 = Color32::from_rgb(0xf0, 0x8a, 0x3c);
 
 /// A small crosshair marking a symbol's registration point: the origin its
 /// instances rotate and scale around.
@@ -2597,6 +2670,58 @@ mod tests {
         drag(&mut h, from, &[from + vec2(0.0, 10.0), to]);
         let at = on_stage(&h, child, Point::ZERO);
         assert!(at.distance(Point::new(700.0, 500.0)) < 1.0, "child at {at:?}");
+    }
+
+    /// A torso box at (300, 400), and an arm hanging from it: an upper arm
+    /// and forearm, each 200 long and pivoting at their left ends, with the
+    /// shoulder at (400, 400) and the elbow at (600, 400). The Bone tool is
+    /// picked.
+    fn bone_rig() -> (Editor, LayerId, LayerId, LayerId) {
+        let mut editor = Editor::new(Document::default());
+        let style = Style { stroke: None, ..editor.draw_style };
+        let rect =
+            |width, height| Element { shape: Shape::Rect { width, height, corner_radius: 0.0 }, style };
+        let doc = &mut editor.doc;
+        let torso =
+            doc.add_layer("Torso", vec![rect(100.0, 100.0)], 0, Transform::at(Point::new(300.0, 400.0)));
+        let upper =
+            doc.add_layer("Upper", vec![rect(200.0, 40.0)], 0, Transform::at(Point::new(500.0, 400.0)));
+        let fore = doc.add_layer("Fore", vec![rect(200.0, 40.0)], 0, Transform::at(Point::new(700.0, 400.0)));
+        for (layer, parent) in [(upper, torso), (fore, upper)] {
+            doc.set_pivot(layer, Point::new(-100.0, 0.0));
+            doc.set_parent(layer, Some(parent), 0);
+        }
+        editor.tool = Tool::Bone;
+        (editor, torso, upper, fore)
+    }
+
+    #[test]
+    fn the_bone_tool_pulls_the_arm_after_the_pointer() {
+        let (editor, torso, upper, fore) = bone_rig();
+        let mut h = harness(editor);
+        let from = screen(&h, 750.0, 400.0);
+        let to = screen(&h, 650.0, 500.0);
+        drag(&mut h, from, &[from + vec2(-10.0, 10.0), to]);
+
+        // The spot grabbed, halfway along the forearm, is under the pointer.
+        let grabbed = on_stage(&h, fore, Point::new(50.0, 0.0));
+        assert!(grabbed.distance(Point::new(650.0, 500.0)) < 2.0, "grabbed at {grabbed:?}");
+        // The shoulder stayed, and the torso neither moved nor turned.
+        assert!(on_stage(&h, upper, Point::new(-100.0, 0.0)).distance(Point::new(400.0, 400.0)) < 0.01);
+        assert_eq!(pose(&h, torso), Transform::at(Point::new(300.0, 400.0)));
+        assert_eq!(h.state().1.selection, Some(fore));
+    }
+
+    #[test]
+    fn the_bone_tool_moves_a_whole_rig_by_its_root() {
+        let (editor, torso, _, fore) = bone_rig();
+        let mut h = harness(editor);
+        let from = screen(&h, 300.0, 400.0);
+        let to = screen(&h, 300.0, 300.0);
+        drag(&mut h, from, &[from + vec2(0.0, -10.0), to]);
+        assert!(pose(&h, torso).position.distance(Point::new(300.0, 300.0)) < 1.0);
+        let hand = on_stage(&h, fore, Point::new(100.0, 0.0));
+        assert!(hand.distance(Point::new(800.0, 300.0)) < 1.0, "the arm came along: {hand:?}");
     }
 
     #[test]

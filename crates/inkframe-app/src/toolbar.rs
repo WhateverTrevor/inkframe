@@ -133,6 +133,16 @@ fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) {
             painter.line_segment([at(0.0, 1.0), at(0.3, 0.95)], stroke);
             painter.line_segment([at(0.6, 0.15), at(0.85, 0.4)], Stroke::new(1.0, Color32::from_gray(140)));
         }
+        Tool::Bone => {
+            // Two bones meeting at a joint, like an arm bent at the elbow.
+            let (shoulder, elbow, hand) = (at(0.15, 0.2), at(0.45, 0.7), at(0.9, 0.35));
+            painter.line_segment([shoulder, elbow], stroke);
+            painter.line_segment([elbow, hand], stroke);
+            for joint in [shoulder, elbow] {
+                painter.circle_stroke(joint, 2.5, stroke);
+            }
+            painter.circle_filled(hand, 2.5, stroke.color);
+        }
         Tool::Text => {
             // A capital T with small serifs, as in most apps' text tools.
             painter.line_segment([at(0.1, 0.05), at(0.9, 0.05)], stroke);

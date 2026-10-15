@@ -72,5 +72,6 @@ pub fn tool_key(tool: Tool) -> Key {
         Tool::Ellipse => Key::O,
         Tool::Pencil => Key::Y,
         Tool::Text => Key::T,
+        Tool::Bone => Key::B,
     }
 }

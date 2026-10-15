@@ -1,5 +1,5 @@
 {
-  "version": 14,
+  "version": 15,
   "width": 1920,
   "height": 1080,
   "frame_rate": {
@@ -302,7 +302,11 @@
             }
           ]
         }
-      ]
+      ],
+      "rotation_limits": {
+        "min": -150.0,
+        "max": 0.0
+      }
     },
     {
       "id": 4,
