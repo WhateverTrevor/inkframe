@@ -485,9 +485,196 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     easing_section(ui, editor, id, frame);
     ui.add_space(8.0);
     instance_section(ui, editor, id);
+    effects_section(ui, editor, id);
     deformer_section(ui, editor, id);
     drawings_section(ui, editor, id);
     shapes_section(ui, editor, id);
+}
+
+/// The layer's colour effect and filters, as in Animate's Properties.
+fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    use inkframe_core::{ColorEffect, Filter, FilterKind};
+    let Some(layer) = editor.doc.layer_mut(id) else { return };
+
+    egui::CollapsingHeader::new("Colour Effect")
+        .id_salt("color_effect")
+        .default_open(!layer.color_effect.is_none())
+        .show(ui, |ui| {
+            let effect = &mut layer.color_effect;
+            egui::ComboBox::from_id_salt("color_effect_kind").selected_text(effect.label()).show_ui(
+                ui,
+                |ui| {
+                    let choices = [
+                        ColorEffect::None,
+                        ColorEffect::Brightness { amount: 0.5 },
+                        ColorEffect::Tint { color: Color::rgb(255, 0, 0), amount: 0.5 },
+                        ColorEffect::Advanced { multiply: [1.0; 4], add: [0.0; 4] },
+                    ];
+                    for choice in choices {
+                        if ui.selectable_label(effect.label() == choice.label(), choice.label()).clicked()
+                            && effect.label() != choice.label()
+                        {
+                            *effect = choice;
+                        }
+                    }
+                },
+            );
+            match effect {
+                ColorEffect::None => {}
+                ColorEffect::Brightness { amount } => {
+                    ui.add(
+                        egui::Slider::new(amount, -1.0..=1.0)
+                            .custom_formatter(|v, _| format!("{:+.0}%", v * 100.0)),
+                    );
+                }
+                ColorEffect::Tint { color, amount } => {
+                    ui.horizontal(|ui| {
+                        color_button(ui, color);
+                        ui.add(
+                            egui::Slider::new(amount, 0.0..=1.0)
+                                .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
+                        );
+                    });
+                }
+                ColorEffect::Advanced { multiply, add } => {
+                    egui::Grid::new("advanced_effect").num_columns(3).spacing([6.0, 4.0]).show(ui, |ui| {
+                        for (i, name) in ["Red", "Green", "Blue", "Alpha"].into_iter().enumerate() {
+                            ui.label(name);
+                            let mut percent = multiply[i] * 100.0;
+                            if ui
+                                .add(DragValue::new(&mut percent).range(-100.0..=100.0).suffix("% ×"))
+                                .changed()
+                            {
+                                multiply[i] = percent / 100.0;
+                            }
+                            ui.add(DragValue::new(&mut add[i]).range(-255.0..=255.0).prefix("+ "));
+                            ui.end_row();
+                        }
+                    });
+                }
+            }
+        });
+
+    egui::CollapsingHeader::new(format!("Filters ({})", layer.filters.len()))
+        .id_salt("filters")
+        .default_open(!layer.filters.is_empty())
+        .show(ui, |ui| {
+            let mut remove = None;
+            let mut raise = None;
+            for (i, filter) in layer.filters.iter_mut().enumerate() {
+                ui.push_id(i, |ui| {
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut filter.enabled, filter.kind.label());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .add(crate::icons::IconButton::new(
+                                    crate::icons::Icon::Trash,
+                                    "Remove this filter",
+                                ))
+                                .clicked()
+                            {
+                                remove = Some(i);
+                            }
+                            if i > 0
+                                && ui
+                                    .add(crate::icons::IconButton::new(
+                                        crate::icons::Icon::Up,
+                                        "Apply this one earlier",
+                                    ))
+                                    .clicked()
+                            {
+                                raise = Some(i);
+                            }
+                        });
+                    });
+                    ui.add_enabled_ui(filter.enabled, |ui| filter_controls(ui, &mut filter.kind));
+                });
+            }
+            if let Some(i) = remove {
+                layer.filters.remove(i);
+            }
+            if let Some(i) = raise {
+                layer.filters.swap(i, i - 1);
+            }
+            ui.menu_button("Add Filter", |ui| {
+                for kind in FilterKind::ALL {
+                    if ui.button(kind.label()).clicked() {
+                        layer.filters.push(Filter { enabled: true, kind });
+                        ui.close();
+                    }
+                }
+            });
+        });
+}
+
+/// One filter's settings.
+fn filter_controls(ui: &mut egui::Ui, kind: &mut inkframe_core::FilterKind) {
+    use inkframe_core::FilterKind;
+    fn pixels(value: &mut f32) -> DragValue<'_> {
+        DragValue::new(value).range(0.0..=255.0).speed(0.2).suffix(" px")
+    }
+    fn percent(value: &mut f32, max: f32) -> egui::Slider<'_> {
+        egui::Slider::new(value, 0.0..=max).custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+    }
+    fn signed(value: &mut f32) -> egui::Slider<'_> {
+        egui::Slider::new(value, -1.0..=1.0).custom_formatter(|v, _| format!("{:+.0}", v * 100.0))
+    }
+    egui::Grid::new("filter").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| match kind {
+        FilterKind::DropShadow { distance, angle, blur, color, strength } => {
+            ui.label("Colour");
+            color_button(ui, color);
+            ui.end_row();
+            ui.label("Distance");
+            ui.add(DragValue::new(distance).range(-255.0..=255.0).speed(0.2).suffix(" px"));
+            ui.end_row();
+            ui.label("Angle");
+            ui.add(DragValue::new(angle).speed(1.0).suffix("°"));
+            ui.end_row();
+            ui.label("Blur");
+            ui.add(pixels(blur));
+            ui.end_row();
+            ui.label("Strength");
+            ui.add(percent(strength, 10.0));
+            ui.end_row();
+        }
+        FilterKind::Blur { x, y } => {
+            ui.label("Blur");
+            ui.horizontal(|ui| {
+                ui.add(pixels(x).prefix("x "));
+                ui.add(pixels(y).prefix("y "));
+            });
+            ui.end_row();
+        }
+        FilterKind::Glow { blur, color, strength, inner } => {
+            ui.label("Colour");
+            color_button(ui, color);
+            ui.end_row();
+            ui.label("Blur");
+            ui.add(pixels(blur));
+            ui.end_row();
+            ui.label("Strength");
+            ui.add(percent(strength, 10.0));
+            ui.end_row();
+            ui.label("");
+            ui.checkbox(inner, "Inner glow");
+            ui.end_row();
+        }
+        FilterKind::AdjustColor { brightness, contrast, saturation, hue } => {
+            ui.label("Brightness");
+            ui.add(signed(brightness));
+            ui.end_row();
+            ui.label("Contrast");
+            ui.add(signed(contrast));
+            ui.end_row();
+            ui.label("Saturation");
+            ui.add(signed(saturation));
+            ui.end_row();
+            ui.label("Hue");
+            ui.add(egui::Slider::new(hue, -180.0..=180.0).suffix("°"));
+            ui.end_row();
+        }
+    });
 }
 
 /// Settings for a layer holding a symbol instance: which symbol, and how its

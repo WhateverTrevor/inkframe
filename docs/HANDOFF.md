@@ -1,18 +1,18 @@
 # Handoff: where Inkframe stands
 
 A checkpoint for picking development back up. Last updated 2026-10-15,
-after the camera.
+after colour effects and filters.
 
 ## State
 
 - **Branch:** `main`, clean. Every feature is built on its own branch,
   then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (483 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (492 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
-- **File format:** version 21. Older versions load and upgrade automatically
+- **File format:** version 22. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -245,6 +245,18 @@ after the camera.
     button. One camera only (duplicates and pastes become plain layers;
     it can't become a symbol). `INKFRAME_SCREENSHOT_CAMERA=1` shows one.
     Next from the Animate comparison: filters and colour effects.
+
+51. Colour effects and filters (format v22; `effects.rs`):
+    `Layer::color_effect` and `Layer::filters`, applied in the renderer's
+    scratch-buffer path; the buffer reaches `filter_margin` past the layer
+    and past the band (a test checks a blur across a band edge is
+    symmetric). Effects are fixed per layer, not animated: tweening them
+    would need channels in `Track`. Properties has Colour Effect and
+    Filters sections; the timeline labels such layers "fx".
+    `INKFRAME_SCREENSHOT_EFFECTS=1` gives the rig a shadow, glow and tint.
+    Also: layer thumbnails now only redraw on font/image loading for
+    layers that show text or pictures, which fixed a flaky test.
+    This completes the Animate comparison list.
 
 ## Not yet verified by hand
 

@@ -298,7 +298,8 @@ fn render_layers(
         let matrix = parent.pre_concat(doc.layer_matrix(layer, frame));
         let mask = doc.mask_for(layer, frame).filter(|_| !layer.mask);
 
-        if opacity >= 1.0 && mask.is_none() && layer.blend.is_normal() {
+        let effects = !layer.color_effect.is_none() || layer.filters.iter().any(|f| f.enabled);
+        if opacity >= 1.0 && mask.is_none() && layer.blend.is_normal() && !effects {
             draw_layer(pixmap, doc, layer, frame, matrix, style, depth);
             continue;
         }
@@ -316,7 +317,18 @@ fn render_layers(
         // A whole-image buffer would cost a full-screen allocation and blend
         // per translucent layer (about 20 ms each at Retina sizes), which
         // made onion skinning, where every ghost is translucent, crawl.
-        let Some(region) = covered_pixels(doc, layer, frame, matrix, pixmap.width(), pixmap.height()) else {
+        //
+        // Filters (a shadow, a glow) paint past the layer, and a blur needs
+        // the pixels past the edge of the image to blur them in, so with
+        // filters the buffer reaches that far around the layer, even past
+        // the image (or the band of it being drawn: see `in_bands`). Only
+        // the part over the image is blended down, and every band computes
+        // the same pixels, so bands still meet seamlessly. Filter sizes
+        // follow the zoom (`parent`'s scale), as the drawing does.
+        let filter_scale = parent.average_scale();
+        let margin = inkframe_core::filter_margin(&layer.filters, filter_scale);
+        let Some(region) = covered_pixels(doc, layer, frame, matrix, pixmap.width(), pixmap.height(), margin)
+        else {
             continue; // Empty, or entirely outside the image.
         };
         let mut scratch = Pixmap::new(region.width(), region.height()).expect("region is non-empty");
@@ -324,6 +336,11 @@ fn render_layers(
         // the image beneath it, so the result is identical to drawing in place.
         let offset = Affine::translate(Point::new(-region.x() as f32, -region.y() as f32));
         draw_layer(&mut scratch.as_mut(), doc, layer, frame, offset.pre_concat(matrix), style, depth);
+        if effects {
+            let (width, height) = (scratch.width() as usize, scratch.height() as usize);
+            inkframe_core::apply_color_effect(scratch.data_mut(), &layer.color_effect);
+            inkframe_core::apply_filters(scratch.data_mut(), width, height, &layer.filters, filter_scale);
+        }
         if let Some(mask) = mask {
             let stencil = mask_stencil(doc, mask, frame, offset.pre_concat(parent), &scratch, style, depth);
             scratch.apply_mask(&stencil);
@@ -528,6 +545,8 @@ fn mask_stencil(
 
 /// The pixels a layer can paint when drawn with `matrix`, clipped to a
 /// `width`×`height` image, or `None` if that's nothing.
+/// The pixels a layer can touch in a `width`×`height` image, plus
+/// `margin` all round, which may reach past the image.
 fn covered_pixels(
     doc: &Document,
     layer: &Layer,
@@ -535,15 +554,21 @@ fn covered_pixels(
     matrix: Affine,
     width: u32,
     height: u32,
+    margin: f32,
 ) -> Option<IntRect> {
     let local = doc.layer_bounds(layer, frame)?;
     let bounds = inkframe_core::Rect::bounding(local.corners().map(|c| matrix.apply(c)))?;
     // Anti-aliasing can tint the pixel just past a shape's edge, so round
     // outward and allow one more.
-    let left = (bounds.min.x.floor() as i32 - 1).max(0);
-    let top = (bounds.min.y.floor() as i32 - 1).max(0);
-    let right = (bounds.max.x.ceil() as i32 + 1).min(width as i32);
-    let bottom = (bounds.max.y.ceil() as i32 + 1).min(height as i32);
+    let reach = margin.ceil() as i32 + 1;
+    let left = (bounds.min.x.floor() as i32 - reach).max(-reach);
+    let top = (bounds.min.y.floor() as i32 - reach).max(-reach);
+    let right = (bounds.max.x.ceil() as i32 + reach).min(width as i32 + reach);
+    let bottom = (bounds.max.y.ceil() as i32 + reach).min(height as i32 + reach);
+    // With no margin, nothing past the image is needed at all.
+    let (left, top) = if margin > 0.0 { (left, top) } else { (left.max(0), top.max(0)) };
+    let (right, bottom) =
+        if margin > 0.0 { (right, bottom) } else { (right.min(width as i32), bottom.min(height as i32)) };
     IntRect::from_ltrb(left, top, right, bottom)
 }
 
@@ -789,6 +814,56 @@ mod tests {
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
         let c = pixmap.pixel(x, y).unwrap().demultiply();
         [c.red(), c.green(), c.blue(), c.alpha()]
+    }
+
+    #[test]
+    fn filters_across_a_band_edge_leave_no_seam() {
+        // A blurred square centred on the line between the first two bands:
+        // whatever each band works out on its own, the result must be the
+        // same above the line as below it.
+        let mut doc = Document::default();
+        (doc.width, doc.height, doc.background) = (300, 300, Color::WHITE);
+        let square = Element {
+            shape: Shape::Rect { width: 40.0, height: 40.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::rgb(0, 0, 0)), stroke: None },
+        };
+        let id = doc.add_layer("Square", vec![square], 0, Pose::at(Point::new(150.0, BAND_HEIGHT as f32)));
+        doc.layer_mut(id).unwrap().filters.push(inkframe_core::Filter {
+            enabled: true,
+            kind: inkframe_core::FilterKind::Blur { x: 12.0, y: 12.0 },
+        });
+        let image = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        let line = BAND_HEIGHT;
+        for k in 0..40 {
+            assert_eq!(
+                pixel(&image, 150, line - 1 - k),
+                pixel(&image, 150, line + k),
+                "{k} rows from the line"
+            );
+        }
+        // And it did blur: grey well outside the square's edge.
+        let edge = pixel(&image, 150, line + 24);
+        assert!(edge[0] > 0 && edge[0] < 255, "{edge:?}");
+    }
+
+    #[test]
+    fn a_drop_shadow_shows_beside_the_layer() {
+        let mut doc = red_square_doc();
+        let id = doc.layers[0].id;
+        doc.layer_mut(id).unwrap().filters.push(inkframe_core::Filter {
+            enabled: true,
+            kind: inkframe_core::FilterKind::DropShadow {
+                distance: 15.0,
+                angle: 0.0,
+                blur: 0.0,
+                color: Color::rgb(0, 0, 255),
+                strength: 1.0,
+            },
+        });
+        let image = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        // The square spans x 10–30 at y 50; its shadow sits 15 to the right.
+        assert_eq!(pixel(&image, 20, 50), [255, 0, 0, 255]);
+        assert_eq!(pixel(&image, 40, 50), [0, 0, 255, 255]);
     }
 
     #[test]

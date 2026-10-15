@@ -61,6 +61,7 @@ The data model and the math behind animation.
 | `psd.rs` | Photoshop files: reading and writing 8-bit RGB layered images (PackBits or raw), and `Document::import_psd`; `inkframe_render::export_psd` draws each layer for writing |
 | `blend.rs` | `BlendMode`, every layer's Photoshop-style blend mode; the renderer composites a non-Normal layer through a scratch buffer |
 | `retouch.rs` | Smudge, Blur, Sharpen, Dodge, Burn and Clone Stamp: a `RetouchStroke` places dabs with the brush's `DabPath`, and each dab reads the square of pixels under it (`Canvas::read_region`), reworks them, and writes them back |
+| `effects.rs` | Colour effects (`ColorEffect`: brightness, tint, advanced) and filters (`Filter`: drop shadow, blur, glow, adjust colour), as pixel operations on premultiplied RGBA; blurs are three box passes standing in for a Gaussian. The renderer runs a layer with effects through its scratch buffer, widened by `filter_margin` (past the band being drawn, so bands meet seamlessly) |
 | `fill.rs` | The Paint Bucket (`bucket_fill`, a scanline flood fill with a tolerance, or every matching pixel) and `gradient` (linear or radial, blended as straight colours) |
 | `container.rs` | The project file: a zip of `document.json` and each canvas tile as `canvases/<id>/<column>_<row>.png`. Plain-JSON files from before version 17 still open |
 | `deform.rs` | Bone deformers: a `Deformer`'s rest joints and animated bends, bending outlines by blending each point between nearby bones (subdividing segments first). `Layer::shown_elements(frame)` is the drawing as seen (drawing swapped, then bent): use it for drawing, hit testing and bounds. Also `Layer::key_frames`/`insert_key`/`remove_key`/`move_key`, covering the transform and the deformer together |
@@ -119,7 +120,7 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 21. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 22. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
@@ -131,7 +132,8 @@ drawing; `drawing::drawings_or_elements` reads either), version 15
 joint rotation limits, version 16 deformers, version 17 paint layers,
 when project files became zips (see `container.rs`), version 18
 layer blend modes, version 19 layer folders and colours, and version 20
-shape tweens and shape hints, and version 21 the camera and layer depth;
+shape tweens and shape hints, version 21 the camera and layer depth, and version 22 colour effects
+and filters;
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 

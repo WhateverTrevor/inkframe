@@ -129,6 +129,12 @@ impl AutoScreenshot {
         std::env::var_os("INKFRAME_SCREENSHOT_CAMERA").is_some()
     }
 
+    /// Whether to give the rig a drop shadow, a glow and a tint, and show
+    /// the effects in Properties.
+    pub fn effects() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_EFFECTS").is_some()
+    }
+
     /// Whether to add a layer morphing from a square into a circle.
     pub fn shape_tween() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_SHAPE_TWEEN").is_some()

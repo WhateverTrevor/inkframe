@@ -41,7 +41,9 @@ struct Source {
     matrix: Affine,
     canvases: Vec<Canvas>,
     symbol: Option<Symbol>,
-    /// The image library's and the font index's generations.
+    /// The image library's and the font index's generations, for a layer
+    /// that shows pictures or text (zero otherwise, so a font finishing
+    /// loading doesn't redraw every thumbnail).
     loaded: (u64, u64),
 }
 
@@ -102,6 +104,12 @@ fn source(editor: &Editor, id: LayerId, size: [u32; 2]) -> Option<Source> {
             _ => None,
         })
         .collect();
+    // A symbol could hold either, so an instance counts as both.
+    let shows = |wanted: fn(&Shape) -> bool| {
+        layer.instance.is_some() || layer.all_elements().any(|e| wanted(&e.shape))
+    };
+    let images = if shows(|s| matches!(s, Shape::Image { .. })) { editor.images.generation() } else { 0 };
+    let fonts = if shows(|s| matches!(s, Shape::Text(_))) { inkframe_render::fonts_generation() } else { 0 };
     Some(Source {
         frame,
         size,
@@ -109,7 +117,7 @@ fn source(editor: &Editor, id: LayerId, size: [u32; 2]) -> Option<Source> {
         matrix: doc.layer_matrix(layer, frame),
         canvases,
         symbol: layer.instance.and_then(|instance| doc.symbol(instance.symbol)).cloned(),
-        loaded: (editor.images.generation(), inkframe_render::fonts_generation()),
+        loaded: (images, fonts),
     })
 }
 

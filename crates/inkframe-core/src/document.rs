@@ -8,6 +8,7 @@ use crate::blend::BlendMode;
 use crate::color::Color;
 use crate::deform::Deformer;
 use crate::drawing::{Drawing, Exposure};
+use crate::effects::{ColorEffect, Filter};
 use crate::font_file::FontFile;
 use crate::geometry::{Point, Rect};
 use crate::ik::RotationLimits;
@@ -30,7 +31,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 21;
+pub const FORMAT_VERSION: u32 = 22;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -175,6 +176,12 @@ pub struct Layer {
     /// 0 is on the stage, positive further away (see `camera.rs`).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub depth: f32,
+    /// Brightness, tint or finer colour changes (see `effects.rs`).
+    #[serde(default, skip_serializing_if = "ColorEffect::is_none")]
+    pub color_effect: ColorEffect,
+    /// Drop shadows, blurs, glows and colour adjustment, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub filters: Vec<Filter>,
 }
 
 fn is_origin(p: &Point) -> bool {
@@ -379,6 +386,8 @@ impl Document {
             in_folder: None,
             camera: false,
             depth: 0.0,
+            color_effect: ColorEffect::None,
+            filters: Vec::new(),
         });
         if timeline == TimelineId::Main {
             self.keep_camera_on_top();
