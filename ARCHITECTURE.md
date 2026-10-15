@@ -207,6 +207,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `library.rs` | The Library panel, with cached symbol thumbnails |
 | `export_dialog.rs` | Export settings and the background export thread |
 | `lip_sync_dialog.rs` | The Lip Sync window: picks the dialogue and timing source, maps drawings to mouth shapes, applies `Layer::apply_lip_sync` |
+| `rhubarb.rs` | Finding and running Rhubarb Lip Sync on a background thread (`Job`): decodes the dialogue to a temporary WAV, reads progress from its `--machineReadable` log, parses its TSV output |
 | `xsheet.rs` | The Exposure Sheet window: `column` turns a layer's exposure into cells (starts and holds), `enter` exposes a typed drawing name, making the drawing if it's new |
 | `shortcuts.rs` | Every keyboard shortcut in one place |
 | `motion_path.rs` | The math for showing and bending a layer's motion path on the stage |

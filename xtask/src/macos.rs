@@ -12,7 +12,12 @@
 //!       ffmpeg            optional; found by inkframe-export's `locate`
 //!     Resources/
 //!       Inkframe.icns     the icon at every size macOS asks for
-//!       licenses/         Inkframe's licenses (and ffmpeg's, if bundled)
+//!       rhubarb/          optional; Rhubarb Lip Sync and its speech models
+//!       licenses/         Inkframe's licenses (and ffmpeg's and Rhubarb's)
+//!
+//! Rhubarb lives in Resources rather than beside the executable because it
+//! reads data files from `res/` next to itself, and `codesign` takes
+//! everything in `MacOS/` for code.
 //! ```
 //!
 //! The bundle is signed "ad hoc" (with no identity). Apple Silicon refuses to
@@ -27,24 +32,30 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::util::{
-    build_release, bundle_ffmpeg, copy, copy_licenses, fresh_dir, output, read, remove_dir, run, write,
+    build_release, bundle_ffmpeg, bundle_rhubarb, copy, copy_licenses, fresh_dir, output, read, remove_dir,
+    run, write,
 };
 use crate::{icon, workspace_root};
 
 pub struct Options {
     ffmpeg: Option<PathBuf>,
+    rhubarb: Option<PathBuf>,
     dmg: bool,
 }
 
 impl Options {
     pub fn parse(args: &[String]) -> Result<Self, String> {
-        let mut options = Self { ffmpeg: None, dmg: false };
+        let mut options = Self { ffmpeg: None, rhubarb: None, dmg: false };
         let mut args = args.iter();
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--ffmpeg" => {
                     let path = args.next().ok_or("--ffmpeg needs a path")?;
                     options.ffmpeg = Some(PathBuf::from(path));
+                }
+                "--rhubarb" => {
+                    let path = args.next().ok_or("--rhubarb needs a path")?;
+                    options.rhubarb = Some(PathBuf::from(path));
                 }
                 "--dmg" => options.dmg = true,
                 other => return Err(format!("unknown option {other:?}\n\n{}", crate::USAGE)),
@@ -84,11 +95,22 @@ pub fn bundle(options: &Options) -> Result<(), String> {
     if let Some(ffmpeg) = &options.ffmpeg {
         bundle_ffmpeg(ffmpeg, &macos_dir.join("ffmpeg"), &resources.join("licenses/ffmpeg"))?;
     }
+    if let Some(rhubarb) = &options.rhubarb {
+        bundle_rhubarb(rhubarb, &resources.join("rhubarb"), &resources.join("licenses/rhubarb"))?;
+    }
+
+    // Downloaded files (Rhubarb's, ffmpeg's) carry extended attributes such
+    // as the quarantine flag, and copies keep them; `codesign` refuses a
+    // bundle with any, so clear them all first.
+    run(Command::new("xattr").arg("-cr").arg(&app))?;
 
     // Sign from the inside out: a bundle's signature records the signatures
     // of the code inside it, so nested executables must be signed first.
     if options.ffmpeg.is_some() {
         codesign(&macos_dir.join("ffmpeg"))?;
+    }
+    if options.rhubarb.is_some() {
+        codesign(&resources.join("rhubarb/rhubarb"))?;
     }
     codesign(&app)?;
     println!("Built {}", app.display());

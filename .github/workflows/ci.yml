@@ -22,6 +22,13 @@ env:
   WINDOWS_FFMPEG_VERSION: "9.0.2"
   WINDOWS_FFMPEG_URL: https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip
   WINDOWS_FFMPEG_SHA256: 60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba
+  # Rhubarb Lip Sync, bundled for the Lip Sync window, from its GitHub
+  # releases. Only the program, its speech models (res/) and its licence are
+  # kept. The Rhubarb tests fail rather than skip if it's missing.
+  INKFRAME_REQUIRE_RHUBARB: "1"
+  RHUBARB_VERSION: "1.14.0"
+  MACOS_RHUBARB_SHA256: f991deacac6c973a14a4431a16a58b842f436531e120cfaea142c87c0d3ab4c5
+  WINDOWS_RHUBARB_SHA256: 62fa416a8d5e382a3828ee4bef358ce520d0b4cabdeaea75a7ac266d098d1fe3
 
 jobs:
   test:
@@ -78,6 +85,47 @@ jobs:
         shell: pwsh
         run: (Resolve-Path vendor/ffmpeg).Path | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
+      # Rhubarb goes in vendor/rhubarb, where the tests find it and the
+      # installers bundle it from. Its macOS build is for Intel, so Apple
+      # Silicon runs it through Rosetta.
+      - name: Cache Rhubarb
+        id: rhubarb
+        uses: actions/cache@v6
+        with:
+          path: vendor/rhubarb
+          key: rhubarb-${{ runner.os }}-${{ env.RHUBARB_VERSION }}-${{ runner.os == 'macOS' && env.MACOS_RHUBARB_SHA256 || env.WINDOWS_RHUBARB_SHA256 }}
+      - name: Download Rhubarb (macOS)
+        if: runner.os == 'macOS' && steps.rhubarb.outputs.cache-hit != 'true'
+        run: |
+          name="Rhubarb-Lip-Sync-$RHUBARB_VERSION-macOS"
+          curl --fail --silent --show-error --location -o "$RUNNER_TEMP/rhubarb.zip" \
+            "https://github.com/DanielSWolf/rhubarb-lip-sync/releases/download/v$RHUBARB_VERSION/$name.zip"
+          echo "$MACOS_RHUBARB_SHA256  $RUNNER_TEMP/rhubarb.zip" | shasum -a 256 --check
+          unzip -q "$RUNNER_TEMP/rhubarb.zip" "$name/rhubarb" "$name/res/*" "$name/LICENSE.md" -d "$RUNNER_TEMP"
+          mkdir -p vendor
+          mv "$RUNNER_TEMP/$name" vendor/rhubarb
+      - name: Install Rosetta (macOS)
+        if: runner.os == 'macOS'
+        run: arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
+      - name: Download Rhubarb (Windows)
+        if: runner.os == 'Windows' && steps.rhubarb.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $name = "Rhubarb-Lip-Sync-$env:RHUBARB_VERSION-Windows"
+          $zip = Join-Path $env:RUNNER_TEMP "rhubarb.zip"
+          Invoke-WebRequest -OutFile $zip `
+            -Uri "https://github.com/DanielSWolf/rhubarb-lip-sync/releases/download/v$env:RHUBARB_VERSION/$name.zip"
+          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          if ($hash -ne $env:WINDOWS_RHUBARB_SHA256) {
+            throw "rhubarb.zip has SHA-256 $hash, expected $env:WINDOWS_RHUBARB_SHA256"
+          }
+          Expand-Archive $zip -DestinationPath $env:RUNNER_TEMP
+          $unpacked = Join-Path $env:RUNNER_TEMP $name
+          New-Item -ItemType Directory -Force vendor/rhubarb | Out-Null
+          foreach ($part in "rhubarb.exe", "res", "LICENSE.md") {
+            Copy-Item -Recurse (Join-Path $unpacked $part) vendor/rhubarb/
+          }
+
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
@@ -105,7 +153,7 @@ jobs:
           unzip -o "$RUNNER_TEMP/ffmpeg.zip" ffmpeg -d vendor/ffmpeg
       - name: Bundle the macOS app
         if: runner.os == 'macOS'
-        run: cargo xtask bundle-macos --ffmpeg vendor/ffmpeg/ffmpeg --dmg
+        run: cargo xtask bundle-macos --ffmpeg vendor/ffmpeg/ffmpeg --rhubarb vendor/rhubarb --dmg
       - name: Test export with the bundled ffmpeg (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -114,7 +162,7 @@ jobs:
 
       - name: Build the Windows installer
         if: runner.os == 'Windows'
-        run: cargo xtask bundle-windows --ffmpeg vendor/ffmpeg/ffmpeg.exe
+        run: cargo xtask bundle-windows --ffmpeg vendor/ffmpeg/ffmpeg.exe --rhubarb vendor/rhubarb
       - name: Test export with the bundled ffmpeg (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

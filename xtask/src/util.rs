@@ -43,6 +43,44 @@ pub fn bundle_ffmpeg(ffmpeg: &Path, destination: &Path, license_dir: &Path) -> R
     write(&license_dir.join("VERSION.txt"), note.as_bytes())
 }
 
+/// Copies Rhubarb Lip Sync in: its program and the speech models it reads
+/// from `res/` beside itself, which is all it needs of the release folder
+/// (that also holds plug-ins for other apps and test files). Its licence,
+/// which covers the models and libraries inside it too, goes in
+/// `license_dir`.
+pub fn bundle_rhubarb(release: &Path, destination: &Path, license_dir: &Path) -> Result<(), String> {
+    let program = format!("rhubarb{}", std::env::consts::EXE_SUFFIX);
+    for needed in [program.as_str(), "res/sphinx", "LICENSE.md"] {
+        if !release.join(needed).exists() {
+            return Err(format!(
+                "{} doesn't look like an unpacked Rhubarb release: it has no {needed}",
+                release.display()
+            ));
+        }
+    }
+    fresh_dir(destination)?;
+    copy(&release.join(&program), &destination.join(&program))?;
+    copy_dir(&release.join("res"), &destination.join("res"))?;
+    fresh_dir(license_dir)?;
+    copy(&release.join("LICENSE.md"), &license_dir.join("LICENSE.md"))
+}
+
+/// Copies a folder and everything in it.
+pub fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
+    fs::create_dir_all(to).map_err(|e| format!("couldn't create {}: {e}", to.display()))?;
+    let entries = fs::read_dir(from).map_err(|e| format!("couldn't read {}: {e}", from.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("couldn't read {}: {e}", from.display()))?;
+        let target = to.join(entry.file_name());
+        if entry.path().is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            copy(&entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
 /// Empties `dir`, creating it if needed. Packaging starts each output from
 /// nothing, so files from an earlier run (an ffmpeg that's no longer
 /// wanted, say) can't linger.

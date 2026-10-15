@@ -26,9 +26,11 @@ Tasks:
   icon                       Redraw the app icon PNGs in assets/icon/
   bundle-macos [options]     Build target/release/Inkframe.app
       --ffmpeg <path>        Bundle this ffmpeg (must be a self-contained build)
+      --rhubarb <folder>     Bundle Rhubarb Lip Sync from this unpacked release
       --dmg                  Also make a disk image for distribution
   bundle-windows [options]   Build an installer in target/release/ (needs Inno Setup 6)
       --ffmpeg <path>        Bundle this ffmpeg.exe (must be a static build)
+      --rhubarb <folder>     Bundle Rhubarb Lip Sync from this unpacked release
 ";
 
 fn main() -> ExitCode {

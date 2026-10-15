@@ -39,10 +39,11 @@ planned (the code is already cross-platform and CI builds it on Windows).
 - **Swap drawings** for mouths, hands and blinks: a layer can hold several
   named drawings ("closed", "A", "O") and show a different one from any
   frame on, the way Toon Boom Harmony's drawing substitution works.
-- **Lip sync** a mouth to dialogue: from the sound's loudness, or from a
-  [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-lip-sync) or
-  Papagayo timing file for the actual sounds. Its drawings are matched to
-  the standard mouth shapes by name.
+- **Lip sync** a mouth to dialogue: the bundled
+  [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-lip-sync)
+  listens for the actual sounds, or use the sound's loudness, or a Rhubarb
+  or Papagayo timing file. Its drawings are matched to the standard mouth
+  shapes by name.
 - **Motion paths:** a moving layer's path is drawn on the stage, with a dot
   per frame showing its spacing. Drag the path to curve it, then fine-tune
   the curve handles; "Orient to path" turns the layer to face where it's going.
@@ -96,6 +97,12 @@ cargo run --release -- examples/bouncing-ball.inkf
 If ffmpeg is somewhere unusual, point Inkframe at it with the
 `INKFRAME_FFMPEG` environment variable.
 
+Lip sync from Rhubarb needs
+[Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-lip-sync/releases)
+unpacked into `vendor/rhubarb/` (or pointed to with `INKFRAME_RHUBARB`); the
+installers include it. Without it, lip sync from loudness and timing files
+still works.
+
 To build a double-clickable `Inkframe.app` (and a `.dmg` to install it from):
 
 ```sh
@@ -123,7 +130,7 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Bend a drawing | Select the layer and click **Add Bend Deformer** in the properties panel: bones are laid along the drawing's long side (set how many, and how soft the bends are). With the Bone tool, drag a green joint to bend the drawing there; bends are keyed on the current frame and tween like anything else, or type them in the panel. Shapes bend; images and text stay as they are |
 | Exposure sheet | Timeline › Exposure Sheet. One row per frame, one column per layer that swaps drawings, plus each sound's loudness. A name marks where a drawing starts and a line shows it held. Click a cell to go there; double-click and type a drawing's name, then Enter, to expose it and move down a row (a new name makes a new, blank drawing); right-click for a list of drawings, or to hold the one above |
 | Swap drawings | In the properties panel's **Drawings** section, **New** adds a blank drawing (or **Duplicate** a copy of the one showing) from the current frame on. Click a drawing's name to show it from the current frame on, or press `[` and `]` to flip through them. With a layer that has several drawings selected, new shapes are drawn into the drawing that's showing. The timeline marks each swap with the drawing's name |
-| Lip sync | Give a mouth layer a drawing per mouth shape, named with Rhubarb's letters (A closed, B, C, D wide open, E, F, G, H, X at rest) or Papagayo's (MBP, etc, E, AI, O, U, FV, L, rest); a few are enough, the rest borrow a similar shape's. Import the dialogue, select the mouth, then Modify › Lip Sync…: pick the sound, loudness or a timing file, check the drawings, and Apply. The swaps land under the sound, replacing any there |
+| Lip sync | Give a mouth layer a drawing per mouth shape, named with Rhubarb's letters (A closed, B, C, D wide open, E, F, G, H, X at rest) or Papagayo's (MBP, etc, E, AI, O, U, FV, L, rest); a few are enough, the rest borrow a similar shape's. Import the dialogue, select the mouth, then Modify › Lip Sync…: pick the sound and where the shapes come from (Rhubarb, which listens for the sounds and takes a few seconds; loudness; or a timing file), check the drawings, and Apply. For Rhubarb, typing what's said helps with unclear words, and "Other" language listens for sounds rather than English words. The swaps land under the sound, replacing any there |
 | Draw | Rectangle (`R`), Oval (`O`), Pencil (`Y`). Hold Shift for squares and circles |
 | Reshape | Subselection tool (`A`): drag a shape's points, or a selected point's handles. Alt/Option moves one handle alone for a sharp corner; Alt/Option-click a point to switch it between corner and smooth; Delete removes the point. Rectangles and ovals become editable paths on the first edit |
 | Pen (`P`) | Click for corners, drag for curves. Click the first point to close the shape; Enter, Esc or clicking the last point ends an open line. Backspace removes the last point, Shift snaps to 45°. Click a selected shape's outline to add a point without changing its curve |
@@ -189,4 +196,7 @@ you state otherwise, any contribution you submit is dual-licensed the same way.
 
 Inkframe includes [Noto Color Emoji](https://github.com/googlefonts/noto-emoji)
 (`assets/fonts/`), © Google, under the
-[SIL Open Font License 1.1](assets/fonts/Noto-COLRv1-LICENSE.txt).
+[SIL Open Font License 1.1](assets/fonts/Noto-COLRv1-LICENSE.txt). The
+installers also include ffmpeg (under its own licence; see
+[packaging/macos/README.md](packaging/macos/README.md#licensing)) and
+Rhubarb Lip Sync, © Daniel Wolf, MIT licensed, as separate programs.

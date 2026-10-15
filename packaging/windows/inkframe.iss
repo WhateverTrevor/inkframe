@@ -5,7 +5,8 @@
 ; defines (see xtask/src/windows.rs).
 ;
 ;   AppVersion   version from Cargo.toml, e.g. 0.1.0
-;   SourceDir    folder holding inkframe.exe, ffmpeg.exe (optional), licenses\
+;   SourceDir    folder holding inkframe.exe, ffmpeg.exe and rhubarb\ (both
+;                optional), licenses\
 ;   IconFile     assets\icon\inkframe.ico
 ;   OutputDir    where setup.exe is written
 ;   OutputName   setup.exe's name, without the extension

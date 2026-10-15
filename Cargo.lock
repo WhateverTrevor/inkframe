@@ -1711,6 +1711,7 @@ dependencies = [
  "inkframe-render",
  "rfd",
  "rodio",
+ "serde_json",
  "tiny-skia 0.12.0",
  "winresource",
 ]

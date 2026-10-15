@@ -65,3 +65,28 @@ built. A build that includes x264 is GPL. Distributing it means passing that
 licence on and making ffmpeg's source available. The packaging task copies
 the licence the binary reports (`ffmpeg -L`) and its exact version into
 `Inkframe.app/Contents/Resources/licenses/ffmpeg/`.
+
+## Bundling Rhubarb Lip Sync
+
+The Lip Sync window can run [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-lip-sync)
+to work out mouth shapes from dialogue. Unpack its macOS release into
+`vendor/rhubarb/` (git ignores it) and pass that folder:
+
+```sh
+shasum -a 256 Rhubarb-Lip-Sync-1.14.0-macOS.zip   # compare with ci.yml
+unzip Rhubarb-Lip-Sync-1.14.0-macOS.zip
+mv Rhubarb-Lip-Sync-1.14.0-macOS vendor/rhubarb
+cargo xtask bundle-macos --ffmpeg vendor/ffmpeg/ffmpeg --rhubarb vendor/rhubarb --dmg
+```
+
+Only the program, its speech models (`res/`) and `LICENSE.md` are copied,
+into `Inkframe.app/Contents/Resources/rhubarb/` (Rhubarb reads `res/` from
+beside itself, and `Contents/MacOS/` may only hold code). The models add
+about 70 MB to the disk image. Rhubarb's macOS build is for Intel, so Apple
+Silicon Macs run it through Rosetta; the Lip Sync window explains how to
+install Rosetta if it's missing. `cargo run` finds `vendor/rhubarb/` too.
+
+Rhubarb is MIT licensed, and so are, or similarly permissive, the libraries
+and models inside it; its `LICENSE.md`, covering all of them, is copied to
+`Contents/Resources/licenses/rhubarb/`.
+

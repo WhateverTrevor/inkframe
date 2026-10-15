@@ -19,6 +19,8 @@ rodio.workspace = true
 eframe.workspace = true
 egui.workspace = true
 rfd.workspace = true
+# Reads Rhubarb's progress log.
+serde_json.workspace = true
 tiny-skia.workspace = true
 
 # Embeds the icon and version details in inkframe.exe (see build.rs).
