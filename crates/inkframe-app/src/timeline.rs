@@ -16,13 +16,23 @@ use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2}
 use inkframe_core::{AnyChannel, AudioId, Easing, Layer, LayerId, Property, TimelineId};
 
 use crate::audio_engine::AudioEngine;
+use crate::convert::to_color32;
 use crate::editor::Editor;
 use crate::icons::{self, Icon, IconButton};
+use crate::layer_thumbnails::LayerThumbnails;
 use crate::value_graph::{self, FrameAxis, ValueGraph};
 
-const NAME_WIDTH: f32 = 200.0;
+const NAME_WIDTH: f32 = 270.0;
 const RULER_HEIGHT: f32 = 22.0;
-const ROW_HEIGHT: f32 = 24.0;
+/// A layer's row: tall enough for its thumbnail.
+const LAYER_ROW: f32 = 34.0;
+/// A property's row under an expanded layer, and the graph's list.
+const PROPERTY_ROW: f32 = 22.0;
+const AUDIO_ROW: f32 = 34.0;
+/// The box a layer's thumbnail is fitted into, in points.
+const THUMBNAIL: Vec2 = vec2(44.0, 26.0);
+/// How far each level of folder indents a layer's name.
+const FOLDER_INDENT: f32 = 14.0;
 const FRAME_WIDTH: f32 = 12.0;
 /// How far property names are indented under their layer.
 const PROPERTY_INDENT: f32 = 44.0;
@@ -52,17 +62,22 @@ fn nearest_gap(layout: &Layout, rows: &[Row], y: f32) -> usize {
         .unwrap_or(0)
 }
 
-/// Moves `layer` into `gap`, counted from the top as the timeline shows
-/// layers (the reverse of the document's bottom-first order).
-fn restack(editor: &mut Editor, layer: LayerId, gap: usize) {
-    let count = editor.layers().len();
-    let Some(from_top) = editor.layers().iter().rev().position(|l| l.id == layer) else { return };
+/// Moves `layer` into `gap`, counted from the top among the layer rows
+/// showing. It lands just above the layer below the gap, in that layer's
+/// folder; or, dropped just under an open folder's name, inside that folder.
+fn restack(editor: &mut Editor, rows: &[Row], collapsed: &HashSet<LayerId>, layer: LayerId, gap: usize) {
+    let shown: Vec<LayerId> = layer_starts(rows).into_iter().map(|i| rows[i].layer).collect();
+    let above = gap.checked_sub(1).and_then(|i| shown.get(i)).copied();
+    let below = shown.get(gap).copied();
     // Dropping just above or just below itself leaves it where it was.
-    if gap == from_top || gap == from_top + 1 {
+    if above == Some(layer) || below == Some(layer) {
         return;
     }
-    let to_top = if gap > from_top { gap - 1 } else { gap };
-    editor.doc.move_layer_to(layer, count - 1 - to_top);
+    let doc = &editor.doc;
+    let open_folder_above =
+        above.filter(|&id| doc.layer(id).is_some_and(|l| l.folder) && !collapsed.contains(&id));
+    let folder = open_folder_above.or_else(|| below.and_then(|id| doc.layer(id)?.in_folder));
+    editor.doc.place_layer(layer, below, folder);
 }
 
 /// How close to the end of a layer's bar a press must land to grab it, in points.
@@ -71,7 +86,6 @@ const EDGE_GRAB: f32 = 3.0;
 const PLAYHEAD: Color32 = Color32::from_rgb(0xe8, 0x3a, 0x3a);
 const CURRENT_KEY: Color32 = crate::theme::ACCENT;
 /// Animate shows tweens in a violet-blue; we follow suit so they read the same.
-const TWEEN: Color32 = Color32::from_rgb(0x8a, 0x7c, 0xd8);
 const HOLD: Color32 = Color32::from_gray(150);
 /// Drawing swaps: warm, to stand apart from the tweens' purple.
 const SWAP: Color32 = Color32::from_rgb(0xf0, 0xb0, 0x5a);
@@ -114,18 +128,33 @@ struct Layout {
     names: Rect,
     frames: Rect,
     scroll: Vec2,
+    /// Where each row starts below the top of the rows, plus where the
+    /// last one ends: rows differ in height.
+    tops: Vec<f32>,
 }
 
 impl Layout {
-    fn new(rect: Rect, scroll: Vec2) -> Self {
+    fn new(rect: Rect, scroll: Vec2, heights: &[f32]) -> Self {
         let body_top = rect.top() + RULER_HEIGHT;
         let split_x = rect.left() + NAME_WIDTH;
+        let tops = std::iter::once(0.0)
+            .chain(heights.iter().scan(0.0, |y, h| {
+                *y += h;
+                Some(*y)
+            }))
+            .collect();
         Self {
             ruler: Rect::from_min_max(pos2(split_x, rect.top()), pos2(rect.right(), body_top)),
             names: Rect::from_min_max(pos2(rect.left(), body_top), pos2(split_x, rect.bottom())),
             frames: Rect::from_min_max(pos2(split_x, body_top), rect.max),
             scroll,
+            tops,
         }
+    }
+
+    /// The height of all the rows together.
+    fn content_height(&self) -> f32 {
+        *self.tops.last().unwrap_or(&0.0)
     }
 
     /// Left edge of a frame's column.
@@ -161,32 +190,58 @@ impl Layout {
         }
     }
 
+    /// The top of a row on screen. Past the last row, rows are taken to
+    /// be layer-sized, which places the gap after the last layer.
     fn row_top(&self, row: usize) -> f32 {
-        self.frames.top() + row as f32 * ROW_HEIGHT - self.scroll.y
+        let last = self.tops.len() - 1;
+        let offset = match self.tops.get(row) {
+            Some(&top) => top,
+            None => self.content_height() + (row - last) as f32 * LAYER_ROW,
+        };
+        self.frames.top() + offset - self.scroll.y
     }
 
+    fn row_height(&self, row: usize) -> f32 {
+        match (self.tops.get(row), self.tops.get(row + 1)) {
+            (Some(top), Some(bottom)) => bottom - top,
+            _ => LAYER_ROW,
+        }
+    }
+
+    /// The row at height `y` on screen; below the last row, the index one
+    /// past it (which no row has).
     fn row_at(&self, y: f32) -> Option<usize> {
         let offset = y - self.frames.top() + self.scroll.y;
-        (offset >= 0.0).then(|| (offset / ROW_HEIGHT) as usize)
+        if offset < 0.0 {
+            return None;
+        }
+        let rows = self.tops.len() - 1;
+        Some(self.tops.partition_point(|&top| top <= offset).saturating_sub(1).min(rows))
     }
 
     fn row_rect(&self, row: usize, columns: Rect) -> Rect {
         let top = self.row_top(row);
-        Rect::from_x_y_ranges(columns.x_range(), top..=top + ROW_HEIGHT)
+        Rect::from_x_y_ranges(columns.x_range(), top..=top + self.row_height(row))
     }
 
     fn expander_rect(&self, row: usize) -> Rect {
         let r = self.row_rect(row, self.names);
-        Rect::from_center_size(pos2(r.left() + 10.0, r.center().y), Vec2::splat(ROW_HEIGHT * 0.8))
+        Rect::from_center_size(pos2(r.left() + 13.0, r.center().y), Vec2::splat(18.0))
     }
 
     fn eye_rect(&self, row: usize) -> Rect {
         let r = self.row_rect(row, self.names);
-        Rect::from_center_size(pos2(r.left() + 32.0, r.center().y), Vec2::splat(ROW_HEIGHT))
+        Rect::from_center_size(pos2(r.left() + 34.0, r.center().y), Vec2::splat(22.0))
     }
 
     fn lock_rect(&self, row: usize) -> Rect {
-        self.eye_rect(row).translate(vec2(ROW_HEIGHT, 0.0))
+        self.eye_rect(row).translate(vec2(22.0, 0.0))
+    }
+
+    /// The small square of the layer's colour at the right of its name.
+    fn color_rect(&self, row: usize) -> Rect {
+        let r = self.row_rect(row, self.names);
+        Rect::from_center_size(pos2(r.right() - 14.0, r.center().y), Vec2::splat(10.0))
     }
 }
 
@@ -196,6 +251,12 @@ pub struct TimelineView {
     drag: Option<Drag>,
     /// Layers whose property rows are showing.
     expanded: HashSet<LayerId>,
+    /// Folders closed up, hiding their contents.
+    collapsed: HashSet<LayerId>,
+    /// The layer whose colour square was clicked, and where the square
+    /// is, while the colour popup is open.
+    color_menu: Option<(LayerId, Rect)>,
+    thumbnails: LayerThumbnails,
     /// The row that was right-clicked, which the context menu acts on.
     context_row: Option<Row>,
     /// Or the audio row that was right-clicked.
@@ -205,9 +266,12 @@ pub struct TimelineView {
     graph: ValueGraph,
     /// Dragging along the ruler in graph mode, which scrubs.
     scrubbing: bool,
-    /// Where the grid was drawn last frame. Tests use it to find cells.
+    /// Where the grid was drawn last frame, and its rows' heights. Tests
+    /// use them to find cells.
     #[cfg(test)]
     grid_rect: Option<Rect>,
+    #[cfg(test)]
+    heights: Vec<f32>,
 }
 
 impl TimelineView {
@@ -249,8 +313,8 @@ impl TimelineView {
     fn graph_grid(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let (response, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         let rect = response.rect;
-        self.update_scroll(ui, &response, editor, rect, 0);
-        let layout = Layout::new(rect, self.scroll);
+        self.update_scroll(ui, &response, editor, rect, 0.0);
+        let layout = Layout::new(rect, self.scroll, &[PROPERTY_ROW; Property::ALL.len() + 1]);
 
         // Pressing on the ruler scrubs, as in the timeline.
         let press = ui.input(|i| i.pointer.press_origin());
@@ -336,12 +400,27 @@ impl TimelineView {
     fn rows(&self, editor: &Editor) -> Vec<Row> {
         let mut rows = Vec::new();
         for layer in editor.layers().iter().rev() {
+            // Inside a closed folder, at any depth: hidden.
+            let hidden = std::iter::successors(layer.in_folder, |&id| editor.doc.layer(id)?.in_folder)
+                .take(64)
+                .any(|folder| self.collapsed.contains(&folder));
+            if hidden {
+                continue;
+            }
             rows.push(Row { layer: layer.id, property: None });
-            if self.expanded.contains(&layer.id) {
+            if self.expanded.contains(&layer.id) && !layer.folder {
                 rows.extend(Property::ALL.map(|p| Row { layer: layer.id, property: Some(p) }));
             }
         }
         rows
+    }
+
+    /// Each row's height: layers' and audio's tall, properties' short.
+    fn heights(rows: &[Row], audio_rows: usize) -> Vec<f32> {
+        rows.iter()
+            .map(|row| if row.property.is_some() { PROPERTY_ROW } else { LAYER_ROW })
+            .chain(std::iter::repeat_n(AUDIO_ROW, audio_rows))
+            .collect()
     }
 
     fn grid(&mut self, ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) {
@@ -352,8 +431,10 @@ impl TimelineView {
             self.grid_rect = Some(rect);
         }
 
-        // Forget expanded layers that have since been deleted.
+        // Forget expanded layers and closed folders since deleted.
         self.expanded.retain(|id| editor.doc.layer(*id).is_some());
+        self.collapsed.retain(|id| editor.doc.layer(*id).is_some());
+        self.thumbnails.begin_frame(editor);
         let rows = self.rows(editor);
         // Audio rows sit below the layers. Sound belongs to the main
         // timeline, so they're hidden while editing inside a symbol.
@@ -363,12 +444,26 @@ impl TimelineView {
             Vec::new()
         };
 
-        self.update_scroll(ui, &response, editor, rect, rows.len() + audio_rows.len());
-        let layout = Layout::new(rect, self.scroll);
+        let heights = Self::heights(&rows, audio_rows.len());
+        self.update_scroll(ui, &response, editor, rect, heights.iter().sum());
+        let layout = Layout::new(rect, self.scroll, &heights);
+        #[cfg(test)]
+        {
+            self.heights = heights;
+        }
 
         self.handle_input(ui, &response, editor, &layout, &rows, &audio_rows);
         self.update_cursor(ui, &response, editor, &layout, &rows);
         context_menu(&response, editor, self.context_row, self.context_audio);
+        if let Some((layer, square)) = self.color_menu {
+            let mut open = true;
+            egui::Popup::new(egui::Id::new("layer-colour"), ui.ctx().clone(), square, ui.layer_id())
+                .open_bool(&mut open)
+                .show(|ui| color_choices(ui, editor, layer));
+            if !open {
+                self.color_menu = None;
+            }
+        }
 
         painter.rect_filled(rect, 0.0, ui.visuals().extreme_bg_color);
         paint_frames(&painter.with_clip_rect(layout.frames), editor, &layout, &rows);
@@ -414,9 +509,9 @@ impl TimelineView {
         response: &egui::Response,
         editor: &Editor,
         rect: Rect,
-        rows: usize,
+        content_height: f32,
     ) {
-        let layout = Layout::new(rect, self.scroll);
+        let layout = Layout::new(rect, self.scroll, &[]);
         if response.hovered() {
             self.scroll -= ui.input(|i| i.smooth_scroll_delta);
         }
@@ -427,8 +522,7 @@ impl TimelineView {
                 self.scroll.x = editor.frame as f32 * FRAME_WIDTH;
             }
         }
-        let content =
-            vec2((editor.duration() + TRAILING_FRAMES) as f32 * FRAME_WIDTH, rows as f32 * ROW_HEIGHT);
+        let content = vec2((editor.duration() + TRAILING_FRAMES) as f32 * FRAME_WIDTH, content_height);
         let max = (content - layout.frames.size()).max(Vec2::ZERO);
         self.scroll = self.scroll.clamp(Vec2::ZERO, max);
     }
@@ -456,14 +550,26 @@ impl TimelineView {
         // first, so the context menu acts on what was clicked.
         if response.secondary_clicked()
             && let Some(p) = response.interact_pointer_pos()
-            && layout.frames.contains(p)
+            && (layout.frames.contains(p) || layout.names.contains(p))
         {
-            editor.set_frame(clamp_frame(layout.frame_at(p.x)));
+            if layout.frames.contains(p) {
+                editor.set_frame(clamp_frame(layout.frame_at(p.x)));
+            }
             self.context_row = row_under(p.y);
             self.context_audio = audio_under(p.y);
             if let Some(row) = self.context_row {
                 select_row(editor, row);
             }
+        }
+
+        if response.clicked()
+            && let Some(p) = response.interact_pointer_pos()
+            && layout.names.contains(p)
+            && let Some(index) = layout.row_at(p.y)
+            && let Some(row) = rows.get(index).filter(|row| row.property.is_none())
+            && layout.color_rect(index).expand(3.0).contains(p)
+        {
+            self.color_menu = Some((row.layer, layout.color_rect(index)));
         }
 
         let pressed = response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed());
@@ -523,7 +629,7 @@ impl TimelineView {
 
         if !ui.input(|i| i.pointer.primary_down()) {
             if let Some(Drag::Reorder { layer, gap: Some(gap), .. }) = self.drag {
-                restack(editor, layer, gap);
+                restack(editor, rows, &self.collapsed, layer, gap);
             }
             self.drag = None;
         }
@@ -573,17 +679,26 @@ impl TimelineView {
         if layout.names.contains(p) {
             let row = row?;
             if row.property.is_none() {
-                let layer = editor.doc.layer_mut(row.layer)?;
-                if layout.expander_rect(index).contains(p) {
-                    if !self.expanded.remove(&row.layer) {
-                        self.expanded.insert(row.layer);
+                let layer = editor.doc.layer(row.layer)?;
+                let (is_folder, visible, locked) = (layer.folder, layer.visible, layer.locked);
+                // The colour square opens its menu on the click (below), not
+                // the press: opened on the press, the release that follows
+                // would count as a click outside it and close it again.
+                if layout.color_rect(index).expand(3.0).contains(p) {
+                    return None;
+                } else if layout.expander_rect(index).contains(p) {
+                    // A folder's triangle closes it; a layer's shows its
+                    // properties.
+                    let toggled = if is_folder { &mut self.collapsed } else { &mut self.expanded };
+                    if !toggled.remove(&row.layer) {
+                        toggled.insert(row.layer);
                     }
                     return None;
                 } else if layout.eye_rect(index).contains(p) {
-                    layer.visible = !layer.visible;
+                    editor.set_visible(row.layer, !visible);
                     return None;
                 } else if layout.lock_rect(index).contains(p) {
-                    layer.locked = !layer.locked;
+                    editor.set_locked(row.layer, !locked);
                     return None;
                 }
             }
@@ -630,8 +745,35 @@ impl TimelineView {
         None
     }
 
+    /// A layer's thumbnail in `rect`: the stage's background with the
+    /// layer drawn over it where it sits.
+    fn paint_thumbnail(
+        &mut self,
+        painter: &egui::Painter,
+        ctx: &egui::Context,
+        editor: &Editor,
+        id: LayerId,
+        rect: Rect,
+    ) {
+        let stage = editor.doc.stage_rect();
+        // The stage's shape, fitted into the box.
+        let scale = (rect.width() / stage.width()).min(rect.height() / stage.height());
+        let shown = Rect::from_center_size(rect.center(), vec2(stage.width(), stage.height()) * scale);
+        painter.rect_filled(shown, 2.0, to_color32(editor.doc.background));
+        let pixels = ctx.pixels_per_point();
+        let size = [
+            (shown.width() * pixels).round().max(1.0) as u32,
+            (shown.height() * pixels).round().max(1.0) as u32,
+        ];
+        if let Some(texture) = self.thumbnails.get(ctx, editor, id, size) {
+            let uv = Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0));
+            painter.image(texture, shown, uv, Color32::WHITE);
+        }
+        painter.rect_stroke(shown, 2.0, (1.0, Color32::from_black_alpha(120)), egui::StrokeKind::Outside);
+    }
+
     fn paint_names(
-        &self,
+        &mut self,
         painter: &egui::Painter,
         ui: &egui::Ui,
         editor: &Editor,
@@ -653,9 +795,21 @@ impl TimelineView {
                     if selected {
                         painter.rect_filled(rect, 0.0, ui.visuals().selection.bg_fill);
                     }
-                    let expanded = self.expanded.contains(&row.layer);
-                    disclosure_triangle(painter, layout.expander_rect(index).center(), expanded, text);
+                    let tag = to_color32(layer.tag_color());
+                    // The layer's colour down its left edge, as in Animate.
+                    let strip = Rect::from_min_max(
+                        rect.left_top() + vec2(0.0, 1.0),
+                        pos2(rect.left() + 3.0, rect.bottom() - 1.0),
+                    );
+                    painter.rect_filled(strip, 0.0, tag);
 
+                    let triangle = layout.expander_rect(index).center();
+                    if layer.folder {
+                        disclosure_triangle(painter, triangle, !self.collapsed.contains(&layer.id), text);
+                    } else {
+                        let expanded = self.expanded.contains(&row.layer);
+                        disclosure_triangle(painter, triangle, expanded, faint.gamma_multiply(2.0));
+                    }
                     let (eye, eye_color) =
                         if layer.visible { (Icon::Eye, text) } else { (Icon::EyeClosed, faint) };
                     icons::paint(painter, eye, layout.eye_rect(index).shrink(5.0), eye_color);
@@ -663,12 +817,34 @@ impl TimelineView {
                         if layer.locked { (Icon::Lock, text) } else { (Icon::Unlock, faint) };
                     icons::paint(painter, lock, layout.lock_rect(index).shrink(6.0), lock_color);
 
+                    // Inside folders, indented a step per level.
+                    let indent = FOLDER_INDENT * editor.doc.folder_depth(layer).min(6) as f32;
+                    let picture = Rect::from_min_size(
+                        pos2(
+                            layout.lock_rect(index).right() + 4.0 + indent,
+                            rect.center().y - THUMBNAIL.y / 2.0,
+                        ),
+                        THUMBNAIL,
+                    );
+                    let mut name_pos = pos2(picture.right() + 8.0, rect.center().y);
+                    if layer.folder {
+                        let icon =
+                            if self.collapsed.contains(&layer.id) { Icon::Folder } else { Icon::FolderOpen };
+                        let at = Rect::from_center_size(
+                            pos2(picture.left() + 11.0, picture.center().y),
+                            Vec2::splat(18.0),
+                        );
+                        icons::paint(painter, icon, at, tag);
+                        name_pos.x = at.right() + 8.0;
+                    } else {
+                        self.paint_thumbnail(painter, ui.ctx(), editor, layer.id, picture);
+                    }
+
                     // Attached layers are indented by how deep they hang,
                     // with a hook, so a rig reads as one: torso, then arm, then hand.
                     let depth = rig_depth(editor, layer);
-                    let indent = 12.0 * depth.min(6) as f32;
-                    let mut name_pos = pos2(layout.lock_rect(index).right() + 6.0 + indent, rect.center().y);
                     if depth > 0 {
+                        name_pos.x += 10.0 * (depth.min(6) - 1) as f32;
                         // Drawn rather than typed: the UI font has no "↳".
                         let corner = name_pos + vec2(2.0, 0.0);
                         let stroke = (1.0, faint);
@@ -677,11 +853,18 @@ impl TimelineView {
                         name_pos.x += 12.0;
                     }
                     let color = if layer.visible { text } else { faint };
-                    let name = painter.text(name_pos, Align2::LEFT_CENTER, &layer.name, font.clone(), color);
+                    // A long name stops short of the colour square.
+                    let room = Rect::from_x_y_ranges(
+                        rect.left()..=layout.color_rect(index).left() - 6.0,
+                        rect.y_range(),
+                    );
+                    let label_painter = painter.with_clip_rect(room.intersect(painter.clip_rect()));
+                    let name =
+                        label_painter.text(name_pos, Align2::LEFT_CENTER, &layer.name, font.clone(), color);
                     // Guides and masks are labelled, since neither is drawn in
                     // an export, and masked layers say so, since what shows of
                     // them depends on another layer.
-                    let tag = if layer.guide {
+                    let label = if layer.guide {
                         Some("guide")
                     } else if layer.mask {
                         Some("mask")
@@ -690,10 +873,12 @@ impl TimelineView {
                     } else {
                         None
                     };
-                    if let Some(tag) = tag {
+                    if let Some(label) = label {
                         let at = pos2(name.right() + 6.0, rect.center().y);
-                        painter.text(at, Align2::LEFT_CENTER, tag, font.clone(), faint);
+                        label_painter.text(at, Align2::LEFT_CENTER, label, FontId::proportional(11.0), faint);
                     }
+                    // The colour's square, which is also where to pick another.
+                    painter.rect_filled(layout.color_rect(index), 2.0, tag);
                 }
                 Some(property) => {
                     // The property the inspector's easing graph is showing is
@@ -760,12 +945,14 @@ fn select_row(editor: &mut Editor, row: Row) {
 /// order, or reversed for a right-to-left layout.
 fn layer_buttons(ui: &mut egui::Ui, editor: &mut Editor, right_to_left: bool) {
     enum Action {
+        Folder,
         Duplicate,
         Up,
         Down,
         Delete,
     }
     let mut buttons = [
+        (Icon::Folder, "New folder: put the selected layers in a folder", Action::Folder),
         (Icon::Duplicate, "Duplicate layer", Action::Duplicate),
         (Icon::Up, "Move layer up", Action::Up),
         (Icon::Down, "Move layer down", Action::Down),
@@ -778,6 +965,7 @@ fn layer_buttons(ui: &mut egui::Ui, editor: &mut Editor, right_to_left: bool) {
     for (icon, hover, action) in buttons {
         if ui.add_enabled(has_selection, IconButton::new(icon, hover)).clicked() {
             match action {
+                Action::Folder => editor.new_folder(),
                 Action::Duplicate => editor.duplicate_selected_layer(),
                 Action::Up => editor.move_selected_layer(1),
                 Action::Down => editor.move_selected_layer(-1),
@@ -905,6 +1093,7 @@ fn context_menu(response: &egui::Response, editor: &mut Editor, row: Option<Row>
             scope.iter().filter_map(|&p| channel(p).tween_at(frame)).map(|t| t.easing).collect();
         // Show a check mark only when every tween in scope agrees.
         let shared_easing = easings.first().copied().filter(|e| easings.iter().all(|x| x == e));
+        let in_folder = layer.in_folder.is_some();
 
         if let Some(property) = row.property {
             ui.weak(property.name());
@@ -947,6 +1136,16 @@ fn context_menu(response: &egui::Response, editor: &mut Editor, row: Option<Row>
             ui.close();
         }
         ui.separator();
+        if ui.button("New Folder").on_hover_text("Put the selected layers in a new folder").clicked() {
+            editor.new_folder();
+            ui.close();
+        }
+        if in_folder && ui.button("Remove from Folder").clicked() {
+            editor.doc.set_folder(row.layer, None);
+            ui.close();
+        }
+        ui.menu_button("Layer Colour", |ui| color_choices(ui, editor, row.layer));
+        ui.separator();
         if ui.button("Duplicate Layer").clicked() {
             editor.duplicate_selected_layer();
             ui.close();
@@ -956,6 +1155,39 @@ fn context_menu(response: &egui::Response, editor: &mut Editor, row: Option<Row>
             ui.close();
         }
     });
+}
+
+/// The layer colours to pick from, and Automatic (one picked by the
+/// layer's id). Choosing one closes the menu.
+fn color_choices(ui: &mut egui::Ui, editor: &mut Editor, layer: LayerId) {
+    let Some(current) = editor.doc.layer(layer).map(|l| l.color) else { return };
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        for color in inkframe_core::TAG_COLORS {
+            let (rect, response) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::click());
+            ui.painter().rect_filled(rect, 3.0, to_color32(color));
+            if current == Some(color) {
+                ui.painter().rect_stroke(
+                    rect.expand(2.0),
+                    4.0,
+                    (1.5, Color32::WHITE),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            if response.clicked() {
+                if let Some(l) = editor.doc.layer_mut(layer) {
+                    l.color = Some(color);
+                }
+                ui.close();
+            }
+        }
+    });
+    if ui.selectable_label(current.is_none(), "Automatic").clicked() {
+        if let Some(l) = editor.doc.layer_mut(layer) {
+            l.color = None;
+        }
+        ui.close();
+    }
 }
 
 /// Runs `f` on the channels a row stands for: one property, or all of them.
@@ -1005,34 +1237,101 @@ fn paint_frames(painter: &egui::Painter, editor: &Editor, layout: &Layout, rows:
     painter.vline(x, layout.frames.y_range(), (1.0, PLAYHEAD));
 }
 
-/// A layer's summary: one diamond wherever any property has a key, over a
-/// band covering the frames where something is animating.
+/// A layer's summary, drawn as Animate draws a layer: a bar of the layer's
+/// colour over the frames it's on, a dot on each keyframe, the stretches
+/// between keyframes that tween tinted more strongly with an arrow along
+/// them, and a small box marking where the bar ends. A folder's row shows
+/// one bar spanning everything in it.
 fn paint_summary_row(painter: &egui::Painter, editor: &Editor, layout: &Layout, layer: &Layer, row: Rect) {
-    let span = row.shrink2(vec2(0.0, 4.0));
+    let span = row.shrink2(vec2(0.0, 5.0));
     let dim = |c: Color32| if layer.visible { c } else { c.gamma_multiply(0.4) };
+    let tag = to_color32(layer.tag_color());
+    let doc_last = editor.last_frame();
 
-    // A bar across the frames the layer appears on, with brighter ends to
-    // show they can be dragged.
-    let (start, end) = (layer.start, layer.last_frame(editor.last_frame()));
-    let bar = Rect::from_x_y_ranges(layout.frame_x(start)..=layout.frame_x(end + 1), span.y_range());
-    painter.rect_filled(bar, 2.0, dim(Color32::from_white_alpha(18)));
-    for x in [bar.left(), bar.right()] {
-        painter.vline(x, bar.y_range(), (2.0, dim(Color32::from_white_alpha(90))));
+    if layer.folder {
+        let members = editor.doc.folder_block(layer.id);
+        let range = members
+            .iter()
+            .skip(1)
+            .filter_map(|&id| editor.doc.layer(id))
+            .filter(|l| !l.folder)
+            .map(|l| (l.start, l.last_frame(doc_last)))
+            .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)));
+        if let Some((start, end)) = range {
+            let bar = Rect::from_x_y_ranges(layout.frame_x(start)..=layout.frame_x(end + 1), span.y_range());
+            painter.rect_filled(bar, 2.0, dim(tag.gamma_multiply(0.18)));
+            painter.rect_stroke(bar, 2.0, (1.0, dim(tag.gamma_multiply(0.5))), egui::StrokeKind::Inside);
+        }
+        return;
     }
 
+    // The frames the layer is on, with brighter ends to show they can be
+    // dragged.
+    let (start, end) = (layer.start, layer.last_frame(doc_last));
+    let bar = Rect::from_x_y_ranges(layout.frame_x(start)..=layout.frame_x(end + 1), span.y_range());
+    painter.rect_filled(bar, 2.0, dim(tag.gamma_multiply(0.16)));
+    for x in [bar.left(), bar.right()] {
+        painter.vline(x, bar.y_range(), (2.0, dim(tag.gamma_multiply(0.8))));
+    }
+
+    // Tweens: a keyframe-to-keyframe stretch where some property changes
+    // smoothly (rather than holding until the next key).
     let frames = layer.key_frames();
-    if let (Some(&first), Some(&last)) = (frames.first(), frames.last())
-        && first != last
-    {
-        let x_range = layout.frame_center_x(first)..=layout.frame_center_x(last);
+    for pair in frames.windows(2) {
+        let (from, to) = (pair[0], pair[1]);
+        let tweens = Property::ALL.iter().any(|&p| {
+            layer
+                .track
+                .channel(p)
+                .tweens()
+                .iter()
+                .any(|t| t.easing != Easing::Hold && t.start <= from && t.end >= to)
+        });
+        if !tweens {
+            continue;
+        }
+        let x_range = layout.frame_center_x(from)..=layout.frame_center_x(to);
         painter.rect_filled(
-            Rect::from_x_y_ranges(x_range, span.y_range()),
+            Rect::from_x_y_ranges(x_range.clone(), span.y_range()),
             0.0,
-            dim(TWEEN.gamma_multiply(0.3)),
+            dim(tag.gamma_multiply(0.38)),
+        );
+        arrow(
+            painter,
+            *x_range.start() + 6.0,
+            *x_range.end() - 6.0,
+            span.center().y,
+            dim(Color32::from_white_alpha(150)),
         );
     }
-    paint_keys(painter, editor, layout, layer, &frames, row, dim);
+
+    // The bar's end, if it runs on past the last keyframe.
+    if frames.last().is_none_or(|&last| last < end) {
+        let x = layout.frame_center_x(end);
+        let marker = Rect::from_center_size(pos2(x, span.center().y), vec2(5.0, 8.0));
+        painter.rect_stroke(
+            marker,
+            0.0,
+            (1.0, dim(Color32::from_white_alpha(170))),
+            egui::StrokeKind::Inside,
+        );
+    }
+    paint_keys(painter, editor, layout, layer, &frames, row, dim, KeyMark::Dot);
     paint_drawing_swaps(painter, layout, layer, row, dim);
+}
+
+/// A thin line from `x0` to `x1` at height `y` with an arrowhead at `x1`:
+/// Animate's mark for a tween.
+fn arrow(painter: &egui::Painter, x0: f32, x1: f32, y: f32, color: Color32) {
+    if x1 - x0 < 6.0 {
+        return;
+    }
+    painter.hline(x0..=x1, y, (1.0, color));
+    painter.add(egui::Shape::convex_polygon(
+        vec![pos2(x1 + 1.0, y), pos2(x1 - 4.0, y - 3.0), pos2(x1 - 4.0, y + 3.0)],
+        color,
+        Stroke::NONE,
+    ));
 }
 
 /// For a layer that swaps drawings: a mark where each swap happens, with
@@ -1073,8 +1372,9 @@ fn paint_property_row(
     let dim = |c: Color32| if layer.visible { c } else { c.gamma_multiply(0.4) };
     let channel = layer.track.channel(property);
 
+    let tag = to_color32(layer.tag_color());
     for tween in channel.tweens() {
-        let color = if tween.easing == Easing::Hold { HOLD } else { TWEEN };
+        let color = if tween.easing == Easing::Hold { HOLD } else { tag };
         let x_range = layout.frame_center_x(tween.start)..=layout.frame_center_x(tween.end);
         painter.rect_filled(
             Rect::from_x_y_ranges(x_range.clone(), span.y_range()),
@@ -1083,9 +1383,18 @@ fn paint_property_row(
         );
         painter.hline(x_range, span.center().y, (1.0, dim(color)));
     }
-    paint_keys(painter, editor, layout, layer, &channel.key_frames(), row, dim);
+    paint_keys(painter, editor, layout, layer, &channel.key_frames(), row, dim, KeyMark::Diamond);
 }
 
+/// How a key is marked: dots on a layer's row, as Animate marks
+/// keyframes, and diamonds on property rows, as in its motion editor.
+#[derive(Clone, Copy)]
+enum KeyMark {
+    Dot,
+    Diamond,
+}
+
+#[allow(clippy::too_many_arguments)]
 fn paint_keys(
     painter: &egui::Painter,
     editor: &Editor,
@@ -1094,13 +1403,19 @@ fn paint_keys(
     frames: &[u32],
     row: Rect,
     dim: impl Fn(Color32) -> Color32,
+    mark: KeyMark,
 ) {
     let is_selected = editor.selection == Some(layer.id);
     for &frame in frames {
         let center = pos2(layout.frame_center_x(frame), row.center().y);
         let current = is_selected && frame == editor.frame;
-        let fill = if current { CURRENT_KEY } else { Color32::from_gray(230) };
-        diamond(painter, center, 5.0, dim(fill));
+        let fill = if current { CURRENT_KEY } else { Color32::from_gray(235) };
+        match mark {
+            KeyMark::Dot => {
+                painter.circle(center, 3.5, dim(fill), Stroke::new(1.0, Color32::from_black_alpha(180)));
+            }
+            KeyMark::Diamond => diamond(painter, center, 5.0, dim(fill)),
+        }
     }
 }
 
@@ -1231,7 +1546,7 @@ fn paint_audio_rows(
             let visible = visible_frame_range(layout, editor.duration() + TRAILING_FRAMES);
             for frame in visible.filter(|f| *f >= track.start) {
                 let Some(&peak) = peaks.get((frame - track.start) as usize) else { break };
-                let height = (peak / loudest * (ROW_HEIGHT - 6.0)).max(1.0);
+                let height = (peak / loudest * (row.height() - 8.0)).max(1.0);
                 let x = layout.frame_center_x(frame);
                 frames.vline(
                     x,
@@ -1281,7 +1596,7 @@ mod tests {
     /// Screen position of a frame's cell in a given row.
     fn cell(h: &Harness<'_, State>, row: usize, frame: u32) -> Pos2 {
         let timeline = &h.state().0;
-        let layout = Layout::new(timeline.grid_rect.unwrap(), timeline.scroll);
+        let layout = Layout::new(timeline.grid_rect.unwrap(), timeline.scroll, &timeline.heights);
         pos2(layout.frame_center_x(frame), layout.row_rect(row, layout.frames).center().y)
     }
 
@@ -1297,7 +1612,9 @@ mod tests {
     fn expand(h: &mut Harness<'_, State>) {
         let expander = {
             let timeline = &h.state().0;
-            Layout::new(timeline.grid_rect.unwrap(), timeline.scroll).expander_rect(0).center()
+            Layout::new(timeline.grid_rect.unwrap(), timeline.scroll, &timeline.heights)
+                .expander_rect(0)
+                .center()
         };
         h.drag_at(expander);
         h.step();
@@ -1308,7 +1625,7 @@ mod tests {
     /// Screen position of a column boundary (the left edge of `frame`) in a row.
     fn boundary(h: &Harness<'_, State>, row: usize, frame: u32) -> Pos2 {
         let timeline = &h.state().0;
-        let layout = Layout::new(timeline.grid_rect.unwrap(), timeline.scroll);
+        let layout = Layout::new(timeline.grid_rect.unwrap(), timeline.scroll, &timeline.heights);
         pos2(layout.frame_x(frame), layout.row_rect(row, layout.frames).center().y)
     }
 
@@ -1340,7 +1657,7 @@ mod tests {
     /// Screen position of a layer's name, `row` rows down.
     fn name(h: &Harness<'_, State>, row: usize) -> Pos2 {
         let timeline = &h.state().0;
-        let layout = Layout::new(timeline.grid_rect.unwrap(), timeline.scroll);
+        let layout = Layout::new(timeline.grid_rect.unwrap(), timeline.scroll, &timeline.heights);
         // Right of the eye and lock, over the name itself.
         layout.row_rect(row, layout.names).right_center() - vec2(30.0, 0.0)
     }
@@ -1422,5 +1739,75 @@ mod tests {
 
         let track = &h.state().1.doc.layer(id).unwrap().track;
         assert!(Property::ALL.iter().all(|&p| track.channel(p).has_key(3) && !track.channel(p).has_key(0)));
+    }
+
+    /// Clicks the centre of a part of row `row`'s name cell.
+    fn click_part(h: &mut Harness<'_, State>, row: usize, part: fn(&Layout, usize) -> Rect) {
+        let at = {
+            let timeline = &h.state().0;
+            part(&Layout::new(timeline.grid_rect.unwrap(), timeline.scroll, &timeline.heights), row).center()
+        };
+        h.drag_at(at);
+        h.step();
+        h.drop_at(at);
+        h.run();
+    }
+
+    /// Layers B and C (with A from the harness) and a folder holding B.
+    /// Top to bottom: C, Folder 1, B, A.
+    fn with_folder(h: &mut Harness<'_, State>) -> (LayerId, LayerId) {
+        let editor = &mut h.state_mut().1;
+        let b = editor.doc.add_layer("B", vec![], 0, Transform::default());
+        editor.doc.add_layer("C", vec![], 0, Transform::default());
+        let folder = editor.doc.add_folder(TimelineId::Main, &[b]).unwrap();
+        h.run();
+        (folder, b)
+    }
+
+    #[test]
+    fn closing_a_folder_hides_its_rows() {
+        let (mut h, _) = harness();
+        with_folder(&mut h);
+        assert_eq!(h.state().0.rows(&h.state().1).len(), 4);
+        click_part(&mut h, 1, Layout::expander_rect);
+        assert_eq!(h.state().0.rows(&h.state().1).len(), 3);
+    }
+
+    #[test]
+    fn a_folders_eye_and_lock_apply_to_its_contents() {
+        let (mut h, _) = harness();
+        let (_, b) = with_folder(&mut h);
+        click_part(&mut h, 1, Layout::eye_rect);
+        click_part(&mut h, 1, Layout::lock_rect);
+        let layer = h.state().1.doc.layer(b).unwrap();
+        assert!(!layer.visible && layer.locked);
+    }
+
+    #[test]
+    fn dropping_a_layer_under_a_folders_name_puts_it_inside() {
+        let (mut h, _) = harness();
+        let (folder, _) = with_folder(&mut h);
+        // Drag C (top row) to just below the folder's row.
+        let (from, to) = (name(&h, 0), name(&h, 1) + vec2(0.0, LAYER_ROW / 2.0 + 2.0));
+        h.drag_at(from);
+        h.step();
+        h.hover_at(from + vec2(0.0, 10.0));
+        h.step();
+        h.hover_at(to);
+        h.step();
+        h.drop_at(to);
+        h.run();
+        assert_eq!(layer_names(&h), ["Folder 1", "C", "B", "A"]);
+        let c = h.state().1.layers().iter().find(|l| l.name == "C").unwrap();
+        assert_eq!(c.in_folder, Some(folder));
+    }
+
+    #[test]
+    fn the_colour_square_opens_the_colour_choices() {
+        let (mut h, id) = harness();
+        click_part(&mut h, 0, Layout::color_rect);
+        assert_eq!(h.state().0.color_menu.map(|(layer, _)| layer), Some(id));
+        use egui_kittest::kittest::Queryable;
+        h.get_by_label("Automatic");
     }
 }

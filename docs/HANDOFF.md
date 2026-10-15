@@ -1,18 +1,18 @@
 # Handoff: where Inkframe stands
 
-A checkpoint for picking development back up. Last updated 2026-10-14
-(end of the second long session), after the value graph.
+A checkpoint for picking development back up. Last updated 2026-10-15,
+after UI round 2 (the layers panel and timeline).
 
 ## State
 
-- **Branch:** `main`, clean. Every feature was built on its own branch,
-  then fast-forward merged and the branch deleted.
+- **Branch:** `main`, clean. Every feature is built on its own branch,
+  then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (273 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (454 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
-- **File format:** version 12. Older versions load and upgrade automatically
+- **File format:** version 19. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -197,6 +197,18 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     header menu. Next: round 2, the layers panel and timeline (thumbnails,
     colour tags, folders, Animate-style cells); round 3, tabbed areas,
     workspace presets, Properties tabs, Swatches/Align/History panels.
+
+47. UI round 2: layers panel and timeline (format v19). Layer folders
+    (`folder.rs` in the core; a folder is a `Layer` with `folder` set,
+    members name it in `in_folder` and sit directly below it), layer
+    colours (`Layer::color` / `tag_color`), per-layer thumbnails
+    (`layer_thumbnails.rs`, `render_layer_thumbnail`), variable row
+    heights in the timeline's `Layout` (`tops`), Animate-style cells (dots
+    on keyframes, tinted tweens with arrows, a box where a bar ends) and
+    the selection outline on the stage in the layer's colour.
+    `INKFRAME_SCREENSHOT_FOLDER=1` puts the rig's arm in a folder. Next:
+    round 3 (tabbed areas, workspace presets, Properties tabs, Swatches /
+    Align / History panels).
 
 ## Not yet verified by hand
 

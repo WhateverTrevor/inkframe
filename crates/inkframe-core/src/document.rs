@@ -29,7 +29,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 18;
+pub const FORMAT_VERSION: u32 = 19;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -78,7 +78,7 @@ pub struct Document {
 /// Always look layers up by id rather than holding on to an index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct LayerId(u64);
+pub struct LayerId(pub(crate) u64);
 
 impl fmt::Display for LayerId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -150,6 +150,17 @@ pub struct Layer {
     /// How the layer mixes with what's beneath it (see `blend.rs`).
     #[serde(default, skip_serializing_if = "BlendMode::is_normal")]
     pub blend: BlendMode,
+    /// The colour chosen for the layer in the timeline and on the stage;
+    /// `None` uses one picked by its id (see `folder.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<Color>,
+    /// This layer is a folder: it draws nothing and holds the layers that
+    /// name it in `in_folder`, which sit directly below it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub folder: bool,
+    /// The folder this layer is in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_folder: Option<LayerId>,
 }
 
 fn is_origin(p: &Point) -> bool {
@@ -347,6 +358,9 @@ impl Document {
             rotation_limits: None,
             deformer: None,
             blend: BlendMode::Normal,
+            color: None,
+            folder: false,
+            in_folder: None,
         });
         Some(id)
     }
@@ -515,8 +529,6 @@ impl Document {
             }
         }
         // Never hand out an id that's already in use, even if the stored
-        // counter was edited or lost.
-        // Never hand out an id that's already in use, even if the stored
         // counters were edited or lost. Layer ids are unique across the
         // whole document, symbols included.
         let max_layer_id = self.all_layers().map(|l| l.id.0).max().unwrap_or(0);
@@ -536,6 +548,14 @@ impl Document {
             .any(|s| s.layers.iter().filter_map(|l| l.instance).any(|i| self.symbol_contains(i.symbol, s.id)))
         {
             return Err(DocumentError::Invalid("a symbol can't contain an instance of itself"));
+        }
+        // Folders that went missing or contents out of place in a
+        // hand-edited file.
+        let timelines: Vec<TimelineId> = std::iter::once(TimelineId::Main)
+            .chain(self.symbols.iter().map(|s| TimelineId::Symbol(s.id)))
+            .collect();
+        for timeline in timelines {
+            self.tidy_folders(timeline);
         }
         self.version = FORMAT_VERSION;
         Ok(())

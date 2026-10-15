@@ -83,6 +83,7 @@ enum Command {
     /// Opens the Lip Sync window for the selected layer.
     LipSync,
     NewPaintLayer,
+    NewFolder,
     PlayPause,
     StepBackward,
     StepForward,
@@ -198,6 +199,13 @@ impl InkframeApp {
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
             }
+            if AutoScreenshot::folder() {
+                let arm: Vec<_> = ["Upper arm", "Forearm", "Hand"]
+                    .iter()
+                    .filter_map(|name| app.editor.layers().iter().find(|l| l.name == *name).map(|l| l.id))
+                    .collect();
+                app.editor.doc.add_folder(TimelineId::Main, &arm);
+            }
             app.xsheet.open = AutoScreenshot::exposure_sheet();
             if let Some(degrees) = AutoScreenshot::view_rotation() {
                 app.views.stage().rotate_view(degrees);
@@ -312,6 +320,7 @@ impl InkframeApp {
             Command::NewPaintLayer => {
                 editor.add_paint_layer();
             }
+            Command::NewFolder => editor.new_folder(),
             Command::LipSync => self.lip_sync.open(editor),
             Command::PlayPause => editor.toggle_playback(),
             Command::StepBackward => editor.step(-1),
@@ -590,6 +599,7 @@ impl InkframeApp {
                 item(ui, "Mask", None, Command::MaskLayerBelow, below);
                 ui.separator();
                 item(ui, "New Paint Layer", None, Command::NewPaintLayer, true);
+                item(ui, "New Folder", None, Command::NewFolder, true);
                 let below_is_paint = self.editor.selection.is_some_and(|id| {
                     let Some(timeline) = self.editor.doc.timeline_of(id) else { return false };
                     let layers = self.editor.doc.layers_of(timeline);

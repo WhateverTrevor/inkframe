@@ -22,6 +22,7 @@ mod document;
 mod drawing;
 mod easing;
 mod fill;
+mod folder;
 mod font_file;
 mod freehand;
 mod geometry;
@@ -57,6 +58,7 @@ pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, 
 pub use drawing::{Drawing, Exposure};
 pub use easing::Easing;
 pub use fill::{BucketSettings, Gradient, GradientShape, bucket_fill, gradient};
+pub use folder::TAG_COLORS;
 pub use font_file::{FontFile, FontFileId};
 pub use freehand::fit_freehand_path;
 pub use geometry::{Affine, Point, Rect};

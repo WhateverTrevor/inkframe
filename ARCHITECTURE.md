@@ -51,6 +51,7 @@ The data model and the math behind animation.
 | `guide.rs` | Motion guides: `Document::pose`, a layer's transform following its guide (use it rather than `Layer::transform_at` wherever layers are drawn or edited) |
 | `rig.rs` | Parenting and pivots: `Document::layer_matrix` (parents · pose · −pivot), the one map from a layer's drawing to its timeline that drawing, hit testing and editing all use; `set_parent` and `set_pivot`, which keep the layer where it is on screen |
 | `ik.rs` | Inverse kinematics for the Bone tool: `Document::ik_chain` (a layer and its parents below the root) and `Document::reach`, a cyclic-coordinate-descent solver that keys only rotations and honours `Layer::rotation_limits` |
+| `folder.rs` | Layer folders (a `Layer` with `folder` set; members name it in `in_folder` and always sit directly below it, restored by `tidy_folders`), `add_folder`, `place_layer` (a timeline drop), `move_among_siblings`, `folder_block`; layer colours (`Layer::tag_color`, `TAG_COLORS`) |
 | `paint.rs` | Painted pixels: `Canvas` (256×256 premultiplied RGBA tiles, shared between undo snapshots with `Arc`), `Shape::Paint` naming a canvas, `Document::element_bounds`/`element_hit` (paint counts only painted pixels), `add_paint_layer`, `separate_canvases` (a duplicated layer or drawing gets its own canvas) |
 | `brush.rs` | The brush engine (and `BrushSettings::presets`, the paper `grain`, and `DabPath`, which every stroke tool uses to place its dabs): a `BrushStroke` lays round dabs along the pen's path into its own coverage mask, then redraws the touched tiles from how they were before the stroke, so opacity caps a whole stroke and flow builds up within it, as in Photoshop |
 | `selection.rs` | Pixel selections: a soft 0–255 mask per canvas pixel (`Selection`), from rectangles, ellipses and polygons (anti-aliased by 4×4 subsampling) or the magic wand; combining (`Combine`); `limit`/`limit_canvas` keep a change only where selected; `keep`/`clear`/`shifted` for moving and cutting; `outline` for marching ants |
@@ -115,7 +116,7 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 18. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 19. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
@@ -125,8 +126,8 @@ motion guides, version 11 masks, version 12 skew, version 13 parents
 and pivots, version 14 drawings (a layer's `elements` became its first
 drawing; `drawing::drawings_or_elements` reads either), version 15
 joint rotation limits, version 16 deformers, version 17 paint layers,
-when project files became zips (see `container.rs`), and version 18
-layer blend modes;
+when project files became zips (see `container.rs`), version 18
+layer blend modes, and version 19 layer folders and colours;
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 
@@ -222,6 +223,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `rhubarb.rs` | Finding and running Rhubarb Lip Sync on a background thread (`Job`): decodes the dialogue to a temporary WAV, reads progress from its `--machineReadable` log, parses its TSV output |
 | `theme.rs` | The look: Inter as the interface font, a palette of greys with one blue accent (constants other modules draw with), spacing and corner radii |
 | `icons.rs` | The interface's small icons (playback, layer toggles, area kinds), drawn as lines in the theme's colours, and `IconButton` |
+| `layer_thumbnails.rs` | The timeline's per-layer thumbnails (`render_layer_thumbnail` in the render crate), cached and redrawn only when what shows in them changes, a few per UI frame |
 | `layout.rs` | The window's areas, Blender-style: a binary tree of splits whose leaves are areas, each showing a `Kind` of editor, picked from a grouped menu in its header (`Kind::GROUPS`); the timeline and graph editor are one `TimelineView` whose mode follows the area's kind; resizing, splitting, joining, swapping and maximising, and saving the layout to the settings folder. `app.rs` keeps a view per stage, timeline and exposure-sheet area (`Views`), menu commands acting on the stage last pointed at |
 | `adjust_dialog.rs` | The Adjustments window: live preview from the canvas as it was, OK or Cancel, and the Curves editor |
 | `xsheet.rs` | The Exposure Sheet window: `column` turns a layer's exposure into cells (starts and holds), `enter` exposes a typed drawing name, making the drawing if it's new |

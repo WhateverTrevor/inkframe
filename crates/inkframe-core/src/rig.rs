@@ -80,6 +80,11 @@ impl Document {
         if child == parent || self.timeline_of(child) != self.timeline_of(parent) {
             return false;
         }
+        // Folders only group layers in the timeline; they have no place on
+        // the stage to hang from or to hang.
+        if [child, parent].iter().any(|&id| self.layer(id).is_some_and(|l| l.folder)) {
+            return false;
+        }
         let mut current = self.layer(parent);
         for _ in 0..MAX_DEPTH {
             match current {
