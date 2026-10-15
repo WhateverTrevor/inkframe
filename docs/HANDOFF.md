@@ -181,6 +181,12 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     exposure-sheet area has its own view (`Views` in app.rs); commands act
     on the last stage pointed at. Screenshots always use the default
     layout (`INKFRAME_SCREENSHOT_LAYOUT=custom` shows a rearranged one).
+45. The area header menu works (the header's right-click target had been
+    added over it and took its clicks; a test now clicks through it) and
+    lists ten editors in three groups, Blender-style. New kinds: Graph
+    Editor (a timeline in graph mode; its Graph button swaps the area's
+    kind), Tool Settings, Audio and Document. The timeline's layer
+    buttons no longer overlap the transport bar in narrow areas.
 
 ## Not yet verified by hand
 

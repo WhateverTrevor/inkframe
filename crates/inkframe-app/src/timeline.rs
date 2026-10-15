@@ -219,6 +219,10 @@ impl TimelineView {
         self.graph_mode = on;
     }
 
+    pub fn graph_mode(&self) -> bool {
+        self.graph_mode
+    }
+
     /// Shows or hides a layer's property rows.
     pub fn set_expanded(&mut self, layer: LayerId, expanded: bool) {
         if expanded {
@@ -761,6 +765,37 @@ fn select_row(editor: &mut Editor, row: Row) {
     }
 }
 
+/// Duplicate, raise, lower and delete for the selected layer, in reading
+/// order, or reversed for a right-to-left layout.
+fn layer_buttons(ui: &mut egui::Ui, editor: &mut Editor, right_to_left: bool) {
+    enum Action {
+        Duplicate,
+        Up,
+        Down,
+        Delete,
+    }
+    let mut buttons = [
+        ("Duplicate", "Duplicate layer", Action::Duplicate),
+        ("⬆", "Move layer up", Action::Up),
+        ("⬇", "Move layer down", Action::Down),
+        ("🗑", "Delete layer", Action::Delete),
+    ];
+    if right_to_left {
+        buttons.reverse();
+    }
+    let has_selection = editor.selection.is_some();
+    for (label, hover, action) in buttons {
+        if ui.add_enabled(has_selection, egui::Button::new(label)).on_hover_text(hover).clicked() {
+            match action {
+                Action::Duplicate => editor.duplicate_selected_layer(),
+                Action::Up => editor.move_selected_layer(1),
+                Action::Down => editor.move_selected_layer(-1),
+                Action::Delete => editor.delete_selected_layer(),
+            }
+        }
+    }
+}
+
 fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) {
     ui.horizontal(|ui| {
         let last = editor.last_frame();
@@ -808,27 +843,18 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) 
                 .on_hover_text("Frames shown after the current one");
         }
 
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let has_selection = editor.selection.is_some();
-            if ui.add_enabled(has_selection, egui::Button::new("🗑")).on_hover_text("Delete layer").clicked()
-            {
-                editor.delete_selected_layer();
-            }
-            if ui
-                .add_enabled(has_selection, egui::Button::new("⬇"))
-                .on_hover_text("Move layer down")
-                .clicked()
-            {
-                editor.move_selected_layer(-1);
-            }
-            if ui.add_enabled(has_selection, egui::Button::new("⬆")).on_hover_text("Move layer up").clicked()
-            {
-                editor.move_selected_layer(1);
-            }
-            if ui.add_enabled(has_selection, egui::Button::new("Duplicate")).clicked() {
-                editor.duplicate_selected_layer();
-            }
-        });
+        // The layer buttons sit at the right end when there's room. In a
+        // narrow area they follow on instead, rather than being drawn over
+        // the controls before them.
+        const LAYER_BUTTONS_WIDTH: f32 = 170.0;
+        if ui.available_width() >= LAYER_BUTTONS_WIDTH {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                layer_buttons(ui, editor, true);
+            });
+        } else {
+            ui.separator();
+            layer_buttons(ui, editor, false);
+        }
     });
 }
 

@@ -195,8 +195,8 @@ impl InkframeApp {
             if let Some(name) = AutoScreenshot::type_into() {
                 app.views.stage().type_into(&mut app.editor, &name);
             }
-            for timeline in app.views.timelines.values_mut() {
-                timeline.set_graph_mode(AutoScreenshot::graph());
+            if AutoScreenshot::graph() {
+                app.layout.timelines_to_graphs();
             }
             app.xsheet.open = AutoScreenshot::exposure_sheet();
             if let Some(degrees) = AutoScreenshot::view_rotation() {
@@ -902,9 +902,17 @@ impl InkframeApp {
                     stage.show(ui, &mut self.editor);
                 }
             }
-            Kind::Timeline => {
+            Kind::Timeline | Kind::GraphEditor => {
                 if let Some(timeline) = self.views.timelines.get_mut(&area) {
+                    // The area's kind says which mode; the Graph button
+                    // in the transport bar switches the kind.
+                    let graph = kind == Kind::GraphEditor;
+                    timeline.set_graph_mode(graph);
                     timeline.show(ui, &mut self.editor, &mut self.audio);
+                    if timeline.graph_mode() != graph {
+                        let other = if graph { Kind::Timeline } else { Kind::GraphEditor };
+                        self.views.retype = Some((area, other));
+                    }
                 }
             }
             Kind::Properties => {
@@ -934,6 +942,25 @@ impl InkframeApp {
                 if let Some(sheet) = self.views.sheets.get_mut(&area) {
                     sheet.contents(ui, &mut self.editor, &mut self.audio);
                 }
+            }
+            Kind::ToolSettings => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("tool_settings", area))
+                    .show(ui, |ui| inspector::tool_settings(ui, &mut self.editor));
+            }
+            Kind::Audio => {
+                egui::ScrollArea::vertical().id_salt(("audio", area)).show(ui, |ui| {
+                    if let Some(inspector::AudioAction::Import) =
+                        inspector::audio_section(ui, &mut self.editor, &mut self.audio)
+                    {
+                        self.import_audio();
+                    }
+                });
+            }
+            Kind::Document => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("document", area))
+                    .show(ui, |ui| inspector::document(ui, &mut self.editor));
             }
         }
     }
@@ -974,6 +1001,9 @@ impl eframe::App for InkframeApp {
             drop_hint(&ctx);
         }
         self.layout = layout;
+        if let Some((area, kind)) = self.views.retype.take() {
+            self.layout.set_kind(area, kind);
+        }
         // The last stage pointed at is the one menu commands (zoom, turn)
         // act on.
         if let Some(area) = self.hovered_area
@@ -1033,6 +1063,9 @@ struct Views {
     sheets: BTreeMap<AreaId, ExposureSheet>,
     /// The stage last pointed at.
     active_stage: Option<AreaId>,
+    /// An area to change to another kind once the layout has drawn: a
+    /// timeline whose Graph button was pressed, say.
+    retype: Option<(AreaId, Kind)>,
     /// Stands in when no area shows the stage, so commands still have one.
     spare_stage: StageView,
 }
@@ -1043,7 +1076,8 @@ impl Views {
     fn prepare(&mut self, layout: &Layout) {
         let areas = layout.areas(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 1000.0)));
         let of = |kind: Kind| areas.iter().filter(move |a| a.1 == kind).map(|a| a.0).collect::<Vec<_>>();
-        let (stages, timelines, sheets) = (of(Kind::Stage), of(Kind::Timeline), of(Kind::ExposureSheet));
+        let (stages, sheets) = (of(Kind::Stage), of(Kind::ExposureSheet));
+        let timelines: Vec<AreaId> = areas.iter().filter(|a| a.1.is_timeline()).map(|a| a.0).collect();
         self.stages.retain(|id, _| stages.contains(id));
         self.timelines.retain(|id, _| timelines.contains(id));
         self.sheets.retain(|id, _| sheets.contains(id));
