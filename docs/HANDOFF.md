@@ -132,8 +132,16 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     sounds; double-click to type a drawing name (Enter moves down a row,
     a new name makes a blank drawing), right-click to pick or clear.
     `Layer::clear_exposure` and `Layer::drawing_named` in `drawing.rs`.
-    This completes the Harmony/OpenToonz character plan; bundling
-    Rhubarb for lip sync is the agreed follow-up (needs download OK).
+    This completes the Harmony/OpenToonz character plan.
+39. Rhubarb Lip Sync 1.14.0 bundled (user approved the ~174 MB download
+    of both zips; they're in the git-ignored `vendor/downloads/rhubarb/`,
+    unpacked essentials in `vendor/rhubarb/`). `rhubarb.rs` runs it; it's
+    the Lip Sync window's default source when found. xtask `--rhubarb`
+    for both installers (macOS: `Contents/Resources/rhubarb/`, since only
+    code may sit in `MacOS/`; `xattr -cr` before signing). CI downloads
+    both pinned zips and sets `INKFRAME_REQUIRE_RHUBARB`. The macOS build
+    is x86_64 (Rosetta); EBADARCH is explained to the user. The disk image
+    grew from about 37 MB to 110 MB.
 
 ## Not yet verified by hand
 

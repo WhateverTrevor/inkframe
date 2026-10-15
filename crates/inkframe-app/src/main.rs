@@ -18,6 +18,7 @@ mod library;
 mod lip_sync_dialog;
 mod motion_path;
 mod pen;
+mod rhubarb;
 mod screenshot;
 mod shortcuts;
 mod stage;

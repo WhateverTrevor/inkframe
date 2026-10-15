@@ -43,3 +43,18 @@ CI bundles the "essentials" build from [gyan.dev](https://www.gyan.dev/ffmpeg/bu
 of `.github/workflows/ci.yml`. To do the same by hand, download that zip,
 check it with `certutil -hashfile ffmpeg.zip SHA256`, and copy
 `bin\ffmpeg.exe` from it to `vendor\ffmpeg\ffmpeg.exe`.
+
+## Bundling Rhubarb Lip Sync
+
+Unpack Rhubarb's Windows release (`Rhubarb-Lip-Sync-1.14.0-Windows.zip`,
+checked with `certutil -hashfile` against the SHA-256 in
+`.github/workflows/ci.yml`) to `vendor\rhubarb\`, then:
+
+```powershell
+cargo xtask bundle-windows --ffmpeg vendor\ffmpeg\ffmpeg.exe --rhubarb vendor\rhubarb
+```
+
+`rhubarb.exe` and its speech models (`res\`) are installed in a `rhubarb\`
+folder beside `inkframe.exe`, and its licence in `licenses\rhubarb\`. See
+[../macos/README.md](../macos/README.md#bundling-rhubarb-lip-sync).
+

@@ -5,7 +5,8 @@
 //! ```text
 //! inkframe.exe        the editor, with its icon embedded (see inkframe-app/build.rs)
 //! ffmpeg.exe          optional; found by inkframe-export's `locate`
-//! licenses\           Inkframe's licenses (and ffmpeg's, if bundled)
+//! rhubarb\            optional; Rhubarb Lip Sync and its speech models
+//! licenses\           Inkframe's licenses (and ffmpeg's and Rhubarb's)
 //! ```
 //!
 //! [Inno Setup](https://jrsoftware.org/isinfo.php) then turns that folder
@@ -16,22 +17,29 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::util::{build_release, bundle_ffmpeg, copy, copy_licenses, fresh_dir, remove_dir, run};
+use crate::util::{
+    build_release, bundle_ffmpeg, bundle_rhubarb, copy, copy_licenses, fresh_dir, remove_dir, run,
+};
 use crate::workspace_root;
 
 pub struct Options {
     ffmpeg: Option<PathBuf>,
+    rhubarb: Option<PathBuf>,
 }
 
 impl Options {
     pub fn parse(args: &[String]) -> Result<Self, String> {
-        let mut options = Self { ffmpeg: None };
+        let mut options = Self { ffmpeg: None, rhubarb: None };
         let mut args = args.iter();
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--ffmpeg" => {
                     let path = args.next().ok_or("--ffmpeg needs a path")?;
                     options.ffmpeg = Some(PathBuf::from(path));
+                }
+                "--rhubarb" => {
+                    let path = args.next().ok_or("--rhubarb needs a path")?;
+                    options.rhubarb = Some(PathBuf::from(path));
                 }
                 other => return Err(format!("unknown option {other:?}\n\n{}", crate::USAGE)),
             }
@@ -65,6 +73,9 @@ pub fn bundle(options: &Options) -> Result<(), String> {
     copy_licenses(&root, &staging.join("licenses"))?;
     if let Some(ffmpeg) = &options.ffmpeg {
         bundle_ffmpeg(ffmpeg, &staging.join("ffmpeg.exe"), &staging.join("licenses").join("ffmpeg"))?;
+    }
+    if let Some(rhubarb) = &options.rhubarb {
+        bundle_rhubarb(rhubarb, &staging.join("rhubarb"), &staging.join("licenses").join("rhubarb"))?;
     }
 
     // Inno Setup's `/D` defines fill in the `{#Name}` placeholders in the script.

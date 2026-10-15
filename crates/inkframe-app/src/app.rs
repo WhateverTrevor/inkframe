@@ -811,7 +811,7 @@ impl eframe::App for InkframeApp {
             if AutoScreenshot::lip_sync_apply() && !self.audio.is_busy() {
                 self.lip_sync.apply_once(&mut self.editor, &mut self.audio);
             }
-            screenshot.update(&ctx, self.audio.is_busy());
+            screenshot.update(&ctx, self.audio.is_busy() || self.lip_sync.is_busy());
         }
     }
 }
