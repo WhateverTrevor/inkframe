@@ -208,6 +208,35 @@ impl InkframeApp {
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
             }
+            if AutoScreenshot::effects() {
+                use inkframe_core::{Color, ColorEffect, Filter, FilterKind};
+                let find = |editor: &crate::editor::Editor, name: &str| {
+                    editor.layers().iter().find(|l| l.name == name).map(|l| l.id)
+                };
+                let shadow = FilterKind::DropShadow {
+                    distance: 18.0,
+                    angle: 45.0,
+                    blur: 14.0,
+                    color: Color::rgba(0, 0, 0, 160),
+                    strength: 1.0,
+                };
+                let glow = FilterKind::Glow {
+                    blur: 16.0,
+                    color: Color::rgb(0xff, 0xd0, 0x40),
+                    strength: 1.5,
+                    inner: false,
+                };
+                for (name, kind) in [("Torso", shadow), ("Head", glow)] {
+                    if let Some(layer) = find(&app.editor, name).and_then(|id| app.editor.doc.layer_mut(id)) {
+                        layer.filters.push(Filter { enabled: true, kind });
+                    }
+                }
+                if let Some(layer) = find(&app.editor, "Tail").and_then(|id| app.editor.doc.layer_mut(id)) {
+                    layer.color_effect =
+                        ColorEffect::Tint { color: Color::rgb(0x40, 0xc0, 0x80), amount: 0.6 };
+                }
+                app.editor.select(find(&app.editor, "Torso"));
+            }
             if AutoScreenshot::camera() {
                 let camera = app.editor.doc.add_camera();
                 let pose = inkframe_core::Transform {

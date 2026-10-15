@@ -879,6 +879,9 @@ impl TimelineView {
                         Some("mask")
                     } else if editor.doc.mask_for(layer, editor.frame).is_some() {
                         Some("masked")
+                    } else if !layer.color_effect.is_none() || layer.filters.iter().any(|f| f.enabled) {
+                        // Effects change how it looks without showing why.
+                        Some("fx")
                     } else {
                         None
                     };
