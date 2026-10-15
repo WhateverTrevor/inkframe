@@ -450,7 +450,7 @@ impl TimelineView {
                 }
                 Drag::Key { row, frame: from } => {
                     let moved = editor.doc.layer_mut(row.layer).is_some_and(|l| match row.property {
-                        None => l.track.move_key(*from, frame),
+                        None => l.move_key(*from, frame),
                         Some(property) => l.track.channel_mut(property).move_key(*from, frame),
                     });
                     if moved {
@@ -548,7 +548,7 @@ impl TimelineView {
             }
             if let Ok(frame) = u32::try_from(layout.frame_at(p.x)) {
                 let has_key = match row.property {
-                    None => layer.track.has_key(frame),
+                    None => layer.has_key(frame),
                     Some(property) => layer.track.channel(property).has_key(frame),
                 };
                 if !layer.locked && has_key {
@@ -916,7 +916,7 @@ fn paint_summary_row(painter: &egui::Painter, editor: &Editor, layout: &Layout, 
         painter.vline(x, bar.y_range(), (2.0, dim(Color32::from_white_alpha(90))));
     }
 
-    let frames = layer.track.key_frames();
+    let frames = layer.key_frames();
     if let (Some(&first), Some(&last)) = (frames.first(), frames.last())
         && first != last
     {

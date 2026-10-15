@@ -3,8 +3,8 @@
 
 use egui::{Color32, DragValue, Sense, Stroke as EguiStroke, vec2};
 use inkframe_core::{
-    Color, Easing, FrameRate, ImageId, Layer, LayerId, Playback, Property, RotationLimits, Shape, Stroke,
-    Style, SymbolId, Text, TextAlign, Tween,
+    Color, Deformer, Easing, FrameRate, ImageId, Layer, LayerId, Playback, Property, RotationLimits, Shape,
+    Stroke, Style, SymbolId, Text, TextAlign, Tween,
 };
 
 use crate::audio_engine::AudioEngine;
@@ -58,6 +58,7 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     easing_section(ui, editor, id, frame);
     ui.add_space(8.0);
     instance_section(ui, editor, id);
+    deformer_section(ui, editor, id);
     drawings_section(ui, editor, id);
     shapes_section(ui, editor, id);
 }
@@ -302,6 +303,60 @@ fn rig_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) 
     {
         layer.rotation_limits = limits;
     }
+}
+
+/// A bone deformer bending the layer's drawing: adding one, its bones'
+/// bends on this frame, and how soft the bends are.
+fn deformer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    let frame = editor.frame;
+    let Some(layer) = editor.doc.layer_mut(id).filter(|l| l.instance.is_none()) else { return };
+    // The drawing as drawn, not bent, is what the bones are laid along.
+    let rest_bounds = layer.elements_at(frame).iter().map(|e| e.bounds()).reduce(|a, b| a.union(b));
+
+    ui.strong("Deformer");
+    let Some(deformer) = &mut layer.deformer else {
+        let add = ui
+            .add_enabled(rest_bounds.is_some(), egui::Button::new("Add Bend Deformer"))
+            .on_hover_text("Bones through the drawing that bend it smoothly, for rubber-hose limbs and tails. Pose them with the Bone tool.");
+        if add.clicked()
+            && let Some(bounds) = rest_bounds
+        {
+            layer.deformer = Some(Deformer::along(bounds, 2, frame));
+        }
+        ui.add_space(8.0);
+        return;
+    };
+
+    let mut remove = false;
+    let mut bones = deformer.bone_count();
+    egui::Grid::new("deformer").num_columns(2).spacing([6.0, 4.0]).show(ui, |ui| {
+        ui.label("Bones").on_hover_text("Changing the count lays the bones out straight again");
+        ui.add(DragValue::new(&mut bones).range(1..=8));
+        ui.end_row();
+        ui.label("Smoothness").on_hover_text("How soft each bend is: 0 bends like a hinge, 1 like a hose");
+        ui.add(egui::Slider::new(&mut deformer.smoothness, 0.0..=1.0));
+        ui.end_row();
+        for (i, mut bend) in deformer.bends_at(frame).into_iter().enumerate() {
+            ui.label(format!("Bend {}", i + 1));
+            if ui.add(DragValue::new(&mut bend).suffix("°").speed(1.0)).changed() {
+                deformer.bends[i].set(frame, bend);
+            }
+            ui.end_row();
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.weak("Drag its joints with the Bone tool (B).");
+        remove = ui.small_button("Remove").clicked();
+    });
+    if bones != deformer.bone_count()
+        && let Some(bounds) = rest_bounds
+    {
+        *deformer = Deformer { smoothness: deformer.smoothness, ..Deformer::along(bounds, bones, frame) };
+    }
+    if remove {
+        layer.deformer = None;
+    }
+    ui.add_space(8.0);
 }
 
 /// The layer's drawings, for swapping between them over time: click one

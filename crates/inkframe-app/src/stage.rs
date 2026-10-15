@@ -161,6 +161,9 @@ enum Gesture {
     /// the point grabbed on it (`local`, in its own coordinates) follows
     /// the pointer.
     Reach { layer: LayerId, local: Point },
+    /// Bending a deformer with the Bone tool: bone `bone` of `layer`'s
+    /// deformer turns to point at the pointer.
+    Bend { layer: LayerId, bone: usize },
     /// Dragging an anchor point or one of its handles with the Subselection
     /// tool. `start` holds the shape's anchors from when the drag began, and
     /// the pointer is converted into the layer's local space with `to_local`.
@@ -594,6 +597,7 @@ impl StageView {
         self.draw_overlays(&overlay, editor, view, handles.as_ref());
         if editor.tool == Tool::Bone {
             draw_skeleton(&overlay, editor, view);
+            draw_deformers(&overlay, editor, view);
         }
         self.draw_text_editing(ui, &overlay, editor, view);
         self.draw_pen_preview(&overlay, view, response.hover_pos());
@@ -710,6 +714,16 @@ impl StageView {
                 }
                 Some(Gesture::Reach { layer, local }) => {
                     editor.doc.reach(*layer, *local, p, editor.frame);
+                }
+                Some(Gesture::Bend { layer, bone }) => {
+                    let frame = editor.frame;
+                    let to_local =
+                        editor.doc.layer(*layer).and_then(|l| editor.doc.layer_matrix(l, frame).inverse());
+                    if let Some(to_local) = to_local
+                        && let Some(deformer) = editor.doc.layer_mut(*layer).and_then(|l| l.deformer.as_mut())
+                    {
+                        deformer.point_bone_at(*bone, to_local.apply(p), frame);
+                    }
                 }
                 Some(Gesture::Pivot { layer }) => {
                     let frame = editor.frame;
@@ -1256,6 +1270,11 @@ impl StageView {
             }
             Tool::Pencil => Some(Gesture::Pencil { points: vec![p] }),
             Tool::Bone => {
+                // A deformer's joints first: they sit on top of the drawing.
+                if let Some((layer, bone)) = deformer_joint_at(editor, view, press) {
+                    editor.select(Some(layer));
+                    return Some(Gesture::Bend { layer, bone });
+                }
                 let tolerance = HIT_TOLERANCE / view.zoom;
                 editor.select(editor.hit_test(p, tolerance));
                 let layer = editor.selected_layer()?;
@@ -1608,7 +1627,7 @@ impl StageView {
             Some(Gesture::Marquee { .. }) => CursorIcon::Crosshair,
             Some(Gesture::Rotate { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Pivot { .. }) => CursorIcon::Crosshair,
-            Some(Gesture::Reach { .. }) => CursorIcon::Grabbing,
+            Some(Gesture::Reach { .. } | Gesture::Bend { .. }) => CursorIcon::Grabbing,
             Some(Gesture::EditAnchor { .. }) => CursorIcon::Move,
             Some(Gesture::BendPath { .. } | Gesture::PathHandle { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Scale { handle, .. }) => handle_cursor(HandleHit::Scale(*handle)),
@@ -1653,6 +1672,13 @@ impl StageView {
                     }
                     (None, Tool::Rectangle | Tool::Ellipse | Tool::Pencil) => CursorIcon::Crosshair,
                     (None, Tool::Text) => CursorIcon::Text,
+                    (None, Tool::Bone)
+                        if response
+                            .hover_pos()
+                            .is_some_and(|p| deformer_joint_at(editor, view, p).is_some()) =>
+                    {
+                        CursorIcon::Grab
+                    }
                     (None, Tool::Bone) => {
                         let tolerance = HIT_TOLERANCE / view.zoom;
                         let over =
@@ -1852,6 +1878,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
         | Gesture::Rotate { .. }
         | Gesture::Pivot { .. }
         | Gesture::Reach { .. }
+        | Gesture::Bend { .. }
         | Gesture::EditAnchor { .. }
         | Gesture::BendPath { .. }
         | Gesture::PathHandle { .. }
@@ -1894,6 +1921,51 @@ fn draw_skeleton(painter: &egui::Painter, editor: &Editor, view: View) {
         }
     }
 }
+
+/// Every deformer's bones in the timeline being edited, as they're bent on
+/// this frame, in screen coordinates: `(layer, joints)`.
+fn deformer_chains(editor: &Editor, view: View) -> Vec<(LayerId, Vec<Pos2>)> {
+    let frame = editor.frame;
+    editor
+        .layers()
+        .iter()
+        .filter(|l| l.is_shown_at(frame) && !l.locked)
+        .filter_map(|layer| {
+            let deformer = layer.deformer.as_ref()?;
+            let to_stage = editor.doc.layer_matrix(layer, frame);
+            let joints = deformer.posed_joints(frame).into_iter().map(|j| view.to_screen(to_stage.apply(j)));
+            Some((layer.id, joints.collect()))
+        })
+        .collect()
+}
+
+/// The deformer joint under `pointer`, as the layer and the bone that
+/// ends there (the chain's first joint is its anchor, so it isn't one).
+fn deformer_joint_at(editor: &Editor, view: View, pointer: Pos2) -> Option<(LayerId, usize)> {
+    deformer_chains(editor, view).into_iter().rev().find_map(|(layer, joints)| {
+        let bone = joints.iter().skip(1).position(|j| j.distance(pointer) <= ANCHOR_HIT)?;
+        Some((layer, bone))
+    })
+}
+
+/// Deformer bones, drawn as a chain through the bent drawing: thinner than
+/// the skeleton's and green, since they bend a drawing rather than move
+/// layers. The anchor joint is a square.
+fn draw_deformers(painter: &egui::Painter, editor: &Editor, view: View) {
+    for (_, joints) in deformer_chains(editor, view) {
+        painter.add(egui::Shape::line(joints.clone(), (1.5, DEFORMER)));
+        for (i, &at) in joints.iter().enumerate() {
+            if i == 0 {
+                let square = Rect::from_center_size(at, Vec2::splat(7.0));
+                painter.rect_filled(square, 1.0, DEFORMER);
+            } else {
+                painter.circle(at, 4.0, Color32::WHITE, (1.5, DEFORMER));
+            }
+        }
+    }
+}
+
+const DEFORMER: Color32 = Color32::from_rgb(0x4c, 0xc2, 0x8a);
 
 /// The skeleton's color: warm, so it stands apart from the blue selection.
 const BONE: Color32 = Color32::from_rgb(0xf0, 0x8a, 0x3c);
@@ -2722,6 +2794,35 @@ mod tests {
         assert!(pose(&h, torso).position.distance(Point::new(300.0, 300.0)) < 1.0);
         let hand = on_stage(&h, fore, Point::new(100.0, 0.0));
         assert!(hand.distance(Point::new(800.0, 300.0)) < 1.0, "the arm came along: {hand:?}");
+    }
+
+    #[test]
+    fn dragging_a_deformer_joint_bends_the_drawing() {
+        let mut editor = Editor::new(Document::default());
+        let bar = Element {
+            shape: Shape::Rect { width: 200.0, height: 40.0, corner_radius: 0.0 },
+            style: Style { stroke: None, ..editor.draw_style },
+        };
+        let id = editor.doc.add_layer("Tail", vec![bar], 0, Transform::at(Point::new(400.0, 400.0)));
+        let bounds = inkframe_core::Rect::from_center_size(Point::ZERO, 200.0, 40.0);
+        editor.doc.layer_mut(id).unwrap().deformer = Some(inkframe_core::Deformer::along(bounds, 2, 0));
+        editor.tool = Tool::Bone;
+        let mut h = harness(editor);
+
+        // Swing the tip joint, at (500, 400), round to straight below the
+        // middle joint.
+        let from = screen(&h, 500.0, 400.0);
+        let to = screen(&h, 400.0, 500.0);
+        drag(&mut h, from, &[from + vec2(-5.0, 10.0), to]);
+
+        let editor = &h.state().1;
+        let layer = editor.doc.layer(id).unwrap();
+        let bends = layer.deformer.as_ref().unwrap().bends_at(0);
+        assert!((bends[1] - 90.0).abs() < 1.0, "{bends:?}");
+        // The layer itself didn't move, and clicking the bent end hits it.
+        assert_eq!(pose(&h, id), Transform::at(Point::new(400.0, 400.0)));
+        assert_eq!(editor.hit_test(Point::new(400.0, 480.0), 1.0), Some(id));
+        assert_eq!(editor.hit_test(Point::new(480.0, 400.0), 1.0), None, "nothing left where the end was");
     }
 
     #[test]

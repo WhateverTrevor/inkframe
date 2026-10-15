@@ -377,7 +377,7 @@ fn draw_layer(
         let corners = element.bounds().corners().map(|c| matrix.apply(c));
         inkframe_core::Rect::bounding(corners).is_some_and(|b| overlaps(b, image))
     };
-    for element in layer.elements_at(frame).iter().filter(|e| visible(e)) {
+    for element in layer.shown_elements(frame).iter().filter(|e| visible(e)) {
         draw_element(pixmap, element, skia_matrix, style);
     }
     // `instance_view` stops at the nesting limit, so a malformed file can't
@@ -525,6 +525,25 @@ mod tests {
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
         let c = pixmap.pixel(x, y).unwrap().demultiply();
         [c.red(), c.green(), c.blue(), c.alpha()]
+    }
+
+    #[test]
+    fn deformers_bend_what_is_drawn() {
+        // A red bar across the middle, bent down 90° at its centre.
+        let mut doc = red_square_doc();
+        let layer = &mut doc.layers[0];
+        layer.track = inkframe_core::Track::new(0, Pose::at(Point::new(50.0, 30.0)));
+        layer.drawings[0].elements[0].shape = Shape::Rect { width: 60.0, height: 8.0, corner_radius: 0.0 };
+        let bounds = inkframe_core::Rect::from_center_size(Point::ZERO, 60.0, 8.0);
+        let mut deformer = inkframe_core::Deformer::along(bounds, 2, 0);
+        deformer.bends[1].set(0, 90.0);
+        layer.deformer = Some(deformer);
+
+        let pixmap = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        // The left half is where it was; the right half now hangs down.
+        assert_eq!(pixel(&pixmap, 30, 30), [255, 0, 0, 255]);
+        assert_eq!(pixel(&pixmap, 50, 55), [255, 0, 0, 255]);
+        assert_eq!(pixel(&pixmap, 75, 30), [255, 255, 255, 255]);
     }
 
     #[test]

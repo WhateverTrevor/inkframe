@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::audio::AudioTrack;
 use crate::color::Color;
+use crate::deform::Deformer;
 use crate::drawing::{Drawing, Exposure};
 use crate::font_file::FontFile;
 use crate::geometry::{Point, Rect};
@@ -26,7 +27,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 15;
+pub const FORMAT_VERSION: u32 = 16;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -135,6 +136,9 @@ pub struct Layer {
     /// How far IK may turn this joint (see `ik.rs`). `None` is free.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rotation_limits: Option<RotationLimits>,
+    /// Bones that bend the drawing itself (see `deform.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deformer: Option<Deformer>,
 }
 
 fn is_origin(p: &Point) -> bool {
@@ -326,6 +330,7 @@ impl Document {
             parent: None,
             pivot: Point::ZERO,
             rotation_limits: None,
+            deformer: None,
         });
         Some(id)
     }
@@ -565,7 +570,7 @@ impl Layer {
     /// included, in its local coordinates. For the full bounds, including a
     /// symbol instance, use [`Document::layer_bounds`].
     pub fn shape_bounds(&self, frame: u32) -> Option<Rect> {
-        self.elements_at(frame).iter().map(Element::bounds).reduce(Rect::union)
+        self.shown_elements(frame).iter().map(Element::bounds).reduce(Rect::union)
     }
 }
 
