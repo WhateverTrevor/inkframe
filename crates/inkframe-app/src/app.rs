@@ -11,9 +11,10 @@ use crate::adjust_dialog::{AdjustDialog, AdjustmentKind};
 use crate::audio_engine::AudioEngine;
 use crate::editor::{Editor, Tool};
 use crate::export_dialog::ExportDialog;
-use crate::layout::{AreaId, Kind, Layout};
+use crate::layout::{AreaId, Kind, Layout, Workspace};
 use crate::library::LibraryView;
 use crate::lip_sync_dialog::LipSyncDialog;
+use crate::panels;
 use crate::screenshot::AutoScreenshot;
 use crate::stage::StageView;
 use crate::timeline::TimelineView;
@@ -45,6 +46,7 @@ enum Command {
     ToggleMaximize,
     /// Puts the window's areas back the way Inkframe starts.
     ResetLayout,
+    Workspace(Workspace),
     /// Writes the current frame as a layered Photoshop file.
     ExportPsd,
     /// Opens the Adjustments window with this adjustment.
@@ -134,6 +136,7 @@ pub struct InkframeApp {
     xsheet: ExposureSheet,
     adjust: AdjustDialog,
     library: LibraryView,
+    panels: panels::PanelState,
     audio: AudioEngine,
     /// The window title we last set, so we only send changes.
     title: String,
@@ -174,6 +177,7 @@ impl InkframeApp {
             xsheet: ExposureSheet::default(),
             adjust: AdjustDialog::default(),
             library: LibraryView::default(),
+            panels: panels::PanelState::default(),
             audio: AudioEngine::default(),
             title: String::new(),
             allow_close: false,
@@ -184,7 +188,7 @@ impl InkframeApp {
         // Screenshots always use the usual layout, so they look the same
         // on every machine.
         if app.screenshot.is_some() {
-            app.layout = Layout::default();
+            app.layout = AutoScreenshot::workspace().map_or_else(Layout::default, Layout::workspace);
             if AutoScreenshot::custom_layout() {
                 app.layout.arrange_for_screenshot();
             }
@@ -249,7 +253,8 @@ impl InkframeApp {
                     self.layout.toggle_maximized(area);
                 }
             }
-            Command::ResetLayout => self.layout = Layout::default(),
+            Command::ResetLayout => self.layout = Layout::workspace(self.layout.workspace_name()),
+            Command::Workspace(workspace) => self.layout = Layout::workspace(workspace),
             // With a painting or selection tool, Select All and Deselect
             // work on pixels, as in Photoshop; otherwise on layers.
             Command::SelectAll if editor.tool.on_pixels() && editor.paint_target().is_some() => {
@@ -698,11 +703,33 @@ impl InkframeApp {
                 ui.separator();
                 ui.checkbox(&mut self.editor.onion.enabled, "Onion Skin");
                 ui.separator();
-                item(ui, "Reset Layout", None, Command::ResetLayout, true);
+                ui.menu_button("Workspace", |ui| {
+                    for workspace in Workspace::ALL {
+                        item(ui, workspace.name(), None, Command::Workspace(workspace), true);
+                    }
+                });
+                item(ui, "Reset Workspace", None, Command::ResetLayout, true);
                 ui.weak("Drag an area's corner to split or join it,\nCtrl+Space to fill the window with it.");
             });
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // The workspace switcher, at the top right as in Animate.
+                let current = self.layout.workspace_name();
+                egui::ComboBox::from_id_salt("workspace").selected_text(current.name()).width(110.0).show_ui(
+                    ui,
+                    |ui| {
+                        for workspace in Workspace::ALL {
+                            if ui.selectable_label(workspace == current, workspace.name()).clicked() {
+                                chosen = Some(Command::Workspace(workspace));
+                            }
+                        }
+                        ui.separator();
+                        if ui.button(format!("Reset {}", current.name())).clicked() {
+                            chosen = Some(Command::ResetLayout);
+                        }
+                    },
+                );
+                ui.add_space(8.0);
                 ui.weak(format!("{:.0}%", self.views.stage().zoom_percent(&self.editor.doc)));
             });
         });
@@ -933,17 +960,11 @@ impl InkframeApp {
                 }
             }
             Kind::Properties => {
-                egui::ScrollArea::vertical().id_salt(("properties", area)).show(ui, |ui| {
-                    inspector::show(ui, &mut self.editor);
-                    ui.add_space(8.0);
-                    self.library.show(ui, &mut self.editor);
-                    ui.add_space(8.0);
-                    if let Some(inspector::AudioAction::Import) =
-                        inspector::audio_section(ui, &mut self.editor, &mut self.audio)
-                    {
-                        self.import_audio();
-                    }
-                });
+                if let Some(inspector::AudioAction::Import) =
+                    inspector::show(ui, &mut self.editor, &mut self.audio)
+                {
+                    self.import_audio();
+                }
             }
             Kind::Tools => {
                 egui::ScrollArea::vertical()
@@ -978,6 +999,22 @@ impl InkframeApp {
                 egui::ScrollArea::vertical()
                     .id_salt(("document", area))
                     .show(ui, |ui| inspector::document(ui, &mut self.editor));
+            }
+            Kind::Swatches => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("swatches", area))
+                    .show(ui, |ui| panels::swatches(ui, &mut self.editor, &mut self.panels));
+            }
+            Kind::Align => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("align", area))
+                    .show(ui, |ui| panels::align(ui, &mut self.editor, &mut self.panels));
+            }
+            Kind::History => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("history", area))
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| panels::history(ui, &mut self.editor));
             }
         }
     }
@@ -1091,7 +1128,8 @@ impl Views {
     /// Makes views for areas that need one, and forgets those of areas
     /// that have gone or changed kind.
     fn prepare(&mut self, layout: &Layout) {
-        let areas = layout.areas(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 1000.0)));
+        // Every tab, showing or not, so a hidden tab keeps its view.
+        let areas = layout.all_tabs();
         let of = |kind: Kind| areas.iter().filter(move |a| a.1 == kind).map(|a| a.0).collect::<Vec<_>>();
         let (stages, sheets) = (of(Kind::Stage), of(Kind::ExposureSheet));
         let timelines: Vec<AreaId> = areas.iter().filter(|a| a.1.is_timeline()).map(|a| a.0).collect();

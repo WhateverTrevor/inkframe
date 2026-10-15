@@ -45,6 +45,20 @@ pub enum Icon {
     Document,
     Folder,
     FolderOpen,
+    Swatches,
+    History,
+    Plus,
+    // The Align panel.
+    AlignLeft,
+    AlignCenterX,
+    AlignRight,
+    AlignTop,
+    AlignCenterY,
+    AlignBottom,
+    DistributeX,
+    DistributeY,
+    MatchWidth,
+    MatchHeight,
     /// A circle struck through: no fill or no stroke.
     NoColor,
     /// The little downward arrow that marks a menu.
@@ -296,6 +310,86 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
                 ));
             }
         }
+        Icon::Swatches => {
+            // Four chips, in fading shades.
+            for (i, (x, y)) in
+                [(0.05, 0.05), (0.55, 0.05), (0.05, 0.55), (0.55, 0.55)].into_iter().enumerate()
+            {
+                let chip = Rect::from_min_max(at(x, y), at(x + 0.4, y + 0.4));
+                painter.rect_filled(chip, 1.5, color.gamma_multiply(1.0 - i as f32 * 0.22));
+            }
+        }
+        Icon::History => {
+            // A clock face with an arrow running back round it.
+            painter.add(Shape::line(arc(0.5, 0.5, 0.4, -PI * 0.75, PI * 1.0), stroke));
+            fill(&[(0.02, 0.18), (0.28, 0.2), (0.12, 0.4)]);
+            line(&[(0.5, 0.28), (0.5, 0.52), (0.68, 0.62)]);
+        }
+        Icon::Plus => {
+            line(&[(0.5, 0.15), (0.5, 0.85)]);
+            line(&[(0.15, 0.5), (0.85, 0.5)]);
+        }
+        Icon::AlignLeft | Icon::AlignCenterX | Icon::AlignRight => {
+            // A guide line and two bars of different lengths against it.
+            let x = match icon {
+                Icon::AlignLeft => 0.08,
+                Icon::AlignCenterX => 0.5,
+                _ => 0.92,
+            };
+            line(&[(x, 0.02), (x, 0.98)]);
+            for (y, length) in [(0.22, 0.7), (0.62, 0.45)] {
+                let left = match icon {
+                    Icon::AlignLeft => 0.16,
+                    Icon::AlignCenterX => 0.5 - length / 2.0,
+                    _ => 0.84 - length,
+                };
+                painter.rect_filled(Rect::from_min_max(at(left, y), at(left + length, y + 0.22)), 1.0, color);
+            }
+        }
+        Icon::AlignTop | Icon::AlignCenterY | Icon::AlignBottom => {
+            let y = match icon {
+                Icon::AlignTop => 0.08,
+                Icon::AlignCenterY => 0.5,
+                _ => 0.92,
+            };
+            line(&[(0.02, y), (0.98, y)]);
+            for (x, length) in [(0.22, 0.7), (0.58, 0.45)] {
+                let top = match icon {
+                    Icon::AlignTop => 0.16,
+                    Icon::AlignCenterY => 0.5 - length / 2.0,
+                    _ => 0.84 - length,
+                };
+                painter.rect_filled(Rect::from_min_max(at(x, top), at(x + 0.22, top + length)), 1.0, color);
+            }
+        }
+        Icon::DistributeX => {
+            // Three blocks with even gaps, marked by their centres.
+            for x in [0.08, 0.4, 0.72] {
+                painter.rect_filled(Rect::from_min_max(at(x, 0.3), at(x + 0.2, 0.7)), 1.0, color);
+            }
+            line(&[(0.02, 0.88), (0.98, 0.88)]);
+        }
+        Icon::DistributeY => {
+            for y in [0.08, 0.4, 0.72] {
+                painter.rect_filled(Rect::from_min_max(at(0.3, y), at(0.7, y + 0.2)), 1.0, color);
+            }
+            line(&[(0.88, 0.02), (0.88, 0.98)]);
+        }
+        Icon::MatchWidth => {
+            // Two bars made the same width, between end marks.
+            line(&[(0.05, 0.1), (0.05, 0.9)]);
+            line(&[(0.95, 0.1), (0.95, 0.9)]);
+            for y in [0.22, 0.58] {
+                painter.rect_filled(Rect::from_min_max(at(0.12, y), at(0.88, y + 0.2)), 1.0, color);
+            }
+        }
+        Icon::MatchHeight => {
+            line(&[(0.1, 0.05), (0.9, 0.05)]);
+            line(&[(0.1, 0.95), (0.9, 0.95)]);
+            for x in [0.22, 0.58] {
+                painter.rect_filled(Rect::from_min_max(at(x, 0.12), at(x + 0.2, 0.88)), 1.0, color);
+            }
+        }
         Icon::NoColor => {
             painter.circle_stroke(r.center(), side * 0.42, stroke);
             line(&[(0.2, 0.8), (0.8, 0.2)]);
@@ -394,6 +488,19 @@ mod tests {
             Document,
             Folder,
             FolderOpen,
+            Swatches,
+            History,
+            Plus,
+            AlignLeft,
+            AlignCenterX,
+            AlignRight,
+            AlignTop,
+            AlignCenterY,
+            AlignBottom,
+            DistributeX,
+            DistributeY,
+            MatchWidth,
+            MatchHeight,
             NoColor,
             Chevron,
         ];

@@ -9,6 +9,7 @@
 //! The main entry point is [`Document`].
 
 mod adjust;
+mod align;
 mod anchor;
 mod audio;
 mod blend;
@@ -44,6 +45,7 @@ mod track;
 mod transform;
 
 pub use adjust::{Adjustment, adjust};
+pub use align::{Align, Axis};
 pub use anchor::{
     Anchor, KAPPA, PathHit, anchors_from_path, insert_anchor, nearest_on_anchors, path_from_anchors,
 };

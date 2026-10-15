@@ -61,6 +61,9 @@ pub struct Document {
     /// sizes are in the JSON; the pixels are saved beside it.
     #[serde(default)]
     pub canvases: BTreeMap<CanvasId, Canvas>,
+    /// Colours saved in the Swatches panel. Older builds ignore them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub swatches: Vec<Color>,
     pub(crate) next_layer_id: u64,
     #[serde(default = "first_id")]
     pub(crate) next_symbol_id: u64,
@@ -266,6 +269,7 @@ impl Default for Document {
             next_image_id: 1,
             next_font_id: 1,
             canvases: BTreeMap::new(),
+            swatches: Vec::new(),
             next_canvas_id: 1,
         }
     }

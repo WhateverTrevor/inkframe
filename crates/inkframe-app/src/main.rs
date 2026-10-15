@@ -21,6 +21,7 @@ mod layout;
 mod library;
 mod lip_sync_dialog;
 mod motion_path;
+mod panels;
 mod pen;
 mod rhubarb;
 mod screenshot;

@@ -1,14 +1,14 @@
 # Handoff: where Inkframe stands
 
 A checkpoint for picking development back up. Last updated 2026-10-15,
-after UI round 2 (the layers panel and timeline).
+after UI round 3 (tabs, workspaces and panels).
 
 ## State
 
 - **Branch:** `main`, clean. Every feature is built on its own branch,
   then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (454 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (469 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
@@ -209,6 +209,18 @@ after UI round 2 (the layers panel and timeline).
     `INKFRAME_SCREENSHOT_FOLDER=1` puts the rig's arm in a folder. Next:
     round 3 (tabbed areas, workspace presets, Properties tabs, Swatches /
     Align / History panels).
+
+48. UI round 3: tabbed areas (`Node::Area::tabs`, `add_tab`, `move_tab`
+    by dragging a tab to another header, icon-only tabs when they don't
+    fit), workspace presets (`Workspace`; switcher at the menu bar's top
+    right), Properties tabs (Tool / Layer / Document), and the Swatches,
+    Align and History panels (`panels.rs`; core `align.rs`, history step
+    names from `history::describe`). Document swatches are saved in the
+    file without a format bump (older builds ignore them). Old saved
+    layouts get a Library tab beside Properties (`Layout::upgraded`).
+    `INKFRAME_SCREENSHOT_WORKSPACE=animator` (etc.) screenshots a workspace.
+    Next, from the Animate comparison: shape tweens, a camera layer,
+    filters and colour effects.
 
 ## Not yet verified by hand
 
