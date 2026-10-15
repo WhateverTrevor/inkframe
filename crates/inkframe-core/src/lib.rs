@@ -19,6 +19,7 @@ mod deform;
 mod document;
 mod drawing;
 mod easing;
+mod fill;
 mod font_file;
 mod freehand;
 mod geometry;
@@ -29,6 +30,7 @@ mod image;
 mod lip_sync;
 mod mask;
 mod paint;
+mod retouch;
 mod rig;
 mod shape;
 mod symbol;
@@ -40,7 +42,7 @@ pub use anchor::{
     Anchor, KAPPA, PathHit, anchors_from_path, insert_anchor, nearest_on_anchors, path_from_anchors,
 };
 pub use audio::{AudioId, AudioTrack};
-pub use brush::{BrushMode, BrushSettings, BrushStroke};
+pub use brush::{BrushMode, BrushSettings, BrushStroke, DabPath};
 pub use channel::{Animatable, AnyChannel, Bend, Channel, Key, MotionCurve, Tween};
 pub use clipboard::{Clipboard, CopiedKeyframe, CopiedLayers};
 pub use color::{Color, ParseColorError};
@@ -48,6 +50,7 @@ pub use deform::Deformer;
 pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, Layer, LayerId, TimelineId};
 pub use drawing::{Drawing, Exposure};
 pub use easing::Easing;
+pub use fill::{BucketSettings, GradientShape, bucket_fill, gradient};
 pub use font_file::{FontFile, FontFileId};
 pub use freehand::fit_freehand_path;
 pub use geometry::{Affine, Point, Rect};
@@ -59,6 +62,7 @@ pub use lip_sync::{
     LipSyncError, MouthCue, MouthMap, MouthShape, cues_from_loudness, parse_papagayo, parse_rhubarb,
 };
 pub use paint::{Canvas, CanvasId, TILE, premultiply, unpremultiply};
+pub use retouch::{Retouch, RetouchStroke, ToneRange};
 pub use shape::{Path, Segment, Shape, Stroke, Style};
 pub use symbol::{Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId};
 pub use text::{DEFAULT_FAMILY, Font, Text, TextAlign};

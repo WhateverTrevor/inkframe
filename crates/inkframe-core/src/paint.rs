@@ -153,6 +153,74 @@ impl Canvas {
         bounds
     }
 
+    /// A rectangle of pixels, `width`×`height` from (`x`, `y`), row by row,
+    /// premultiplied RGBA. Parts outside the canvas come back transparent.
+    pub fn read_region(&self, x: i64, y: i64, width: u32, height: u32) -> Vec<u8> {
+        let mut pixels = vec![0; (width * height * 4) as usize];
+        self.each_tile_span(x, y, width, height, |tile_at, from, to, count| {
+            if let Some(tile) = self.tile(tile_at) {
+                pixels[to..to + count * 4].copy_from_slice(&tile[from..from + count * 4]);
+            }
+        });
+        pixels
+    }
+
+    /// Writes a rectangle read by [`Canvas::read_region`] back, after
+    /// changing it. Parts outside the canvas are dropped, and tiles left
+    /// fully transparent are removed.
+    pub fn write_region(&mut self, x: i64, y: i64, width: u32, height: u32, pixels: &[u8]) {
+        let mut spans = Vec::new();
+        self.each_tile_span(x, y, width, height, |tile_at, from, to, count| {
+            spans.push((tile_at, from, to, count))
+        });
+        let mut touched = Vec::new();
+        for (tile_at, from, to, count) in spans {
+            let source = &pixels[to..to + count * 4];
+            // Writing nothing onto nothing needn't make a tile.
+            if self.tile(tile_at).is_none() && source.iter().all(|&b| b == 0) {
+                continue;
+            }
+            self.tile_mut(tile_at)[from..from + count * 4].copy_from_slice(source);
+            touched.push(tile_at);
+        }
+        touched.dedup();
+        for tile_at in touched {
+            if self.tile(tile_at).is_some_and(|t| t.chunks_exact(4).all(|p| p[3] == 0)) {
+                self.tiles.remove(&tile_at);
+            }
+        }
+    }
+
+    /// Splits a rectangle into its rows' runs within each tile, calling
+    /// `span(tile, offset in tile, offset in the rectangle, pixel count)`
+    /// for each; byte offsets, for copying between the two.
+    fn each_tile_span(
+        &self,
+        x: i64,
+        y: i64,
+        width: u32,
+        height: u32,
+        mut span: impl FnMut((u32, u32), usize, usize, usize),
+    ) {
+        for row in 0..height as i64 {
+            let cy = y + row;
+            if cy < 0 || cy >= self.height as i64 {
+                continue;
+            }
+            let (start, end) = (x.max(0), (x + width as i64).min(self.width as i64));
+            let mut cx = start;
+            while cx < end {
+                let (tx, ty) = (cx as u32 / TILE, cy as u32 / TILE);
+                let run_end = end.min(((tx + 1) * TILE) as i64);
+                let count = (run_end - cx) as usize;
+                let from = (((cy as u32 % TILE) * TILE + cx as u32 % TILE) * 4) as usize;
+                let to = ((row * width as i64 + (cx - x)) * 4) as usize;
+                span((tx, ty), from, to, count);
+                cx = run_end;
+            }
+        }
+    }
+
     /// The whole canvas as one premultiplied RGBA image, row by row.
     pub fn to_pixels(&self) -> Vec<u8> {
         let mut pixels = vec![0; (self.width * self.height * 4) as usize];
@@ -423,6 +491,23 @@ mod tests {
         let pasted = other.paste_layers(&copied, crate::TimelineId::Main, Point::ZERO, None)[0];
         let pasted_canvas = other.canvas(canvas_of(&other, pasted)).unwrap();
         assert_eq!(pasted_canvas.pixel(300, 10), [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn regions_read_and_write_across_tiles() {
+        let mut canvas = Canvas::new(600, 600);
+        // A 20×20 block straddling four tiles, partly off the top left.
+        let block = vec![9u8; 20 * 20 * 4];
+        canvas.write_region(246, 246, 20, 20, &block);
+        assert_eq!(canvas.tiles().count(), 4);
+        assert_eq!(canvas.read_region(246, 246, 20, 20), block);
+        assert_eq!(canvas.pixel(265, 265), [9; 4]);
+        // Off the canvas reads as transparent.
+        let edge = canvas.read_region(-5, -5, 10, 10);
+        assert!(edge.iter().all(|&b| b == 0));
+        // Writing transparency clears the tiles away again.
+        canvas.write_region(246, 246, 20, 20, &vec![0; 20 * 20 * 4]);
+        assert!(canvas.is_empty());
     }
 
     #[test]

@@ -76,7 +76,12 @@ enum Command {
     ZoomOut,
     ZoomFit,
     ZoomActualSize,
-    UseTool(Tool),
+    /// A toolbar slot's key: its last-used tool, or with `cycle` the next
+    /// tool in the slot.
+    UseSlot {
+        group: &'static [Tool],
+        cycle: bool,
+    },
     /// Ends the pen path being drawn, leaving it open.
     FinishPath,
     /// Removes the newest point of the pen path being drawn.
@@ -229,8 +234,8 @@ impl InkframeApp {
             Command::DeleteDrawing => editor.delete_shown_drawing(),
             // While painting, [ and ] change the brush size instead, as in
             // Photoshop.
-            Command::PreviousDrawing if editor.tool.paints() => editor.resize_brush(1.0 / BRUSH_STEP),
-            Command::NextDrawing if editor.tool.paints() => editor.resize_brush(BRUSH_STEP),
+            Command::PreviousDrawing if editor.tool.uses_brush() => editor.resize_brush(1.0 / BRUSH_STEP),
+            Command::NextDrawing if editor.tool.uses_brush() => editor.resize_brush(BRUSH_STEP),
             Command::PreviousDrawing => editor.cycle_drawing(-1),
             Command::NextDrawing => editor.cycle_drawing(1),
             Command::NewPaintLayer => {
@@ -246,7 +251,7 @@ impl InkframeApp {
             Command::ZoomOut => self.stage.zoom_by(&editor.doc, 0.8),
             Command::ZoomFit => self.stage.zoom_to_fit(),
             Command::ZoomActualSize => self.stage.zoom_to_actual_size(&editor.doc),
-            Command::UseTool(tool) => editor.tool = tool,
+            Command::UseSlot { group, cycle } => editor.use_slot(group, cycle),
             Command::FinishPath => self.stage.finish_path(editor, false),
             Command::RemovePathPoint => self.stage.remove_last_path_point(),
             Command::DeleteAnchor => self.stage.delete_selected_anchor(editor),
@@ -375,10 +380,17 @@ impl InkframeApp {
                 (Key::Delete, Command::DeleteLayer),
                 (Key::Backspace, Command::DeleteLayer),
             ];
-            let tool_keys = Tool::ALL.map(|tool| (tool_key(tool), Command::UseTool(tool)));
-            for (key, command) in plain_keys.into_iter().chain(tool_keys) {
+            for (key, command) in plain_keys {
                 if input.consume_key(Modifiers::NONE, key) {
                     commands.push(command);
+                }
+            }
+            for group in Tool::GROUPS {
+                let key = tool_key(group[0]);
+                if input.consume_key(Modifiers::SHIFT, key) {
+                    commands.push(Command::UseSlot { group, cycle: true });
+                } else if input.consume_key(Modifiers::NONE, key) {
+                    commands.push(Command::UseSlot { group, cycle: false });
                 }
             }
         });

@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 
 use inkframe_core::FontFileId;
 use inkframe_core::{
-    Affine, Anchor, BrushSettings, CanvasId, Color, Document, DocumentError, Drawing, Element, History,
-    Layer, LayerId, Point, Property, Shape, Stroke, Style, SymbolId, Text, TimelineId, Transform,
-    path_from_anchors,
+    Affine, Anchor, BrushSettings, BucketSettings, CanvasId, Color, Document, DocumentError, Drawing,
+    Element, GradientShape, History, Layer, LayerId, Point, Property, Shape, Stroke, Style, SymbolId, Text,
+    TimelineId, ToneRange, Transform, path_from_anchors,
 };
 use inkframe_core::{Clipboard, CopiedKeyframe};
 use inkframe_render::ImageLibrary;
@@ -34,22 +34,47 @@ pub enum Tool {
     Eraser,
     /// Picks the paint colour from the stage.
     Eyedropper,
+    PaintBucket,
+    Gradient,
+    Smudge,
+    Blur,
+    Sharpen,
+    Dodge,
+    Burn,
+    CloneStamp,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 11] = [
-        Tool::Select,
-        Tool::Subselect,
-        Tool::Bone,
-        Tool::Pen,
-        Tool::Rectangle,
-        Tool::Ellipse,
-        Tool::Pencil,
-        Tool::Text,
-        Tool::Brush,
-        Tool::Eraser,
-        Tool::Eyedropper,
+    /// The toolbar, top to bottom. Tools that do similar jobs share a
+    /// slot, as in Photoshop: the slot shows whichever was used last, its
+    /// key picks that one, and Shift with the key steps through the rest.
+    pub const GROUPS: [&'static [Tool]; 15] = [
+        &[Tool::Select],
+        &[Tool::Subselect],
+        &[Tool::Bone],
+        &[Tool::Pen],
+        &[Tool::Rectangle],
+        &[Tool::Ellipse],
+        &[Tool::Pencil],
+        &[Tool::Text],
+        &[Tool::Brush],
+        &[Tool::Eraser],
+        &[Tool::PaintBucket, Tool::Gradient],
+        &[Tool::Smudge, Tool::Blur, Tool::Sharpen],
+        &[Tool::Dodge, Tool::Burn],
+        &[Tool::CloneStamp],
+        &[Tool::Eyedropper],
     ];
+
+    /// Every tool, in toolbar order.
+    pub fn all() -> impl Iterator<Item = Tool> {
+        Self::GROUPS.into_iter().flatten().copied()
+    }
+
+    /// The tools sharing this one's toolbar slot (just itself, for most).
+    pub fn group(self) -> &'static [Tool] {
+        Self::GROUPS.into_iter().find(|g| g.contains(&self)).expect("every tool is in a group")
+    }
 
     pub fn name(self) -> &'static str {
         match self {
@@ -64,12 +89,52 @@ impl Tool {
             Tool::Brush => "Brush",
             Tool::Eraser => "Eraser",
             Tool::Eyedropper => "Eyedropper",
+            Tool::PaintBucket => "Paint Bucket",
+            Tool::Gradient => "Gradient",
+            Tool::Smudge => "Smudge",
+            Tool::Blur => "Blur",
+            Tool::Sharpen => "Sharpen",
+            Tool::Dodge => "Dodge",
+            Tool::Burn => "Burn",
+            Tool::CloneStamp => "Clone Stamp",
         }
     }
 
-    /// Whether the tool paints pixels.
+    /// Whether the tool works on a paint layer's pixels.
     pub fn paints(self) -> bool {
-        matches!(self, Tool::Brush | Tool::Eraser)
+        self.uses_brush() || matches!(self, Tool::PaintBucket | Tool::Gradient | Tool::Eyedropper)
+    }
+
+    /// Whether the tool paints strokes with a brush tip (and so has a size,
+    /// hardness and so on).
+    pub fn uses_brush(self) -> bool {
+        matches!(
+            self,
+            Tool::Brush
+                | Tool::Eraser
+                | Tool::Smudge
+                | Tool::Blur
+                | Tool::Sharpen
+                | Tool::Dodge
+                | Tool::Burn
+                | Tool::CloneStamp
+        )
+    }
+}
+
+/// A retouching tool's brush and how strongly it works (0 to 1).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RetouchBrush {
+    pub brush: BrushSettings,
+    pub strength: f32,
+}
+
+impl RetouchBrush {
+    fn new(size: f32, strength: f32) -> Self {
+        Self {
+            brush: BrushSettings { size, hardness: 0.3, pressure_size: false, ..BrushSettings::default() },
+            strength,
+        }
     }
 }
 
@@ -151,6 +216,32 @@ pub struct Editor {
     /// How much a stroke's path is smoothed, 0 to 1: it trails behind the
     /// pen, steadying a shaky hand.
     pub smoothing: f32,
+    /// The gradient's other colour (Photoshop's background colour).
+    pub second_color: Color,
+    pub smudge: RetouchBrush,
+    pub blur: RetouchBrush,
+    pub sharpen: RetouchBrush,
+    pub dodge: RetouchBrush,
+    pub burn: RetouchBrush,
+    /// The Clone Stamp's brush; its strength is the opacity it paints at.
+    pub clone: RetouchBrush,
+    /// Which tones Dodge and Burn work on most.
+    pub tone_range: ToneRange,
+    pub bucket: BucketSettings,
+    pub gradient_shape: GradientShape,
+    /// Fade the gradient to transparent rather than to `second_color`.
+    pub gradient_to_clear: bool,
+    pub gradient_opacity: f32,
+    /// Where the Clone Stamp copies from, set by Alt-clicking: the layer,
+    /// and the canvas pixel.
+    pub clone_source: Option<(LayerId, Point)>,
+    /// Once a stroke has started from a source, the distance from where it
+    /// paints to where it copies stays the same for later strokes, so a
+    /// picture can be copied over in several strokes ("aligned" in
+    /// Photoshop). Cleared when a new source is set.
+    pub clone_offset: Option<Point>,
+    /// The tool last used from each toolbar slot, by the slot's first tool.
+    last_in_group: Vec<(Tool, Tool)>,
     pub playback: Playback,
     pub onion: OnionSkin,
     /// The property whose easing curve the inspector is showing and editing.
@@ -192,6 +283,21 @@ impl Editor {
                 ..BrushSettings::default()
             },
             smoothing: 0.3,
+            second_color: Color::WHITE,
+            smudge: RetouchBrush::new(40.0, 0.6),
+            blur: RetouchBrush::new(40.0, 0.5),
+            sharpen: RetouchBrush::new(40.0, 0.5),
+            dodge: RetouchBrush::new(60.0, 0.3),
+            burn: RetouchBrush::new(60.0, 0.3),
+            clone: RetouchBrush::new(50.0, 1.0),
+            tone_range: ToneRange::Midtones,
+            bucket: BucketSettings::default(),
+            gradient_shape: GradientShape::Linear,
+            gradient_to_clear: false,
+            gradient_opacity: 1.0,
+            clone_source: None,
+            clone_offset: None,
+            last_in_group: Vec::new(),
             playback: Playback { looping: true, ..Playback::default() },
             onion: OnionSkin { enabled: false, before: 2, after: 2 },
             focused_property: Property::Position,
@@ -576,10 +682,73 @@ impl Editor {
         })
     }
 
-    /// Makes the brush (or eraser, if that's in use) `factor` times bigger.
+    /// Makes the current tool's brush `factor` times bigger.
     pub fn resize_brush(&mut self, factor: f32) {
-        let settings = if self.tool == Tool::Eraser { &mut self.eraser } else { &mut self.brush };
-        settings.size = (settings.size * factor).clamp(1.0, 500.0);
+        if let Some(settings) = self.brush_of(self.tool) {
+            settings.size = (settings.size * factor).clamp(1.0, 500.0);
+        }
+    }
+
+    /// A copy of the brush a tool paints with, if it paints with one.
+    pub fn brush_for(&self, tool: Tool) -> Option<BrushSettings> {
+        Some(match tool {
+            Tool::Brush => self.brush,
+            Tool::Eraser => self.eraser,
+            Tool::Smudge => self.smudge.brush,
+            Tool::Blur => self.blur.brush,
+            Tool::Sharpen => self.sharpen.brush,
+            Tool::Dodge => self.dodge.brush,
+            Tool::Burn => self.burn.brush,
+            Tool::CloneStamp => self.clone.brush,
+            _ => return None,
+        })
+    }
+
+    /// The brush a tool paints with, if it paints with one.
+    pub fn brush_of(&mut self, tool: Tool) -> Option<&mut BrushSettings> {
+        Some(match tool {
+            Tool::Brush => &mut self.brush,
+            Tool::Eraser => &mut self.eraser,
+            _ => &mut self.retouch_of(tool)?.brush,
+        })
+    }
+
+    pub fn retouch_of(&mut self, tool: Tool) -> Option<&mut RetouchBrush> {
+        Some(match tool {
+            Tool::Smudge => &mut self.smudge,
+            Tool::Blur => &mut self.blur,
+            Tool::Sharpen => &mut self.sharpen,
+            Tool::Dodge => &mut self.dodge,
+            Tool::Burn => &mut self.burn,
+            Tool::CloneStamp => &mut self.clone,
+            _ => return None,
+        })
+    }
+
+    /// Switches to `tool`, remembering it as its toolbar slot's choice.
+    pub fn use_tool(&mut self, tool: Tool) {
+        let slot = tool.group()[0];
+        self.last_in_group.retain(|(s, _)| *s != slot);
+        self.last_in_group.push((slot, tool));
+        self.tool = tool;
+    }
+
+    /// The tool a toolbar slot shows: the one last used from it.
+    pub fn slot_choice(&self, group: &[Tool]) -> Tool {
+        self.last_in_group.iter().find(|(slot, _)| *slot == group[0]).map_or(group[0], |(_, tool)| *tool)
+    }
+
+    /// A toolbar slot's key: picks its tool, or with `cycle` (Shift) steps
+    /// to the next one in the slot.
+    pub fn use_slot(&mut self, group: &[Tool], cycle: bool) {
+        let choice = self.slot_choice(group);
+        let tool = if cycle && group.contains(&self.tool) {
+            let i = group.iter().position(|t| *t == self.tool).unwrap_or(0);
+            group[(i + 1) % group.len()]
+        } else {
+            choice
+        };
+        self.use_tool(tool);
     }
 
     /// Adds a paint layer on top of the timeline being edited, from the
@@ -1097,6 +1266,26 @@ mod tests {
         assert_eq!(layer.key_frames(), [0, 8]);
         editor.remove_keyframe();
         assert_eq!(editor.doc.layer(id).unwrap().deformer.as_ref().unwrap().key_frames(), [0]);
+    }
+
+    #[test]
+    fn toolbar_slots_remember_their_tool_and_shift_cycles_them() {
+        let mut editor = Editor::new(Document::default());
+        let fill = Tool::PaintBucket.group();
+        editor.use_slot(fill, false);
+        assert_eq!(editor.tool, Tool::PaintBucket);
+        editor.use_slot(fill, true);
+        assert_eq!(editor.tool, Tool::Gradient);
+        editor.use_tool(Tool::Brush);
+        // The slot's key brings back the one used last.
+        editor.use_slot(fill, false);
+        assert_eq!(editor.tool, Tool::Gradient);
+        let retouch = Tool::Smudge.group();
+        editor.use_slot(retouch, false);
+        editor.use_slot(retouch, true);
+        editor.use_slot(retouch, true);
+        editor.use_slot(retouch, true);
+        assert_eq!(editor.tool, Tool::Smudge, "cycling wraps around");
     }
 
     #[test]

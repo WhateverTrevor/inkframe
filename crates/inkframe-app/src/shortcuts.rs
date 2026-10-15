@@ -62,9 +62,17 @@ pub const LAYER_END_HERE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::AL
 pub const PREVIOUS_DRAWING: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::OpenBracket);
 pub const NEXT_DRAWING: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::CloseBracket);
 
-/// Single-key tool shortcuts, matching Animate so muscle memory carries over.
+/// Single-key tool shortcuts, matching Animate (and, for painting,
+/// Photoshop) so muscle memory carries over. Tools sharing a toolbar slot
+/// share its key; Shift with it steps through them.
 pub fn tool_key(tool: Tool) -> Key {
     match tool {
+        Tool::PaintBucket | Tool::Gradient => Key::G,
+        // Photoshop has no key for these by default; U is free and near.
+        Tool::Smudge | Tool::Blur | Tool::Sharpen => Key::U,
+        // O, Photoshop's, is the Oval here.
+        Tool::Dodge | Tool::Burn => Key::D,
+        Tool::CloneStamp => Key::S,
         Tool::Select => Key::V,
         Tool::Subselect => Key::A,
         Tool::Pen => Key::P,
