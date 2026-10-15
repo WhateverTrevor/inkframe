@@ -602,7 +602,19 @@ impl TimelineView {
                         lock_color,
                     );
 
-                    let name_pos = pos2(layout.lock_rect(index).right() + 6.0, rect.center().y);
+                    // Attached layers are indented by how deep they hang,
+                    // with a hook, so a rig reads as one: torso, then arm, then hand.
+                    let depth = rig_depth(editor, layer);
+                    let indent = 12.0 * depth.min(6) as f32;
+                    let mut name_pos = pos2(layout.lock_rect(index).right() + 6.0 + indent, rect.center().y);
+                    if depth > 0 {
+                        // Drawn rather than typed: the UI font has no "↳".
+                        let corner = name_pos + vec2(2.0, 0.0);
+                        let stroke = (1.0, faint);
+                        painter.line_segment([corner - vec2(0.0, 6.0), corner], stroke);
+                        painter.line_segment([corner, corner + vec2(6.0, 0.0)], stroke);
+                        name_pos.x += 12.0;
+                    }
                     let color = if layer.visible { text } else { faint };
                     let name = painter.text(name_pos, Align2::LEFT_CENTER, &layer.name, font.clone(), color);
                     // Guides and masks are labelled, since neither is drawn in
@@ -1011,6 +1023,11 @@ fn diamond(painter: &egui::Painter, center: Pos2, radius: f32, fill: Color32) {
         center + vec2(-radius, 0.0),
     ];
     painter.add(egui::Shape::convex_polygon(points, fill, Stroke::new(1.0, Color32::from_black_alpha(160))));
+}
+
+/// How many parents up a layer's chain goes: 0 for a layer on its own.
+fn rig_depth(editor: &Editor, layer: &inkframe_core::Layer) -> usize {
+    std::iter::successors(editor.doc.parent_of(layer), |l| editor.doc.parent_of(l)).take(64).count()
 }
 
 /// The ▸ / ▾ toggle that expands a layer into its property rows.

@@ -226,6 +226,7 @@ impl Document {
                     copy.name = format!("{} copy", copy.name);
                 }
                 copy.follow = relink(layer.follow);
+                copy.parent = relink(layer.parent);
                 copy.masked_by = relink(layer.masked_by);
                 if let Some(instance) = &mut copy.instance {
                     instance.symbol = symbols.get(&instance.symbol).copied().unwrap_or(instance.symbol);

@@ -53,6 +53,7 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 
     ui.add_space(8.0);
     transform_section(ui, editor, id, frame);
+    rig_section(ui, editor, id, frame);
     ui.add_space(8.0);
     easing_section(ui, editor, id, frame);
     ui.add_space(8.0);
@@ -210,6 +211,64 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
     }
     motion_path_section(ui, editor, id);
     mask_section(ui, editor, id);
+}
+
+/// How the layer hangs in a character rig: the layer it's attached to, and
+/// the pivot it turns around.
+fn rig_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) {
+    let Some(layer) = editor.doc.layer(id) else { return };
+    // Only layers it can attach to without making a loop.
+    let parents: Vec<(LayerId, String)> = editor
+        .layers()
+        .iter()
+        .filter(|other| editor.doc.can_parent(id, other.id))
+        .map(|other| (other.id, other.name.clone()))
+        .collect();
+    let (old_parent, old_pivot) = (layer.parent, layer.pivot);
+    let (mut parent, mut pivot) = (old_parent, old_pivot);
+    let bounds = editor.doc.layer_bounds(layer, frame);
+
+    egui::Grid::new("rig").num_columns(2).spacing([6.0, 4.0]).show(ui, |ui| {
+        ui.label("Parent").on_hover_text(
+            "The layer this one is attached to. It moves, turns and scales with its parent, \
+             and its own position is measured from the parent.",
+        );
+        let current = parents.iter().find(|(p, _)| Some(*p) == parent).map_or("None", |(_, name)| name);
+        egui::ComboBox::from_id_salt("parent").selected_text(current).show_ui(ui, |ui| {
+            ui.selectable_value(&mut parent, None, "None");
+            for (other, name) in &parents {
+                ui.selectable_value(&mut parent, Some(*other), name);
+            }
+        });
+        ui.end_row();
+
+        ui.label("Pivot").on_hover_text(
+            "The point the layer turns and scales around, in its own coordinates. \
+             Option-drag (Alt-drag) the ring on the stage to move it.",
+        );
+        ui.horizontal(|ui| {
+            ui.add(DragValue::new(&mut pivot.x).prefix("x ").speed(1.0));
+            ui.add(DragValue::new(&mut pivot.y).prefix("y ").speed(1.0));
+            if let Some(bounds) = bounds
+                && ui
+                    .small_button("Center")
+                    .on_hover_text("Put the pivot in the middle of the layer")
+                    .clicked()
+            {
+                pivot = bounds.center();
+            }
+        });
+        ui.end_row();
+    });
+
+    // Both keep the layer where it is on screen: attaching it re-measures
+    // its keys from the parent, and moving the pivot shifts its position.
+    if parent != old_parent {
+        editor.doc.set_parent(id, parent, frame);
+    }
+    if pivot != old_pivot {
+        editor.doc.set_pivot(id, pivot);
+    }
 }
 
 /// Which mask, if any, the layer is seen through.
