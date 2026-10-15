@@ -269,7 +269,7 @@ impl Document {
         let scale = matrix.average_scale().max(1e-6);
         let local_tolerance = tolerance / scale;
 
-        layer.elements_at(frame).iter().any(|e| e.shape.hit_test(local, &e.style, local_tolerance))
+        layer.shown_elements(frame).iter().any(|e| e.shape.hit_test(local, &e.style, local_tolerance))
             || self.instance_view(layer, frame, depth).is_some_and(|(symbol, local_frame)| {
                 symbol.layers.iter().filter(|inner| inner.is_shown_at(local_frame)).any(|inner| {
                     self.layer_hit_at_depth(inner, local, local_frame, local_tolerance, depth + 1)

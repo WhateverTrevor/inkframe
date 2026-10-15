@@ -97,8 +97,8 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     `into_parent_space`). Option/Alt-drag moves the pivot (a plain drag
     still moves the layer). Selecting a parent and child together only
     transforms the parent (`Document::hangs_from`). The rest of the plan,
-    after drawing substitution (34), lip sync (35) and bones/IK (36):
-    deformers and an exposure sheet.
+    after drawing substitution (34), lip sync (35), bones/IK (36) and
+    deformers (37): an exposure sheet.
 34. Drawing substitution (format v14): `Layer::drawings` (never empty)
     and `Layer::exposure` hold keys, in `drawing.rs`. Everything that
     draws, hits or edits a layer reads `elements_at(frame)`; the editor's
@@ -120,6 +120,13 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     joint first, nudging out of the straight-arm stall). Roots move the
     rig. `Layer::rotation_limits` is set in the inspector's rig section
     ("Bends").
+37. Deformers (format v16): `Layer::deformer` (`deform.rs`), a bone
+    deformer with rest joints, animated per-bone bends and smoothness.
+    `Layer::shown_elements` applies it for render, hit testing and
+    bounds; editing tools still edit the unbent drawing (`elements_at`),
+    so Subselection points show where the drawing is at rest. Bone tool
+    drags green joints (`Gesture::Bend`). Images and text don't bend.
+    F6/⇧F6 and dragging summary keys include the deformer's keys.
 
 ## Not yet verified by hand
 

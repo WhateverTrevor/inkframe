@@ -1,5 +1,5 @@
 {
-  "version": 15,
+  "version": 16,
   "width": 1920,
   "height": 1080,
   "frame_rate": {
@@ -9,6 +9,176 @@
   "duration": 48,
   "background": "#f4f1eaff",
   "layers": [
+    {
+      "id": 7,
+      "name": "Tail",
+      "visible": true,
+      "locked": false,
+      "start": 0,
+      "parent": 1,
+      "drawings": [
+        {
+          "name": "1",
+          "elements": [
+            {
+              "shape": {
+                "type": "rect",
+                "width": 300.0,
+                "height": 34.0,
+                "corner_radius": 17.0
+              },
+              "style": {
+                "fill": "#5b7fd6ff",
+                "stroke": {
+                  "color": "#2b2a33ff",
+                  "width": 4.0
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "pivot": {
+        "x": 150.0,
+        "y": 0.0
+      },
+      "track": {
+        "position": [
+          {
+            "frame": 0,
+            "value": {
+              "x": -90.0,
+              "y": 150.0
+            },
+            "easing": {
+              "type": "linear"
+            }
+          }
+        ],
+        "rotation": [
+          {
+            "frame": 0,
+            "value": -20.0,
+            "easing": {
+              "type": "linear"
+            }
+          }
+        ],
+        "scale": [
+          {
+            "frame": 0,
+            "value": {
+              "x": 1.0,
+              "y": 1.0
+            },
+            "easing": {
+              "type": "linear"
+            }
+          }
+        ],
+        "opacity": [
+          {
+            "frame": 0,
+            "value": 1.0,
+            "easing": {
+              "type": "linear"
+            }
+          }
+        ]
+      },
+      "deformer": {
+        "joints": [
+          {
+            "x": 150.0,
+            "y": 0.0
+          },
+          {
+            "x": 50.0,
+            "y": 0.0
+          },
+          {
+            "x": -50.0,
+            "y": 0.0
+          },
+          {
+            "x": -150.0,
+            "y": 0.0
+          }
+        ],
+        "bends": [
+          [
+            {
+              "frame": 0,
+              "value": -15,
+              "easing": {
+                "type": "ease_in_out"
+              }
+            },
+            {
+              "frame": 24,
+              "value": 15,
+              "easing": {
+                "type": "ease_in_out"
+              }
+            },
+            {
+              "frame": 47,
+              "value": -15,
+              "easing": {
+                "type": "ease_in_out"
+              }
+            }
+          ],
+          [
+            {
+              "frame": 0,
+              "value": -30,
+              "easing": {
+                "type": "ease_in_out"
+              }
+            },
+            {
+              "frame": 24,
+              "value": 30,
+              "easing": {
+                "type": "ease_in_out"
+              }
+            },
+            {
+              "frame": 47,
+              "value": -30,
+              "easing": {
+                "type": "ease_in_out"
+              }
+            }
+          ],
+          [
+            {
+              "frame": 0,
+              "value": -40,
+              "easing": {
+                "type": "ease_in_out"
+              }
+            },
+            {
+              "frame": 24,
+              "value": 40,
+              "easing": {
+                "type": "ease_in_out"
+              }
+            },
+            {
+              "frame": 47,
+              "value": -40,
+              "easing": {
+                "type": "ease_in_out"
+              }
+            }
+          ]
+        ],
+        "smoothness": 0.5
+      }
+    },
     {
       "id": 1,
       "name": "Torso",
@@ -634,5 +804,5 @@
       }
     }
   ],
-  "next_layer_id": 7
+  "next_layer_id": 8
 }

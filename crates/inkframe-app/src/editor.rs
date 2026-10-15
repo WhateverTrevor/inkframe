@@ -757,7 +757,7 @@ impl Editor {
         let frame = self.frame;
         for id in self.selected_ids() {
             if let Some(layer) = self.doc.layer_mut(id) {
-                layer.track.insert_key(frame);
+                layer.insert_key(frame);
             }
         }
     }
@@ -766,7 +766,7 @@ impl Editor {
         let frame = self.frame;
         for id in self.selected_ids() {
             if let Some(layer) = self.doc.layer_mut(id) {
-                layer.track.remove_key(frame);
+                layer.remove_key(frame);
             }
         }
     }
@@ -1010,6 +1010,20 @@ mod tests {
         let id = editor.doc.add_layer("A", vec![], 0, Transform::default());
         editor.selection = Some(id);
         (editor, id)
+    }
+
+    #[test]
+    fn keyframes_include_a_deformers_bends() {
+        let (mut editor, id) = editor_with_layer();
+        let bounds = inkframe_core::Rect::from_center_size(Point::ZERO, 100.0, 10.0);
+        editor.doc.layer_mut(id).unwrap().deformer = Some(inkframe_core::Deformer::along(bounds, 2, 0));
+        editor.set_frame(8);
+        editor.insert_keyframe();
+        let layer = editor.doc.layer(id).unwrap();
+        assert_eq!(layer.deformer.as_ref().unwrap().key_frames(), [0, 8]);
+        assert_eq!(layer.key_frames(), [0, 8]);
+        editor.remove_keyframe();
+        assert_eq!(editor.doc.layer(id).unwrap().deformer.as_ref().unwrap().key_frames(), [0]);
     }
 
     #[test]

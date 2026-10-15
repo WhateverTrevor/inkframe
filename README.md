@@ -31,6 +31,9 @@ planned (the code is already cross-platform and CI builds it on Windows).
   a rig with the **Bone tool**: drag a hand and the elbow and shoulder
   turn to follow (inverse kinematics), with limits so elbows and knees
   bend only one way.
+- **Bend drawings with deformers:** run a few bones through a single
+  drawing (an arm, a tail, a scarf) and it bends smoothly along them,
+  rubber-hose style, like Harmony's bone deformer.
 - **Swap drawings** for mouths, hands and blinks: a layer can hold several
   named drawings ("closed", "A", "O") and show a different one from any
   frame on, the way Toon Boom Harmony's drawing substitution works.
@@ -115,6 +118,7 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Move the pivot | Option/Alt-drag the ring in the middle of the selected layer. It snaps to the corners, edge midpoints and center; or type it in the properties panel. The layer stays where it is, and from then on turns and scales around the new spot |
 | Attach to a parent | Pick a **Parent** in the properties panel. The layer stays where it is and from then on follows its parent; the timeline indents it under the parent's name. Deleting a parent hands its children to the parent above |
 | Pose with bones (IK) | Bone tool (`B`) shows the rigs as bones between their pivots. Drag a layer and the joints above it turn so the spot you grabbed follows the pointer, keying their rotations on the current frame; the top of the rig (the root, drawn as a square) stays put, and dragging it moves the whole rig. To stop a joint bending the wrong way, tick **Bends** in its properties and set the lowest and highest rotation |
+| Bend a drawing | Select the layer and click **Add Bend Deformer** in the properties panel: bones are laid along the drawing's long side (set how many, and how soft the bends are). With the Bone tool, drag a green joint to bend the drawing there; bends are keyed on the current frame and tween like anything else, or type them in the panel. Shapes bend; images and text stay as they are |
 | Swap drawings | In the properties panel's **Drawings** section, **New** adds a blank drawing (or **Duplicate** a copy of the one showing) from the current frame on. Click a drawing's name to show it from the current frame on, or press `[` and `]` to flip through them. With a layer that has several drawings selected, new shapes are drawn into the drawing that's showing. The timeline marks each swap with the drawing's name |
 | Lip sync | Give a mouth layer a drawing per mouth shape, named with Rhubarb's letters (A closed, B, C, D wide open, E, F, G, H, X at rest) or Papagayo's (MBP, etc, E, AI, O, U, FV, L, rest); a few are enough, the rest borrow a similar shape's. Import the dialogue, select the mouth, then Modify › Lip Sync…: pick the sound, loudness or a timing file, check the drawings, and Apply. The swaps land under the sound, replacing any there |
 | Draw | Rectangle (`R`), Oval (`O`), Pencil (`Y`). Hold Shift for squares and circles |
