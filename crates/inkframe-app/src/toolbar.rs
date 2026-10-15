@@ -15,12 +15,28 @@ const BUTTON_SIZE: f32 = 36.0;
 pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
     ui.vertical_centered(|ui| {
         ui.add_space(4.0);
-        for tool in Tool::ALL {
-            let key = shortcuts::tool_key(tool).name();
+        for group in Tool::GROUPS {
+            let shown = if group.contains(&editor.tool) { editor.tool } else { editor.slot_choice(group) };
+            let key = shortcuts::tool_key(shown).name();
+            let hint = if group.len() > 1 {
+                format!("{} ({key}; Shift+{key} for the others, or right-click)", shown.name())
+            } else {
+                format!("{} ({key})", shown.name())
+            };
             let response =
-                tool_button(ui, tool, editor.tool == tool).on_hover_text(format!("{} ({key})", tool.name()));
+                tool_button(ui, shown, group.contains(&editor.tool), group.len() > 1).on_hover_text(hint);
             if response.clicked() {
-                editor.tool = tool;
+                editor.use_tool(shown);
+            }
+            if group.len() > 1 {
+                response.context_menu(|ui| {
+                    for &tool in group {
+                        if ui.selectable_label(editor.tool == tool, tool.name()).clicked() {
+                            editor.use_tool(tool);
+                            ui.close();
+                        }
+                    }
+                });
             }
         }
 
@@ -64,14 +80,22 @@ fn swatch(ui: &mut egui::Ui, color: &mut Option<inkframe_core::Color>) -> bool {
     changed
 }
 
-fn tool_button(ui: &mut egui::Ui, tool: Tool, selected: bool) -> egui::Response {
+/// A toolbar button. `grouped` adds the small corner triangle that marks a
+/// slot holding more than one tool, as Photoshop's do.
+fn tool_button(ui: &mut egui::Ui, tool: Tool, selected: bool, grouped: bool) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(BUTTON_SIZE), Sense::click());
     let visuals = ui.style().interact_selectable(&response, selected);
     if selected || response.hovered() {
         ui.painter().rect_filled(rect, 4.0, visuals.weak_bg_fill);
     }
     let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(18.0));
-    draw_icon(ui.painter(), tool, icon_rect, Stroke::new(1.5, visuals.fg_stroke.color));
+    let color = visuals.fg_stroke.color;
+    draw_icon(ui.painter(), tool, icon_rect, Stroke::new(1.5, color));
+    if grouped {
+        let corner = rect.right_bottom() - vec2(4.0, 4.0);
+        let triangle = vec![corner, corner - vec2(5.0, 0.0), corner - vec2(0.0, 5.0)];
+        ui.painter().add(egui::Shape::convex_polygon(triangle, color.gamma_multiply(0.7), Stroke::NONE));
+    }
     response
 }
 
@@ -179,6 +203,74 @@ fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) {
                 Stroke::new(stroke.width + 1.5, stroke.color),
             );
             painter.line_segment([at(0.15, 0.85), at(0.02, 0.98)], stroke);
+        }
+        Tool::PaintBucket => {
+            // A bucket tipped to the left, paint dripping from its lip.
+            let bucket = [(0.2, 0.35), (0.6, 0.1), (0.95, 0.55), (0.55, 0.85)];
+            painter.add(egui::Shape::closed_line(bucket.iter().map(|&(x, y)| at(x, y)).collect(), stroke));
+            painter.line_segment([at(0.4, 0.22), at(0.75, 0.7)], stroke);
+            painter.circle_filled(at(0.12, 0.7), r.width() * 0.09, stroke.color);
+            painter.line_segment([at(0.2, 0.35), at(0.12, 0.62)], stroke);
+        }
+        Tool::Gradient => {
+            // A swatch fading from solid on the left to clear on the right.
+            let strips = 8;
+            for i in 0..strips {
+                let x0 = i as f32 / strips as f32;
+                let strip = Rect::from_min_max(at(x0, 0.2), at(x0 + 1.0 / strips as f32, 0.8));
+                let alpha = 1.0 - x0;
+                painter.rect_filled(strip, 0.0, stroke.color.gamma_multiply(alpha));
+            }
+            painter.rect_stroke(
+                Rect::from_min_max(at(0.0, 0.2), at(1.0, 0.8)),
+                1.0,
+                stroke,
+                StrokeKind::Middle,
+            );
+        }
+        Tool::Smudge => {
+            // A blob of paint dragged out into a tapering smear.
+            painter.circle_filled(at(0.25, 0.7), r.width() * 0.2, stroke.color);
+            let smear = [(0.25, 0.5), (0.95, 0.1), (0.4, 0.88)];
+            painter.add(egui::Shape::convex_polygon(
+                smear.iter().map(|&(x, y)| at(x, y)).collect(),
+                stroke.color.gamma_multiply(0.6),
+                Stroke::NONE,
+            ));
+        }
+        Tool::Blur => {
+            // A water drop.
+            let drop: Vec<Pos2> = (0..=24)
+                .map(|i| {
+                    let t = i as f32 / 24.0 * std::f32::consts::TAU;
+                    let bulge = 0.32 * (1.0 - 0.5 * (t / 2.0).cos().powi(8));
+                    at(0.5 + t.sin() * bulge, 0.62 - t.cos() * 0.38)
+                })
+                .collect();
+            painter.add(egui::Shape::closed_line(drop, stroke));
+        }
+        Tool::Sharpen => {
+            // A sharp point.
+            let point = [(0.5, 0.0), (0.82, 1.0), (0.18, 1.0)];
+            painter.add(egui::Shape::closed_line(point.iter().map(|&(x, y)| at(x, y)).collect(), stroke));
+        }
+        Tool::Dodge | Tool::Burn => {
+            // Darkroom tools on a stick: Dodge a hollow disc, Burn a solid one.
+            painter.line_segment([at(0.55, 0.45), at(0.95, 0.95)], stroke);
+            let (center, radius) = (at(0.38, 0.3), r.width() * 0.3);
+            if tool == Tool::Burn {
+                painter.circle_filled(center, radius, stroke.color);
+            } else {
+                painter.circle_stroke(center, radius, stroke);
+            }
+        }
+        Tool::CloneStamp => {
+            // A rubber stamp: a knob, a neck, and a wide base.
+            painter.circle_stroke(at(0.5, 0.18), r.width() * 0.16, stroke);
+            painter
+                .line_segment([at(0.5, 0.34), at(0.5, 0.6)], Stroke::new(stroke.width + 1.0, stroke.color));
+            painter.rect_filled(Rect::from_min_max(at(0.1, 0.6), at(0.9, 0.78)), 1.0, stroke.color);
+            painter.line_segment([at(0.15, 0.92), at(0.85, 0.92)], stroke);
         }
         Tool::Text => {
             // A capital T with small serifs, as in most apps' text tools.

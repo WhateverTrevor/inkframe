@@ -8,8 +8,8 @@
 use egui::{Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{
     Affine, Anchor, Bend, BrushMode, BrushStroke, CanvasId, Color, Document, Element, LayerId, MotionCurve,
-    Path, Point, Rect as StageRect, Shape, Style, Text, TimelineId, Transform, fit_freehand_path,
-    insert_anchor, nearest_on_anchors, path_from_anchors,
+    Path, Point, Rect as StageRect, Retouch, RetouchStroke, Shape, Style, Text, TimelineId, Transform,
+    fit_freehand_path, insert_anchor, nearest_on_anchors, path_from_anchors,
 };
 use inkframe_render::{RenderOptions, output_size, render_timeline_into};
 
@@ -193,13 +193,24 @@ struct Painting {
     canvas: CanvasId,
     /// The canvas's size, to find its pixels from the layer's coordinates.
     size: (u32, u32),
-    stroke: BrushStroke,
+    work: PaintWork,
     /// Where the smoothed stroke has got to, on screen. It trails the pen
     /// by `Editor::smoothing`, which steadies a shaky line.
     smoothed: Pos2,
     /// Where the pen really is, and how hard it's pressed, for the stroke
     /// to catch up to when it lifts.
     pen: tablet::Sample,
+}
+
+/// What a painting gesture is doing.
+enum PaintWork {
+    /// The brush or eraser.
+    Brush(BrushStroke),
+    /// Smudge, Blur, Sharpen, Dodge, Burn or the Clone Stamp.
+    Retouch(RetouchStroke),
+    /// Dragging out a gradient, from where the drag began; it's laid down
+    /// when the pen lifts.
+    Gradient { from: Pos2 },
 }
 
 /// Something on a motion path under the pointer.
@@ -605,7 +616,7 @@ impl StageView {
         if editor.tool == Tool::Pen {
             self.handle_pen(ui, &response, editor, view);
         }
-        if editor.tool.paints() || editor.tool == Tool::Eyedropper {
+        if editor.tool.paints() {
             self.handle_painting(ui, &response, editor, view);
         }
         // No transform handles on text being typed into: dragging would
@@ -623,11 +634,12 @@ impl StageView {
         }
         self.draw_text_editing(ui, &overlay, editor, view);
         self.draw_pen_preview(&overlay, view, response.hover_pos());
-        if editor.tool.paints()
+        if editor.tool.uses_brush()
             && let Some(pointer) = response.hover_pos()
         {
             draw_brush_outline(&overlay, editor, view, pointer);
         }
+        self.draw_painting(&overlay, editor, view);
         if let Some(hit) = response.hover_pos().and_then(|p| self.outline_hit(editor, view, p)) {
             // Show where the new point would land: a hollow anchor with a plus.
             overlay.circle(hit.screen, 5.0, Color32::WHITE, (1.0, SELECTION));
@@ -1320,7 +1332,18 @@ impl StageView {
             // The pen and the painting tools handle their own presses and
             // drags; see `handle_pen` and `handle_painting`. The Text tool
             // only clicks.
-            Tool::Pen | Tool::Text | Tool::Brush | Tool::Eraser | Tool::Eyedropper => None,
+            Tool::Pen | Tool::Text => None,
+            Tool::Brush
+            | Tool::Eraser
+            | Tool::Eyedropper
+            | Tool::PaintBucket
+            | Tool::Gradient
+            | Tool::Smudge
+            | Tool::Blur
+            | Tool::Sharpen
+            | Tool::Dodge
+            | Tool::Burn
+            | Tool::CloneStamp => None,
             Tool::Subselect => {
                 let Some((target, part)) = self.anchor_hit(editor, view, press) else {
                     // Dragging off the anchors selects a layer, but doesn't move it.
@@ -1483,12 +1506,16 @@ impl StageView {
             && !space_held
             && let Some(press) = press
         {
-            // Alt picks a colour with the brush, as in Photoshop.
-            if editor.tool == Tool::Eyedropper || (alt && editor.tool == Tool::Brush) {
-                pick_color(editor, view.to_local(press));
-                return;
+            match editor.tool {
+                // Alt picks a colour with the brush, as in Photoshop.
+                Tool::Eyedropper => return pick_color(editor, view.to_local(press)),
+                Tool::Brush if alt => return pick_color(editor, view.to_local(press)),
+                // Alt-click sets where the Clone Stamp copies from.
+                Tool::CloneStamp if alt => return set_clone_source(editor, view, press),
+                Tool::PaintBucket => return fill_at(editor, view, press),
+                _ => {}
             }
-            self.painting = start_painting(editor);
+            self.painting = start_painting(editor, view, press);
             if let Some(painting) = &mut self.painting {
                 let pressure = tablet::current().map_or(1.0, |pen| pen.pressure);
                 painting.smoothed = press;
@@ -1511,7 +1538,42 @@ impl StageView {
             // Lifted: finish where the pen actually is.
             let pen = painting.pen;
             paint_to(painting, editor, view, pen.pos, pen.pressure);
+            if let PaintWork::Gradient { from } = painting.work {
+                lay_gradient(painting, editor, view, from, pen.pos);
+            }
             self.painting = None;
+        }
+    }
+
+    /// While a gradient is being dragged out: the line it runs along.
+    fn draw_painting(&self, painter: &egui::Painter, editor: &Editor, view: View) {
+        if let Some(Painting { work: PaintWork::Gradient { from }, pen, .. }) = &self.painting {
+            painter.line_segment([*from, pen.pos], (3.0, Color32::from_black_alpha(140)));
+            painter.line_segment([*from, pen.pos], (1.5, Color32::WHITE));
+            for end in [*from, pen.pos] {
+                painter.circle(end, 4.0, Color32::WHITE, (1.5, Color32::from_black_alpha(160)));
+            }
+        }
+        // The Clone Stamp's source: where it is, or, mid-stroke, where it's
+        // copying from right now.
+        if editor.tool == Tool::CloneStamp
+            && let Some((layer, source)) = editor.clone_source
+        {
+            let at = match (&self.painting, editor.clone_offset) {
+                (Some(painting), Some(offset)) => {
+                    canvas_point(editor, view, painting.layer, painting.size, painting.pen.pos)
+                        .map(|p| p + offset)
+                }
+                _ => Some(source),
+            };
+            if let Some(screen) = at.and_then(|p| canvas_to_screen(editor, view, layer, p)) {
+                let arm = vec2(7.0, 0.0);
+                for stroke in [(3.0, Color32::from_black_alpha(140)), (1.0, Color32::WHITE)] {
+                    painter.line_segment([screen - arm, screen + arm], stroke);
+                    painter.line_segment([screen - arm.rot90(), screen + arm.rot90()], stroke);
+                    painter.circle_stroke(screen, 5.0, stroke);
+                }
+            }
         }
     }
 
@@ -1601,7 +1663,7 @@ impl StageView {
 
     fn draw_overlays(&self, painter: &egui::Painter, editor: &Editor, view: View, handles: Option<&Handles>) {
         // Painting needs a clear view of the picture, not a box around it.
-        if editor.tool.paints() || editor.tool == Tool::Eyedropper {
+        if editor.tool.paints() {
             return;
         }
         // The path tools show the selected shape's own outline and points;
@@ -1757,7 +1819,20 @@ impl StageView {
                     (None, Tool::Text) => CursorIcon::Text,
                     // The brush's outline shows its size (`draw_brush_outline`);
                     // the crosshair marks its centre.
-                    (None, Tool::Brush | Tool::Eraser | Tool::Eyedropper) => CursorIcon::Crosshair,
+                    (
+                        None,
+                        Tool::Brush
+                        | Tool::Eraser
+                        | Tool::Eyedropper
+                        | Tool::PaintBucket
+                        | Tool::Gradient
+                        | Tool::Smudge
+                        | Tool::Blur
+                        | Tool::Sharpen
+                        | Tool::Dodge
+                        | Tool::Burn
+                        | Tool::CloneStamp,
+                    ) => CursorIcon::Crosshair,
                     (None, Tool::Bone)
                         if response
                             .hover_pos()
@@ -2011,7 +2086,7 @@ fn draw_skeleton(painter: &egui::Painter, editor: &Editor, view: View) {
 /// A circle the size the brush (or eraser) paints at full pressure, around
 /// the pointer, scaled like the canvas it would paint on.
 fn draw_brush_outline(painter: &egui::Painter, editor: &Editor, view: View, pointer: Pos2) {
-    let settings = if editor.tool == Tool::Eraser { editor.eraser } else { editor.brush };
+    let Some(settings) = editor.brush_for(editor.tool) else { return };
     let canvas_scale = editor
         .paint_target()
         .and_then(|(layer, ..)| editor.doc.layer(layer))
@@ -2024,38 +2099,133 @@ fn draw_brush_outline(painter: &egui::Painter, editor: &Editor, view: View, poin
 
 /// Gets a stroke ready on the selected paint layer, first adding a paint
 /// layer if the selected layer isn't one (as Photoshop would ask for).
-fn start_painting(editor: &mut Editor) -> Option<Painting> {
+fn start_painting(editor: &mut Editor, view: View, press: Pos2) -> Option<Painting> {
     if editor.paint_target().is_none() {
         editor.add_paint_layer();
     }
     let (layer, canvas, width, height) = editor.paint_target()?;
-    let (settings, mode) = match editor.tool {
-        Tool::Eraser => (editor.eraser, BrushMode::Erase),
-        _ => (editor.brush, BrushMode::Paint(editor.paint_color)),
+    let size = (width, height);
+    let work = match editor.tool {
+        Tool::Brush => PaintWork::Brush(BrushStroke::new(editor.brush, BrushMode::Paint(editor.paint_color))),
+        Tool::Eraser => PaintWork::Brush(BrushStroke::new(editor.eraser, BrushMode::Erase)),
+        Tool::Gradient => PaintWork::Gradient { from: press },
+        tool => {
+            let kind = retouch_kind(editor, tool, view, layer, size, press)?;
+            let brush = editor.retouch_of(tool)?.brush;
+            PaintWork::Retouch(RetouchStroke::new(brush, kind, editor.doc.canvas(canvas)?))
+        }
     };
     Some(Painting {
         layer,
         canvas,
-        size: (width, height),
-        stroke: BrushStroke::new(settings, mode),
+        size,
+        work,
         smoothed: Pos2::ZERO,
         pen: tablet::Sample { pos: Pos2::ZERO, pressure: 1.0 },
     })
 }
 
-/// Carries the stroke on to `screen` (a point on screen), in the canvas's
-/// pixels, which follow the layer wherever it's been moved, turned or
-/// scaled.
+/// What a retouching tool does, with its settings. The Clone Stamp needs a
+/// source on this layer (Alt-click), and keeps the distance to it for the
+/// strokes after the first.
+fn retouch_kind(
+    editor: &mut Editor,
+    tool: Tool,
+    view: View,
+    layer: LayerId,
+    size: (u32, u32),
+    press: Pos2,
+) -> Option<Retouch> {
+    let strength = editor.retouch_of(tool)?.strength;
+    let range = editor.tone_range;
+    Some(match tool {
+        Tool::Smudge => Retouch::Smudge { strength },
+        Tool::Blur => Retouch::Blur { strength },
+        Tool::Sharpen => Retouch::Sharpen { strength },
+        Tool::Dodge => Retouch::Dodge { exposure: strength, range },
+        Tool::Burn => Retouch::Burn { exposure: strength, range },
+        Tool::CloneStamp => {
+            let (source_layer, source) = editor.clone_source?;
+            if source_layer != layer {
+                return None;
+            }
+            let offset = match editor.clone_offset {
+                Some(offset) => offset,
+                None => source - canvas_point(editor, view, layer, size, press)?,
+            };
+            editor.clone_offset = Some(offset);
+            Retouch::Clone { offset, opacity: strength }
+        }
+        _ => return None,
+    })
+}
+
+/// A point on screen, in the pixels of a layer's canvas (which follows the
+/// layer wherever it's been moved, turned or scaled).
+fn canvas_point(
+    editor: &Editor,
+    view: View,
+    layer: LayerId,
+    size: (u32, u32),
+    screen: Pos2,
+) -> Option<Point> {
+    let layer = editor.doc.layer(layer)?;
+    let local = editor.doc.layer_matrix(layer, editor.frame).inverse()?.apply(view.to_local(screen));
+    Some(Point::new(local.x + size.0 as f32 / 2.0, local.y + size.1 as f32 / 2.0))
+}
+
+/// The opposite of [`canvas_point`]: a canvas pixel on screen.
+fn canvas_to_screen(editor: &Editor, view: View, layer: LayerId, at: Point) -> Option<Pos2> {
+    let layer = editor.doc.layer(layer)?;
+    let size = layer.elements_at(editor.frame).iter().find_map(|e| match e.shape {
+        Shape::Paint { width, height, .. } => Some((width, height)),
+        _ => None,
+    })?;
+    let local = Point::new(at.x - size.0 as f32 / 2.0, at.y - size.1 as f32 / 2.0);
+    Some(view.to_screen(editor.doc.layer_matrix(layer, editor.frame).apply(local)))
+}
+
+/// Carries the stroke (or the gradient's drag) on to `screen`.
 fn paint_to(painting: &mut Painting, editor: &mut Editor, view: View, screen: Pos2, pressure: f32) {
-    let frame = editor.frame;
-    let Some(layer) = editor.doc.layer(painting.layer) else { return };
-    let Some(to_local) = editor.doc.layer_matrix(layer, frame).inverse() else { return };
-    let local = to_local.apply(view.to_local(screen));
-    let (width, height) = painting.size;
-    let at = Point::new(local.x + width as f32 / 2.0, local.y + height as f32 / 2.0);
-    if let Some(canvas) = editor.doc.canvas_mut(painting.canvas) {
-        painting.stroke.add_point(canvas, at, pressure);
+    let Some(at) = canvas_point(editor, view, painting.layer, painting.size, screen) else { return };
+    let Some(canvas) = editor.doc.canvas_mut(painting.canvas) else { return };
+    match &mut painting.work {
+        PaintWork::Brush(stroke) => stroke.add_point(canvas, at, pressure),
+        PaintWork::Retouch(stroke) => stroke.add_point(canvas, at, pressure),
+        PaintWork::Gradient { .. } => {}
     }
+}
+
+/// Lays the gradient dragged from `from` to `to` (on screen).
+fn lay_gradient(painting: &Painting, editor: &mut Editor, view: View, from: Pos2, to: Pos2) {
+    let point = |screen| canvas_point(editor, view, painting.layer, painting.size, screen);
+    let (Some(from), Some(to)) = (point(from), point(to)) else { return };
+    let start = editor.paint_color;
+    let end = if editor.gradient_to_clear { Color { a: 0, ..start } } else { editor.second_color };
+    let (shape, opacity) = (editor.gradient_shape, editor.gradient_opacity);
+    if let Some(canvas) = editor.doc.canvas_mut(painting.canvas) {
+        inkframe_core::gradient(canvas, from, to, start, end, shape, opacity);
+    }
+}
+
+/// The Paint Bucket: fills on the selected paint layer (made if needed).
+fn fill_at(editor: &mut Editor, view: View, press: Pos2) {
+    if editor.paint_target().is_none() {
+        editor.add_paint_layer();
+    }
+    let Some((layer, canvas, width, height)) = editor.paint_target() else { return };
+    let Some(at) = canvas_point(editor, view, layer, (width, height), press) else { return };
+    let (color, settings) = (editor.paint_color, editor.bucket);
+    if let Some(canvas) = editor.doc.canvas_mut(canvas) {
+        inkframe_core::bucket_fill(canvas, at.x.floor() as i64, at.y.floor() as i64, color, settings);
+    }
+}
+
+/// Alt-click with the Clone Stamp: copy from here on.
+fn set_clone_source(editor: &mut Editor, view: View, press: Pos2) {
+    let Some((layer, _, width, height)) = editor.paint_target() else { return };
+    editor.clone_source = canvas_point(editor, view, layer, (width, height), press).map(|p| (layer, p));
+    editor.clone_offset = None;
 }
 
 /// Sets the paint colour to what the stage shows at `at` (in the
@@ -3053,6 +3223,70 @@ mod tests {
         assert_ne!(first, second);
         assert!(editor.doc.canvas(second).unwrap().is_empty());
         assert!(!editor.doc.canvas(first).unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_bucket_fills_an_empty_paint_layer() {
+        let mut editor = Editor::new(Document::default());
+        editor.use_tool(Tool::PaintBucket);
+        editor.paint_color = Color::rgb(0, 120, 0);
+        let mut h = harness(editor);
+        let at = screen(&h, 500.0, 500.0);
+        click(&mut h, at);
+        assert_eq!(painted_at(&h, 10, 10), [0, 120, 0, 255]);
+        assert_eq!(painted_at(&h, 1900, 1070), [0, 120, 0, 255]);
+    }
+
+    #[test]
+    fn dragging_the_gradient_blends_between_the_colours() {
+        let mut editor = Editor::new(Document::default());
+        editor.use_tool(Tool::Gradient);
+        editor.paint_color = Color::rgb(0, 0, 0);
+        editor.second_color = Color::rgb(255, 255, 255);
+        let mut h = harness(editor);
+        let (from, middle, to) =
+            (screen(&h, 400.0, 500.0), screen(&h, 900.0, 500.0), screen(&h, 1400.0, 500.0));
+        drag(&mut h, from, &[middle, to]);
+        assert_eq!(painted_at(&h, 300, 100), [0, 0, 0, 255], "black before the start");
+        assert_eq!(painted_at(&h, 1500, 900), [255, 255, 255, 255], "white past the end");
+        let grey = painted_at(&h, 900, 700)[0];
+        assert!((110..=145).contains(&grey), "grey in the middle: {grey}");
+    }
+
+    #[test]
+    fn the_clone_stamp_copies_from_where_it_was_alt_clicked() {
+        let mut editor = Editor::new(Document::default());
+        editor.use_tool(Tool::Brush);
+        editor.smoothing = 0.0;
+        editor.paint_color = Color::rgb(0, 0, 200);
+        let mut h = harness(editor);
+        // A blue dot to copy.
+        let dot = screen(&h, 300.0, 300.0);
+        click(&mut h, dot);
+        h.state_mut().1.use_tool(Tool::CloneStamp);
+        h.state_mut().1.clone.brush.hardness = 1.0;
+        hold_alt(&mut h, true);
+        click(&mut h, dot);
+        hold_alt(&mut h, false);
+        assert!(h.state().1.clone_source.is_some());
+        // Stamping 400 pixels to the right copies the dot there.
+        let there = screen(&h, 700.0, 300.0);
+        click(&mut h, there);
+        assert_eq!(painted_at(&h, 700, 300), [0, 0, 200, 255]);
+    }
+
+    #[test]
+    fn smudging_pulls_paint_along() {
+        let mut editor = Editor::new(Document::default());
+        editor.use_tool(Tool::Brush);
+        let mut h = harness(editor);
+        let dot = screen(&h, 500.0, 500.0);
+        click(&mut h, dot);
+        h.state_mut().1.use_tool(Tool::Smudge);
+        h.state_mut().1.smoothing = 0.0;
+        let to = screen(&h, 600.0, 500.0);
+        drag(&mut h, dot, &[dot + vec2(10.0, 0.0), to]);
+        assert!(painted_at(&h, 540, 500)[3] > 30, "paint dragged out to the right");
     }
 
     #[test]

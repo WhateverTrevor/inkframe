@@ -42,6 +42,10 @@ pub struct BrushSettings {
     pub min_size: f32,
     /// Whether pen pressure changes the flow.
     pub pressure_flow: bool,
+    /// How much a paper texture breaks up the paint, 0 to 1: 0 is smooth,
+    /// higher catches only the paper's raised grain, like chalk or a dry
+    /// brush. The texture stays put on the canvas, as paper would.
+    pub grain: f32,
 }
 
 impl Default for BrushSettings {
@@ -55,7 +59,134 @@ impl Default for BrushSettings {
             pressure_size: true,
             min_size: 0.15,
             pressure_flow: false,
+            grain: 0.0,
         }
+    }
+}
+
+impl BrushSettings {
+    /// Ready-made brushes, by name: a starting point to adjust from.
+    pub fn presets() -> [(&'static str, BrushSettings); 6] {
+        let base = BrushSettings::default();
+        [
+            ("Hard Round", BrushSettings { hardness: 1.0, spacing: 0.1, ..base }),
+            ("Soft Round", BrushSettings { size: 60.0, hardness: 0.0, spacing: 0.12, ..base }),
+            (
+                "Airbrush",
+                BrushSettings {
+                    size: 90.0,
+                    hardness: 0.0,
+                    flow: 0.08,
+                    spacing: 0.08,
+                    pressure_size: false,
+                    pressure_flow: true,
+                    ..base
+                },
+            ),
+            (
+                "Inking Pen",
+                BrushSettings { size: 8.0, hardness: 0.95, spacing: 0.05, min_size: 0.05, ..base },
+            ),
+            ("Chalk", BrushSettings { size: 30.0, hardness: 0.7, spacing: 0.15, grain: 0.45, ..base }),
+            ("Dry Brush", BrushSettings { size: 50.0, hardness: 0.5, flow: 0.8, grain: 0.6, ..base }),
+        ]
+    }
+
+    /// The dab's radius at `pressure`, never under half a pixel.
+    pub fn radius(&self, pressure: f32) -> f32 {
+        let scale = if self.pressure_size { self.min_size + (1.0 - self.min_size) * pressure } else { 1.0 };
+        (self.size * scale / 2.0).max(0.5)
+    }
+
+    /// Distance to the next dab: `spacing` of the dab's size, but never
+    /// under half a pixel, or tiny brushes would stamp thousands of dabs.
+    pub fn step(&self, pressure: f32) -> f32 {
+        (self.radius(pressure) * 2.0 * self.spacing).max(0.5)
+    }
+
+    /// How much a dab of `radius` covers a pixel whose centre is `distance`
+    /// from the dab's: fully inside `radius - soft`, fading to nothing half
+    /// a pixel past `radius`. The soft part is at least a pixel, so a hard
+    /// brush still gets a smooth (anti-aliased) edge, and a 0% one fades all
+    /// the way from its centre.
+    pub fn coverage(&self, distance: f32, radius: f32) -> f32 {
+        let soft = ((1.0 - self.hardness) * radius).max(1.0);
+        let t = ((radius + 0.5 - distance) / (soft + 0.5)).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    }
+
+    /// How much paint the paper's grain lets through at pixel (`x`, `y`).
+    pub fn grain_at(&self, x: u32, y: u32) -> f32 {
+        if self.grain <= 0.0 {
+            return 1.0;
+        }
+        // Paint catches where the paper is higher than the grain setting.
+        let height = paper(x, y);
+        ((height - self.grain) / 0.25 + 0.5).clamp(0.0, 1.0)
+    }
+}
+
+/// A paper texture: smooth random bumps a few pixels across, the same at
+/// the same spot every time, 0 (low) to 1 (high).
+fn paper(x: u32, y: u32) -> f32 {
+    // Value noise: random heights on a 3-pixel grid, blended between.
+    const CELL: f32 = 3.0;
+    let (fx, fy) = (x as f32 / CELL, y as f32 / CELL);
+    let (cx, cy) = (fx.floor() as u32, fy.floor() as u32);
+    let (tx, ty) = (fx - fx.floor(), fy - fy.floor());
+    let smooth = |t: f32| t * t * (3.0 - 2.0 * t);
+    let (sx, sy) = (smooth(tx), smooth(ty));
+    let h = |x: u32, y: u32| {
+        // A small integer hash: stable, and good enough to look random.
+        let mut n = x.wrapping_mul(0x9E37_79B1) ^ y.wrapping_mul(0x85EB_CA77);
+        n ^= n >> 15;
+        n = n.wrapping_mul(0x2C1B_3C6D);
+        n ^= n >> 12;
+        (n & 0xFFFF) as f32 / 65535.0
+    };
+    let top = h(cx, cy) + (h(cx + 1, cy) - h(cx, cy)) * sx;
+    let bottom = h(cx, cy + 1) + (h(cx + 1, cy + 1) - h(cx, cy + 1)) * sx;
+    top + (bottom - top) * sy
+}
+
+/// Where a stroke's dabs go: one at the start, then one every `step` along
+/// the pen's path, with the pressure in between found by blending. Every
+/// stroke tool (brush, eraser, smudge, clone stamp…) places dabs this way.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DabPath {
+    last: Option<(Point, f32)>,
+    until_next: f32,
+}
+
+impl DabPath {
+    /// Carries the path on to `at` with `pressure`, calling `dab` with the
+    /// centre and pressure of each dab due on the way.
+    pub fn advance(
+        &mut self,
+        settings: &BrushSettings,
+        at: Point,
+        pressure: f32,
+        mut dab: impl FnMut(Point, f32),
+    ) {
+        let pressure = pressure.clamp(0.0, 1.0);
+        match self.last {
+            None => {
+                dab(at, pressure);
+                self.until_next = settings.step(pressure);
+            }
+            Some((from, from_pressure)) => {
+                let length = from.distance(at);
+                let mut travelled = self.until_next;
+                while travelled <= length {
+                    let t = if length > 0.0 { travelled / length } else { 1.0 };
+                    let p = from_pressure + (pressure - from_pressure) * t;
+                    dab(from.lerp(at, t), p);
+                    travelled += settings.step(p);
+                }
+                self.until_next = travelled - length;
+            }
+        }
+        self.last = Some((at, pressure));
     }
 }
 
@@ -76,10 +207,7 @@ pub struct BrushStroke {
     coverage: BTreeMap<(u32, u32), Vec<f32>>,
     /// Tiles whose coverage changed since the canvas was last redrawn.
     dirty: BTreeSet<(u32, u32)>,
-    /// The last point and pressure, and how far along from it the next dab
-    /// is due.
-    last: Option<(Point, f32)>,
-    until_next: f32,
+    path: DabPath,
 }
 
 impl BrushStroke {
@@ -90,56 +218,26 @@ impl BrushStroke {
             before: BTreeMap::new(),
             coverage: BTreeMap::new(),
             dirty: BTreeSet::new(),
-            last: None,
-            until_next: 0.0,
+            path: DabPath::default(),
         }
     }
 
     /// Carries the stroke on to `at` (canvas pixels) with `pressure` (0 to
     /// 1; 1 for a mouse), laying dabs along the way, and updates `canvas`.
     pub fn add_point(&mut self, canvas: &mut Canvas, at: Point, pressure: f32) {
-        let pressure = pressure.clamp(0.0, 1.0);
-        match self.last {
-            None => self.dab(canvas, at, pressure),
-            Some((from, from_pressure)) => {
-                let length = from.distance(at);
-                let mut travelled = self.until_next;
-                while travelled <= length {
-                    let t = if length > 0.0 { travelled / length } else { 1.0 };
-                    let p = from_pressure + (pressure - from_pressure) * t;
-                    self.dab(canvas, from.lerp(at, t), p);
-                    travelled += self.step(p);
-                }
-                self.until_next = travelled - length;
-            }
+        let mut dabs = Vec::new();
+        self.path.advance(&self.settings, at, pressure, |at, pressure| dabs.push((at, pressure)));
+        for (at, pressure) in dabs {
+            self.dab(canvas, at, pressure);
         }
-        if self.last.is_none() {
-            self.until_next = self.step(pressure);
-        }
-        self.last = Some((at, pressure));
         self.redraw(canvas);
-    }
-
-    /// Distance to the next dab: `spacing` of the dab's size, but never
-    /// under half a pixel, or tiny brushes would stamp thousands of dabs.
-    fn step(&self, pressure: f32) -> f32 {
-        (self.radius(pressure) * 2.0 * self.settings.spacing).max(0.5)
-    }
-
-    fn radius(&self, pressure: f32) -> f32 {
-        let s = &self.settings;
-        let scale = if s.pressure_size { s.min_size + (1.0 - s.min_size) * pressure } else { 1.0 };
-        (s.size * scale / 2.0).max(0.5)
     }
 
     /// Adds one dab centred on `at` to the stroke's coverage.
     fn dab(&mut self, canvas: &Canvas, at: Point, pressure: f32) {
         let s = self.settings;
-        let radius = self.radius(pressure);
+        let radius = s.radius(pressure);
         let flow = s.flow * if s.pressure_flow { pressure } else { 1.0 };
-        // The soft part of the edge: at least a pixel, so even a hard brush
-        // has smooth (anti-aliased) edges.
-        let soft = ((1.0 - s.hardness) * radius).max(1.0);
         let reach = radius + 1.0;
         let (x0, y0) = ((at.x - reach).floor().max(0.0) as u32, (at.y - reach).floor().max(0.0) as u32);
         let x1 = ((at.x + reach).ceil() as u32).min(canvas.width);
@@ -157,15 +255,11 @@ impl BrushStroke {
                     for x in x0.max(left)..x1.min(left + TILE) {
                         // Measured to the pixel's centre.
                         let d = Point::new(x as f32 + 0.5, y as f32 + 0.5).distance(at);
-                        // Fully covered inside `radius - soft`, fading to
-                        // nothing half a pixel past `radius`: a hard brush
-                        // gets a pixel-wide smooth edge, a 0% one fades all
-                        // the way from its centre.
-                        let t = ((radius + 0.5 - d) / (soft + 0.5)).clamp(0.0, 1.0);
-                        if t <= 0.0 {
+                        let cover = s.coverage(d, radius);
+                        if cover <= 0.0 {
                             continue;
                         }
-                        let amount = t * t * (3.0 - 2.0 * t) * flow;
+                        let amount = cover * flow * s.grain_at(x, y);
                         let c = &mut coverage[((y - top) * TILE + x - left) as usize];
                         *c += amount * (1.0 - *c);
                     }
@@ -313,6 +407,16 @@ mod tests {
         // Only tile (0, 0) differs; the right-hand one is still the same.
         assert_ne!(before, canvas);
         assert!(std::ptr::eq(before.tile((1, 0)).unwrap(), canvas.tile((1, 0)).unwrap()));
+    }
+
+    #[test]
+    fn grain_breaks_paint_up_where_the_paper_is_low() {
+        let mut canvas = Canvas::new(200, 100);
+        let settings = BrushSettings { size: 60.0, grain: 0.5, hardness: 1.0, ..BrushSettings::default() };
+        line(settings, red(), &mut canvas, Point::new(20.0, 50.0), Point::new(180.0, 50.0));
+        let row: Vec<u8> = (30..170).map(|x| canvas.pixel(x, 50)[3]).collect();
+        assert!(row.iter().any(|&a| a > 200), "the paper's peaks catch paint");
+        assert!(row.iter().any(|&a| a < 60), "its hollows don't");
     }
 
     #[test]

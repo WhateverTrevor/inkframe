@@ -148,10 +148,16 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     tools, with Bone moved to K. The brush panel shows in the properties
     panel while painting. `tablet.rs` reads pen pressure (Windows: egui
     touch force; macOS: NSEvent local monitor). `[`/`]` resize the brush
-    while painting. Planned next, as agreed with the user: phase 2 (bucket,
-    gradient, smudge, blur/sharpen, dodge/burn, clone stamp, brush
-    presets), phase 3 (marquee, lasso, magic wand, adjustments, blend
-    modes), phase 4 maybe (canvas rotation, PSD).
+    while painting.
+41. Painting, phase 2: Paint Bucket and Gradient (`fill.rs`), Smudge,
+    Blur, Sharpen, Dodge, Burn and Clone Stamp (`retouch.rs`), brush
+    presets and paper grain (`brush.rs`). Toolbar slots group related
+    tools (`Tool::GROUPS`, `Editor::use_slot`): the key picks the slot's
+    last-used tool, Shift+key cycles, right-click lists them. Keys: G
+    bucket/gradient, U smudge/blur/sharpen, D dodge/burn, S clone stamp.
+    The properties panel's tool section shows each tool's own settings.
+    Planned next, as agreed with the user: phase 3 (marquee, lasso, magic
+    wand, adjustments, blend modes), phase 4 maybe (canvas rotation, PSD).
 
 ## Not yet verified by hand
 

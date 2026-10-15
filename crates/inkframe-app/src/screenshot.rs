@@ -21,7 +21,8 @@
 //!   `=apply` also applies it from loudness once the sound has loaded.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_PAINT=1` paints a few strokes on a new paint layer, as a pen
-//!   would (pressing harder through the middle of each), to show the brushes.
+//!   would (pressing harder through the middle of each), to show the brushes; `=tools`
+//!   also uses the bucket, gradient and retouching tools on them.
 
 use std::path::PathBuf;
 
@@ -80,12 +81,15 @@ impl AutoScreenshot {
         if var("INKFRAME_SCREENSHOT_ONION").is_some() {
             editor.onion.enabled = true;
         }
-        if var("INKFRAME_SCREENSHOT_PAINT").is_some() {
+        if let Some(paint) = var("INKFRAME_SCREENSHOT_PAINT") {
             paint_demo(editor);
+            if paint == "tools" {
+                retouch_demo(editor);
+            }
         }
         if let Some(name) = var("INKFRAME_SCREENSHOT_TOOL") {
-            match Tool::ALL.into_iter().find(|t| t.name().eq_ignore_ascii_case(&name)) {
-                Some(tool) => editor.tool = tool,
+            match Tool::all().find(|t| t.name().eq_ignore_ascii_case(&name)) {
+                Some(tool) => editor.use_tool(tool),
                 None => eprintln!("Unknown tool {name:?} in INKFRAME_SCREENSHOT_TOOL"),
             }
         }
@@ -199,6 +203,81 @@ fn paint_demo(editor: &mut Editor) {
         let at = Point::new(1250.0, 220.0 + i as f32 * 15.0);
         if let Some(canvas) = editor.doc.canvas_mut(canvas) {
             eraser.add_point(canvas, at, 1.0);
+        }
+    }
+}
+
+/// After `paint_demo`: a gradient sky on a layer of its own underneath, a
+/// bucket-filled ring, and each retouching tool used once on the strokes.
+fn retouch_demo(editor: &mut Editor) {
+    use inkframe_core::{
+        BrushSettings, BucketSettings, Color, GradientShape, Point, Retouch, RetouchStroke, ToneRange,
+    };
+    let Some((strokes, canvas, ..)) = editor.paint_target() else { return };
+
+    // The sky, moved below the strokes.
+    if let Some(sky) = editor.add_paint_layer()
+        && let Some((_, sky_canvas, ..)) = editor.paint_target()
+    {
+        if let Some(c) = editor.doc.canvas_mut(sky_canvas) {
+            let (top, bottom) = (Color::rgb(0x9c, 0xc8, 0xf0), Color::rgb(0xfb, 0xf4, 0xe6));
+            inkframe_core::gradient(
+                c,
+                Point::new(0.0, 0.0),
+                Point::new(0.0, 1080.0),
+                top,
+                bottom,
+                GradientShape::Linear,
+                1.0,
+            );
+        }
+        editor.doc.move_layer(sky, -1);
+        editor.select(Some(strokes));
+    }
+
+    let Some(c) = editor.doc.canvas_mut(canvas) else { return };
+    // A ring drawn with the brush, then filled with the bucket.
+    let ring = BrushSettings { size: 10.0, hardness: 1.0, pressure_size: false, ..BrushSettings::default() };
+    let mut stroke =
+        inkframe_core::BrushStroke::new(ring, inkframe_core::BrushMode::Paint(Color::rgb(30, 30, 30)));
+    for i in 0..=90 {
+        let t = i as f32 / 90.0 * std::f32::consts::TAU;
+        stroke.add_point(c, Point::new(1700.0 + t.cos() * 110.0, 880.0 + t.sin() * 110.0), 1.0);
+    }
+    inkframe_core::bucket_fill(c, 1700, 880, Color::rgb(0x6c, 0xc0, 0x6c), BucketSettings::default());
+
+    // Each retouching tool once, on the strokes.
+    let soft =
+        |size: f32| BrushSettings { size, hardness: 0.3, pressure_size: false, ..BrushSettings::default() };
+    // Each pass: what it does, its brush size, and the points it passes.
+    type Pass<'a> = (Retouch, f32, &'a [(f32, f32)]);
+    let passes: [Pass; 5] = [
+        (Retouch::Smudge { strength: 0.9 }, 40.0, &[(470.0, 350.0), (520.0, 300.0), (570.0, 240.0)]),
+        (
+            Retouch::Blur { strength: 1.0 },
+            80.0,
+            &[(900.0, 420.0), (1100.0, 420.0), (900.0, 420.0), (1100.0, 420.0)],
+        ),
+        (
+            Retouch::Dodge { exposure: 0.6, range: ToneRange::Midtones },
+            70.0,
+            &[(700.0, 560.0), (800.0, 560.0)],
+        ),
+        (
+            Retouch::Burn { exposure: 0.7, range: ToneRange::Midtones },
+            90.0,
+            &[(430.0, 765.0), (560.0, 770.0)],
+        ),
+        (
+            Retouch::Clone { offset: Point::new(-300.0, 0.0), opacity: 1.0 },
+            120.0,
+            &[(1650.0, 300.0), (1650.0, 600.0)],
+        ),
+    ];
+    for (kind, size, points) in passes {
+        let mut stroke = RetouchStroke::new(soft(size), kind, c);
+        for &(x, y) in points {
+            stroke.add_point(c, Point::new(x, y), 1.0);
         }
     }
 }

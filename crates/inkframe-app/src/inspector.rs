@@ -36,25 +36,134 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
         .show(ui, |ui| document_section(ui, editor));
 }
 
-/// The brush's (or eraser's) settings, while one is in use, as Photoshop's
-/// options bar shows them.
+/// The painting tool's settings, while one is in use, as Photoshop's
+/// options bar shows them: just the ones that tool has.
 fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
-    let erasing = editor.tool == crate::editor::Tool::Eraser;
-    ui.heading(if erasing { "Eraser" } else { "Brush" });
-    let settings = if erasing { &mut editor.eraser } else { &mut editor.brush };
-    egui::Grid::new("brush").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-        if !erasing {
+    use crate::editor::Tool;
+    let tool = editor.tool;
+    ui.heading(tool.name());
+    egui::Grid::new("paint_tool").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        if matches!(tool, Tool::Brush | Tool::PaintBucket | Tool::Gradient | Tool::Eyedropper) {
             ui.label("Colour");
             color_button(ui, &mut editor.paint_color);
             ui.end_row();
         }
-        ui.label("Size").on_hover_text("[ and ] make it smaller and bigger");
-        ui.add(egui::Slider::new(&mut settings.size, 1.0..=500.0).logarithmic(true).suffix(" px"));
-        ui.end_row();
-        ui.label("Hardness")
-            .on_hover_text("How crisp the edge is: 100% is a hard disc, 0% fades from the middle");
-        ui.add(percent(&mut settings.hardness));
-        ui.end_row();
+        match tool {
+            Tool::Brush => {
+                ui.label("Preset");
+                egui::ComboBox::from_id_salt("brush_preset").selected_text("Choose…").show_ui(ui, |ui| {
+                    for (name, preset) in inkframe_core::BrushSettings::presets() {
+                        if ui.button(name).clicked() {
+                            editor.brush = preset;
+                        }
+                    }
+                });
+                ui.end_row();
+                brush_controls(ui, &mut editor.brush, true);
+            }
+            Tool::Eraser => brush_controls(ui, &mut editor.eraser, true),
+            Tool::PaintBucket => {
+                ui.label("Tolerance").on_hover_text("How different a colour may be and still be filled");
+                ui.add(egui::Slider::new(&mut editor.bucket.tolerance, 0..=255));
+                ui.end_row();
+                ui.label("Contiguous").on_hover_text(
+                    "Fill only the area connected to where you click, or every matching pixel",
+                );
+                ui.checkbox(&mut editor.bucket.contiguous, "");
+                ui.end_row();
+                ui.label("Opacity");
+                ui.add(percent(&mut editor.bucket.opacity));
+                ui.end_row();
+            }
+            Tool::Gradient => {
+                ui.label("To");
+                ui.horizontal(|ui| {
+                    ui.add_enabled_ui(!editor.gradient_to_clear, |ui| {
+                        color_button(ui, &mut editor.second_color)
+                    });
+                    ui.checkbox(&mut editor.gradient_to_clear, "Transparent");
+                });
+                ui.end_row();
+                ui.label("Shape");
+                ui.horizontal(|ui| {
+                    ui.radio_value(
+                        &mut editor.gradient_shape,
+                        inkframe_core::GradientShape::Linear,
+                        "Linear",
+                    );
+                    ui.radio_value(
+                        &mut editor.gradient_shape,
+                        inkframe_core::GradientShape::Radial,
+                        "Radial",
+                    );
+                });
+                ui.end_row();
+                ui.label("Opacity");
+                ui.add(percent(&mut editor.gradient_opacity));
+                ui.end_row();
+            }
+            Tool::Eyedropper => {}
+            _ => {
+                let (label, hint) = match tool {
+                    Tool::Dodge | Tool::Burn => ("Exposure", "How much each pass lightens or darkens"),
+                    Tool::CloneStamp => ("Opacity", "How strongly the copy covers what's there"),
+                    _ => ("Strength", "How strongly each pass works"),
+                };
+                if let Some(retouch) = editor.retouch_of(tool) {
+                    ui.label(label).on_hover_text(hint);
+                    ui.add(percent(&mut retouch.strength));
+                    ui.end_row();
+                }
+                if matches!(tool, Tool::Dodge | Tool::Burn) {
+                    ui.label("Range").on_hover_text("Which tones it works on most");
+                    egui::ComboBox::from_id_salt("tone_range")
+                        .selected_text(editor.tone_range.label())
+                        .show_ui(ui, |ui| {
+                            for range in inkframe_core::ToneRange::ALL {
+                                ui.selectable_value(&mut editor.tone_range, range, range.label());
+                            }
+                        });
+                    ui.end_row();
+                }
+                if let Some(retouch) = editor.retouch_of(tool) {
+                    brush_controls(ui, &mut retouch.brush, false);
+                }
+            }
+        }
+        if tool.uses_brush() {
+            ui.label("Smoothing").on_hover_text("Steadies the line by letting it trail behind the pen");
+            ui.add(percent(&mut editor.smoothing));
+            ui.end_row();
+        }
+    });
+    let hint = match tool {
+        Tool::CloneStamp if editor.clone_source.is_none() => {
+            Some("Option/Alt-click on the paint layer to choose where to copy from.")
+        }
+        Tool::CloneStamp => Some("Option/Alt-click to copy from somewhere else."),
+        Tool::Eyedropper => Some("Click the stage to pick up a colour (or Option/Alt-click with the brush)."),
+        Tool::Gradient => Some("Drag across the paint layer, from where the colour starts to where it ends."),
+        _ if tool.uses_brush() && tablet_hint_needed() => {
+            Some("Pen pressure is used when drawing with a tablet.")
+        }
+        _ => None,
+    };
+    if let Some(hint) = hint {
+        ui.weak(hint);
+    }
+}
+
+/// The settings every brush tip has. `paint` adds the ones only painting
+/// (rather than retouching) uses: opacity, flow and the paper grain.
+fn brush_controls(ui: &mut egui::Ui, settings: &mut inkframe_core::BrushSettings, paint: bool) {
+    ui.label("Size").on_hover_text("[ and ] make it smaller and bigger");
+    ui.add(egui::Slider::new(&mut settings.size, 1.0..=500.0).logarithmic(true).suffix(" px"));
+    ui.end_row();
+    ui.label("Hardness")
+        .on_hover_text("How crisp the edge is: 100% is a hard disc, 0% fades from the middle");
+    ui.add(percent(&mut settings.hardness));
+    ui.end_row();
+    if paint {
         ui.label("Opacity").on_hover_text("The most a single stroke covers, however often it crosses itself");
         ui.add(percent(&mut settings.opacity));
         ui.end_row();
@@ -62,29 +171,27 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
             .on_hover_text("How much each touch of the brush adds: low flow builds up like an airbrush");
         ui.add(percent(&mut settings.flow));
         ui.end_row();
-        ui.label("Spacing").on_hover_text("Distance between dabs, as a share of the brush's size");
-        ui.add(
-            egui::Slider::new(&mut settings.spacing, 0.02..=1.0)
-                .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
-        );
+        ui.label("Grain")
+            .on_hover_text("A paper texture that breaks the paint up, like chalk or a dry brush");
+        ui.add(percent(&mut settings.grain));
         ui.end_row();
-        ui.label("Pressure").on_hover_text("What pressing harder with a pen does");
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut settings.pressure_size, "Size");
-            ui.checkbox(&mut settings.pressure_flow, "Flow");
-        });
-        ui.end_row();
-        if settings.pressure_size {
-            ui.label("Lightest").on_hover_text("The size at the lightest touch, as a share of the full size");
-            ui.add(percent(&mut settings.min_size));
-            ui.end_row();
-        }
-        ui.label("Smoothing").on_hover_text("Steadies the line by letting it trail behind the pen");
-        ui.add(percent(&mut editor.smoothing));
-        ui.end_row();
+    }
+    ui.label("Spacing").on_hover_text("Distance between dabs, as a share of the brush's size");
+    ui.add(
+        egui::Slider::new(&mut settings.spacing, 0.02..=1.0)
+            .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
+    );
+    ui.end_row();
+    ui.label("Pressure").on_hover_text("What pressing harder with a pen does");
+    ui.horizontal(|ui| {
+        ui.checkbox(&mut settings.pressure_size, "Size");
+        ui.checkbox(&mut settings.pressure_flow, if paint { "Flow" } else { "Strength" });
     });
-    if tablet_hint_needed() {
-        ui.weak("Pen pressure is used when drawing with a tablet.");
+    ui.end_row();
+    if settings.pressure_size {
+        ui.label("Lightest").on_hover_text("The size at the lightest touch, as a share of the full size");
+        ui.add(percent(&mut settings.min_size));
+        ui.end_row();
     }
 }
 
