@@ -17,6 +17,7 @@ use inkframe_core::{AnyChannel, AudioId, Easing, Layer, LayerId, Property, Timel
 
 use crate::audio_engine::AudioEngine;
 use crate::editor::Editor;
+use crate::icons::{self, Icon, IconButton};
 use crate::value_graph::{self, FrameAxis, ValueGraph};
 
 const NAME_WIDTH: f32 = 200.0;
@@ -68,7 +69,7 @@ fn restack(editor: &mut Editor, layer: LayerId, gap: usize) {
 const EDGE_GRAB: f32 = 3.0;
 
 const PLAYHEAD: Color32 = Color32::from_rgb(0xe8, 0x3a, 0x3a);
-const CURRENT_KEY: Color32 = Color32::from_rgb(0x2f, 0x9b, 0xff);
+const CURRENT_KEY: Color32 = crate::theme::ACCENT;
 /// Animate shows tweens in a violet-blue; we follow suit so they read the same.
 const TWEEN: Color32 = Color32::from_rgb(0x8a, 0x7c, 0xd8);
 const HOLD: Color32 = Color32::from_gray(150);
@@ -655,22 +656,12 @@ impl TimelineView {
                     let expanded = self.expanded.contains(&row.layer);
                     disclosure_triangle(painter, layout.expander_rect(index).center(), expanded, text);
 
-                    let eye = if layer.visible { text } else { faint };
-                    painter.text(
-                        layout.eye_rect(index).center(),
-                        Align2::CENTER_CENTER,
-                        "👁",
-                        font.clone(),
-                        eye,
-                    );
-                    let (lock, lock_color) = if layer.locked { ("🔒", text) } else { ("🔓", faint) };
-                    painter.text(
-                        layout.lock_rect(index).center(),
-                        Align2::CENTER_CENTER,
-                        lock,
-                        font.clone(),
-                        lock_color,
-                    );
+                    let (eye, eye_color) =
+                        if layer.visible { (Icon::Eye, text) } else { (Icon::EyeClosed, faint) };
+                    icons::paint(painter, eye, layout.eye_rect(index).shrink(5.0), eye_color);
+                    let (lock, lock_color) =
+                        if layer.locked { (Icon::Lock, text) } else { (Icon::Unlock, faint) };
+                    icons::paint(painter, lock, layout.lock_rect(index).shrink(6.0), lock_color);
 
                     // Attached layers are indented by how deep they hang,
                     // with a hook, so a rig reads as one: torso, then arm, then hand.
@@ -775,17 +766,17 @@ fn layer_buttons(ui: &mut egui::Ui, editor: &mut Editor, right_to_left: bool) {
         Delete,
     }
     let mut buttons = [
-        ("Duplicate", "Duplicate layer", Action::Duplicate),
-        ("⬆", "Move layer up", Action::Up),
-        ("⬇", "Move layer down", Action::Down),
-        ("🗑", "Delete layer", Action::Delete),
+        (Icon::Duplicate, "Duplicate layer", Action::Duplicate),
+        (Icon::Up, "Move layer up", Action::Up),
+        (Icon::Down, "Move layer down", Action::Down),
+        (Icon::Trash, "Delete layer", Action::Delete),
     ];
     if right_to_left {
         buttons.reverse();
     }
     let has_selection = editor.selection.is_some();
-    for (label, hover, action) in buttons {
-        if ui.add_enabled(has_selection, egui::Button::new(label)).on_hover_text(hover).clicked() {
+    for (icon, hover, action) in buttons {
+        if ui.add_enabled(has_selection, IconButton::new(icon, hover)).clicked() {
             match action {
                 Action::Duplicate => editor.duplicate_selected_layer(),
                 Action::Up => editor.move_selected_layer(1),
@@ -799,23 +790,28 @@ fn layer_buttons(ui: &mut egui::Ui, editor: &mut Editor, right_to_left: bool) {
 fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) {
     ui.horizontal(|ui| {
         let last = editor.last_frame();
-        if ui.button("⏮").on_hover_text("First frame (Home)").clicked() {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        if ui.add(IconButton::new(Icon::First, "First frame (Home)")).clicked() {
             editor.set_frame(0);
         }
-        if ui.button("⏴").on_hover_text("Previous frame (,)").clicked() {
+        if ui.add(IconButton::new(Icon::Previous, "Previous frame (,)")).clicked() {
             editor.step(-1);
         }
-        let play = if editor.playback.playing { "⏸" } else { "▶" };
-        if ui.button(play).on_hover_text("Play / pause (Enter)").clicked() {
+        let play = if editor.playback.playing { Icon::Pause } else { Icon::Play };
+        if ui.add(IconButton::new(play, "Play / pause (Enter)")).clicked() {
             editor.toggle_playback();
         }
-        if ui.button("⏵").on_hover_text("Next frame (.)").clicked() {
+        if ui.add(IconButton::new(Icon::Next, "Next frame (.)")).clicked() {
             editor.step(1);
         }
-        if ui.button("⏭").on_hover_text("Last frame (End)").clicked() {
+        if ui.add(IconButton::new(Icon::Last, "Last frame (End)")).clicked() {
             editor.set_frame(last);
         }
-        ui.toggle_value(&mut editor.playback.looping, "🔁").on_hover_text("Loop playback");
+        let looping = editor.playback.looping;
+        if ui.add(IconButton::new(Icon::Loop, "Loop playback").selected(looping)).clicked() {
+            editor.playback.looping = !looping;
+        }
+        ui.spacing_mut().item_spacing.x = 8.0;
 
         ui.separator();
 
@@ -830,12 +826,30 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) 
 
         ui.separator();
 
-        ui.toggle_value(graph_mode, "Graph")
-            .on_hover_text("Show the selected layer's animation as a graph of values over time");
+        if ui
+            .add(
+                IconButton::new(
+                    Icon::Graph,
+                    "Show the selected layer's animation as a graph of values over time",
+                )
+                .selected(*graph_mode),
+            )
+            .clicked()
+        {
+            *graph_mode = !*graph_mode;
+        }
         ui.separator();
 
-        ui.toggle_value(&mut editor.onion.enabled, "Onion skin")
-            .on_hover_text("Show faint copies of nearby frames");
+        let onion = editor.onion.enabled;
+        if ui
+            .add(
+                IconButton::new(Icon::Onion, "Onion skin: show faint copies of nearby frames")
+                    .selected(onion),
+            )
+            .clicked()
+        {
+            editor.onion.enabled = !onion;
+        }
         if editor.onion.enabled {
             ui.add(egui::DragValue::new(&mut editor.onion.before).range(0..=10).prefix("◀ "))
                 .on_hover_text("Frames shown before the current one");
@@ -1185,14 +1199,9 @@ fn paint_audio_rows(
         let color = if track.muted { AUDIO.gamma_multiply(0.35) } else { AUDIO };
 
         // Names column: speaker (click to mute) and the track's name.
-        let speaker = if track.muted { "🔇" } else { "🔊" };
-        names.text(
-            layout.eye_rect(index).center(),
-            Align2::CENTER_CENTER,
-            speaker,
-            FontId::proportional(13.0),
-            if track.muted { faint } else { text },
-        );
+        let (speaker, speaker_color) =
+            if track.muted { (Icon::SpeakerMuted, faint) } else { (Icon::Speaker, text) };
+        icons::paint(names, speaker, layout.eye_rect(index).shrink(5.0), speaker_color);
         let name_pos = pos2(layout.lock_rect(index).right() + 6.0, name_row.center().y);
         names.text(
             name_pos,

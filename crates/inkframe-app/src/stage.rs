@@ -48,7 +48,6 @@ const ANCHOR_HIT: f32 = 7.0;
 /// Pen drags shorter than this make a corner rather than a curve, in screen points.
 const MIN_HANDLE_DRAG: f32 = 2.0;
 
-const PASTEBOARD: Color32 = Color32::from_gray(48);
 const SELECTION: Color32 = Color32::from_rgb(0x2f, 0x9b, 0xff);
 const ONION_BEFORE: inkframe_core::Color = inkframe_core::Color::rgb(0x30, 0x60, 0xff);
 const ONION_AFTER: inkframe_core::Color = inkframe_core::Color::rgb(0x20, 0xb0, 0x40);
@@ -670,7 +669,7 @@ impl StageView {
         // edited: the stage's on the main timeline, a symbol's inside one.
         let view = stage_view.with_timeline(editor.timeline_transform());
 
-        painter.rect_filled(area, 0.0, PASTEBOARD);
+        painter.rect_filled(area, 0.0, crate::theme::PASTEBOARD);
         if !editor.doc.background.is_opaque() {
             draw_checkerboard(&painter.with_clip_rect(area), stage_view);
         }

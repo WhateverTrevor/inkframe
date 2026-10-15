@@ -117,6 +117,11 @@ impl AutoScreenshot {
         std::env::var("INKFRAME_SCREENSHOT_LAYOUT").is_ok_and(|v| v == "custom")
     }
 
+    /// Whether to show the Stage area's editor menu open.
+    pub fn area_menu() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_AREA_MENU").is_some()
+    }
+
     /// How far to turn the view, in degrees.
     pub fn view_rotation() -> Option<f32> {
         std::env::var("INKFRAME_SCREENSHOT_ROTATE").ok()?.parse().ok()

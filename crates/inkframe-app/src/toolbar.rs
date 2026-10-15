@@ -8,6 +8,7 @@ use egui::{Color32, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2, pos2, 
 
 use crate::convert::color_button;
 use crate::editor::{Editor, Tool};
+use crate::icons::{Icon, IconButton};
 use crate::shortcuts;
 
 const BUTTON_SIZE: f32 = 36.0;
@@ -90,17 +91,37 @@ fn group_button(ui: &mut egui::Ui, editor: &mut Editor, group: &'static [Tool]) 
     }
 }
 
-/// A color button with a small "none" toggle underneath. Returns true on change.
+/// A color button and, beside it, a button to switch to no colour. With
+/// no colour, the swatch shows Animate's red slash; clicking it brings a
+/// colour back. Returns true on change.
 fn swatch(ui: &mut egui::Ui, color: &mut Option<inkframe_core::Color>) -> bool {
     let mut changed = false;
-    if let Some(c) = color {
-        changed |= color_button(ui, c);
-    }
-    let mut none = color.is_none();
-    if ui.toggle_value(&mut none, "none").on_hover_text("No color").changed() {
-        *color = if none { None } else { Some(inkframe_core::Color::BLACK) };
-        changed = true;
-    }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let size = ui.spacing().interact_size;
+        // Centred under the label, the pair taking a swatch and a button.
+        ui.add_space(((ui.available_width() - size.x - 26.0) / 2.0).max(0.0));
+        match color {
+            Some(c) => changed |= color_button(ui, c),
+            None => {
+                let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+                ui.painter().rect_filled(rect, 2.0, Color32::WHITE);
+                ui.painter().line_segment(
+                    [rect.left_bottom(), rect.right_top()],
+                    Stroke::new(2.0, Color32::from_rgb(0xe0, 0x30, 0x30)),
+                );
+                if response.on_hover_text("No colour. Click to use one").clicked() {
+                    *color = Some(inkframe_core::Color::BLACK);
+                    changed = true;
+                }
+            }
+        }
+        let none = IconButton::new(Icon::NoColor, "No colour").selected(color.is_none());
+        if ui.add(none).clicked() && color.is_some() {
+            *color = None;
+            changed = true;
+        }
+    });
     changed
 }
 

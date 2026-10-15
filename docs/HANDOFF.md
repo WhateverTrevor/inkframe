@@ -188,6 +188,16 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     kind), Tool Settings, Audio and Document. The timeline's layer
     buttons no longer overlap the transport bar in narrow areas.
 
+46. UI round 1 (of 3, from the Animate comparison): `theme.rs` (Inter
+    Regular 3.19 OTF bundled in assets/fonts, palette, spacing) and
+    `icons.rs` (drawn icons replacing every emoji in the UI). Area headers
+    are a flat icon + name + chevron button; the editor menu is drawn
+    items. Panel areas get a margin; toolbar swatches use a red slash and
+    a no-colour button. `INKFRAME_SCREENSHOT_AREA_MENU=1` opens the Stage
+    header menu. Next: round 2, the layers panel and timeline (thumbnails,
+    colour tags, folders, Animate-style cells); round 3, tabbed areas,
+    workspace presets, Properties tabs, Swatches/Align/History panels.
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either

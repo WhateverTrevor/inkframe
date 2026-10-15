@@ -217,7 +217,10 @@ you state otherwise, any contribution you submit is dual-licensed the same way.
 
 Inkframe includes [Noto Color Emoji](https://github.com/googlefonts/noto-emoji)
 (`assets/fonts/`), © Google, under the
-[SIL Open Font License 1.1](assets/fonts/Noto-COLRv1-LICENSE.txt). The
+[SIL Open Font License 1.1](assets/fonts/Noto-COLRv1-LICENSE.txt), and the
+[Inter](https://github.com/rsms/inter) typeface for its interface, © The
+Inter Project Authors, under the same
+[licence](assets/fonts/Inter-LICENSE.txt). The
 installers also include ffmpeg (under its own licence; see
 [packaging/macos/README.md](packaging/macos/README.md#licensing)) and
 Rhubarb Lip Sync, © Daniel Wolf, MIT licensed, as separate programs.

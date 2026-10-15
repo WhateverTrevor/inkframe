@@ -273,7 +273,8 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 
     ui.heading("Layer");
     ui.text_edit_singleline(&mut layer.name);
-    ui.horizontal(|ui| {
+    // Wrapped, so a narrow panel shows all four rather than cutting one off.
+    ui.horizontal_wrapped(|ui| {
         ui.checkbox(&mut layer.visible, "Visible");
         ui.checkbox(&mut layer.locked, "Locked");
         ui.checkbox(&mut layer.guide, "Guide").on_hover_text(
@@ -1113,7 +1114,13 @@ pub fn audio_section(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEn
                     ui.separator();
                     ui.horizontal(|ui| {
                         ui.add(egui::TextEdit::singleline(&mut track.name).desired_width(150.0));
-                        if ui.small_button("🗑").on_hover_text("Remove this audio").clicked() {
+                        if ui
+                            .add(crate::icons::IconButton::new(
+                                crate::icons::Icon::Trash,
+                                "Remove this audio",
+                            ))
+                            .clicked()
+                        {
                             remove = Some(track.id);
                         }
                     });
