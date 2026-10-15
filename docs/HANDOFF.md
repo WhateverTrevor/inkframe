@@ -89,6 +89,16 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     `assets/fonts/`, pinned to googlefonts/noto-emoji commit 1ffdd21) is
     painted as vector layers by `color_glyph.rs`; installers include its
     licence.
+33. Parenting and movable pivots (format v13), the first step of the
+    Harmony/OpenToonz "character" plan: `Layer::parent` and `Layer::pivot`,
+    with `Document::layer_matrix` in `rig.rs` used everywhere a layer is
+    drawn, hit or edited. A child's pose is in its parent's space; stage
+    gestures convert the pointer into that space (`Handles::space`,
+    `into_parent_space`). Option/Alt-drag moves the pivot (a plain drag
+    still moves the layer). Selecting a parent and child together only
+    transforms the parent (`Document::hangs_from`). Remaining steps of the
+    plan, not started: drawing substitution, bones/IK, lip sync, deformers,
+    exposure sheet.
 
 ## Not yet verified by hand
 

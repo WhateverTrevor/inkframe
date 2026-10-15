@@ -1,0 +1,448 @@
+{
+  "version": 13,
+  "width": 1920,
+  "height": 1080,
+  "frame_rate": {
+    "numerator": 24,
+    "denominator": 1
+  },
+  "duration": 48,
+  "background": "#f4f1eaff",
+  "layers": [
+    {
+      "id": 1,
+      "name": "Torso",
+      "visible": true,
+      "locked": false,
+      "start": 0,
+      "elements": [
+        {
+          "shape": {
+            "type": "rect",
+            "width": 220,
+            "height": 360,
+            "corner_radius": 40
+          },
+          "style": {
+            "fill": "#5b7fd6ff",
+            "stroke": {
+              "color": "#2b2a33ff",
+              "width": 4.0
+            }
+          }
+        }
+      ],
+      "track": {
+        "position": [
+          {
+            "frame": 0,
+            "value": {
+              "x": 860,
+              "y": 560
+            },
+            "easing": {
+              "type": "ease_in_out"
+            }
+          },
+          {
+            "frame": 24,
+            "value": {
+              "x": 900,
+              "y": 540
+            },
+            "easing": {
+              "type": "ease_in_out"
+            }
+          },
+          {
+            "frame": 47,
+            "value": {
+              "x": 860,
+              "y": 560
+            },
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "rotation": [
+          {
+            "frame": 0,
+            "value": 0,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          },
+          {
+            "frame": 24,
+            "value": -6,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          },
+          {
+            "frame": 47,
+            "value": 0,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "scale": [
+          {
+            "frame": 0,
+            "value": {
+              "x": 1.0,
+              "y": 1.0
+            },
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "opacity": [
+          {
+            "frame": 0,
+            "value": 1.0,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ]
+      },
+      "pivot": {
+        "x": 0,
+        "y": 160
+      }
+    },
+    {
+      "id": 2,
+      "name": "Upper arm",
+      "visible": true,
+      "locked": false,
+      "start": 0,
+      "elements": [
+        {
+          "shape": {
+            "type": "rect",
+            "width": 70,
+            "height": 220,
+            "corner_radius": 30
+          },
+          "style": {
+            "fill": "#f2b48cff",
+            "stroke": {
+              "color": "#2b2a33ff",
+              "width": 4.0
+            }
+          }
+        }
+      ],
+      "track": {
+        "position": [
+          {
+            "frame": 0,
+            "value": {
+              "x": 130,
+              "y": -140
+            },
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "rotation": [
+          {
+            "frame": 0,
+            "value": -30,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          },
+          {
+            "frame": 24,
+            "value": -95,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          },
+          {
+            "frame": 47,
+            "value": -30,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "scale": [
+          {
+            "frame": 0,
+            "value": {
+              "x": 1.0,
+              "y": 1.0
+            },
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "opacity": [
+          {
+            "frame": 0,
+            "value": 1.0,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ]
+      },
+      "parent": 1,
+      "pivot": {
+        "x": 0,
+        "y": -90
+      }
+    },
+    {
+      "id": 3,
+      "name": "Forearm",
+      "visible": true,
+      "locked": false,
+      "start": 0,
+      "elements": [
+        {
+          "shape": {
+            "type": "rect",
+            "width": 60,
+            "height": 200,
+            "corner_radius": 28
+          },
+          "style": {
+            "fill": "#f2b48cff",
+            "stroke": {
+              "color": "#2b2a33ff",
+              "width": 4.0
+            }
+          }
+        }
+      ],
+      "track": {
+        "position": [
+          {
+            "frame": 0,
+            "value": {
+              "x": 0,
+              "y": 90
+            },
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "rotation": [
+          {
+            "frame": 0,
+            "value": -20,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          },
+          {
+            "frame": 24,
+            "value": -70,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          },
+          {
+            "frame": 47,
+            "value": -20,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "scale": [
+          {
+            "frame": 0,
+            "value": {
+              "x": 1.0,
+              "y": 1.0
+            },
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "opacity": [
+          {
+            "frame": 0,
+            "value": 1.0,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ]
+      },
+      "parent": 2,
+      "pivot": {
+        "x": 0,
+        "y": -80
+      }
+    },
+    {
+      "id": 4,
+      "name": "Hand",
+      "visible": true,
+      "locked": false,
+      "start": 0,
+      "elements": [
+        {
+          "shape": {
+            "type": "ellipse",
+            "radius_x": 42,
+            "radius_y": 42
+          },
+          "style": {
+            "fill": "#f2b48cff",
+            "stroke": {
+              "color": "#2b2a33ff",
+              "width": 4.0
+            }
+          }
+        }
+      ],
+      "track": {
+        "position": [
+          {
+            "frame": 0,
+            "value": {
+              "x": 0,
+              "y": 100
+            },
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "rotation": [
+          {
+            "frame": 0,
+            "value": 0,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "scale": [
+          {
+            "frame": 0,
+            "value": {
+              "x": 1.0,
+              "y": 1.0
+            },
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "opacity": [
+          {
+            "frame": 0,
+            "value": 1.0,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ]
+      },
+      "parent": 3
+    },
+    {
+      "id": 5,
+      "name": "Head",
+      "visible": true,
+      "locked": false,
+      "start": 0,
+      "elements": [
+        {
+          "shape": {
+            "type": "ellipse",
+            "radius_x": 95,
+            "radius_y": 95
+          },
+          "style": {
+            "fill": "#f2b48cff",
+            "stroke": {
+              "color": "#2b2a33ff",
+              "width": 4.0
+            }
+          }
+        }
+      ],
+      "track": {
+        "position": [
+          {
+            "frame": 0,
+            "value": {
+              "x": 0,
+              "y": -250
+            },
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "rotation": [
+          {
+            "frame": 0,
+            "value": 0,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          },
+          {
+            "frame": 24,
+            "value": 8,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          },
+          {
+            "frame": 47,
+            "value": 0,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "scale": [
+          {
+            "frame": 0,
+            "value": {
+              "x": 1.0,
+              "y": 1.0
+            },
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ],
+        "opacity": [
+          {
+            "frame": 0,
+            "value": 1.0,
+            "easing": {
+              "type": "ease_in_out"
+            }
+          }
+        ]
+      },
+      "parent": 1,
+      "pivot": {
+        "x": 0,
+        "y": 80
+      }
+    }
+  ],
+  "next_layer_id": 6
+}

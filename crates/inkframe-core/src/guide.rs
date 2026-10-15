@@ -93,7 +93,11 @@ impl Document {
             return own;
         };
         let keys = layer.track.position.keys();
-        let position = |frame: f32| Some(path.at(guide_progress(layer, &path, frame)));
+        // The guide is in the timeline's coordinates; a layer with a parent
+        // has its position in the parent's.
+        let into_parent =
+            self.parent_matrix(layer, frame as u32).inverse().unwrap_or(crate::Affine::IDENTITY);
+        let position = |frame: f32| Some(into_parent.apply(path.at(guide_progress(layer, &path, frame))));
         let mut rotation = layer.track.rotation.sample(frame).unwrap_or_default();
         if layer.track.orient_to_path {
             let (first, last) = (keys[0].frame, keys[keys.len() - 1].frame);
@@ -107,7 +111,7 @@ impl Document {
     /// layer's own transform. `None` if it isn't a guide or has no outline.
     pub fn guide_path(&self, guide: LayerId, frame: f32) -> Option<GuidePath> {
         let layer = self.layer(guide).filter(|l| l.guide)?;
-        let to_timeline = layer.track.sample(frame).to_affine();
+        let to_timeline = self.layer_matrix(layer, frame as u32);
         let outline = layer.elements.iter().find_map(|element| match &element.shape {
             Shape::Path(path) => Some(path.flatten()),
             shape @ (Shape::Rect { .. } | Shape::Ellipse { .. }) => {

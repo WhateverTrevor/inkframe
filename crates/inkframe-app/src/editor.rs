@@ -343,7 +343,7 @@ impl Editor {
         for open in &self.open_symbols {
             let instance = open.instance.and_then(|id| self.doc.layer(id));
             to_stage = match instance {
-                Some(layer) => to_stage.pre_concat(self.doc.pose(layer, open.return_frame).to_affine()),
+                Some(layer) => to_stage.pre_concat(self.doc.layer_matrix(layer, open.return_frame)),
                 None => Affine::translate(self.doc.stage_rect().center()),
             };
         }
@@ -361,7 +361,7 @@ impl Editor {
             match open.instance.and_then(|id| self.doc.layer(id)) {
                 Some(layer) => {
                     levels.push(Surrounding { timeline, frame: open.return_frame, to_stage, skip: layer.id });
-                    to_stage = to_stage.pre_concat(self.doc.pose(layer, open.return_frame).to_affine());
+                    to_stage = to_stage.pre_concat(self.doc.layer_matrix(layer, open.return_frame));
                 }
                 // Opened on its own: nothing from further out is shown.
                 None => {
@@ -666,7 +666,10 @@ impl Editor {
 
     /// Deletes every selected layer.
     pub fn delete_selected_layer(&mut self) {
+        let frame = self.frame;
         for id in self.selected_ids() {
+            // Its children stay where they are, hanging from what it hung from.
+            self.doc.release_children(id, frame);
             self.doc.remove_layer(id);
         }
         self.select(None);

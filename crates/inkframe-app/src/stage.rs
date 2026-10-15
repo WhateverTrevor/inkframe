@@ -28,6 +28,8 @@ const FIT_MARGIN: f32 = 24.0;
 const MAX_TEXTURE_SIDE: f32 = 4096.0;
 const MIN_ZOOM: f32 = 0.02;
 const MAX_ZOOM: f32 = 64.0;
+/// How close to the pivot a press grabs it, in screen points.
+const PIVOT_GRAB: f32 = 6.0;
 /// How close to a selection box edge a press skews instead of moving, in
 /// screen points.
 const SKEW_REACH: f32 = 3.0;
@@ -117,9 +119,10 @@ impl View {
 
 /// An in-progress mouse interaction on the stage.
 enum Gesture {
-    /// Dragging the selected layers, each from where it started. Positions
-    /// are in the timeline's coordinates.
-    Move { layers: Vec<(LayerId, Point)>, grab: Point },
+    /// Dragging the selected layers, each from where it started. Each
+    /// position is in its layer's parent's space, with the map there from
+    /// the timeline's coordinates, which `grab` is in.
+    Move { layers: Vec<(LayerId, Point, Affine)>, grab: Point },
     /// Dragging a selection box over empty stage. `adding` keeps what was
     /// already selected (Shift held).
     Marquee { start: Point, current: Point, adding: bool },
@@ -136,13 +139,24 @@ enum Gesture {
         handle: ScaleHandle,
         start: Transform,
         bounds: StageRect,
-        group: Vec<(LayerId, Transform)>,
+        group: Vec<GroupMember>,
+        /// Timeline coordinates to the space `start` is in (the parent's).
+        into_space: Affine,
     },
     /// Dragging an edge of the selection box to slant the layer. `grab` is
-    /// where the drag started, in the timeline's coordinates.
-    Skew { layer: LayerId, edge: ScaleHandle, start: Transform, bounds: StageRect, grab: Point },
+    /// where the drag started, in the space `start` is in.
+    Skew {
+        layer: LayerId,
+        edge: ScaleHandle,
+        start: Transform,
+        bounds: StageRect,
+        grab: Point,
+        into_space: Affine,
+    },
     /// Dragging the rotation knob or a corner's rotate zone.
-    Rotate { layer: LayerId, drag: RotateDrag, group: Vec<(LayerId, Transform)> },
+    Rotate { layer: LayerId, drag: RotateDrag, group: Vec<GroupMember>, into_space: Affine },
+    /// Dragging a layer's pivot to a new spot on the layer.
+    Pivot { layer: LayerId },
     /// Dragging an anchor point or one of its handles with the Subselection
     /// tool. `start` holds the shape's anchors from when the drag began, and
     /// the pointer is converted into the layer's local space with `to_local`.
@@ -196,6 +210,8 @@ struct OutlineHit {
 enum HandleHit {
     Scale(ScaleHandle),
     Rotate,
+    /// The pivot: the joint the layer turns and scales around.
+    Pivot,
     /// An edge of the box, between its handles, which slants the layer.
     /// Named by the edge's middle handle.
     Skew(ScaleHandle),
@@ -207,13 +223,18 @@ enum HandleHit {
 /// follow the layer through tweens, undo and edits in the inspector.
 struct Handles {
     layer: LayerId,
-    /// With several layers selected: each one and its pose on this frame.
-    /// The handles then go around them all, as an imaginary layer (`pose`)
-    /// that the real ones follow; see `transform_group`.
-    group: Vec<(LayerId, Transform)>,
+    /// With several layers selected: each one, its pose on this frame, and
+    /// its parents' placement. The handles then go around them all, as an
+    /// imaginary layer (`pose`) that the real ones follow; see
+    /// `transform_group`.
+    group: Vec<GroupMember>,
     pose: Transform,
-    /// The layer's bounds in its own local coordinates.
+    /// Maps the space `pose` is in (the layer's parent's) to the timeline's.
+    space: Affine,
+    /// The layer's bounds, measured from its pivot (the point `pose`
+    /// places), which is what the scale and rotate math works in.
     bounds: StageRect,
+    pivot: Pos2,
     scale: [(ScaleHandle, Pos2); 8],
     center: Pos2,
     top: Pos2,
@@ -233,27 +254,42 @@ impl Handles {
             .filter_map(|id| editor.doc.layer(id))
             .filter(|l| l.is_shown_at(frame) && !l.locked)
             .collect();
-        let (layer, group, bounds, pose) = match editable[..] {
+        // A layer hanging from another selected one already follows it, so
+        // transforming it as well would move it twice.
+        let ids: Vec<LayerId> = editable.iter().map(|l| l.id).collect();
+        let editable: Vec<_> =
+            editable.into_iter().filter(|l| !ids.iter().any(|&a| editor.doc.hangs_from(l, a))).collect();
+        let (layer, group, bounds, pose, space) = match editable[..] {
             [] => return None,
             [layer] => {
-                (layer, Vec::new(), editor.doc.layer_bounds(layer, frame)?, editor.doc.pose(layer, frame))
+                let bounds = editor.doc.layer_bounds(layer, frame)?;
+                let from_pivot = StageRect { min: bounds.min - layer.pivot, max: bounds.max - layer.pivot };
+                let space = editor.doc.parent_matrix(layer, frame);
+                (layer, Vec::new(), from_pivot, editor.doc.pose(layer, frame), space)
             }
             // Several: an upright box around them all, centered on its
             // own middle, standing in for a layer that holds them.
             [.., last] => {
                 let boxes = editable.iter().filter_map(|l| {
-                    let to_stage = editor.doc.pose(l, frame).to_affine();
+                    let to_stage = editor.doc.layer_matrix(l, frame);
                     StageRect::bounding(
                         editor.doc.layer_bounds(l, frame)?.corners().map(|c| to_stage.apply(c)),
                     )
                 });
                 let area = boxes.reduce(StageRect::union)?;
-                let group = editable.iter().map(|l| (l.id, editor.doc.pose(l, frame))).collect();
+                let group = editable
+                    .iter()
+                    .map(|l| GroupMember {
+                        id: l.id,
+                        pose: editor.doc.pose(l, frame),
+                        space: editor.doc.parent_matrix(l, frame),
+                    })
+                    .collect();
                 let bounds = StageRect::from_center_size(Point::ZERO, area.width(), area.height());
-                (last, group, bounds, Transform::at(area.center()))
+                (last, group, bounds, Transform::at(area.center()), Affine::IDENTITY)
             }
         };
-        let to_stage = pose.to_affine();
+        let to_stage = space.pre_concat(pose.to_affine());
         let screen = |local: Point| view.to_screen(to_stage.apply(local));
 
         let center = screen(bounds.center());
@@ -271,8 +307,10 @@ impl Handles {
 
         Some(Self {
             layer: layer.id,
+            pivot: view.to_screen(space.apply(pose.position)),
             group,
             pose,
+            space,
             bounds,
             scale: ScaleHandle::ALL.map(|h| (h, screen(h.local_position(bounds)))),
             center,
@@ -281,7 +319,14 @@ impl Handles {
         })
     }
 
-    fn hit(&self, p: Pos2, view: View) -> Option<HandleHit> {
+    /// `alt` is whether Option/Alt is held, which makes the pivot grabbable.
+    fn hit(&self, p: Pos2, view: View, alt: bool) -> Option<HandleHit> {
+        // The pivot starts in the middle of the layer, right where people
+        // grab it to move it, so it only takes the press with Option/Alt
+        // held. Then it comes first, since it's usually inside the layer.
+        if alt && self.group.is_empty() && p.distance(self.pivot) <= PIVOT_GRAB {
+            return Some(HandleHit::Pivot);
+        }
         if p.distance(self.knob) <= HANDLE_SIZE {
             return Some(HandleHit::Rotate);
         }
@@ -310,8 +355,8 @@ impl Handles {
             }
         }
         let inside = self
-            .pose
-            .to_affine()
+            .space
+            .pre_concat(self.pose.to_affine())
             .inverse()
             .is_some_and(|to_local| self.bounds.contains(to_local.apply(view.to_local(p))));
         let near_corner = self.scale.iter().any(|(h, pos)| h.is_corner() && pos.distance(p) <= ROTATE_ZONE);
@@ -322,6 +367,7 @@ impl Handles {
         let handle = match hit {
             HandleHit::Scale(handle) => handle,
             HandleHit::Rotate => return CursorIcon::Grab,
+            HandleHit::Pivot => return CursorIcon::Crosshair,
             // Top and bottom edges slide sideways; the sides slide up and down.
             HandleHit::Skew(edge) if edge.y != 0 => return CursorIcon::ResizeColumn,
             HandleHit::Skew(_) => return CursorIcon::ResizeRow,
@@ -612,7 +658,7 @@ impl StageView {
             let press = ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos());
             let space_held = ui.input(|i| i.key_down(egui::Key::Space));
             if let Some(press) = press {
-                self.gesture = self.begin_gesture(editor, press, view, space_held, shift);
+                self.gesture = self.begin_gesture(editor, press, view, space_held, shift, alt);
             }
         }
 
@@ -625,8 +671,11 @@ impl StageView {
                         // Constrain to the dominant axis, like every design tool.
                         if delta.x.abs() > delta.y.abs() { delta.y = 0.0 } else { delta.x = 0.0 }
                     }
-                    for &(id, start) in layers.iter() {
+                    for &(id, start, into_space) in layers.iter() {
                         if let Some(layer) = editor.doc.layer(id) {
+                            // The same distance on screen, measured in the
+                            // parent's space, which may be turned or scaled.
+                            let delta = into_space.apply(*grab + delta) - into_space.apply(*grab);
                             let pose =
                                 Transform { position: start + delta, ..editor.doc.pose(layer, editor.frame) };
                             editor.set_pose(id, pose);
@@ -634,25 +683,46 @@ impl StageView {
                     }
                 }
                 Some(Gesture::Marquee { current, .. }) => *current = p,
-                Some(Gesture::Scale { layer, handle, start, bounds, group }) => {
+                Some(Gesture::Scale { layer, handle, start, bounds, group, into_space }) => {
                     let options = ScaleOptions { proportional: shift, from_pivot: alt };
-                    let pose = scale_pose(start, *bounds, *handle, p, options);
+                    let pose = scale_pose(start, *bounds, *handle, into_space.apply(p), options);
                     if group.is_empty() {
                         editor.set_pose(*layer, pose);
                     } else {
                         transform_group(editor, group, start, &pose);
                     }
                 }
-                Some(Gesture::Skew { layer, edge, start, bounds, grab }) => {
-                    editor.set_pose(*layer, skew_pose(start, *bounds, *edge, *grab, p));
+                Some(Gesture::Skew { layer, edge, start, bounds, grab, into_space }) => {
+                    editor.set_pose(*layer, skew_pose(start, *bounds, *edge, *grab, into_space.apply(p)));
                 }
-                Some(Gesture::Rotate { layer, drag, group }) => {
-                    let pose = drag.update(p, shift);
+                Some(Gesture::Rotate { layer, drag, group, into_space }) => {
+                    let pose = drag.update(into_space.apply(p), shift);
                     if group.is_empty() {
                         editor.set_pose(*layer, pose);
                     } else {
                         transform_group(editor, group, &drag.start(), &pose);
                     }
+                }
+                Some(Gesture::Pivot { layer }) => {
+                    let frame = editor.frame;
+                    let Some(layer) = editor.doc.layer(*layer) else { return };
+                    // Moving the pivot leaves the drawing where it is, so the
+                    // layer's map to the timeline is the same before and after.
+                    let to_stage = editor.doc.layer_matrix(layer, frame);
+                    let Some(local) = to_stage.inverse().map(|m| m.apply(p)) else { return };
+                    // The box's corners, edge midpoints and center attract
+                    // it, since those are where a joint most often goes.
+                    let snap = editor.doc.layer_bounds(layer, frame).and_then(|bounds| {
+                        ScaleHandle::ALL
+                            .map(|h| h.local_position(bounds))
+                            .into_iter()
+                            .chain([bounds.center()])
+                            .find(|spot| {
+                                view.to_screen(to_stage.apply(*spot)).distance(pointer) <= PIVOT_GRAB
+                            })
+                    });
+                    let id = layer.id;
+                    editor.doc.set_pivot(id, snap.unwrap_or(local));
                 }
                 Some(Gesture::EditAnchor { target, part, start, closed, grab, to_local }) => {
                     // Move the part by however far the pointer has moved, so
@@ -679,6 +749,7 @@ impl StageView {
                     }
                 }
                 Some(Gesture::BendPath { layer, segment, s }) => {
+                    let p = into_parent_space(editor, *layer).apply(p);
                     let (out, into) = motion_path::bend_through(segment, *s, p);
                     if let Some(layer) = editor.doc.layer_mut(*layer) {
                         let position = &mut layer.track.position;
@@ -690,6 +761,7 @@ impl StageView {
                     }
                 }
                 Some(Gesture::PathHandle { layer, frame, out }) => {
+                    let p = into_parent_space(editor, *layer).apply(p);
                     if let Some(layer) = editor.doc.layer_mut(*layer) {
                         let position = &mut layer.track.position;
                         let key = position.key_at(*frame).map(|k| k.value);
@@ -772,8 +844,10 @@ impl StageView {
             }
         }
         if response.clicked() && editor.tool == Tool::Select {
-            let on_handle =
-                |pointer| Handles::for_selection(editor, view).and_then(|h| h.hit(pointer, view)).is_some();
+            let alt = ui.input(|i| i.modifiers.alt);
+            let on_handle = |pointer| {
+                Handles::for_selection(editor, view).and_then(|h| h.hit(pointer, view, alt)).is_some()
+            };
             if let Some(pointer) = response.interact_pointer_pos().filter(|p| !on_handle(*p)) {
                 let tolerance = HIT_TOLERANCE / view.zoom;
                 let hit = editor.hit_test(view.to_local(pointer), tolerance);
@@ -807,7 +881,9 @@ impl StageView {
         // nothing of its own to bend.
         let layer = self.motion_path_layer(editor).filter(|l| !follows_guide(editor, l))?;
         let segments = motion_path::segments(&layer.track.position);
-        let near = |at: Point, reach: f32| view.to_screen(at).distance(pointer) <= reach;
+        // The keys are in the parent's space, wherever the parent is now.
+        let space = editor.doc.parent_matrix(layer, editor.frame);
+        let near = |at: Point, reach: f32| view.to_screen(space.apply(at)).distance(pointer) <= reach;
         for segment in segments.iter().filter(|s| s.bent) {
             let [p0, p1, p2, p3] = segment.points;
             if near(p1, ANCHOR_HIT) && p1 != p0 {
@@ -817,11 +893,12 @@ impl StageView {
                 return Some(PathHit::Handle { frame: segment.to, out: false });
             }
         }
-        let local = view.to_local(pointer);
+        let local = into_parent_space(editor, layer.id).apply(view.to_local(pointer));
+        let zoom = view.zoom * space.average_scale();
         segments
             .iter()
             .map(|segment| (segment, motion_path::nearest(segment, local)))
-            .filter(|(_, (_, distance))| distance * view.zoom <= HIT_TOLERANCE + 2.0)
+            .filter(|(_, (_, distance))| distance * zoom <= HIT_TOLERANCE + 2.0)
             .min_by(|a, b| a.1.1.total_cmp(&b.1.1))
             .map(|(segment, (s, _))| PathHit::Segment { segment: *segment, s })
     }
@@ -839,7 +916,7 @@ impl StageView {
         if follows_guide(editor, layer) {
             let keys = position.keys();
             for frame in keys[0].frame..=keys[keys.len() - 1].frame {
-                let at = view.to_screen(editor.doc.pose(layer, frame).position);
+                let at = view.to_screen(editor.doc.layer_matrix(layer, frame).apply(layer.pivot));
                 if position.key_at(frame).is_some() {
                     let square = Rect::from_center_size(at, Vec2::splat(6.0));
                     painter.rect_filled(square, 0.0, Color32::WHITE);
@@ -850,20 +927,24 @@ impl StageView {
             }
             return;
         }
+        // A child's path is in its parent's space, so it rides along with
+        // the parent as it is on this frame.
+        let space = editor.doc.parent_matrix(layer, editor.frame);
+        let screen = |p: Point| view.to_screen(space.apply(p));
         for segment in motion_path::segments(position) {
             let curve = MotionCurve { points: segment.points };
-            let points: Vec<Pos2> = (0..=32).map(|i| view.to_screen(curve.at(i as f32 / 32.0))).collect();
+            let points: Vec<Pos2> = (0..=32).map(|i| screen(curve.at(i as f32 / 32.0))).collect();
             painter.extend(egui::Shape::dashed_line(&points, (1.0, path_color), 5.0, 3.0));
         }
         let keys = position.keys();
         let (first, last) = (keys[0].frame, keys[keys.len() - 1].frame);
         for frame in first..=last {
             if let Some(at) = position.sample(frame as f32) {
-                painter.circle_filled(view.to_screen(at), 2.0, path_color);
+                painter.circle_filled(screen(at), 2.0, path_color);
             }
         }
         for segment in motion_path::segments(position).iter().filter(|s| s.bent) {
-            let [p0, p1, p2, p3] = segment.points.map(|p| view.to_screen(p));
+            let [p0, p1, p2, p3] = segment.points.map(screen);
             for (anchor, handle) in [(p0, p1), (p3, p2)] {
                 if anchor != handle {
                     painter.line_segment([anchor, handle], (1.0, SELECTION));
@@ -872,7 +953,7 @@ impl StageView {
             }
         }
         for key in keys {
-            let square = Rect::from_center_size(view.to_screen(key.value), Vec2::splat(6.0));
+            let square = Rect::from_center_size(screen(key.value), Vec2::splat(6.0));
             painter.rect_filled(square, 0.0, Color32::WHITE);
             painter.rect_stroke(square, 0.0, (1.0, SELECTION), StrokeKind::Middle);
         }
@@ -1019,7 +1100,7 @@ impl StageView {
             && let Some(layer) = editor.doc.layer(editing.layer)
         {
             let layout = inkframe_render::layout_text(text);
-            let to_stage = editor.doc.pose(layer, editor.frame).to_affine();
+            let to_stage = editor.doc.layer_matrix(layer, editor.frame);
             let (x, baseline) = caret_position(&layout, editing.cursor.cursor);
             let top = view.to_screen(to_stage.apply(Point::new(x, baseline - layout.ascent)));
             let bottom = view.to_screen(to_stage.apply(Point::new(x, baseline + layout.descent)));
@@ -1045,7 +1126,7 @@ impl StageView {
         else {
             return;
         };
-        let to_stage = editor.doc.pose(layer, editor.frame).to_affine();
+        let to_stage = editor.doc.layer_matrix(layer, editor.frame);
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
         let layout = inkframe_render::layout_text(text);
 
@@ -1087,6 +1168,7 @@ impl StageView {
         view: View,
         space_held: bool,
         shift: bool,
+        alt: bool,
     ) -> Option<Gesture> {
         if space_held {
             return Some(Gesture::Pan);
@@ -1098,19 +1180,25 @@ impl StageView {
                 // whatever shape happens to be underneath them.
                 if let Some(handles) = Handles::for_selection(editor, view) {
                     let layer = handles.layer;
-                    match handles.hit(press, view) {
+                    // The handle math works in the space the pose is in: the
+                    // layer's parent's, which is the timeline's for a layer
+                    // without one.
+                    let into_space = handles.space.inverse().unwrap_or(Affine::IDENTITY);
+                    let q = into_space.apply(p);
+                    match handles.hit(press, view, alt) {
                         Some(HandleHit::Scale(handle)) => {
                             let (start, bounds, group) = (handles.pose, handles.bounds, handles.group);
-                            return Some(Gesture::Scale { layer, handle, start, bounds, group });
+                            return Some(Gesture::Scale { layer, handle, start, bounds, group, into_space });
                         }
                         Some(HandleHit::Rotate) => {
-                            let drag = RotateDrag::new(handles.pose, p);
-                            return Some(Gesture::Rotate { layer, drag, group: handles.group });
+                            let drag = RotateDrag::new(handles.pose, q);
+                            return Some(Gesture::Rotate { layer, drag, group: handles.group, into_space });
                         }
                         Some(HandleHit::Skew(edge)) => {
                             let (start, bounds) = (handles.pose, handles.bounds);
-                            return Some(Gesture::Skew { layer, edge, start, bounds, grab: p });
+                            return Some(Gesture::Skew { layer, edge, start, bounds, grab: q, into_space });
                         }
+                        Some(HandleHit::Pivot) => return Some(Gesture::Pivot { layer }),
                         None => {}
                     }
                 }
@@ -1141,12 +1229,18 @@ impl StageView {
                     editor.select(Some(hit));
                 }
                 let frame = editor.frame;
-                let layers = editor
-                    .selected_ids()
-                    .into_iter()
-                    .filter_map(|id| editor.doc.layer(id))
+                let selected = editor.selected_ids();
+                let layers = selected
+                    .iter()
+                    .filter_map(|&id| editor.doc.layer(id))
                     .filter(|l| !l.locked)
-                    .map(|l| (l.id, editor.doc.pose(l, frame).position))
+                    // Children of a moving parent already come along.
+                    .filter(|l| !selected.iter().any(|&a| editor.doc.hangs_from(l, a)))
+                    .map(|l| {
+                        let into_space =
+                            editor.doc.parent_matrix(l, frame).inverse().unwrap_or(Affine::IDENTITY);
+                        (l.id, editor.doc.pose(l, frame).position, into_space)
+                    })
                     .collect();
                 Some(Gesture::Move { layers, grab: p })
             }
@@ -1167,7 +1261,7 @@ impl StageView {
                 };
                 self.anchor_selection = Some(target);
                 let layer = editor.doc.layer(target.layer)?;
-                let to_local = editor.doc.pose(layer, editor.frame).to_affine().inverse()?;
+                let to_local = editor.doc.layer_matrix(layer, editor.frame).inverse()?;
                 let (start, closed) = layer.elements.get(target.element)?.shape.to_anchors();
                 Some(Gesture::EditAnchor { target, part, start, closed, grab: to_local.apply(p), to_local })
             }
@@ -1185,7 +1279,7 @@ impl StageView {
             return None;
         }
         let layer = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !l.locked)?;
-        let to_stage = editor.doc.pose(layer, editor.frame).to_affine();
+        let to_stage = editor.doc.layer_matrix(layer, editor.frame);
         let local = to_stage.inverse()?.apply(view.to_local(pointer));
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
 
@@ -1239,7 +1333,7 @@ impl StageView {
         let Some(layer) = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame) && !l.locked) else {
             return Vec::new();
         };
-        let to_stage = editor.doc.pose(layer, editor.frame).to_affine();
+        let to_stage = editor.doc.layer_matrix(layer, editor.frame);
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
 
         let mut handles = Vec::new();
@@ -1272,7 +1366,7 @@ impl StageView {
     /// of the selected anchor.
     fn draw_anchor_overlay(&self, painter: &egui::Painter, editor: &Editor, view: View) {
         let Some(layer) = editor.selected_layer().filter(|l| l.is_shown_at(editor.frame)) else { return };
-        let to_stage = editor.doc.pose(layer, editor.frame).to_affine();
+        let to_stage = editor.doc.layer_matrix(layer, editor.frame);
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
 
         for (element, e) in layer.elements.iter().enumerate() {
@@ -1399,15 +1493,19 @@ impl StageView {
                 continue;
             }
             if let Some(bounds) = editor.doc.layer_bounds(layer, editor.frame) {
-                let pose = editor.doc.pose(layer, editor.frame);
-                let to_stage = pose.to_affine();
+                let to_stage = editor.doc.layer_matrix(layer, editor.frame);
                 let corners = bounds.corners().map(|c| view.to_screen(to_stage.apply(c))).to_vec();
                 painter.add(egui::Shape::closed_line(corners, (1.5, SELECTION)));
                 // The pivot (the point the layer rotates and scales around)
                 // matters only when there's one layer to rotate or scale.
+                // It's drawn as a ring with a cross, so it reads as something
+                // to grab rather than a dot of the drawing.
                 if selected.len() == 1 {
-                    let pivot = view.to_screen(pose.position);
-                    painter.circle(pivot, 3.5, Color32::WHITE, (1.5, SELECTION));
+                    let pivot = view.to_screen(to_stage.apply(layer.pivot));
+                    painter.circle(pivot, 4.5, Color32::WHITE, (1.5, SELECTION));
+                    let arm = vec2(3.0, 0.0);
+                    painter.line_segment([pivot - arm, pivot + arm], (1.0, SELECTION));
+                    painter.line_segment([pivot - arm.rot90(), pivot + arm.rot90()], (1.0, SELECTION));
                 }
             }
         }
@@ -1488,13 +1586,15 @@ impl StageView {
             Some(Gesture::Move { .. }) => CursorIcon::Move,
             Some(Gesture::Marquee { .. }) => CursorIcon::Crosshair,
             Some(Gesture::Rotate { .. }) => CursorIcon::Grabbing,
+            Some(Gesture::Pivot { .. }) => CursorIcon::Crosshair,
             Some(Gesture::EditAnchor { .. }) => CursorIcon::Move,
             Some(Gesture::BendPath { .. } | Gesture::PathHandle { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Scale { handle, .. }) => handle_cursor(HandleHit::Scale(*handle)),
             Some(Gesture::Skew { edge, .. }) => handle_cursor(HandleHit::Skew(*edge)),
             Some(Gesture::DrawShape { .. } | Gesture::Pencil { .. }) => CursorIcon::Crosshair,
             None => {
-                let hovered = handles.zip(response.hover_pos()).and_then(|(h, p)| h.hit(p, view));
+                let alt = ui.input(|i| i.modifiers.alt);
+                let hovered = handles.zip(response.hover_pos()).and_then(|(h, p)| h.hit(p, view, alt));
                 match (hovered, editor.tool) {
                     (Some(hit), _) => handle_cursor(hit),
                     // A hand over the motion path says it can be dragged.
@@ -1701,7 +1801,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
                 .filter(|l| {
                     // The layer's box on the stage, from its corners, so rotated
                     // layers are judged by where they actually are.
-                    let to_stage = editor.doc.pose(l, frame).to_affine();
+                    let to_stage = editor.doc.layer_matrix(l, frame);
                     editor
                         .doc
                         .layer_bounds(l, frame)
@@ -1722,6 +1822,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
         | Gesture::Scale { .. }
         | Gesture::Skew { .. }
         | Gesture::Rotate { .. }
+        | Gesture::Pivot { .. }
         | Gesture::EditAnchor { .. }
         | Gesture::BendPath { .. }
         | Gesture::PathHandle { .. }
@@ -1801,21 +1902,21 @@ struct TextEditing {
 /// slants it, which its own scale can't express. For those, the layer's new
 /// matrix is worked out directly and turned back into a pose, skew included
 /// (`Transform::from_affine`).
-fn transform_group(
-    editor: &mut Editor,
-    group: &[(LayerId, Transform)],
-    before: &Transform,
-    after: &Transform,
-) {
+///
+/// A layer with a parent has its pose in the parent's space, so it always
+/// takes the matrix route: the change is carried into that space first.
+fn transform_group(editor: &mut Editor, group: &[GroupMember], before: &Transform, after: &Transform) {
     let factor = Point::new(after.scale.x / before.scale.x, after.scale.y / before.scale.y);
     let turn = (after.rotation - before.rotation).to_radians();
     let (sin, cos) = turn.sin_cos();
     let uneven = (factor.x - factor.y).abs() > 1e-4;
     let group_change = before.to_affine().inverse().map(|undo| after.to_affine().pre_concat(undo));
-    for &(id, start) in group {
+    for &GroupMember { id, pose: start, space } in group {
         let slanted = start.rotation % 90.0 != 0.0 || start.skew != Point::ZERO;
-        let pose = match group_change {
-            Some(change) if uneven && slanted => {
+        let parented = space != Affine::IDENTITY;
+        let in_space = |change: Affine| Some(space.inverse()?.pre_concat(change).pre_concat(space));
+        let pose = match group_change.and_then(in_space) {
+            Some(change) if parented || (uneven && slanted) => {
                 let mut pose = start.from_affine(change.pre_concat(start.to_affine()));
                 // The matrix only knows the angle modulo a full turn; keep the
                 // layer's own count of turns, so a tween through it still spins
@@ -1838,6 +1939,22 @@ fn transform_group(
         };
         editor.set_pose(id, pose);
     }
+}
+
+/// Maps timeline coordinates into the space a layer's position keys are in:
+/// its parent's.
+fn into_parent_space(editor: &Editor, layer: LayerId) -> Affine {
+    let layer = editor.doc.layer(layer);
+    layer.and_then(|l| editor.doc.parent_matrix(l, editor.frame).inverse()).unwrap_or(Affine::IDENTITY)
+}
+
+/// One layer of a multi-layer selection, as it was when a gesture began.
+#[derive(Debug, Clone, Copy)]
+struct GroupMember {
+    id: LayerId,
+    pose: Transform,
+    /// Its parent's placement on the timeline (identity without a parent).
+    space: Affine,
 }
 
 fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
@@ -1874,7 +1991,7 @@ fn text_of_mut(editor: &mut Editor, layer: LayerId, element: usize) -> Option<&m
 
 /// Maps the timeline's coordinates into a layer's own, where its shapes are.
 fn layer_to_local(editor: &Editor, layer: LayerId) -> Option<Affine> {
-    editor.doc.pose(editor.doc.layer(layer)?, editor.frame).to_affine().inverse()
+    editor.doc.layer_matrix(editor.doc.layer(layer)?, editor.frame).inverse()
 }
 
 /// Moves `end` so the rectangle from `start` is a square, keeping the drag direction.
@@ -2292,8 +2409,14 @@ mod tests {
     #[test]
     fn several_layers_turn_together_around_their_middle() {
         let (mut editor, a, b) = two_boxes();
-        let group: Vec<(LayerId, Transform)> =
-            [a, b].iter().map(|&id| (id, editor.doc.layer(id).unwrap().transform_at(0))).collect();
+        let group: Vec<GroupMember> = [a, b]
+            .iter()
+            .map(|&id| GroupMember {
+                id,
+                pose: editor.doc.layer(id).unwrap().transform_at(0),
+                space: Affine::IDENTITY,
+            })
+            .collect();
         let before = Transform::at(Point::new(400.0, 200.0));
         transform_group(&mut editor, &group, &before, &Transform { rotation: 90.0, ..before });
 
@@ -2341,6 +2464,152 @@ mod tests {
 
         let rotation = pose(&h, id).rotation;
         assert!((rotation - 90.0).abs() < 1.0, "rotation {rotation}");
+    }
+
+    /// Where a point on a layer's drawing is on the stage.
+    fn on_stage(harness: &Harness<'_, State>, id: LayerId, local: Point) -> Point {
+        let editor = &harness.state().1;
+        let layer = editor.doc.layer(id).unwrap();
+        editor.doc.layer_matrix(layer, editor.frame).apply(local)
+    }
+
+    #[test]
+    fn dragging_the_pivot_moves_it_but_not_the_layer() {
+        let (editor, id) = editor_with_selected_box();
+        let mut h = harness(editor);
+
+        // The pivot starts in the middle; Option-drag it up and to the
+        // right, short of the corner, which would snap it.
+        let from = screen(&h, 400.0, 400.0);
+        let to = screen(&h, 470.0, 340.0);
+        hold_alt(&mut h, true);
+        drag(&mut h, from, &[from + vec2(10.0, -10.0), to]);
+
+        let pivot = h.state().1.doc.layer(id).unwrap().pivot;
+        assert!(pivot.distance(Point::new(70.0, -60.0)) < 1.0, "pivot {pivot:?}");
+        // The box itself stayed put.
+        let corner = on_stage(&h, id, Point::new(-100.0, -100.0));
+        assert!(corner.distance(Point::new(300.0, 300.0)) < 0.1, "corner {corner:?}");
+    }
+
+    #[test]
+    fn a_plain_drag_on_the_pivot_moves_the_layer() {
+        let (editor, id) = editor_with_selected_box();
+        let mut h = harness(editor);
+        let (from, to) = (screen(&h, 400.0, 400.0), screen(&h, 450.0, 400.0));
+        drag(&mut h, from, &[from + vec2(10.0, 0.0), to]);
+        assert_eq!(h.state().1.doc.layer(id).unwrap().pivot, Point::ZERO);
+        assert!(pose(&h, id).position.distance(Point::new(450.0, 400.0)) < 1.0);
+    }
+
+    fn hold_alt(harness: &mut Harness<'_, State>, held: bool) {
+        let modifiers = egui::Modifiers { alt: held, ..egui::Modifiers::NONE };
+        harness.event(egui::Event::ModifiersChanged(modifiers));
+        harness.step();
+    }
+
+    #[test]
+    fn the_pivot_snaps_to_a_corner() {
+        let (editor, id) = editor_with_selected_box();
+        let mut h = harness(editor);
+        let from = screen(&h, 400.0, 400.0);
+        let to = screen(&h, 300.0, 500.0) + vec2(3.0, -2.0);
+        hold_alt(&mut h, true);
+        drag(&mut h, from, &[from + vec2(-10.0, 10.0), to]);
+        assert_eq!(h.state().1.doc.layer(id).unwrap().pivot, Point::new(-100.0, 100.0));
+    }
+
+    #[test]
+    fn rotating_swings_the_layer_around_its_pivot() {
+        let (mut editor, id) = editor_with_selected_box();
+        // The pivot on the middle of the left edge, like an elbow.
+        editor.doc.set_pivot(id, Point::new(-100.0, 0.0));
+        let mut h = harness(editor);
+
+        let knob = {
+            let (stage, editor) = h.state();
+            let view = stage.view(stage.last_area, &editor.doc);
+            Handles::for_selection(editor, view).unwrap().knob
+        };
+        let pivot = screen(&h, 300.0, 400.0);
+        // The knob stays above the box's middle; swing it a quarter turn
+        // clockwise around the elbow.
+        let turned = |degrees: f32| {
+            let (sin, cos) = degrees.to_radians().sin_cos();
+            let v = knob - pivot;
+            pivot + vec2(v.x * cos - v.y * sin, v.x * sin + v.y * cos)
+        };
+        let path = [turned(30.0), turned(60.0), turned(90.0)];
+        drag(&mut h, knob, &path);
+
+        assert!((pose(&h, id).rotation - 90.0).abs() < 1.0, "rotation {}", pose(&h, id).rotation);
+        // The elbow stayed where it was; the far edge swung down.
+        let elbow = on_stage(&h, id, Point::new(-100.0, 0.0));
+        assert!(elbow.distance(Point::new(300.0, 400.0)) < 0.5, "elbow {elbow:?}");
+        let hand = on_stage(&h, id, Point::new(100.0, 0.0));
+        assert!(hand.distance(Point::new(300.0, 600.0)) < 4.0, "hand {hand:?}");
+    }
+
+    /// A box at (400, 400) turned a quarter turn, with a smaller box at
+    /// (700, 400) attached to it and selected.
+    fn parent_and_child() -> (Editor, LayerId, LayerId) {
+        let (mut editor, parent) = editor_with_selected_box();
+        editor.set_pose(parent, Transform { rotation: 90.0, ..Transform::at(Point::new(400.0, 400.0)) });
+        let small = Element {
+            shape: Shape::Rect { width: 100.0, height: 100.0, corner_radius: 0.0 },
+            style: Style { stroke: None, ..editor.draw_style },
+        };
+        let child = editor.doc.add_layer("Hand", vec![small], 0, Transform::at(Point::new(700.0, 400.0)));
+        assert!(editor.doc.set_parent(child, Some(parent), 0));
+        editor.selection = Some(child);
+        (editor, parent, child)
+    }
+
+    #[test]
+    fn a_child_drags_where_the_pointer_goes_inside_a_turned_parent() {
+        let (editor, _, child) = parent_and_child();
+        let mut h = harness(editor);
+
+        let handles_at = {
+            let (stage, editor) = h.state();
+            let view = stage.view(stage.last_area, &editor.doc);
+            Handles::for_selection(editor, view).unwrap().center
+        };
+        assert!(handles_at.distance(screen(&h, 700.0, 400.0)) < 0.5, "the handles go around the child");
+
+        let from = screen(&h, 700.0, 400.0);
+        let to = screen(&h, 800.0, 400.0);
+        drag(&mut h, from, &[from + vec2(10.0, 0.0), to]);
+
+        // Rightward on the stage is "up" in the turned parent's space, so the
+        // child's own key moved along y, and on the stage it went right.
+        let at = on_stage(&h, child, Point::ZERO);
+        assert!(at.distance(Point::new(800.0, 400.0)) < 1.0, "child at {at:?}");
+        let key = pose(&h, child).position;
+        assert!((key.y - (-400.0)).abs() < 1.0, "key {key:?}");
+    }
+
+    #[test]
+    fn dragging_a_parent_and_child_together_moves_the_child_once() {
+        let (mut editor, parent, child) = parent_and_child();
+        editor.select_many(&[parent, child]);
+        let mut h = harness(editor);
+        let from = screen(&h, 400.0, 400.0);
+        let to = screen(&h, 400.0, 500.0);
+        drag(&mut h, from, &[from + vec2(0.0, 10.0), to]);
+        let at = on_stage(&h, child, Point::ZERO);
+        assert!(at.distance(Point::new(700.0, 500.0)) < 1.0, "child at {at:?}");
+    }
+
+    #[test]
+    fn turning_the_parent_carries_the_child() {
+        let (mut editor, parent, child) = parent_and_child();
+        editor.set_pose(parent, Transform { rotation: 180.0, ..Transform::at(Point::new(400.0, 400.0)) });
+        let h = harness(editor);
+        // A further quarter turn about (400, 400) takes the hand from the
+        // right of the box to below it.
+        let at = on_stage(&h, child, Point::ZERO);
+        assert!(at.distance(Point::new(400.0, 700.0)) < 0.5, "child at {at:?}");
     }
 
     #[test]

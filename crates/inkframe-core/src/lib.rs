@@ -22,6 +22,7 @@ mod guide;
 mod history;
 mod image;
 mod mask;
+mod rig;
 mod shape;
 mod symbol;
 mod text;

@@ -210,6 +210,13 @@ impl Affine {
         Point::new(self.a * p.x + self.c * p.y + self.e, self.b * p.x + self.d * p.y + self.f)
     }
 
+    /// How much the transform enlarges things on average: the square root
+    /// of how much it scales areas. Good for turning a distance measured on
+    /// screen into one inside the transform, when it may be stretched.
+    pub fn average_scale(&self) -> f32 {
+        (self.a * self.d - self.b * self.c).abs().sqrt()
+    }
+
     /// The transform that undoes this one, or `None` if it collapses space
     /// (for example a scale of zero), in which case nothing can be mapped back.
     pub fn inverse(&self) -> Option<Affine> {

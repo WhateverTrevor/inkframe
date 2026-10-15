@@ -24,7 +24,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 12;
+pub const FORMAT_VERSION: u32 = 13;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -115,6 +115,17 @@ pub struct Layer {
     /// The mask layer this layer is seen through, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub masked_by: Option<LayerId>,
+    /// The layer whose motion this one inherits, if any (see `rig.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<LayerId>,
+    /// The point, in the layer's own coordinates, that it rotates and
+    /// scales around; its position is where this point sits.
+    #[serde(default, skip_serializing_if = "is_origin")]
+    pub pivot: Point,
+}
+
+fn is_origin(p: &Point) -> bool {
+    *p == Point::ZERO
 }
 
 /// A styled shape inside a layer.
@@ -298,6 +309,8 @@ impl Document {
             follow: None,
             mask: false,
             masked_by: None,
+            parent: None,
+            pivot: Point::ZERO,
         });
         Some(id)
     }

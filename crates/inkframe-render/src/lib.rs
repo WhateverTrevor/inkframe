@@ -197,7 +197,7 @@ pub fn render_symbol_thumbnail(
         .filter(|l| l.is_shown_at(frame))
         .filter_map(|l| {
             let local = doc.layer_bounds(l, frame)?;
-            let to_symbol = doc.pose(l, frame).to_affine();
+            let to_symbol = doc.layer_matrix(l, frame);
             inkframe_core::Rect::bounding(local.corners().map(|c| to_symbol.apply(c)))
         })
         .reduce(inkframe_core::Rect::union)?;
@@ -264,7 +264,8 @@ fn render_layers(
         if opacity <= 0.0 {
             continue;
         }
-        let matrix = parent.pre_concat(transform.to_affine());
+        // Through the layer's own parents and pivot (see `rig.rs` in the core).
+        let matrix = parent.pre_concat(doc.layer_matrix(layer, frame));
         let mask = doc.mask_for(layer, frame).filter(|_| !layer.mask);
 
         if opacity >= 1.0 && mask.is_none() {
@@ -321,7 +322,8 @@ fn mask_stencil(
     let mut drawing =
         Pixmap::new(scratch.width(), scratch.height()).expect("same size as the scratch buffer");
     let untinted = Style { tint: None, ..style };
-    draw_layer(&mut drawing.as_mut(), doc, mask, frame, parent.pre_concat(pose.to_affine()), untinted, depth);
+    let matrix = parent.pre_concat(doc.layer_matrix(mask, frame));
+    draw_layer(&mut drawing.as_mut(), doc, mask, frame, matrix, untinted, depth);
     let mut stencil = Mask::from_pixmap(drawing.as_ref(), MaskType::Alpha);
     let opacity = pose.opacity.clamp(0.0, 1.0);
     if opacity < 1.0 {

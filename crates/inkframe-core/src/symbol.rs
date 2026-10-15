@@ -225,7 +225,7 @@ impl Document {
                 .filter(|inner| inner.is_shown_at(local_frame))
                 .filter_map(|inner| {
                     let bounds = self.layer_bounds_at_depth(inner, local_frame, depth + 1)?;
-                    let to_parent = self.pose(inner, local_frame).to_affine();
+                    let to_parent = self.layer_matrix(inner, local_frame);
                     Rect::bounding(bounds.corners().map(|c| to_parent.apply(c)))
                 })
                 .reduce(Rect::union)
@@ -255,14 +255,15 @@ impl Document {
         tolerance: f32,
         depth: usize,
     ) -> bool {
-        let transform = self.pose(layer, frame);
-        let Some(to_local) = transform.to_affine().inverse() else {
+        let matrix = self.layer_matrix(layer, frame);
+        let Some(to_local) = matrix.inverse() else {
             return false; // Scaled to nothing: there's nothing to click on.
         };
         let local = to_local.apply(point);
         // Tolerance is given in parent units; convert it to local units so a
-        // layer scaled up 4× doesn't get a 4× bigger click target.
-        let scale = transform.scale.x.abs().max(transform.scale.y.abs()).max(1e-6);
+        // layer scaled up 4× (by itself or its parents) doesn't get a 4×
+        // bigger click target. The matrix's area scale gives the average.
+        let scale = matrix.average_scale().max(1e-6);
         let local_tolerance = tolerance / scale;
 
         layer.elements.iter().any(|e| e.shape.hit_test(local, &e.style, local_tolerance))
