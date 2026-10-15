@@ -39,6 +39,8 @@ enum Command {
     LayerViaCopy,
     LayerViaCut,
     MergeDown,
+    /// Writes the current frame as a layered Photoshop file.
+    ExportPsd,
     /// Opens the Adjustments window with this adjustment.
     Adjust(AdjustmentKind),
     Cut,
@@ -84,6 +86,10 @@ enum Command {
     ZoomOut,
     ZoomFit,
     ZoomActualSize,
+    /// Turns the view (not the drawing) 15° one way or the other, or back.
+    RotateViewLeft,
+    RotateViewRight,
+    ResetRotation,
     /// A toolbar slot's key: its last-used tool, or with `cycle` the next
     /// tool in the slot.
     UseSlot {
@@ -167,6 +173,9 @@ impl InkframeApp {
             }
             app.timeline.set_graph_mode(AutoScreenshot::graph());
             app.xsheet.open = AutoScreenshot::exposure_sheet();
+            if let Some(degrees) = AutoScreenshot::view_rotation() {
+                app.stage.rotate_view(degrees);
+            }
             if AutoScreenshot::lip_sync() {
                 app.lip_sync.open(&app.editor);
             }
@@ -198,6 +207,7 @@ impl InkframeApp {
                 self.save_as();
             }
             Command::Export => self.export.open(&self.editor.doc),
+            Command::ExportPsd => self.export_psd(),
             // With a painting or selection tool, Select All and Deselect
             // work on pixels, as in Photoshop; otherwise on layers.
             Command::SelectAll if editor.tool.on_pixels() && editor.paint_target().is_some() => {
@@ -278,6 +288,9 @@ impl InkframeApp {
             Command::ZoomOut => self.stage.zoom_by(&editor.doc, 0.8),
             Command::ZoomFit => self.stage.zoom_to_fit(),
             Command::ZoomActualSize => self.stage.zoom_to_actual_size(&editor.doc),
+            Command::RotateViewLeft => self.stage.rotate_view(-15.0),
+            Command::RotateViewRight => self.stage.rotate_view(15.0),
+            Command::ResetRotation => self.stage.reset_rotation(),
             Command::UseSlot { group, cycle } => editor.use_slot(group, cycle),
             Command::FinishPath => self.stage.finish_path(editor, false),
             Command::RemovePathPoint => self.stage.remove_last_path_point(),
@@ -408,6 +421,11 @@ impl InkframeApp {
                 (Key::Home, Command::FirstFrame),
                 (Key::End, Command::LastFrame),
                 (Key::Delete, Command::DeleteLayer),
+                // Krita's keys for turning the view: 4 and 6 either way, 5
+                // back upright.
+                (Key::Num4, Command::RotateViewLeft),
+                (Key::Num6, Command::RotateViewRight),
+                (Key::Num5, Command::ResetRotation),
                 (Key::Backspace, Command::DeleteLayer),
             ];
             for (key, command) in plain_keys {
@@ -478,6 +496,7 @@ impl InkframeApp {
                 item(ui, "Save As…", Some(shortcuts::SAVE_AS), Command::SaveAs, true);
                 ui.separator();
                 item(ui, "Export…", Some(shortcuts::EXPORT), Command::Export, true);
+                item(ui, "Export PSD…", None, Command::ExportPsd, true);
             });
             ui.menu_button("Edit", |ui| {
                 item(ui, "Undo", Some(shortcuts::UNDO), Command::Undo, self.editor.history.can_undo());
@@ -623,6 +642,11 @@ impl InkframeApp {
                 item(ui, "Fit Stage", Some(shortcuts::ZOOM_FIT), Command::ZoomFit, true);
                 item(ui, "Actual Size", Some(shortcuts::ZOOM_100), Command::ZoomActualSize, true);
                 ui.separator();
+                item(ui, "Rotate View Left (4)", None, Command::RotateViewLeft, true);
+                item(ui, "Rotate View Right (6)", None, Command::RotateViewRight, true);
+                item(ui, "Reset Rotation (5)", None, Command::ResetRotation, true);
+                ui.weak("Or Shift+Space and drag to turn it freely.");
+                ui.separator();
                 ui.checkbox(&mut self.editor.onion.enabled, "Onion Skin");
             });
 
@@ -663,13 +687,28 @@ impl InkframeApp {
     fn import_image(&mut self) {
         let Some(path) = rfd::FileDialog::new()
             .set_title("Import to stage")
-            .add_filter("Images", &IMAGE_EXTENSIONS)
+            .add_filter("Images and Photoshop files", &[&IMAGE_EXTENSIONS[..], &["psd"]].concat())
             .pick_file()
         else {
             return;
         };
         if let Err(message) = self.editor.import_image(&path) {
             show_error("Couldn't import the image", &message);
+        }
+    }
+
+    /// File › Export PSD: the current frame, layer by layer.
+    fn export_psd(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("Export Photoshop file")
+            .add_filter("Photoshop file", &["psd"])
+            .set_file_name(format!("{}.psd", self.editor.display_name()))
+            .save_file()
+        else {
+            return;
+        };
+        if let Err(message) = self.editor.export_psd(&path) {
+            show_error("Couldn't export the Photoshop file", &message);
         }
     }
 
@@ -687,7 +726,7 @@ impl InkframeApp {
         });
         for path in dropped {
             let extension = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-            if IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+            if IMAGE_EXTENSIONS.contains(&extension.as_str()) || extension == "psd" {
                 if let Err(message) = self.editor.import_image(&path) {
                     show_error("Couldn't import the image", &message);
                 }
@@ -698,7 +737,10 @@ impl InkframeApp {
             } else {
                 show_error(
                     "Can't import that file",
-                    &format!("{} isn't an image, sound or font file Inkframe can read.", file_name(&path)),
+                    &format!(
+                        "{} isn't an image, Photoshop, sound or font file Inkframe can read.",
+                        file_name(&path)
+                    ),
                 );
             }
         }

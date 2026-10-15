@@ -66,10 +66,16 @@ const SURROUNDINGS_OPACITY: f32 = 0.3;
 /// this one type, none of them need to know whether they're inside a symbol.
 #[derive(Debug, Clone, Copy)]
 struct View {
-    /// Screen position of the stage's top-left corner.
-    stage_origin: Pos2,
+    /// Where the middle of the stage is on screen.
+    center: Pos2,
+    /// The stage's size, in its own pixels.
+    size: Vec2,
     /// Screen points per stage pixel.
     stage_zoom: f32,
+    /// How far the view is turned, clockwise, in radians: the stage spins
+    /// about its middle, as when turning paper to draw a curve
+    /// comfortably. The drawing itself isn't changed.
+    rotation: f32,
     timeline_to_stage: Affine,
     stage_to_timeline: Affine,
     /// Screen points per local unit, for sizing hit targets and strokes.
@@ -79,10 +85,12 @@ struct View {
 
 impl View {
     /// A view of the main timeline.
-    fn stage(stage_origin: Pos2, stage_zoom: f32) -> Self {
+    fn stage(center: Pos2, size: Vec2, stage_zoom: f32, rotation: f32) -> Self {
         Self {
-            stage_origin,
+            center,
+            size,
             stage_zoom,
+            rotation,
             timeline_to_stage: Affine::IDENTITY,
             stage_to_timeline: Affine::IDENTITY,
             zoom: stage_zoom,
@@ -109,13 +117,41 @@ impl View {
 
     fn to_screen(self, p: Point) -> Pos2 {
         let on_stage = self.timeline_to_stage.apply(p);
-        self.stage_origin + vec2(on_stage.x, on_stage.y) * self.stage_zoom
+        self.center
+            + rotate(
+                vec2(on_stage.x, on_stage.y) * self.stage_zoom - self.size * self.stage_zoom / 2.0,
+                self.rotation,
+            )
     }
 
     fn to_local(self, p: Pos2) -> Point {
-        let on_stage = to_point(Pos2::ZERO + (p - self.stage_origin) / self.stage_zoom);
-        self.stage_to_timeline.apply(on_stage)
+        let unturned = rotate(p - self.center, -self.rotation) / self.stage_zoom + self.size / 2.0;
+        self.stage_to_timeline.apply(Point::new(unturned.x, unturned.y))
     }
+
+    /// The stage's corners on screen, clockwise from its top left.
+    fn stage_corners(self) -> [Pos2; 4] {
+        let stage = View { timeline_to_stage: Affine::IDENTITY, ..self };
+        let (w, h) = (self.size.x, self.size.y);
+        [(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)].map(|(x, y)| stage.to_screen(Point::new(x, y)))
+    }
+}
+
+/// The angle of `p` around `center`, clockwise from pointing right, in
+/// degrees.
+fn angle_around(center: Pos2, p: Pos2) -> f32 {
+    (p.y - center.y).atan2(p.x - center.x).to_degrees()
+}
+
+/// An angle in degrees, brought into −180 to 180.
+fn normalize_degrees(angle: f32) -> f32 {
+    (angle + 180.0).rem_euclid(360.0) - 180.0
+}
+
+/// `v` turned clockwise (on screen, where y points down) by `angle` radians.
+fn rotate(v: Vec2, angle: f32) -> Vec2 {
+    let (sin, cos) = angle.sin_cos();
+    vec2(v.x * cos - v.y * sin, v.x * sin + v.y * cos)
 }
 
 /// An in-progress mouse interaction on the stage.
@@ -197,6 +233,10 @@ enum Gesture {
     PathHandle { layer: LayerId, frame: u32, out: bool },
     /// Space + drag scrolls the view, like the hand tool in Animate.
     Pan,
+    /// Shift + Space + drag turns the view around the stage's middle, as
+    /// Photoshop's Rotate View does: from `from` (the pointer's angle
+    /// around it, in degrees, when the drag began) and the rotation then.
+    RotateView { from: f32, start: f32 },
 }
 
 /// A brush or eraser stroke being painted.
@@ -479,6 +519,8 @@ pub struct StageView {
     zoom: Option<f32>,
     /// Offset of the stage's center from the viewport's center, in points.
     pan: Vec2,
+    /// How far the view is turned, clockwise, in degrees.
+    rotation: f32,
     gesture: Option<Gesture>,
     /// The path being drawn with the Pen tool, which lasts across many clicks.
     pen: Option<PenPath>,
@@ -504,6 +546,7 @@ impl Default for StageView {
         Self {
             zoom: None,
             pan: Vec2::ZERO,
+            rotation: 0.0,
             gesture: None,
             pen: None,
             anchor_selection: None,
@@ -590,6 +633,16 @@ impl StageView {
         self.pan = Vec2::ZERO;
     }
 
+    /// Turns the view by `degrees` (clockwise) about the stage's middle.
+    pub fn rotate_view(&mut self, degrees: f32) {
+        self.rotation = normalize_degrees(self.rotation + degrees);
+    }
+
+    /// Turns the view back upright.
+    pub fn reset_rotation(&mut self) {
+        self.rotation = 0.0;
+    }
+
     pub fn zoom_to_actual_size(&mut self, doc: &Document) {
         self.set_zoom_about(doc, self.last_area.center(), 1.0);
     }
@@ -611,24 +664,28 @@ impl StageView {
 
         self.handle_navigation(ui, &response, &editor.doc);
         let stage_view = self.view(area, &editor.doc);
-        let stage_rect = Rect::from_min_size(
-            stage_view.stage_origin,
-            vec2(editor.doc.width as f32, editor.doc.height as f32) * stage_view.stage_zoom,
-        );
+        let corners = stage_view.stage_corners();
+        let stage_size = stage_view.size * stage_view.stage_zoom;
         // Everything below works in the coordinates of the timeline being
         // edited: the stage's on the main timeline, a symbol's inside one.
         let view = stage_view.with_timeline(editor.timeline_transform());
 
         painter.rect_filled(area, 0.0, PASTEBOARD);
         if !editor.doc.background.is_opaque() {
-            draw_checkerboard(&painter.with_clip_rect(area), stage_rect);
+            draw_checkerboard(&painter.with_clip_rect(area), stage_view);
         }
-        self.update_texture(ui.ctx(), editor, stage_rect.size());
+        self.update_texture(ui.ctx(), editor, stage_size);
         if let Some(texture) = &self.texture {
-            let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-            painter.image(texture.id(), stage_rect, uv, Color32::WHITE);
+            // The rendered stage, as a quad so it can turn with the view.
+            let mut mesh = egui::Mesh::with_texture(texture.id());
+            let uvs = [pos2(0.0, 0.0), pos2(1.0, 0.0), pos2(1.0, 1.0), pos2(0.0, 1.0)];
+            for (corner, uv) in corners.into_iter().zip(uvs) {
+                mesh.vertices.push(egui::epaint::Vertex { pos: corner, uv, color: Color32::WHITE });
+            }
+            mesh.indices.extend([0, 1, 2, 0, 2, 3]);
+            painter.add(egui::Shape::mesh(mesh));
         }
-        painter.rect_stroke(stage_rect, 0.0, (1.0, Color32::from_gray(20)), StrokeKind::Outside);
+        painter.add(egui::Shape::closed_line(corners.to_vec(), (1.0, Color32::from_gray(20))));
 
         // Switching away from the pen (or anything else that changes the tool)
         // finishes the path in progress rather than silently dropping it.
@@ -689,12 +746,16 @@ impl StageView {
 
     fn view(&self, area: Rect, doc: &Document) -> View {
         let stage_size = vec2(doc.width as f32, doc.height as f32);
+        let rotation = self.rotation.to_radians();
         let zoom = self.zoom.unwrap_or_else(|| {
             let available = (area.size() - Vec2::splat(FIT_MARGIN * 2.0)).max(Vec2::splat(1.0));
-            (available / stage_size).min_elem().clamp(MIN_ZOOM, MAX_ZOOM)
+            // Fit the stage as turned: the box around it grows as it turns.
+            let (sin, cos) = (rotation.sin().abs(), rotation.cos().abs());
+            let turned =
+                vec2(stage_size.x * cos + stage_size.y * sin, stage_size.x * sin + stage_size.y * cos);
+            (available / turned).min_elem().clamp(MIN_ZOOM, MAX_ZOOM)
         });
-        let center = area.center() + self.pan;
-        View::stage(center - stage_size * zoom / 2.0, zoom)
+        View::stage(area.center() + self.pan, stage_size, zoom, rotation)
     }
 
     /// Changes zoom while keeping the stage point under `anchor` fixed on
@@ -704,17 +765,23 @@ impl StageView {
         let zoom = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
         let anchored = before.to_local(anchor);
 
-        // Solve for the new origin that puts `anchored` back under `anchor`,
-        // then express it as a pan offset from the viewport center.
-        let origin = anchor - vec2(anchored.x, anchored.y) * zoom;
+        // Solve for the stage centre that puts `anchored` back under
+        // `anchor`, then express it as a pan offset from the viewport centre.
         let stage_size = vec2(doc.width as f32, doc.height as f32);
-        self.pan = origin + stage_size * zoom / 2.0 - self.last_area.center();
+        let from_center = rotate((vec2(anchored.x, anchored.y) - stage_size / 2.0) * zoom, before.rotation);
+        self.pan = anchor - from_center - self.last_area.center();
         self.zoom = Some(zoom);
     }
 
     fn handle_navigation(&mut self, ui: &egui::Ui, response: &egui::Response, doc: &Document) {
         if response.dragged_by(PointerButton::Middle) || matches!(self.gesture, Some(Gesture::Pan)) {
             self.pan += response.drag_delta();
+        }
+        if let (Some(Gesture::RotateView { from, start }), Some(pointer)) =
+            (&self.gesture, response.interact_pointer_pos())
+        {
+            let center = self.view(response.rect, doc).center;
+            self.rotation = normalize_degrees(start + angle_around(center, pointer) - from);
         }
         if !response.hovered() {
             return;
@@ -879,7 +946,7 @@ impl StageView {
                         }
                     }
                 }
-                Some(Gesture::Pan) | None => {}
+                Some(Gesture::Pan | Gesture::RotateView { .. }) | None => {}
             }
         }
 
@@ -1277,6 +1344,12 @@ impl StageView {
         shift: bool,
         alt: bool,
     ) -> Option<Gesture> {
+        if space_held && shift {
+            return Some(Gesture::RotateView {
+                from: angle_around(view.center, press),
+                start: self.rotation,
+            });
+        }
         if space_held {
             return Some(Gesture::Pan);
         }
@@ -1738,23 +1811,27 @@ impl StageView {
         let light = (1.0, Color32::WHITE);
         match &self.selecting {
             Some(Selecting::Marquee { start, current, .. }) => {
-                let rect = Rect::from_two_pos(*start, *current);
-                let outline: Vec<Pos2> = if editor.tool == Tool::EllipseMarquee {
+                // Drawn in the canvas's own directions, which is how the
+                // selection will lie, however the layer or view is turned.
+                let Some((layer, _, w, h)) = editor.paint_target() else { return };
+                let to_canvas = |p: Pos2| canvas_point(editor, view, layer, (w, h), p).unwrap_or(Point::ZERO);
+                let (a, b) = (to_canvas(*start), to_canvas(*current));
+                let (min, max) =
+                    (Point::new(a.x.min(b.x), a.y.min(b.y)), Point::new(a.x.max(b.x), a.y.max(b.y)));
+                let in_canvas: Vec<Point> = if editor.tool == Tool::EllipseMarquee {
+                    let center = min.lerp(max, 0.5);
+                    let radius = Point::new((max.x - min.x) / 2.0, (max.y - min.y) / 2.0);
                     (0..=48)
                         .map(|i| {
                             let t = i as f32 / 48.0 * std::f32::consts::TAU;
-                            rect.center() + vec2(t.cos() * rect.width() / 2.0, t.sin() * rect.height() / 2.0)
+                            Point::new(center.x + t.cos() * radius.x, center.y + t.sin() * radius.y)
                         })
                         .collect()
                 } else {
-                    vec![
-                        rect.left_top(),
-                        rect.right_top(),
-                        rect.right_bottom(),
-                        rect.left_bottom(),
-                        rect.left_top(),
-                    ]
+                    vec![min, Point::new(max.x, min.y), max, Point::new(min.x, max.y), min]
                 };
+                let outline: Vec<Pos2> =
+                    in_canvas.into_iter().filter_map(|p| canvas_to_screen(editor, view, layer, p)).collect();
                 for stroke in [dark, light] {
                     painter.add(egui::Shape::line(outline.clone(), stroke));
                 }
@@ -2028,7 +2105,7 @@ impl StageView {
         let handle_cursor = |hit| handles.map_or(CursorIcon::Default, |h| h.cursor(hit));
 
         let icon = match &self.gesture {
-            Some(Gesture::Pan) => CursorIcon::Grabbing,
+            Some(Gesture::Pan | Gesture::RotateView { .. }) => CursorIcon::Grabbing,
             _ if space_held => CursorIcon::Grab,
             Some(Gesture::Move { .. } | Gesture::MovePixels { .. }) => CursorIcon::Move,
             Some(Gesture::Marquee { .. }) => CursorIcon::Crosshair,
@@ -2311,7 +2388,8 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
         | Gesture::EditAnchor { .. }
         | Gesture::BendPath { .. }
         | Gesture::PathHandle { .. }
-        | Gesture::Pan => {}
+        | Gesture::Pan
+        | Gesture::RotateView { .. } => {}
     }
 }
 
@@ -2765,25 +2843,33 @@ fn constrain_square(start: Point, end: Point) -> Point {
 }
 
 /// The classic grey checkerboard that signals "transparent here".
-fn draw_checkerboard(painter: &egui::Painter, stage: Rect) {
-    const CELL: f32 = 10.0;
-    let visible = stage.intersect(painter.clip_rect());
-    if !visible.is_positive() {
-        return;
+/// The grey and white squares that show the stage is transparent, turned
+/// with the view. Squares are about 10 screen points, but bigger when
+/// zoomed far in, so there are never too many to draw.
+fn draw_checkerboard(painter: &egui::Painter, view: View) {
+    let corners = view.stage_corners();
+    painter.add(egui::Shape::convex_polygon(corners.to_vec(), Color32::from_gray(204), egui::Stroke::NONE));
+    let mut cell = 10.0 / view.stage_zoom;
+    while (view.size.x / cell) * (view.size.y / cell) > 20_000.0 {
+        cell *= 2.0;
     }
-    painter.rect_filled(visible, 0.0, Color32::from_gray(204));
-
-    // Only iterate over cells that are actually on screen.
-    let first = ((visible.min - stage.min) / CELL).floor();
-    let last = ((visible.max - stage.min) / CELL).ceil();
-    for row in first.y as i32..last.y as i32 {
-        for col in first.x as i32..last.x as i32 {
+    let stage = View { timeline_to_stage: Affine::IDENTITY, ..view };
+    let clip = painter.clip_rect();
+    let (columns, rows) = ((view.size.x / cell).ceil() as i32, (view.size.y / cell).ceil() as i32);
+    for row in 0..rows {
+        for col in 0..columns {
             if (row + col) % 2 == 0 {
                 continue;
             }
-            let min = stage.min + vec2(col as f32, row as f32) * CELL;
-            let cell = Rect::from_min_size(min, Vec2::splat(CELL)).intersect(stage);
-            painter.rect_filled(cell, 0.0, Color32::from_gray(153));
+            let (x0, y0) = (col as f32 * cell, row as f32 * cell);
+            let (x1, y1) = ((x0 + cell).min(view.size.x), (y0 + cell).min(view.size.y));
+            let square: Vec<Pos2> = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+                .iter()
+                .map(|&(x, y)| stage.to_screen(Point::new(x, y)))
+                .collect();
+            if square.iter().any(|p| clip.contains(*p)) {
+                painter.add(egui::Shape::convex_polygon(square, Color32::from_gray(153), egui::Stroke::NONE));
+            }
         }
     }
 }
@@ -2794,9 +2880,11 @@ mod tests {
 
     #[test]
     fn view_round_trips() {
-        let view = View::stage(pos2(100.0, 50.0), 0.5);
-        let p = Point::new(300.0, 200.0);
-        assert_eq!(view.to_local(view.to_screen(p)), p);
+        for rotation in [0.0, 0.7, -2.0] {
+            let view = View::stage(pos2(100.0, 50.0), vec2(640.0, 480.0), 0.5, rotation);
+            let p = Point::new(300.0, 200.0);
+            assert!(view.to_local(view.to_screen(p)).distance(p) < 1e-3);
+        }
     }
 
     #[test]
@@ -3699,6 +3787,24 @@ mod tests {
     }
 
     #[test]
+    fn painting_on_a_turned_view_lands_where_the_pen_is() {
+        let mut h = painting_with(Tool::Brush);
+        h.state_mut().0.rotate_view(90.0);
+        h.run();
+        let (from, to) = (screen(&h, 300.0, 500.0), screen(&h, 900.0, 500.0));
+        // The stage's x axis now runs down the screen.
+        assert!((from.x - to.x).abs() < 0.5 && to.y > from.y, "{from:?} {to:?}");
+        drag(&mut h, from, &[from + vec2(0.0, 10.0), to]);
+        for x in [300, 600, 900] {
+            assert_eq!(painted_at(&h, x, 500)[3], 255, "at x = {x}");
+        }
+        h.state_mut().0.reset_rotation();
+        h.run();
+        let upright = screen(&h, 300.0, 500.0);
+        assert!(upright.y < screen(&h, 300.0, 600.0).y);
+    }
+
+    #[test]
     fn turning_the_parent_carries_the_child() {
         let (mut editor, parent, child) = parent_and_child();
         editor.set_pose(parent, Transform { rotation: 180.0, ..Transform::at(Point::new(400.0, 400.0)) });
@@ -4018,9 +4124,7 @@ mod tests {
         // from the registration point (400, 400) to 30 right and 60 down.
         let to_screen = |h: &Harness<'_, State>, x: f32, y: f32| {
             let (stage, editor) = h.state();
-            let view = stage.view(stage.last_area, &editor.doc);
-            let on_stage = Point::new(x, y);
-            view.stage_origin + vec2(on_stage.x, on_stage.y) * view.stage_zoom
+            stage.view(stage.last_area, &editor.doc).to_screen(Point::new(x, y))
         };
         let (from, to) = (to_screen(&h, 400.0, 400.0), to_screen(&h, 430.0, 460.0));
         drag(&mut h, from, &[to]);

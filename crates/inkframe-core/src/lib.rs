@@ -32,6 +32,7 @@ mod image;
 mod lip_sync;
 mod mask;
 mod paint;
+mod psd;
 mod retouch;
 mod rig;
 mod selection;
@@ -67,6 +68,7 @@ pub use lip_sync::{
     LipSyncError, MouthCue, MouthMap, MouthShape, cues_from_loudness, parse_papagayo, parse_rhubarb,
 };
 pub use paint::{Canvas, CanvasId, TILE, premultiply, unpremultiply};
+pub use psd::{Psd, PsdError, PsdLayer};
 pub use retouch::{Retouch, RetouchStroke, ToneRange};
 pub use selection::{Combine, Selection};
 pub use shape::{Path, Segment, Shape, Stroke, Style};
