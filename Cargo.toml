@@ -25,6 +25,14 @@ serde_json = "1.0.154"
 thiserror = "2.0.21"
 tiny-skia = "0.12.0"
 hound = "3.5.1"
+# Project files are zip containers: the document's JSON plus painted
+# pixels as PNG tiles. Only deflate is needed, the compression every zip
+# tool understands.
+zip = { version = "9.0.3", default-features = false, features = ["deflate"] }
+# Encodes and decodes those tiles. The version the image crate already uses.
+png = "0.18.1"
+# Painted tiles travel on the system clipboard as text.
+base64 = "0.23.1"
 # Text: fontdb finds installed fonts, harfrust shapes text into positioned
 # glyphs, skrifa reads glyph outlines. The latter two are the versions egui
 # already uses, so they're only compiled once. egui's bundled font is the

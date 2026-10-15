@@ -118,7 +118,7 @@ impl Document {
                 let (anchors, closed) = shape.to_anchors();
                 path_from_anchors(&anchors, closed).map(|path| path.flatten())
             }
-            Shape::Image { .. } | Shape::Text(_) => None,
+            Shape::Image { .. } | Shape::Text(_) | Shape::Paint { .. } => None,
         })?;
         GuidePath::new(outline.into_iter().map(|p| to_timeline.apply(p)).collect())
     }

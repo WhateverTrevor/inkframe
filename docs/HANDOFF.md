@@ -142,8 +142,23 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     both pinned zips and sets `INKFRAME_REQUIRE_RHUBARB`. The macOS build
     is x86_64 (Rosetta); EBADARCH is explained to the user. The disk image
     grew from about 37 MB to 110 MB.
+40. Painting, phase 1 of 4 (format v17): project files are zips
+    (`container.rs`); paint layers hold tiled canvases (`paint.rs`);
+    `brush.rs` is the brush engine; Brush (B), Eraser (E), Eyedropper (I)
+    tools, with Bone moved to K. The brush panel shows in the properties
+    panel while painting. `tablet.rs` reads pen pressure (Windows: egui
+    touch force; macOS: NSEvent local monitor). `[`/`]` resize the brush
+    while painting. Planned next, as agreed with the user: phase 2 (bucket,
+    gradient, smudge, blur/sharpen, dodge/burn, clone stamp, brush
+    presets), phase 3 (marquee, lasso, magic wand, adjustments, blend
+    modes), phase 4 maybe (canvas rotation, PSD).
 
 ## Not yet verified by hand
+
+- Pen pressure has never been tried with a real tablet, on either
+  platform. Tests cover the Windows path (touch events with force) with
+  simulated input; the macOS event monitor is only known to compile and
+  to leave mouse input working.
 
 - Audio playback was checked by ear on 2026-10-14 and works.
 - Both installers bundle a static ffmpeg 9.0.2 (macOS: martin-riedl.de,

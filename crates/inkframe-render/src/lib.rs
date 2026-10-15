@@ -378,7 +378,14 @@ fn draw_layer(
         inkframe_core::Rect::bounding(corners).is_some_and(|b| overlaps(b, image))
     };
     for element in layer.shown_elements(frame).iter().filter(|e| visible(e)) {
-        draw_element(pixmap, element, skia_matrix, style);
+        match element.shape {
+            Shape::Paint { canvas, width, height } => {
+                if let Some(canvas) = doc.canvas(canvas) {
+                    draw_canvas(pixmap, canvas, width, height, skia_matrix, style.tint);
+                }
+            }
+            _ => draw_element(pixmap, element, skia_matrix, style),
+        }
     }
     // `instance_view` stops at the nesting limit, so a malformed file can't
     // recurse forever.
@@ -450,6 +457,71 @@ fn draw_element(pixmap: &mut PixmapMut, element: &Element, matrix: Transform, st
 /// with `draw_pixmap`, which doesn't anti-alias: a rotated image would get
 /// jagged edges. Onion-skin tinting doesn't apply; a ghost of a picture is
 /// drawn as the picture, faded.
+/// Draws a paint layer's canvas, centred on the origin, one unit per pixel.
+///
+/// The painted tiles are gathered into one image first and drawn as one
+/// rectangle: drawn tile by tile, scaling would blend each tile's edge with
+/// nothing and leave faint seams. Zoomed in, pixels show as crisp squares,
+/// as in Photoshop; zoomed out they're smoothed.
+fn draw_canvas(
+    pixmap: &mut PixmapMut,
+    canvas: &inkframe_core::Canvas,
+    width: u32,
+    height: u32,
+    matrix: Transform,
+    tint: Option<Color>,
+) {
+    use inkframe_core::TILE;
+    let tiles: Vec<_> = canvas.tiles().collect();
+    let (Some(min_x), Some(min_y)) =
+        (tiles.iter().map(|((x, _), _)| *x).min(), tiles.iter().map(|((_, y), _)| *y).min())
+    else {
+        return; // Nothing painted.
+    };
+    let max_x = tiles.iter().map(|((x, _), _)| *x).max().unwrap_or(min_x);
+    let max_y = tiles.iter().map(|((_, y), _)| *y).max().unwrap_or(min_y);
+    let (columns, rows) = (max_x - min_x + 1, max_y - min_y + 1);
+    let Some(mut region) = Pixmap::new(columns * TILE, rows * TILE) else { return };
+    let stride = (columns * TILE * 4) as usize;
+    for ((x, y), pixels) in tiles {
+        let left = ((x - min_x) * TILE * 4) as usize;
+        for row in 0..TILE as usize {
+            let to = ((y - min_y) as usize * TILE as usize + row) * stride + left;
+            let from = row * TILE as usize * 4;
+            region.data_mut()[to..to + TILE as usize * 4]
+                .copy_from_slice(&pixels[from..from + TILE as usize * 4]);
+        }
+    }
+    if let Some(tint) = tint {
+        // Onion skins: every pixel the tint colour, keeping its coverage.
+        for p in region.data_mut().chunks_exact_mut(4) {
+            let a = p[3] as u32;
+            for (channel, value) in p[..3].iter_mut().zip([tint.r, tint.g, tint.b]) {
+                *channel = (value as u32 * a / 255) as u8;
+            }
+        }
+    }
+
+    // The region's top-left corner, in the layer's coordinates.
+    let origin = ((min_x * TILE) as f32 - width as f32 / 2.0, (min_y * TILE) as f32 - height as f32 / 2.0);
+    // Clipped to the canvas, since the last row and column of tiles can
+    // reach past it.
+    let right = (width as f32 / 2.0).min(origin.0 + region.width() as f32);
+    let bottom = (height as f32 / 2.0).min(origin.1 + region.height() as f32);
+    let Some(rect) = tiny_skia::Rect::from_ltrb(origin.0, origin.1, right, bottom) else { return };
+    let area = (matrix.sx * matrix.sy - matrix.kx * matrix.ky).abs();
+    let quality = if area > 1.0 + 1e-3 { FilterQuality::Nearest } else { FilterQuality::Bilinear };
+    let shader = Pattern::new(
+        region.as_ref(),
+        SpreadMode::Pad,
+        quality,
+        1.0,
+        Transform::from_translate(origin.0, origin.1),
+    );
+    let paint = Paint { shader, anti_alias: false, ..Paint::default() };
+    pixmap.fill_rect(rect, &paint, matrix, None);
+}
+
 fn draw_image(pixmap: &mut PixmapMut, pixels: Option<&Mipmaps>, width: f32, height: f32, matrix: Transform) {
     let Some(rect) = tiny_skia::Rect::from_xywh(-width / 2.0, -height / 2.0, width, height) else {
         return; // Zero-sized.
@@ -525,6 +597,27 @@ mod tests {
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
         let c = pixmap.pixel(x, y).unwrap().demultiply();
         [c.red(), c.green(), c.blue(), c.alpha()]
+    }
+
+    #[test]
+    fn paint_layers_draw_their_pixels_where_they_were_painted() {
+        let mut doc = Document::default();
+        (doc.width, doc.height, doc.background) = (100, 100, Color::WHITE);
+        let layer = doc.add_paint_layer(inkframe_core::TimelineId::Main, "Paint", 0).unwrap();
+        let Shape::Paint { canvas, .. } = doc.layer(layer).unwrap().drawings[0].elements[0].shape else {
+            unreachable!()
+        };
+        let tile = doc.canvas_mut(canvas).unwrap().tile_mut((0, 0));
+        for y in 60..70 {
+            for x in 40..50 {
+                let i = (y * inkframe_core::TILE as usize + x) * 4;
+                tile[i..i + 4].copy_from_slice(&[0, 0, 255, 255]);
+            }
+        }
+        let pixmap = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        assert_eq!(pixel(&pixmap, 45, 65), [0, 0, 255, 255]);
+        assert_eq!(pixel(&pixmap, 39, 65), [255, 255, 255, 255]);
+        assert_eq!(pixel(&pixmap, 45, 70), [255, 255, 255, 255]);
     }
 
     #[test]

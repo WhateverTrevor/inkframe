@@ -20,6 +20,8 @@
 //! * `INKFRAME_SCREENSHOT_LIPSYNC=1` opens the Lip Sync window for the selected layer;
 //!   `=apply` also applies it from loudness once the sound has loaded.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
+//! * `INKFRAME_SCREENSHOT_PAINT=1` paints a few strokes on a new paint layer, as a pen
+//!   would (pressing harder through the middle of each), to show the brushes.
 
 use std::path::PathBuf;
 
@@ -77,6 +79,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_ONION").is_some() {
             editor.onion.enabled = true;
+        }
+        if var("INKFRAME_SCREENSHOT_PAINT").is_some() {
+            paint_demo(editor);
         }
         if let Some(name) = var("INKFRAME_SCREENSHOT_TOOL") {
             match Tool::ALL.into_iter().find(|t| t.name().eq_ignore_ascii_case(&name)) {
@@ -161,4 +166,39 @@ fn save_png(path: &std::path::Path, image: &egui::ColorImage) -> Result<(), Stri
         .ok_or("screenshot is empty")?;
     let pixmap = tiny_skia::Pixmap::from_vec(bytes, size).ok_or("screenshot has the wrong size")?;
     pixmap.save_png(path).map_err(|e| e.to_string())
+}
+
+/// Paints sample strokes on a new paint layer: wavy lines in a few colours
+/// and sizes whose pressure rises and falls along them, so their ends
+/// taper as a pen's do; a soft, low-flow stroke; and an eraser pass.
+fn paint_demo(editor: &mut Editor) {
+    use inkframe_core::{BrushMode, BrushSettings, BrushStroke, Color, Point};
+    let Some(layer) = editor.add_paint_layer() else { return };
+    let Some((_, canvas, ..)) = editor.paint_target().filter(|(id, ..)| *id == layer) else { return };
+    let strokes = [
+        (Color::rgb(0x1a, 0x1a, 0x1a), 18.0, 0.9, 1.0, 300.0),
+        (Color::rgb(0xd6, 0x3a, 0x3a), 40.0, 0.7, 1.0, 420.0),
+        (Color::rgb(0x2f, 0x7d, 0xd6), 70.0, 0.4, 0.8, 560.0),
+        (Color::rgb(0xf0, 0xb0, 0x3c), 160.0, 0.0, 0.08, 720.0),
+    ];
+    for (color, size, hardness, flow, y) in strokes {
+        let settings = BrushSettings { size, hardness, flow, ..BrushSettings::default() };
+        let mut stroke = BrushStroke::new(settings, BrushMode::Paint(color));
+        for i in 0..=120 {
+            let t = i as f32 / 120.0;
+            let at = Point::new(300.0 + t * 1300.0, y + (t * 9.0).sin() * 50.0);
+            // Light at the ends, firm in the middle.
+            let pressure = (t * std::f32::consts::PI).sin();
+            if let Some(canvas) = editor.doc.canvas_mut(canvas) {
+                stroke.add_point(canvas, at, pressure);
+            }
+        }
+    }
+    let mut eraser = BrushStroke::new(editor.eraser, BrushMode::Erase);
+    for i in 0..=40 {
+        let at = Point::new(1250.0, 220.0 + i as f32 * 15.0);
+        if let Some(canvas) = editor.doc.canvas_mut(canvas) {
+            eraser.add_point(canvas, at, 1.0);
+        }
+    }
 }

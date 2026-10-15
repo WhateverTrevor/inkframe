@@ -1,5 +1,5 @@
+use std::collections::BTreeMap;
 use std::fmt;
-use std::path::Path as FsPath;
 
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +11,7 @@ use crate::font_file::FontFile;
 use crate::geometry::{Point, Rect};
 use crate::ik::RotationLimits;
 use crate::image::ImageAsset;
+use crate::paint::{Canvas, CanvasId};
 use crate::shape::{Shape, Style};
 use crate::symbol::{Instance, Symbol, SymbolId};
 use crate::track::Track;
@@ -27,7 +28,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 16;
+pub const FORMAT_VERSION: u32 = 17;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -55,6 +56,10 @@ pub struct Document {
     /// Font files that go with the project (see `font_file.rs`).
     #[serde(default)]
     pub fonts: Vec<FontFile>,
+    /// The canvases paint layers paint on (see `paint.rs`). Only their
+    /// sizes are in the JSON; the pixels are saved beside it.
+    #[serde(default)]
+    pub canvases: BTreeMap<CanvasId, Canvas>,
     pub(crate) next_layer_id: u64,
     #[serde(default = "first_id")]
     pub(crate) next_symbol_id: u64,
@@ -64,6 +69,8 @@ pub struct Document {
     pub(crate) next_image_id: u64,
     #[serde(default = "first_id")]
     pub(crate) next_font_id: u64,
+    #[serde(default = "first_id")]
+    pub(crate) next_canvas_id: u64,
 }
 
 /// A stable identifier for a layer that survives reordering and undo.
@@ -219,6 +226,8 @@ pub enum DocumentError {
     UnsupportedVersion { found: u32 },
     #[error("invalid document: {0}")]
     Invalid(&'static str),
+    #[error("the project file is damaged: {0}")]
+    Corrupt(String),
 }
 
 impl Default for Document {
@@ -241,6 +250,8 @@ impl Default for Document {
             next_audio_id: 1,
             next_image_id: 1,
             next_font_id: 1,
+            canvases: BTreeMap::new(),
+            next_canvas_id: 1,
         }
     }
 }
@@ -344,7 +355,11 @@ impl Document {
         let mut copy = layers[index].clone();
         copy.id = new_id;
         copy.name = format!("{} copy", copy.name);
-        layers.insert(index + 1, copy);
+        // Painting on the copy mustn't paint on the original.
+        for drawing in &mut copy.drawings {
+            self.separate_canvases(&mut drawing.elements, false);
+        }
+        self.layers_of_mut(timeline)?.insert(index + 1, copy);
         Some(new_id)
     }
 
@@ -459,24 +474,10 @@ impl Document {
         Ok(doc)
     }
 
-    pub fn load(path: impl AsRef<FsPath>) -> Result<Self, DocumentError> {
-        Self::from_json(&std::fs::read_to_string(path)?)
-    }
-
     pub(crate) fn allocate_layer_id(&mut self) -> LayerId {
         let id = LayerId(self.next_layer_id);
         self.next_layer_id += 1;
         id
-    }
-
-    /// Saves atomically: write to a temporary file next to the target, then
-    /// rename over it. A crash halfway through can't leave a corrupt file.
-    pub fn save(&self, path: impl AsRef<FsPath>) -> Result<(), DocumentError> {
-        let path = path.as_ref();
-        let tmp = path.with_extension("inkf.tmp");
-        std::fs::write(&tmp, self.to_json()?)?;
-        std::fs::rename(&tmp, path)?;
-        Ok(())
     }
 
     fn validate(&mut self) -> Result<(), DocumentError> {

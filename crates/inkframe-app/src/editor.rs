@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 
 use inkframe_core::FontFileId;
 use inkframe_core::{
-    Affine, Anchor, Color, Document, DocumentError, Drawing, Element, History, Layer, LayerId, Point,
-    Property, Shape, Stroke, Style, SymbolId, Text, TimelineId, Transform, path_from_anchors,
+    Affine, Anchor, BrushSettings, CanvasId, Color, Document, DocumentError, Drawing, Element, History,
+    Layer, LayerId, Point, Property, Shape, Stroke, Style, SymbolId, Text, TimelineId, Transform,
+    path_from_anchors,
 };
 use inkframe_core::{Clipboard, CopiedKeyframe};
 use inkframe_render::ImageLibrary;
@@ -28,10 +29,15 @@ pub enum Tool {
     /// Poses a rig by dragging: the joints above the dragged layer turn so
     /// it follows the pointer (inverse kinematics).
     Bone,
+    /// Paints pixels on a paint layer (see `paint.rs` and `brush.rs`).
+    Brush,
+    Eraser,
+    /// Picks the paint colour from the stage.
+    Eyedropper,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 8] = [
+    pub const ALL: [Tool; 11] = [
         Tool::Select,
         Tool::Subselect,
         Tool::Bone,
@@ -40,6 +46,9 @@ impl Tool {
         Tool::Ellipse,
         Tool::Pencil,
         Tool::Text,
+        Tool::Brush,
+        Tool::Eraser,
+        Tool::Eyedropper,
     ];
 
     pub fn name(self) -> &'static str {
@@ -52,7 +61,15 @@ impl Tool {
             Tool::Pencil => "Pencil",
             Tool::Text => "Text",
             Tool::Bone => "Bone",
+            Tool::Brush => "Brush",
+            Tool::Eraser => "Eraser",
+            Tool::Eyedropper => "Eyedropper",
         }
+    }
+
+    /// Whether the tool paints pixels.
+    pub fn paints(self) -> bool {
+        matches!(self, Tool::Brush | Tool::Eraser)
     }
 }
 
@@ -125,6 +142,15 @@ pub struct Editor {
     pub draw_style: Style,
     /// Stroke given to pencil lines (which are never filled).
     pub pencil_stroke: Stroke,
+    /// The colour the brush paints with.
+    pub paint_color: Color,
+    /// The brush's and eraser's settings, kept apart so switching between
+    /// them doesn't change either, as in Photoshop.
+    pub brush: BrushSettings,
+    pub eraser: BrushSettings,
+    /// How much a stroke's path is smoothed, 0 to 1: it trails behind the
+    /// pen, steadying a shaky hand.
+    pub smoothing: f32,
     pub playback: Playback,
     pub onion: OnionSkin,
     /// The property whose easing curve the inspector is showing and editing.
@@ -157,6 +183,15 @@ impl Editor {
                 stroke: Some(Stroke { color: Color::rgb(0x1a, 0x1a, 0x1a), width: 2.0 }),
             },
             pencil_stroke: Stroke { color: Color::rgb(0x1a, 0x1a, 0x1a), width: 4.0 },
+            paint_color: Color::rgb(0x1a, 0x1a, 0x1a),
+            brush: BrushSettings::default(),
+            eraser: BrushSettings {
+                size: 40.0,
+                hardness: 0.6,
+                pressure_size: false,
+                ..BrushSettings::default()
+            },
+            smoothing: 0.3,
             playback: Playback { looping: true, ..Playback::default() },
             onion: OnionSkin { enabled: false, before: 2, after: 2 },
             focused_property: Property::Position,
@@ -529,6 +564,34 @@ impl Editor {
         self.selection = id;
     }
 
+    // ------------------------------------------------------------- painting
+
+    /// The canvas the brush paints on: the selected layer's, if it's a
+    /// paint layer that can be painted on now, with the canvas's size.
+    pub fn paint_target(&self) -> Option<(LayerId, CanvasId, u32, u32)> {
+        let layer = self.selected_layer().filter(|l| !l.locked && l.is_shown_at(self.frame))?;
+        layer.elements_at(self.frame).iter().find_map(|e| match e.shape {
+            Shape::Paint { canvas, width, height } => Some((layer.id, canvas, width, height)),
+            _ => None,
+        })
+    }
+
+    /// Makes the brush (or eraser, if that's in use) `factor` times bigger.
+    pub fn resize_brush(&mut self, factor: f32) {
+        let settings = if self.tool == Tool::Eraser { &mut self.eraser } else { &mut self.brush };
+        settings.size = (settings.size * factor).clamp(1.0, 500.0);
+    }
+
+    /// Adds a paint layer on top of the timeline being edited, from the
+    /// current frame, and selects it.
+    pub fn add_paint_layer(&mut self) -> Option<LayerId> {
+        let timeline = self.timeline();
+        let name = self.doc.next_layer_name_in(timeline, "Paint");
+        let id = self.doc.add_paint_layer(timeline, name, self.frame)?;
+        self.select(Some(id));
+        Some(id)
+    }
+
     // ------------------------------------------------------------- drawings
 
     /// Shows the selected layer's drawing `index` from the current frame on.
@@ -556,8 +619,18 @@ impl Editor {
     /// change a little.
     pub fn new_drawing(&mut self, copy: bool) {
         let frame = self.frame;
-        if let Some(layer) = self.selected_layer_mut().filter(|l| l.instance.is_none()) {
-            let elements = if copy { layer.elements_at(frame).to_vec() } else { Vec::new() };
+        let Some(id) = self.selected_layer().filter(|l| l.instance.is_none()).map(|l| l.id) else { return };
+        let Some(mut elements) = self.doc.layer(id).map(|l| l.elements_at(frame).to_vec()) else { return };
+        // A paint layer's new drawing is a canvas of its own: a copy of the
+        // one showing, or a blank one. Other layers' blank drawings are empty.
+        let paints = elements.iter().any(|e| matches!(e.shape, Shape::Paint { .. }));
+        if paints {
+            elements.retain(|e| matches!(e.shape, Shape::Paint { .. }) || copy);
+            self.doc.separate_canvases(&mut elements, !copy);
+        } else if !copy {
+            elements.clear();
+        }
+        if let Some(layer) = self.doc.layer_mut(id) {
             let index = layer.add_drawing(Drawing::new(layer.next_drawing_name(), elements));
             layer.expose(frame, index);
         }

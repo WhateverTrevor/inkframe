@@ -143,6 +143,43 @@ fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) {
             }
             painter.circle_filled(hand, 2.5, stroke.color);
         }
+        Tool::Brush => {
+            // A round brush, handle up and to the right, its bristles
+            // coming to a point at the bottom left.
+            painter.line_segment(
+                [at(0.95, 0.05), at(0.55, 0.45)],
+                Stroke::new(stroke.width + 1.0, stroke.color),
+            );
+            let ferrule = [(0.6, 0.35), (0.65, 0.4), (0.45, 0.6), (0.4, 0.55)];
+            painter.add(egui::Shape::closed_line(ferrule.iter().map(|&(x, y)| at(x, y)).collect(), stroke));
+            let bristles = [(0.4, 0.55), (0.45, 0.6), (0.3, 0.85), (0.05, 0.95), (0.15, 0.7)];
+            painter.add(egui::Shape::convex_polygon(
+                bristles.iter().map(|&(x, y)| at(x, y)).collect(),
+                stroke.color,
+                Stroke::NONE,
+            ));
+        }
+        Tool::Eraser => {
+            // A block eraser on its side, the rubbing end shaded.
+            let block = [(0.05, 0.65), (0.5, 0.2), (0.95, 0.55), (0.5, 1.0)];
+            painter.add(egui::Shape::closed_line(block.iter().map(|&(x, y)| at(x, y)).collect(), stroke));
+            let end = [(0.05, 0.65), (0.27, 0.43), (0.72, 0.78), (0.5, 1.0)];
+            painter.add(egui::Shape::convex_polygon(
+                end.iter().map(|&(x, y)| at(x, y)).collect(),
+                stroke.color,
+                Stroke::NONE,
+            ));
+        }
+        Tool::Eyedropper => {
+            // A pipette: a squeeze bulb at the top right, a tube down to a
+            // fine tip at the bottom left.
+            painter.circle_filled(at(0.8, 0.2), r.width() * 0.16, stroke.color);
+            painter.line_segment(
+                [at(0.72, 0.28), at(0.15, 0.85)],
+                Stroke::new(stroke.width + 1.5, stroke.color),
+            );
+            painter.line_segment([at(0.15, 0.85), at(0.02, 0.98)], stroke);
+        }
         Tool::Text => {
             // A capital T with small serifs, as in most apps' text tools.
             painter.line_segment([at(0.1, 0.05), at(0.9, 0.05)], stroke);

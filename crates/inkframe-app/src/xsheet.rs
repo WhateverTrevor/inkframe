@@ -55,14 +55,27 @@ pub fn column(layer: &Layer, frames: u32, last_frame: u32) -> Vec<Cell> {
 
 /// Exposes the drawing called `name` on `layer` from `frame`, making a
 /// blank one by that name if there isn't one. An empty name does nothing.
-pub fn enter(editor: &mut Editor, layer: LayerId, frame: u32, name: &str) {
+pub fn enter(editor: &mut Editor, id: LayerId, frame: u32, name: &str) {
     let name = name.trim();
-    let Some(layer) = editor.doc.layer_mut(layer).filter(|_| !name.is_empty()) else { return };
+    let Some(layer) = editor.doc.layer(id).filter(|_| !name.is_empty()) else { return };
     let drawing = match layer.drawing_named(name) {
         Some(index) => index,
-        None => layer.add_drawing(Drawing::new(name, Vec::new())),
+        None => {
+            // A paint layer's new drawing is a blank canvas like its others.
+            let mut paint: Vec<_> = layer.drawings[0]
+                .elements
+                .iter()
+                .filter(|e| matches!(e.shape, inkframe_core::Shape::Paint { .. }))
+                .cloned()
+                .collect();
+            editor.doc.separate_canvases(&mut paint, true);
+            let Some(layer) = editor.doc.layer_mut(id) else { return };
+            layer.add_drawing(Drawing::new(name, paint))
+        }
     };
-    layer.expose(frame, drawing);
+    if let Some(layer) = editor.doc.layer_mut(id) {
+        layer.expose(frame, drawing);
+    }
 }
 
 /// The cell being typed into.

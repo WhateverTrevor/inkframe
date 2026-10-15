@@ -20,7 +20,7 @@ pub fn build_path(shape: &Shape) -> Option<Path> {
         }
         // Images aren't outlines, and text outlines come from its font; the
         // renderer handles both separately.
-        Shape::Image { .. } | Shape::Text(_) => None,
+        Shape::Image { .. } | Shape::Text(_) | Shape::Paint { .. } => None,
         Shape::Path(ref path) => {
             let mut pb = PathBuilder::new();
             pb.move_to(path.start.x, path.start.y);

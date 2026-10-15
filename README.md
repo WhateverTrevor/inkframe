@@ -80,8 +80,14 @@ planned (the code is already cross-platform and CI builds it on Windows).
   | H.264 MP4 | — | Review copies and the web |
   | HEVC with alpha (macOS) | ✔ | Small files with alpha for Apple devices and Safari |
 
-- **Undo/redo** for every change, and plain-JSON project files (`.inkf`) that
-  diff cleanly in version control.
+- **Paint** like in Photoshop, alongside the vector drawing: paint layers
+  hold pixels, painted with a soft or hard round brush (size, hardness,
+  opacity, flow, spacing, smoothing), erased with the eraser, coloured with
+  the eyedropper. A pen tablet's pressure thins and thickens the stroke
+  (Windows Ink pens and macOS tablets such as Wacom). Paint layers animate
+  like any other layer, and frame by frame with drawing swaps.
+- **Undo/redo** for every change. Project files (`.inkf`) are zip files
+  holding the document as readable JSON and painted pixels as PNG images.
 
 ## Getting started
 
@@ -126,9 +132,10 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Skew | Drag an edge of the selection box between its handles to slant the layer, the opposite edge staying put; or type skew angles in the properties panel. Skew animates like any property |
 | Move the pivot | Option/Alt-drag the ring in the middle of the selected layer. It snaps to the corners, edge midpoints and center; or type it in the properties panel. The layer stays where it is, and from then on turns and scales around the new spot |
 | Attach to a parent | Pick a **Parent** in the properties panel. The layer stays where it is and from then on follows its parent; the timeline indents it under the parent's name. Deleting a parent hands its children to the parent above |
-| Pose with bones (IK) | Bone tool (`B`) shows the rigs as bones between their pivots. Drag a layer and the joints above it turn so the spot you grabbed follows the pointer, keying their rotations on the current frame; the top of the rig (the root, drawn as a square) stays put, and dragging it moves the whole rig. To stop a joint bending the wrong way, tick **Bends** in its properties and set the lowest and highest rotation |
+| Pose with bones (IK) | Bone tool (`K`) shows the rigs as bones between their pivots. Drag a layer and the joints above it turn so the spot you grabbed follows the pointer, keying their rotations on the current frame; the top of the rig (the root, drawn as a square) stays put, and dragging it moves the whole rig. To stop a joint bending the wrong way, tick **Bends** in its properties and set the lowest and highest rotation |
 | Bend a drawing | Select the layer and click **Add Bend Deformer** in the properties panel: bones are laid along the drawing's long side (set how many, and how soft the bends are). With the Bone tool, drag a green joint to bend the drawing there; bends are keyed on the current frame and tween like anything else, or type them in the panel. Shapes bend; images and text stay as they are |
 | Exposure sheet | Timeline › Exposure Sheet. One row per frame, one column per layer that swaps drawings, plus each sound's loudness. A name marks where a drawing starts and a line shows it held. Click a cell to go there; double-click and type a drawing's name, then Enter, to expose it and move down a row (a new name makes a new, blank drawing); right-click for a list of drawings, or to hold the one above |
+| Paint | Brush (`B`) and Eraser (`E`) paint on the selected paint layer; if the selected layer isn't one, a stroke starts a new one (or use Modify › New Paint Layer). The brush's settings show in the properties panel while it's in use; `[` and `]` shrink and grow it. With a tablet, pressing harder paints a thicker line (or a denser one: Pressure › Flow). Eyedropper (`I`), or Alt/Option-click with the brush, picks a colour from the stage. A paint layer's canvas is the stage's size, pixel for pixel; it moves, scales and turns like any layer. For frame-by-frame painting, give it a new drawing on each frame (Drawings › New) |
 | Swap drawings | In the properties panel's **Drawings** section, **New** adds a blank drawing (or **Duplicate** a copy of the one showing) from the current frame on. Click a drawing's name to show it from the current frame on, or press `[` and `]` to flip through them. With a layer that has several drawings selected, new shapes are drawn into the drawing that's showing. The timeline marks each swap with the drawing's name |
 | Lip sync | Give a mouth layer a drawing per mouth shape, named with Rhubarb's letters (A closed, B, C, D wide open, E, F, G, H, X at rest) or Papagayo's (MBP, etc, E, AI, O, U, FV, L, rest); a few are enough, the rest borrow a similar shape's. Import the dialogue, select the mouth, then Modify › Lip Sync…: pick the sound and where the shapes come from (Rhubarb, which listens for the sounds and takes a few seconds; loudness; or a timing file), check the drawings, and Apply. For Rhubarb, typing what's said helps with unclear words, and "Other" language listens for sounds rather than English words. The swaps land under the sound, replacing any there |
 | Draw | Rectangle (`R`), Oval (`O`), Pencil (`Y`). Hold Shift for squares and circles |
