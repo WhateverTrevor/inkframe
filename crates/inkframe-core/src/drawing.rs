@@ -85,6 +85,22 @@ impl Layer {
         self.tidy_exposure();
     }
 
+    /// Removes the swap on `frame`, if there is one, so whatever showed
+    /// before carries on. Returns whether there was one.
+    pub fn clear_exposure(&mut self, frame: u32) -> bool {
+        let before = self.exposure.len();
+        self.exposure.retain(|key| key.frame != frame);
+        self.tidy_exposure();
+        self.exposure.len() != before
+    }
+
+    /// The drawing called `name`, ignoring case and surrounding spaces, as
+    /// typed into an exposure sheet.
+    pub fn drawing_named(&self, name: &str) -> Option<usize> {
+        let name = name.trim();
+        self.drawings.iter().position(|d| d.name.trim().eq_ignore_ascii_case(name))
+    }
+
     /// Adds a drawing to the end of the list and returns its index. It
     /// isn't shown anywhere until it's exposed.
     pub fn add_drawing(&mut self, drawing: Drawing) -> usize {
@@ -212,6 +228,18 @@ mod tests {
         assert_eq!(layer.exposure, [Exposure { frame: 10, drawing: 1 }]);
         assert_eq!(width_at(&layer, 6), 10.0);
         assert_eq!(width_at(&layer, 10), 30.0);
+    }
+
+    #[test]
+    fn clearing_a_swap_lets_the_one_before_carry_on() {
+        let mut layer = mouth();
+        layer.expose(4, 1);
+        layer.expose(10, 2);
+        assert!(layer.clear_exposure(10));
+        assert_eq!(width_at(&layer, 12), 20.0);
+        assert!(!layer.clear_exposure(7), "no swap there");
+        assert_eq!(layer.drawing_named(" o "), Some(2));
+        assert_eq!(layer.drawing_named("U"), None);
     }
 
     #[test]

@@ -14,6 +14,7 @@ use crate::lip_sync_dialog::LipSyncDialog;
 use crate::screenshot::AutoScreenshot;
 use crate::stage::StageView;
 use crate::timeline::TimelineView;
+use crate::xsheet::ExposureSheet;
 use crate::{inspector, shortcuts, toolbar};
 
 /// Everything the user can trigger from a menu or a keyboard shortcut.
@@ -95,6 +96,7 @@ pub struct InkframeApp {
     timeline: TimelineView,
     export: ExportDialog,
     lip_sync: LipSyncDialog,
+    xsheet: ExposureSheet,
     library: LibraryView,
     audio: AudioEngine,
     /// The window title we last set, so we only send changes.
@@ -130,6 +132,7 @@ impl InkframeApp {
             timeline: TimelineView::default(),
             export: ExportDialog::default(),
             lip_sync: LipSyncDialog::default(),
+            xsheet: ExposureSheet::default(),
             library: LibraryView::default(),
             audio: AudioEngine::default(),
             title: String::new(),
@@ -144,6 +147,7 @@ impl InkframeApp {
                 app.stage.type_into(&mut app.editor, &name);
             }
             app.timeline.set_graph_mode(AutoScreenshot::graph());
+            app.xsheet.open = AutoScreenshot::exposure_sheet();
             if AutoScreenshot::lip_sync() {
                 app.lip_sync.open(&app.editor);
             }
@@ -527,6 +531,8 @@ impl InkframeApp {
                 ui.separator();
                 item(ui, "First Frame", None, Command::FirstFrame, true);
                 item(ui, "Last Frame", None, Command::LastFrame, true);
+                ui.separator();
+                ui.checkbox(&mut self.xsheet.open, "Exposure Sheet");
             });
             ui.menu_button("View", |ui| {
                 item(ui, "Zoom In", Some(shortcuts::ZOOM_IN), Command::ZoomIn, true);
@@ -779,6 +785,7 @@ impl eframe::App for InkframeApp {
         let name = self.editor.display_name();
         self.export.show(&ctx, &self.editor.doc, &name, self.editor.project_dir());
         self.lip_sync.show(&ctx, &mut self.editor, &mut self.audio);
+        self.xsheet.show(&ctx, &mut self.editor, &mut self.audio);
 
         let dt = ctx.input(|i| i.stable_dt) as f64;
         let project_dir = self.editor.project_dir();
