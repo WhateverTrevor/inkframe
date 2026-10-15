@@ -343,6 +343,101 @@ pub fn merge_down(doc: &mut Document, upper: LayerId, frame: u32, images: Option
     true
 }
 
+/// The main timeline at `frame` as a Photoshop file: each layer drawn on
+/// its own (trimmed to what it covers), keeping its name, opacity,
+/// visibility and blend mode, over a "Background" layer of the stage
+/// colour; and the frame as a whole, for readers that don't do layers.
+/// Guides and masks aren't layers of the picture, so they're left out
+/// (a mask still shapes what it masks).
+pub fn export_psd(doc: &Document, frame: u32, images: Option<&ImageLibrary>) -> inkframe_core::Psd {
+    let (width, height) = (doc.width, doc.height);
+    let style = Style { tint: None, images, show_guides: false, show_mask: None };
+    let mut layers = Vec::new();
+    if doc.background.a > 0 {
+        let c = doc.background;
+        layers.push(inkframe_core::PsdLayer {
+            name: "Background".into(),
+            left: 0,
+            top: 0,
+            width,
+            height,
+            pixels: [c.r, c.g, c.b, c.a].repeat((width * height) as usize),
+            opacity: 255,
+            visible: true,
+            blend: inkframe_core::BlendMode::Normal,
+        });
+    }
+    for layer in doc.layers.iter().filter(|l| !l.guide && !l.mask) {
+        // Drawn fully opaque and blending normally: Photoshop applies the
+        // layer's own opacity and blend mode, kept as settings.
+        let mut alone = layer.clone();
+        let opacity = doc.pose(layer, frame).opacity.clamp(0.0, 1.0);
+        alone.track.opacity = inkframe_core::Channel::new(frame, 1.0);
+        alone.blend = inkframe_core::BlendMode::Normal;
+        alone.visible = true;
+        if !alone.is_shown_at(frame) {
+            continue;
+        }
+        let Some(mut pixmap) = Pixmap::new(width, height) else { continue };
+        render_layers(
+            &mut pixmap.as_mut(),
+            doc,
+            std::slice::from_ref(&alone),
+            frame,
+            Affine::IDENTITY,
+            1.0,
+            style,
+            None,
+            0,
+        );
+        let Some((left, top, w, h)) = opaque_bounds(&pixmap) else { continue };
+        let mut pixels = Vec::with_capacity((w * h * 4) as usize);
+        for y in top..top + h {
+            for x in left..left + w {
+                let c = pixmap.pixel(x, y).expect("inside").demultiply();
+                pixels.extend([c.red(), c.green(), c.blue(), c.alpha()]);
+            }
+        }
+        layers.push(inkframe_core::PsdLayer {
+            name: layer.name.clone(),
+            left: left as i32,
+            top: top as i32,
+            width: w,
+            height: h,
+            pixels,
+            opacity: (opacity * 255.0).round() as u8,
+            visible: layer.visible,
+            blend: layer.blend,
+        });
+    }
+    let merged = render_frame(doc, frame, &RenderOptions { images, ..RenderOptions::default() })
+        .map(|p| {
+            p.pixels()
+                .iter()
+                .flat_map(|c| {
+                    let c = c.demultiply();
+                    [c.red(), c.green(), c.blue(), c.alpha()]
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    inkframe_core::Psd { width, height, layers, merged }
+}
+
+/// The smallest box (left, top, width, height) holding every pixel that
+/// isn't fully transparent, or `None` for an empty image.
+fn opaque_bounds(pixmap: &Pixmap) -> Option<(u32, u32, u32, u32)> {
+    let (width, height) = (pixmap.width(), pixmap.height());
+    let (mut left, mut top, mut right, mut bottom) = (width, height, 0, 0);
+    for (i, p) in pixmap.pixels().iter().enumerate() {
+        if p.alpha() > 0 {
+            let (x, y) = (i as u32 % width, i as u32 / width);
+            (left, top, right, bottom) = (left.min(x), top.min(y), right.max(x + 1), bottom.max(y + 1));
+        }
+    }
+    (left < right).then_some((left, top, right - left, bottom - top))
+}
+
 /// tiny-skia's version of a layer blend mode. Onion skins and the like are
 /// tinted ghosts, so they always blend normally regardless.
 fn blend_mode(mode: inkframe_core::BlendMode) -> BlendMode {
@@ -663,6 +758,30 @@ mod tests {
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
         let c = pixmap.pixel(x, y).unwrap().demultiply();
         [c.red(), c.green(), c.blue(), c.alpha()]
+    }
+
+    #[test]
+    fn exporting_a_psd_keeps_each_layer_and_its_settings() {
+        let mut doc = Document::default();
+        (doc.width, doc.height, doc.background) = (40, 30, Color::WHITE);
+        let square = Element {
+            shape: Shape::Rect { width: 10.0, height: 10.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None },
+        };
+        let id =
+            doc.add_layer("Red", vec![square], 0, Pose { opacity: 0.5, ..Pose::at(Point::new(20.0, 15.0)) });
+        doc.layer_mut(id).unwrap().blend = inkframe_core::BlendMode::Screen;
+        let psd = export_psd(&doc, 0, None);
+        assert_eq!(psd.layers.len(), 2, "background and the square");
+        let red = &psd.layers[1];
+        assert_eq!(
+            (red.name.as_str(), red.blend, red.opacity),
+            ("Red", inkframe_core::BlendMode::Screen, 128)
+        );
+        assert_eq!((red.left, red.top, red.width, red.height), (15, 10, 10, 10), "trimmed to the square");
+        assert_eq!(&red.pixels[..4], &[255, 0, 0, 255], "drawn at full strength");
+        let back = inkframe_core::Psd::from_bytes(&psd.to_bytes()).unwrap();
+        assert_eq!(back, psd);
     }
 
     #[test]

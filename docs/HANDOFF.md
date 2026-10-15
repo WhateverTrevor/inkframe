@@ -163,8 +163,15 @@ A checkpoint for picking development back up. Last updated 2026-10-14
     tool (`Gesture::MovePixels`); Layer via Copy/Cut (core) and Merge Down
     (`inkframe_render::merge_down`); adjustments (`adjust.rs`, window in
     `adjust_dialog.rs`); layer blend modes (`blend.rs`). The toolbar goes
-    to two columns when the window is too short. Phase 4 (maybe, not
-    agreed yet): canvas rotation while drawing, PSD import/export.
+    to two columns when the window is too short.
+43. Painting, phase 4: the stage view turns (`View::rotation`, about the
+    stage's middle; Shift+Space drag, keys 4/5/6, View menu), with the
+    stage drawn as a textured quad and fit-to-window allowing for the
+    turn. PSD import/export (`psd.rs` in core, `export_psd` in render;
+    File › Export PSD…, .psd accepted by Import to Stage). Verified
+    against macOS's own PSD reader (sips reads our files) and 20 real
+    Photoshop files shipped with macOS (all read). This completes the
+    painting plan agreed with the user.
 
 ## Not yet verified by hand
 

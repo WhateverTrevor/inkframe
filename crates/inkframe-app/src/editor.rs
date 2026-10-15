@@ -374,10 +374,36 @@ impl Editor {
         self.doc.add_audio(path, project_dir.as_deref(), start);
     }
 
+    /// Adds a Photoshop file's layers as paint layers, from the current
+    /// frame, and selects the top one. Unlike an image, the pixels are
+    /// copied into the project, so they can be painted on.
+    pub fn import_psd(&mut self, path: &Path) -> Result<(), String> {
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let psd = inkframe_core::Psd::from_bytes(&bytes).map_err(|e| e.to_string())?;
+        let name =
+            path.file_stem().map_or_else(|| "Photoshop".to_owned(), |s| s.to_string_lossy().into_owned());
+        let added = self.doc.import_psd(&psd, self.timeline(), self.frame, &name);
+        self.select(added.last().copied());
+        Ok(())
+    }
+
+    /// Writes the current frame as a Photoshop file (see
+    /// `inkframe_render::export_psd`).
+    pub fn export_psd(&self, path: &Path) -> Result<(), String> {
+        let psd = inkframe_render::export_psd(&self.doc, self.frame, Some(&self.images));
+        std::fs::write(path, psd.to_bytes()).map_err(|e| e.to_string())
+    }
+
     /// Places an image file on a new layer, on the current frame, in the
     /// middle of the stage, at its own size in pixels (or shrunk to fit the
     /// stage, so a 6000-pixel photo doesn't land as a giant).
+    ///
+    /// A Photoshop file comes in as paint layers instead, one per layer
+    /// (see [`Editor::import_psd`]).
     pub fn import_image(&mut self, path: &Path) -> Result<(), String> {
+        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("psd")) {
+            return self.import_psd(path);
+        }
         let (width, height) = inkframe_render::image_size(path)?;
         let project_dir = self.project_dir();
         let image = self.doc.add_image(path, project_dir.as_deref(), (width, height));
