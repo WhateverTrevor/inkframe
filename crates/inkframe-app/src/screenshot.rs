@@ -129,6 +129,11 @@ impl AutoScreenshot {
         std::env::var_os("INKFRAME_SCREENSHOT_CAMERA").is_some()
     }
 
+    /// Whether to turn the light table on, with the rig's head selected.
+    pub fn light_table() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_LIGHT_TABLE").is_some()
+    }
+
     /// Whether to add an inked head, with a gap in its outline, filled with
     /// the paint bucket.
     pub fn ink_and_paint() -> bool {

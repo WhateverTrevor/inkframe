@@ -599,6 +599,8 @@ struct RenderKey {
     fonts: u64,
     /// The mask layer shown faintly because it's selected.
     shown_mask: Option<LayerId>,
+    /// The layer the light table leaves unfaded, when it's on.
+    light_table: Option<LayerId>,
 }
 
 pub struct StageView {
@@ -2399,6 +2401,7 @@ impl StageView {
         let surroundings = editor.surroundings();
         // A selected mask is drawn faintly so it can be seen while moving it.
         let shown_mask = editor.selected_layer().filter(|l| l.mask).map(|l| l.id);
+        let light_table = editor.selection.filter(|_| editor.light_table);
         let key = RenderKey {
             doc: doc.clone(),
             timeline,
@@ -2410,6 +2413,7 @@ impl StageView {
             images: editor.images.generation(),
             fonts: inkframe_render::fonts_generation(),
             shown_mask,
+            light_table,
         };
         if self.rendered.as_ref() == Some(&key) {
             return;
@@ -2432,6 +2436,7 @@ impl StageView {
             images,
             show_guides: true,
             show_mask: None,
+            light_table: None,
         };
         for level in &surroundings {
             render_timeline_into(
@@ -2453,6 +2458,8 @@ impl StageView {
             draw_background: false,
             images,
             show_guides: true,
+            show_mask: shown_mask,
+            light_table,
             ..RenderOptions::default()
         };
         render_timeline_into(&mut pixmap, doc, timeline, editor.frame, to_stage, None, &options);
@@ -2487,6 +2494,7 @@ fn draw_onion_skins(pixmap: &mut tiny_skia::Pixmap, editor: &Editor, onion: Onio
         // only clutter.
         show_guides: false,
         show_mask: None,
+        light_table: None,
         opacity: 0.45 * (count - distance + 1) as f32 / count as f32,
     };
     // Farthest first, so nearer ghosts paint on top.

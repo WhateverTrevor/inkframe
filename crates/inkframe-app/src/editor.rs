@@ -269,6 +269,9 @@ pub struct Editor {
     /// Which part of the drawing new shapes go in: the line art, or the
     /// colour art beneath it.
     pub colour_art: bool,
+    /// Fade every layer but the selected one, to draw on it (Harmony's
+    /// light table).
+    pub light_table: bool,
     pub gradient_shape: GradientShape,
     /// Fade the gradient to transparent rather than to `second_color`.
     pub gradient_to_clear: bool,
@@ -327,6 +330,7 @@ impl Editor {
             close_gaps: 4.0,
             draw_into_layer: false,
             colour_art: false,
+            light_table: false,
             brush: BrushSettings::default(),
             eraser: BrushSettings {
                 size: 40.0,

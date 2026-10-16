@@ -208,6 +208,11 @@ impl InkframeApp {
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
             }
+            if AutoScreenshot::light_table() {
+                app.editor.light_table = true;
+                let head = app.editor.layers().iter().find(|l| l.name == "Head").map(|l| l.id);
+                app.editor.select(head);
+            }
             if AutoScreenshot::ink_and_paint() {
                 use inkframe_core::{Color, Element, Path, Point, Segment, Shape, Stroke, Style, Transform};
                 let ink =
@@ -861,6 +866,8 @@ impl InkframeApp {
                 ui.weak("Or Shift+Space and drag to turn it freely.");
                 ui.separator();
                 ui.checkbox(&mut self.editor.onion.enabled, "Onion Skin");
+                ui.checkbox(&mut self.editor.light_table, "Light Table")
+                    .on_hover_text("Fade every layer but the selected one, to draw on it");
                 ui.separator();
                 ui.menu_button("Workspace", |ui| {
                     for workspace in Workspace::ALL {
