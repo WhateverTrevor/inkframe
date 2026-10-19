@@ -3698,7 +3698,9 @@ mod tests {
         drag(&mut h, start, &path);
 
         let layer = &h.state().1.doc.layers[0];
-        let Shape::Line { path: stroke, .. } = &layer.drawings[0].elements[0].shape else { panic!("not a line") };
+        let Shape::Line { path: stroke, .. } = &layer.drawings[0].elements[0].shape else {
+            panic!("not a line")
+        };
         assert!(stroke.segments.len() >= 2, "a wavy stroke should keep several segments");
         // The path was recentered, so its local bounds straddle the origin.
         let bounds = h.state().1.doc.layer_bounds(layer, 0).unwrap();
