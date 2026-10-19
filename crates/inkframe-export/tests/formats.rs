@@ -283,3 +283,34 @@ fn missing_fonts_fail_the_export_clearly() {
     );
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn sprite_sheets_pack_frames_with_a_data_file() {
+    let dir = scratch_dir("sheet");
+    let mut doc = sample_doc();
+    // Frame 4 holds frame 3's drawing, so it should share its cell.
+    doc.duration = 4;
+    let mut settings = settings(ExportFormat::SpriteSheet, dir.join("walk.png"), true);
+    settings.frames = 0..=3;
+    export(&doc, &settings, |_| ControlFlow::Continue(())).unwrap();
+
+    let sheet = tiny_skia::Pixmap::load_png(dir.join("walk.png")).unwrap();
+    let data: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("walk.json")).unwrap()).unwrap();
+    assert_eq!(data["meta"]["size"]["w"], sheet.width());
+    assert_eq!(data["meta"]["size"]["h"], sheet.height());
+    let names = data["animations"]["walk"].as_array().unwrap();
+    assert_eq!(names.len(), 4);
+    let cell = |n: usize| data["frames"][names[n].as_str().unwrap()]["frame"].clone();
+    assert_ne!(cell(0), cell(1));
+    assert_eq!(cell(2), cell(3));
+    // Cropped to where the square goes: from its left edge on frame 1 to
+    // its right edge on frame 3, and its height. Three distinct frames,
+    // wide enough to stack in one column, 2 px apart.
+    let used = &data["frames"][names[0].as_str().unwrap()]["spriteSourceSize"];
+    let (w, h) = (used["w"].as_u64().unwrap() as u32, used["h"].as_u64().unwrap() as u32);
+    assert!(w < 64 && h < 36, "{used}");
+    assert_eq!((sheet.width(), sheet.height()), (w, 3 * h + 4));
+    assert_eq!(data["frames"][names[0].as_str().unwrap()]["sourceSize"]["w"], 64);
+    std::fs::remove_dir_all(dir).unwrap();
+}

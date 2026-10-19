@@ -71,6 +71,12 @@ impl ExportDialog {
         self.range = (1, doc.duration);
     }
 
+    /// Opens the dialog set to `format`, for screenshots.
+    pub fn open_with(&mut self, doc: &Document, format: ExportFormat) {
+        self.open(doc);
+        self.format = format;
+    }
+
     pub fn is_running(&self) -> bool {
         self.job.is_some()
     }
@@ -129,7 +135,7 @@ impl ExportDialog {
 
             ui.label("Resolution");
             ui.horizontal(|ui| {
-                for (label, scale) in [("50%", 0.5), ("100%", 1.0), ("200%", 2.0)] {
+                for (label, scale) in [("25%", 0.25), ("50%", 0.5), ("100%", 1.0), ("200%", 2.0)] {
                     ui.selectable_value(&mut self.scale, scale, label);
                 }
                 let (w, h) = inkframe_render::output_size(doc, self.scale);
@@ -152,6 +158,9 @@ impl ExportDialog {
         });
 
         ui.weak(format!("{} · {}", doc.frame_rate, describe(self.format)));
+        if self.format == ExportFormat::SpriteSheet {
+            ui.weak("Frames are cropped to what's drawn, with a .json file beside the image.");
+        }
         if self.format.needs_ffmpeg() && !self.ffmpeg_found {
             ui.colored_label(
                 ui.visuals().warn_fg_color,
@@ -196,11 +205,19 @@ impl ExportDialog {
         }
     }
 
+    /// The 0-based frames to export.
+    fn frames(&self, doc: &Document) -> std::ops::RangeInclusive<u32> {
+        if self.whole_animation { 0..=doc.last_frame() } else { self.range.0 - 1..=self.range.1 - 1 }
+    }
+
     fn ask_for_output(&self, name: &str) -> Option<PathBuf> {
         let extension = self.format.extension();
         let (title, filter) = match self.format {
             ExportFormat::PngSequence => {
                 ("Export PNG sequence (frames are numbered automatically)", "PNG image")
+            }
+            ExportFormat::SpriteSheet => {
+                ("Export sprite sheet (a .json file is written beside it)", "PNG image")
             }
             _ => ("Export video", "Video"),
         };
@@ -212,8 +229,7 @@ impl ExportDialog {
     }
 
     fn start(&mut self, ctx: &egui::Context, doc: &Document, output: PathBuf) {
-        let frames =
-            if self.whole_animation { 0..=doc.last_frame() } else { self.range.0 - 1..=self.range.1 - 1 };
+        let frames = self.frames(doc);
         let settings = ExportSettings {
             format: self.format,
             output: output.clone(),
@@ -279,6 +295,7 @@ fn describe(format: ExportFormat) -> &'static str {
         ExportFormat::ProRes422Hq => "high quality, no alpha, smaller files",
         ExportFormat::H264 => "small files for review and the web, no alpha",
         ExportFormat::HevcWithAlpha => "small files with alpha for Apple devices and Safari",
+        ExportFormat::SpriteSheet => "every frame on one image, for game engines",
     }
 }
 

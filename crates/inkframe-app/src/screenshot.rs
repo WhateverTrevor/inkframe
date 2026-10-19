@@ -19,6 +19,8 @@
 //! * `INKFRAME_SCREENSHOT_GRAPH=1` shows the value graph in the timeline.
 //! * `INKFRAME_SCREENSHOT_LIPSYNC=1` opens the Lip Sync window for the selected layer;
 //!   `=apply` also applies it from loudness once the sound has loaded.
+//! * `INKFRAME_SCREENSHOT_EXPORT=sprite` opens the Export window set to sprite sheets
+//!   (or another format by the start of its name, such as `png` or `h264`).
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -105,6 +107,13 @@ impl AutoScreenshot {
     /// The text layer to start typing into, if any.
     pub fn type_into() -> Option<String> {
         std::env::var("INKFRAME_SCREENSHOT_TYPE").ok()
+    }
+
+    /// The format to open the Export window with, if any.
+    pub fn export() -> Option<inkframe_export::ExportFormat> {
+        let name = std::env::var("INKFRAME_SCREENSHOT_EXPORT").ok()?.to_lowercase();
+        let squash = |s: &str| s.to_lowercase().replace(['.', ' ', '-'], "");
+        inkframe_export::ExportFormat::ALL.into_iter().find(|f| squash(f.label()).starts_with(&squash(&name)))
     }
 
     /// Whether to open the Lip Sync window.

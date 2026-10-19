@@ -11,6 +11,7 @@
 
 pub mod ffmpeg;
 mod png_sequence;
+mod sprite_sheet;
 
 use std::ops::{ControlFlow, RangeInclusive};
 use std::path::PathBuf;
@@ -38,11 +39,15 @@ pub enum ExportFormat {
     /// HEVC with an alpha channel, using Apple's hardware encoder. Plays in
     /// Safari, Final Cut Pro and on iOS. Only available on macOS.
     HevcWithAlpha,
+    /// Every frame packed into one PNG, with a JSON file saying where each
+    /// one is, for game engines (Phaser, PixiJS, Godot, Unity).
+    SpriteSheet,
 }
 
 impl ExportFormat {
-    pub const ALL: [ExportFormat; 6] = [
+    pub const ALL: [ExportFormat; 7] = [
         ExportFormat::PngSequence,
+        ExportFormat::SpriteSheet,
         ExportFormat::ProRes4444,
         ExportFormat::ProRes4444Xq,
         ExportFormat::ProRes422Hq,
@@ -58,12 +63,13 @@ impl ExportFormat {
             ExportFormat::ProRes422Hq => "Apple ProRes 422 HQ (.mov)",
             ExportFormat::H264 => "H.264 (.mp4)",
             ExportFormat::HevcWithAlpha => "HEVC with Alpha (.mov)",
+            ExportFormat::SpriteSheet => "Sprite Sheet (.png + .json)",
         }
     }
 
     pub fn extension(self) -> &'static str {
         match self {
-            ExportFormat::PngSequence => "png",
+            ExportFormat::PngSequence | ExportFormat::SpriteSheet => "png",
             ExportFormat::H264 => "mp4",
             _ => "mov",
         }
@@ -73,6 +79,7 @@ impl ExportFormat {
         matches!(
             self,
             ExportFormat::PngSequence
+                | ExportFormat::SpriteSheet
                 | ExportFormat::ProRes4444
                 | ExportFormat::ProRes4444Xq
                 | ExportFormat::HevcWithAlpha
@@ -80,7 +87,7 @@ impl ExportFormat {
     }
 
     pub fn needs_ffmpeg(self) -> bool {
-        self != ExportFormat::PngSequence
+        !matches!(self, ExportFormat::PngSequence | ExportFormat::SpriteSheet)
     }
 
     /// Whether this format can be produced on the current platform.
@@ -96,7 +103,8 @@ impl ExportFormat {
 #[derive(Debug, Clone)]
 pub struct ExportSettings {
     pub format: ExportFormat,
-    /// For video, the output file. For PNG sequences, the path of the first
+    /// For video, the output file. For sprite sheets, the image, with the
+    /// data file beside it (`walk.png` and `walk.json`). For PNG sequences, the path of the first
     /// image's *name pattern*: `shots/walk.png` produces `shots/walk_0001.png`,
     /// `shots/walk_0002.png` and so on.
     pub output: PathBuf,
@@ -137,6 +145,8 @@ pub enum ExportError {
     NoFrames,
     #[error("couldn't allocate a {0}×{1} frame")]
     FrameTooLarge(u32, u32),
+    #[error("the frames don't fit on one {0}×{0} sprite sheet; export fewer frames or at a smaller size")]
+    SheetTooLarge(u32),
     #[error("{0} isn't available on this platform")]
     Unavailable(&'static str),
     #[error(
@@ -177,7 +187,9 @@ pub fn export(
         return Err(ExportError::Unavailable(settings.format.label()));
     }
 
-    let audio = soundtrack(doc, settings)?;
+    // Game engines play their own sound, so sprite sheets have none (and
+    // a missing audio file shouldn't stop one).
+    let audio = if settings.format == ExportFormat::SpriteSheet { None } else { soundtrack(doc, settings)? };
     // As with audio, a missing picture fails the export up front instead of
     // putting a placeholder into the final render.
     let images = ImageLibrary::load(doc, settings.project_dir.as_deref());
@@ -194,6 +206,9 @@ pub fn export(
     let renderer = FrameRenderer::new(doc, &images, settings);
     match settings.format {
         ExportFormat::PngSequence => png_sequence::write(&renderer, settings, audio.as_ref(), on_progress),
+        ExportFormat::SpriteSheet => {
+            sprite_sheet::write(&renderer, settings, doc.frame_rate.fps(), on_progress)
+        }
         _ => ffmpeg::encode(&renderer, settings, audio.as_ref(), on_progress),
     }
 }

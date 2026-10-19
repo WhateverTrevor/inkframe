@@ -355,6 +355,17 @@ after the Harmony features (palettes to master controllers).
     layer is drawn once. Only movement blurs (shapes changing within a
     drawing don't). `INKFRAME_SCREENSHOT_MOTION_BLUR=1` adds a fast ball.
 
+62. Sprite sheet export: `ExportFormat::SpriteSheet` (no ffmpeg, no
+    audio), in `inkframe-export/src/sprite_sheet.rs`. Frames are cropped
+    to the union of their drawn areas (transparent background; with the
+    background on nothing is cropped), identical frames share a cell, and
+    `Grid::fit` packs them near-square under 8192 px or fails with
+    `ExportError::SheetTooLarge`. Writes `name.png` + `name.json`
+    (TexturePacker JSON hash with trim fields, `animations`, per-frame
+    `duration`). The Export dialog gained a 25% size.
+    `INKFRAME_SCREENSHOT_EXPORT=sprite` opens the Export window on a format.
+    Not yet loaded into an actual engine.
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either
