@@ -208,6 +208,9 @@ impl InkframeApp {
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
             }
+            if AutoScreenshot::node_view() {
+                app.layout.replace_kind(Kind::Timeline, Kind::NodeView);
+            }
             if AutoScreenshot::light_table() {
                 app.editor.light_table = true;
                 let head = app.editor.layers().iter().find(|l| l.name == "Head").map(|l| l.id);
@@ -1176,6 +1179,11 @@ impl InkframeApp {
                     .id_salt(("align", area))
                     .show(ui, |ui| panels::align(ui, &mut self.editor, &mut self.panels));
             }
+            Kind::NodeView => {
+                if let Some(view) = self.views.nodes.get_mut(&area) {
+                    view.show(ui, &mut self.editor);
+                }
+            }
             Kind::Controllers => {
                 egui::ScrollArea::vertical()
                     .id_salt(("controllers", area))
@@ -1286,6 +1294,7 @@ struct Views {
     stages: BTreeMap<AreaId, StageView>,
     timelines: BTreeMap<AreaId, TimelineView>,
     sheets: BTreeMap<AreaId, ExposureSheet>,
+    nodes: BTreeMap<AreaId, crate::node_view::NodeView>,
     /// The stage last pointed at.
     active_stage: Option<AreaId>,
     /// An area to change to another kind once the layout has drawn: a
@@ -1302,11 +1311,15 @@ impl Views {
         // Every tab, showing or not, so a hidden tab keeps its view.
         let areas = layout.all_tabs();
         let of = |kind: Kind| areas.iter().filter(move |a| a.1 == kind).map(|a| a.0).collect::<Vec<_>>();
-        let (stages, sheets) = (of(Kind::Stage), of(Kind::ExposureSheet));
+        let (stages, sheets, graphs) = (of(Kind::Stage), of(Kind::ExposureSheet), of(Kind::NodeView));
         let timelines: Vec<AreaId> = areas.iter().filter(|a| a.1.is_timeline()).map(|a| a.0).collect();
         self.stages.retain(|id, _| stages.contains(id));
         self.timelines.retain(|id, _| timelines.contains(id));
         self.sheets.retain(|id, _| sheets.contains(id));
+        self.nodes.retain(|id, _| graphs.contains(id));
+        for id in graphs {
+            self.nodes.entry(id).or_default();
+        }
         for id in stages {
             self.stages.entry(id).or_default();
         }

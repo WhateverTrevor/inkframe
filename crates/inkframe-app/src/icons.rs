@@ -51,6 +51,8 @@ pub enum Icon {
     LightTable,
     /// A dial: master controllers.
     Dial,
+    /// Three boxes wired together: the node view.
+    Nodes,
     Plus,
     // The Align panel.
     AlignLeft,
@@ -365,6 +367,19 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             line(&[(0.5, 0.5), (0.74, 0.26)]);
             painter.circle_filled(at(0.5, 0.5), side * 0.08, color);
         }
+        Icon::Nodes => {
+            let boxes = [(0.0, 0.08), (0.0, 0.62), (0.62, 0.35)];
+            for (x, y) in boxes {
+                painter.rect_stroke(
+                    Rect::from_min_max(at(x, y), at(x + 0.38, y + 0.3)),
+                    1.5,
+                    stroke,
+                    egui::StrokeKind::Middle,
+                );
+            }
+            line(&[(0.38, 0.23), (0.5, 0.23), (0.5, 0.5), (0.62, 0.5)]);
+            line(&[(0.38, 0.77), (0.5, 0.77), (0.5, 0.5)]);
+        }
         Icon::Plus => {
             line(&[(0.5, 0.15), (0.5, 0.85)]);
             line(&[(0.15, 0.5), (0.85, 0.5)]);
@@ -533,6 +548,7 @@ mod tests {
             Camera,
             LightTable,
             Dial,
+            Nodes,
             Plus,
             AlignLeft,
             AlignCenterX,

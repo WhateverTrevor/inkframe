@@ -221,6 +221,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `editor.rs` | `Editor`: document, selection, current frame, tool, and the operations panels call |
 | `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles |
 | `handles.rs` | The math for scale and rotate handles (anchor pinning, multi-turn rotation) |
+| `node_view.rs` | The Node View: the timeline being edited drawn as a graph built from the layers each frame (layer nodes with Parent and Mask inputs and Transform and Image outputs, effect and filter nodes in each layer's image chain, a Composite in stacking order, the Display). `connect` and `disconnect` turn wiring into the same edits the timeline and Properties make (`set_parent`, `masked_by`, `place_layer`, effects); only node positions are the view's own |
 | `pen.rs` | State of the pen path being drawn, which lasts across many clicks |
 | `subselect.rs` | The math for moving, deleting and converting anchors with the Subselection tool |
 | `timeline.rs` | Transport bar and the hand-painted layer × frame grid |

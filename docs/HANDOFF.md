@@ -8,7 +8,7 @@ after the Harmony features (palettes to master controllers).
 - **Branch:** `main`, clean. Every feature is built on its own branch,
   then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (517 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (521 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
@@ -314,6 +314,15 @@ after the Harmony features (palettes to master controllers).
     (`tidy_controllers`, on delete and load). A Controllers panel
     (`Kind::Controllers`) lists them. Not done: Harmony's on-stage
     controller widgets (dials, 2D pads).
+
+58. Node View (`node_view.rs`, `Kind::NodeView`): a visual editor of
+    the existing model, not a new compositing engine (the user chose
+    this). Built from the layers every frame; `connect`/`disconnect`
+    map wires to `set_parent`, `mask`/`masked_by`, `place_layer` and
+    effects edits. Node positions live in the view (per area, not
+    saved); unmoved nodes are auto-laid out in rows, and the view fits
+    the graph until zoomed or panned. `INKFRAME_SCREENSHOT_NODES=1`
+    puts one in place of the timeline.
 
 ## Not yet verified by hand
 

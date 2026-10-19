@@ -53,12 +53,14 @@ pub enum Kind {
     Align,
     History,
     Controllers,
+    /// The layers as a graph of nodes (see `node_view.rs`).
+    NodeView,
 }
 
 impl Kind {
     /// Every kind, grouped as the area menu lists them, Blender-style.
     pub const GROUPS: [(&'static str, &'static [Kind]); 4] = [
-        ("General", &[Kind::Stage, Kind::Tools, Kind::ToolSettings, Kind::Properties]),
+        ("General", &[Kind::Stage, Kind::Tools, Kind::ToolSettings, Kind::Properties, Kind::NodeView]),
         ("Animation", &[Kind::Timeline, Kind::GraphEditor, Kind::ExposureSheet, Kind::Controllers]),
         ("Design", &[Kind::Swatches, Kind::Align]),
         ("Project", &[Kind::Library, Kind::Audio, Kind::Document, Kind::History]),
@@ -80,6 +82,7 @@ impl Kind {
             Kind::Align => "Align",
             Kind::History => "History",
             Kind::Controllers => "Controllers",
+            Kind::NodeView => "Node View",
         }
     }
 
@@ -99,6 +102,7 @@ impl Kind {
             Kind::Align => Icon::AlignLeft,
             Kind::History => Icon::History,
             Kind::Controllers => Icon::Dial,
+            Kind::NodeView => Icon::Nodes,
         }
     }
 
@@ -328,9 +332,14 @@ impl Layout {
 
     /// Turns every timeline into a graph editor (for screenshots).
     pub fn timelines_to_graphs(&mut self) {
+        self.replace_kind(Kind::Timeline, Kind::GraphEditor);
+    }
+
+    /// Shows `to` wherever `from` is showing (for screenshots).
+    pub fn replace_kind(&mut self, from: Kind, to: Kind) {
         for (id, kind) in self.areas_unmaximized() {
-            if kind == Kind::Timeline {
-                self.set_kind(id, Kind::GraphEditor);
+            if kind == from {
+                self.set_kind(id, to);
             }
         }
     }
@@ -1184,7 +1193,7 @@ mod tests {
         let listed: Vec<Kind> = Kind::GROUPS.iter().flat_map(|(_, kinds)| kinds.iter().copied()).collect();
         let unique: std::collections::HashSet<Kind> = listed.iter().copied().collect();
         assert_eq!(listed.len(), unique.len());
-        assert_eq!(listed.len(), 14);
+        assert_eq!(listed.len(), 15);
     }
 
     #[test]
