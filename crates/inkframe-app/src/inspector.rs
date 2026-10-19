@@ -726,6 +726,18 @@ fn filter_controls(ui: &mut egui::Ui, kind: &mut inkframe_core::FilterKind) {
             ui.checkbox(inner, "Inner glow");
             ui.end_row();
         }
+        FilterKind::MotionBlur { shutter, samples } => {
+            ui.label("Shutter").on_hover_text(
+                "How much of each frame the blur covers: 180° is the usual film look, 360° the whole frame",
+            );
+            ui.add(egui::Slider::new(shutter, 0.0..=360.0).suffix("°"));
+            ui.end_row();
+            ui.label("Quality").on_hover_text(
+                "The fewest moments drawn and blended. Fast movement gets more automatically, so the smear stays smooth",
+            );
+            ui.add(egui::Slider::new(samples, 2..=32));
+            ui.end_row();
+        }
         FilterKind::AdjustColor { brightness, contrast, saturation, hue } => {
             ui.label("Brightness");
             ui.add(signed(brightness));

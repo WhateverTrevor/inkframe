@@ -343,15 +343,62 @@ fn render_layers(
         // follow the zoom (`parent`'s scale), as the drawing does.
         let filter_scale = parent.average_scale();
         let margin = inkframe_core::filter_margin(&fx.filters, filter_scale);
-        let Some(region) = covered_pixels(doc, layer, frame, matrix, pixmap.width(), pixmap.height(), margin)
-        else {
+        // Motion blur: where the layer is at each moment the shutter is
+        // open, centred on this frame. Still layers need just the one.
+        let mut moments = vec![matrix];
+        if let Some((shutter, samples)) = fx.motion_blur() {
+            let at = |i: u32, samples: u32| {
+                let t = frame as f32 + shutter * ((i as f32 + 0.5) / samples as f32 - 0.5);
+                parent.pre_concat(doc.layer_matrix_at(layer, t.max(0.0)))
+            };
+            // Enough moments that no two are more than a couple of pixels
+            // apart, however far the layer moves, so the smear is smooth
+            // rather than a row of copies.
+            let travel = layer_extent_moved(doc, layer, frame, at(0, samples), at(samples - 1, samples));
+            let samples = samples.max((travel / 2.0).ceil() as u32).min(64);
+            let all: Vec<Affine> = (0..samples).map(|i| at(i, samples)).collect();
+            if all.iter().any(|m| *m != all[0]) {
+                moments = all;
+            }
+        }
+        let (width, height) = (pixmap.width(), pixmap.height());
+        let region = moments
+            .iter()
+            .filter_map(|&m| covered_pixels(doc, layer, frame, m, width, height, margin))
+            .reduce(|a, b| {
+                IntRect::from_ltrb(
+                    a.left().min(b.left()),
+                    a.top().min(b.top()),
+                    a.right().max(b.right()),
+                    a.bottom().max(b.bottom()),
+                )
+                .unwrap_or(a)
+            });
+        let Some(region) = region else {
             continue; // Empty, or entirely outside the image.
         };
         let mut scratch = Pixmap::new(region.width(), region.height()).expect("region is non-empty");
         // Shifting by whole pixels lines the scratch buffer up exactly with
         // the image beneath it, so the result is identical to drawing in place.
         let offset = Affine::translate(Point::new(-region.x() as f32, -region.y() as f32));
-        draw_layer(&mut scratch.as_mut(), doc, layer, frame, offset.pre_concat(matrix), style, depth);
+        if let [only] = moments[..] {
+            draw_layer(&mut scratch.as_mut(), doc, layer, frame, offset.pre_concat(only), style, depth);
+        } else {
+            // Each moment drawn on its own, and the pixels averaged.
+            let mut sum = vec![0u32; scratch.data().len()];
+            let mut moment = Pixmap::new(region.width(), region.height()).expect("region is non-empty");
+            for &m in &moments {
+                moment.fill(tiny_skia::Color::TRANSPARENT);
+                draw_layer(&mut moment.as_mut(), doc, layer, frame, offset.pre_concat(m), style, depth);
+                for (total, &byte) in sum.iter_mut().zip(moment.data()) {
+                    *total += byte as u32;
+                }
+            }
+            let count = moments.len() as u32;
+            for (byte, total) in scratch.data_mut().iter_mut().zip(sum) {
+                *byte = ((total + count / 2) / count) as u8;
+            }
+        }
         if effects {
             let (width, height) = (scratch.width() as usize, scratch.height() as usize);
             inkframe_core::apply_color_effect(scratch.data_mut(), &fx.color);
@@ -561,6 +608,13 @@ fn mask_stencil(
 
 /// The pixels a layer can paint when drawn with `matrix`, clipped to a
 /// `width`×`height` image, or `None` if that's nothing.
+/// How far, in pixels, the farthest corner of a layer's drawing moves
+/// between two placements of it.
+fn layer_extent_moved(doc: &Document, layer: &Layer, frame: u32, from: Affine, to: Affine) -> f32 {
+    let Some(bounds) = doc.layer_bounds(layer, frame) else { return 0.0 };
+    bounds.corners().iter().map(|&c| from.apply(c).distance(to.apply(c))).fold(0.0, f32::max)
+}
+
 /// The pixels a layer can touch in a `width`×`height` image, plus
 /// `margin` all round, which may reach past the image.
 fn covered_pixels(
@@ -830,6 +884,49 @@ mod tests {
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
         let c = pixmap.pixel(x, y).unwrap().demultiply();
         [c.red(), c.green(), c.blue(), c.alpha()]
+    }
+
+    #[test]
+    fn motion_blur_smears_a_moving_layer_along_its_path() {
+        // The red square moves 6 pixels a frame, centred at x 50 on frame 5
+        // (covering 40 to 60). Over a whole frame's shutter it sweeps from
+        // 47 to 53, so it's smeared from 37 to 63.
+        let mut doc = red_square_doc();
+        let id = doc.layers[0].id;
+        let sharp = render_frame(&doc, 5, &RenderOptions::default()).unwrap();
+        let blur = inkframe_core::Filter {
+            enabled: true,
+            kind: inkframe_core::FilterKind::MotionBlur { shutter: 360.0, samples: 12 },
+        };
+        doc.layer_mut(id)
+            .unwrap()
+            .track
+            .set_effects(0, inkframe_core::Effects { filters: vec![blur], ..Default::default() });
+        let blurred = render_frame(&doc, 5, &RenderOptions::default()).unwrap();
+
+        assert_eq!(pixel(&sharp, 38, 50), [255, 255, 255, 255], "sharp: nothing before the edge");
+        let before = pixel(&blurred, 38, 50);
+        assert!(before[1] < 250 && before[1] > 150, "blurred: a trace before the edge {before:?}");
+        let inside = pixel(&blurred, 42, 50);
+        assert!(inside[1] > 0, "blurred: the edge itself is softened {inside:?}");
+        assert_eq!(pixel(&blurred, 50, 50), [255, 0, 0, 255], "the middle stays solid");
+    }
+
+    #[test]
+    fn a_still_layer_is_drawn_once_and_unchanged_by_motion_blur() {
+        let mut doc = red_square_doc();
+        let id = doc.layers[0].id;
+        // Frame 20 is past the last key: still.
+        let sharp = render_frame(&doc, 20, &RenderOptions::default()).unwrap();
+        let blur = inkframe_core::Filter {
+            enabled: true,
+            kind: inkframe_core::FilterKind::MotionBlur { shutter: 180.0, samples: 8 },
+        };
+        doc.layer_mut(id)
+            .unwrap()
+            .track
+            .set_effects(0, inkframe_core::Effects { filters: vec![blur], ..Default::default() });
+        assert_eq!(render_frame(&doc, 20, &RenderOptions::default()).unwrap(), sharp);
     }
 
     #[test]

@@ -87,7 +87,7 @@ impl Document {
         self.pose_at(layer, frame as f32)
     }
 
-    fn pose_at(&self, layer: &Layer, frame: f32) -> Transform {
+    pub(crate) fn pose_at(&self, layer: &Layer, frame: f32) -> Transform {
         let own = layer.track.sample(frame);
         let Some(path) = layer.follow.and_then(|guide| self.guide_path(guide, frame)) else {
             return own;

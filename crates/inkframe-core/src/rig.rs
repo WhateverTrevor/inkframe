@@ -34,7 +34,13 @@ impl Document {
     /// Maps a layer's own coordinates (where its shapes are drawn) into its
     /// timeline's at `frame`, through its pivot, its pose and its parents.
     pub fn layer_matrix(&self, layer: &Layer, frame: u32) -> Affine {
-        self.parent_matrix(layer, frame).pre_concat(self.own_matrix(layer, frame))
+        self.layer_matrix_at(layer, frame as f32)
+    }
+
+    /// [`Document::layer_matrix`] at any moment, between frames too: what
+    /// motion blur samples.
+    pub fn layer_matrix_at(&self, layer: &Layer, frame: f32) -> Affine {
+        self.parent_matrix_at(layer, frame).pre_concat(self.own_matrix(layer, frame))
     }
 
     /// The part of [`Document::layer_matrix`] that comes from the layer's
@@ -42,6 +48,10 @@ impl Document {
     /// (its parent's coordinates) into the timeline's as shown. The
     /// identity for a layer with no parent and no camera.
     pub fn parent_matrix(&self, layer: &Layer, frame: u32) -> Affine {
+        self.parent_matrix_at(layer, frame as f32)
+    }
+
+    fn parent_matrix_at(&self, layer: &Layer, frame: f32) -> Affine {
         let mut matrix = Affine::IDENTITY;
         let mut current = layer;
         for _ in 0..MAX_DEPTH {
@@ -54,8 +64,8 @@ impl Document {
     }
 
     /// A layer's pose and pivot, without its parents.
-    fn own_matrix(&self, layer: &Layer, frame: u32) -> Affine {
-        self.pose(layer, frame).to_affine().pre_concat(Affine::translate(Point::ZERO - layer.pivot))
+    fn own_matrix(&self, layer: &Layer, frame: f32) -> Affine {
+        self.pose_at(layer, frame).to_affine().pre_concat(Affine::translate(Point::ZERO - layer.pivot))
     }
 
     /// The layer's parent, if it has one that exists. A parent that has
