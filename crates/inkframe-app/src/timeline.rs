@@ -1048,6 +1048,16 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) 
         }
         ui.separator();
 
+        let lit = editor.light_table;
+        if ui
+            .add(
+                IconButton::new(Icon::LightTable, "Light table: fade every layer but the selected one")
+                    .selected(lit),
+            )
+            .clicked()
+        {
+            editor.light_table = !lit;
+        }
         let onion = editor.onion.enabled;
         if ui
             .add(

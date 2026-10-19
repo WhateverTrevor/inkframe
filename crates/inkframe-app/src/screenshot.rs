@@ -129,6 +129,23 @@ impl AutoScreenshot {
         std::env::var_os("INKFRAME_SCREENSHOT_CAMERA").is_some()
     }
 
+    /// Whether to turn the light table on, with the rig's head selected.
+    pub fn light_table() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_LIGHT_TABLE").is_some()
+    }
+
+    /// Whether to add an inked head, with a gap in its outline, filled with
+    /// the paint bucket.
+    pub fn ink_and_paint() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_INK").is_some()
+    }
+
+    /// Whether to make a palette of the rig's colours, with a darker
+    /// "Night" version switched on.
+    pub fn palette() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_PALETTE").is_some()
+    }
+
     /// Whether to give the rig a drop shadow, a glow and a tint, and show
     /// the effects in Properties.
     pub fn effects() -> bool {

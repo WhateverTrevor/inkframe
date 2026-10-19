@@ -53,6 +53,9 @@ pub struct RenderOptions<'a> {
     /// A mask layer to draw faintly, so it can be seen while it's being
     /// positioned. Masks are otherwise never drawn, only used.
     pub show_mask: Option<LayerId>,
+    /// The light table: draw every top-level layer but this one faded, so
+    /// the one being drawn on stands out, as in Harmony.
+    pub light_table: Option<LayerId>,
 }
 
 impl Default for RenderOptions<'_> {
@@ -65,6 +68,7 @@ impl Default for RenderOptions<'_> {
             images: None,
             show_guides: false,
             show_mask: None,
+            light_table: None,
         }
     }
 }
@@ -120,6 +124,7 @@ pub fn render_timeline_into(
         images: options.images,
         show_guides: options.show_guides,
         show_mask: options.show_mask,
+        light_table: options.light_table,
     };
     let layers = doc.layers_of(timeline);
     in_bands(pixmap, |band, shift| {
@@ -212,7 +217,7 @@ pub fn render_symbol_thumbnail(
         .pre_concat(Affine::translate(-center));
 
     let mut pixmap = Pixmap::new(size, size)?;
-    let style = Style { tint: None, images, show_guides: true, show_mask: None };
+    let style = Style { tint: None, images, show_guides: true, show_mask: None, light_table: None };
     render_layers(&mut pixmap.as_mut(), doc, &symbol.layers, frame, fit, 1.0, style, None, 0);
     Some(pixmap)
 }
@@ -242,7 +247,7 @@ pub fn render_layer_thumbnail(
     .pre_concat(Affine::scale(scale, scale));
 
     let mut pixmap = Pixmap::new(width, height)?;
-    let style = Style { tint: None, images, show_guides: true, show_mask: Some(layer.id) };
+    let style = Style { tint: None, images, show_guides: true, show_mask: Some(layer.id), light_table: None };
     render_layers(&mut pixmap.as_mut(), doc, std::slice::from_ref(&layer), frame, fit, 1.0, style, None, 0);
     Some(pixmap)
 }
@@ -255,7 +260,11 @@ struct Style<'a> {
     images: Option<&'a ImageLibrary>,
     show_guides: bool,
     show_mask: Option<LayerId>,
+    light_table: Option<LayerId>,
 }
+
+/// How strongly the light table draws the layers not being worked on.
+const LIGHT_TABLE_OPACITY: f32 = 0.3;
 
 /// How strongly a mask layer is drawn when it's shown for positioning.
 const MASK_PREVIEW_OPACITY: f32 = 0.35;
@@ -290,6 +299,12 @@ fn render_layers(
     for layer in layers.iter().filter(drawn) {
         let transform = doc.pose(layer, frame);
         let preview = if layer.mask { MASK_PREVIEW_OPACITY } else { 1.0 };
+        // Only the top level is faded: a symbol's own layers go with it.
+        let behind = match style.light_table {
+            Some(focus) if depth == 0 && layer.id != focus => LIGHT_TABLE_OPACITY,
+            _ => 1.0,
+        };
+        let preview = preview * behind;
         let opacity = (transform.opacity * opacity * preview).clamp(0.0, 1.0);
         if opacity <= 0.0 {
             continue;
@@ -373,7 +388,7 @@ pub fn merge_down(doc: &mut Document, upper: LayerId, frame: u32, images: Option
         return false;
     };
     below.data_mut().copy_from_slice(&canvas.to_pixels());
-    let style = Style { tint: None, images, show_guides: false, show_mask: None };
+    let style = Style { tint: None, images, show_guides: false, show_mask: None, light_table: None };
     draw_layer(&mut above.as_mut(), doc, top, frame, matrix, style, 0);
     let paint = PixmapPaint {
         opacity: doc.pose(top, frame).opacity.clamp(0.0, 1.0),
@@ -399,7 +414,7 @@ pub fn merge_down(doc: &mut Document, upper: LayerId, frame: u32, images: Option
 /// (a mask still shapes what it masks).
 pub fn export_psd(doc: &Document, frame: u32, images: Option<&ImageLibrary>) -> inkframe_core::Psd {
     let (width, height) = (doc.width, doc.height);
-    let style = Style { tint: None, images, show_guides: false, show_mask: None };
+    let style = Style { tint: None, images, show_guides: false, show_mask: None, light_table: None };
     let mut layers = Vec::new();
     if doc.background.a > 0 {
         let c = doc.background;
@@ -818,6 +833,28 @@ mod tests {
     }
 
     #[test]
+    fn the_light_table_fades_every_layer_but_one() {
+        let mut doc = red_square_doc();
+        let square = doc.layers[0].id;
+        let blue = Element {
+            shape: Shape::Rect { width: 20.0, height: 20.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::rgb(0, 0, 255)), stroke: None },
+        };
+        let other = doc.add_layer("Blue", vec![blue], 0, Pose::at(Point::new(60.0, 50.0)));
+        let lit = |focus| {
+            let options = RenderOptions { light_table: Some(focus), ..RenderOptions::default() };
+            render_frame(&doc, 0, &options).unwrap()
+        };
+        // Working on the red square: it's full strength, the blue one faded.
+        let image = lit(square);
+        assert_eq!(pixel(&image, 20, 50), [255, 0, 0, 255]);
+        let faded = pixel(&image, 60, 50);
+        assert!(faded[0] > 150 && faded[2] == 255, "blue washed towards white: {faded:?}");
+        // And the other way round.
+        assert_eq!(pixel(&lit(other), 60, 50), [0, 0, 255, 255]);
+    }
+
+    #[test]
     fn filters_across_a_band_edge_leave_no_seam() {
         // A blurred square centred on the line between the first two bands:
         // whatever each band works out on its own, the result must be the
@@ -1125,7 +1162,8 @@ mod tests {
         let mut whole = Pixmap::new(banded.width(), banded.height()).unwrap();
         whole.fill(to_skia_color(doc.background));
         let to_pixels = Affine::scale(1.3, 1.3);
-        let style = super::Style { tint: None, images: None, show_guides: false, show_mask: None };
+        let style =
+            super::Style { tint: None, images: None, show_guides: false, show_mask: None, light_table: None };
         render_layers(&mut whole.as_mut(), &doc, &doc.layers, 0, to_pixels, 1.0, style, None, 0);
 
         // tiny-skia clips each shape's outline where a band starts and ends,

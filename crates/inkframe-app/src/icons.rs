@@ -48,6 +48,9 @@ pub enum Icon {
     Swatches,
     History,
     Camera,
+    LightTable,
+    /// A dial: master controllers.
+    Dial,
     Plus,
     // The Align panel.
     AlignLeft,
@@ -341,6 +344,27 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             painter.circle_stroke(at(0.18, 0.2), side * 0.16, stroke);
             painter.circle_stroke(at(0.52, 0.2), side * 0.16, stroke);
         }
+        Icon::LightTable => {
+            // A lamp over a sheet of paper.
+            painter.add(Shape::closed_line(
+                vec![at(0.3, 0.1), at(0.7, 0.1), at(0.85, 0.42), at(0.15, 0.42)],
+                stroke,
+            ));
+            for (x0, x1) in [(0.35, 0.25), (0.5, 0.5), (0.65, 0.75)] {
+                line(&[(x0, 0.5), (x1, 0.66)]);
+            }
+            painter.rect_stroke(
+                Rect::from_min_max(at(0.05, 0.74), at(0.95, 0.94)),
+                1.5,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
+        }
+        Icon::Dial => {
+            painter.circle_stroke(r.center(), side * 0.4, stroke);
+            line(&[(0.5, 0.5), (0.74, 0.26)]);
+            painter.circle_filled(at(0.5, 0.5), side * 0.08, color);
+        }
         Icon::Plus => {
             line(&[(0.5, 0.15), (0.5, 0.85)]);
             line(&[(0.15, 0.5), (0.85, 0.5)]);
@@ -507,6 +531,8 @@ mod tests {
             Swatches,
             History,
             Camera,
+            LightTable,
+            Dial,
             Plus,
             AlignLeft,
             AlignCenterX,

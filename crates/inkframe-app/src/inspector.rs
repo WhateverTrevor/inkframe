@@ -107,12 +107,34 @@ pub fn tool_settings(ui: &mut egui::Ui, editor: &mut Editor) {
             ui.add(DragValue::new(&mut editor.pencil_stroke.width).range(0.5..=100.0).speed(0.1));
             ui.end_row();
         });
+        drawing_target(ui, editor);
     } else if matches!(editor.tool, Tool::Rectangle | Tool::Ellipse | Tool::Pen | Tool::Text) {
         ui.heading(editor.tool.name());
         shape_style(ui, editor);
+        if editor.tool != Tool::Text {
+            drawing_target(ui, editor);
+        }
     } else {
         ui.weak(format!("The {} tool has no settings.", editor.tool.name()));
     }
+}
+
+/// Where the drawing tools put new shapes: each on a layer of its own (as
+/// in Animate), or into the selected layer's drawing (as in Harmony), and
+/// then into its line art or the colour art beneath.
+fn drawing_target(ui: &mut egui::Ui, editor: &mut Editor) {
+    ui.add_space(6.0);
+    ui.checkbox(&mut editor.draw_into_layer, "Draw into the selected layer").on_hover_text(
+        "Strokes go into the selected layer's drawing, for inking and painting a drawing together. \
+         Off, each shape gets a layer of its own.",
+    );
+    ui.add_enabled_ui(editor.draw_into_layer, |ui| {
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut editor.colour_art, false, "Line Art");
+            ui.selectable_value(&mut editor.colour_art, true, "Colour Art")
+                .on_hover_text("Beneath the lines, where the paint bucket's fills go");
+        });
+    });
 }
 
 /// Fill, stroke and stroke width for the shapes the drawing tools make.
@@ -188,6 +210,19 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
                 ui.end_row();
                 ui.label("Opacity");
                 ui.add(percent(&mut editor.bucket.opacity));
+                ui.end_row();
+                // On a vector layer the bucket fills between lines instead.
+                ui.label("Close gaps").on_hover_text(
+                    "On a vector layer: how wide a gap between lines still counts as closed when filling",
+                );
+                let sizes = [(0.0, "None"), (4.0, "Small"), (10.0, "Medium"), (20.0, "Large")];
+                let current =
+                    sizes.iter().find(|(v, _)| *v == editor.close_gaps).map_or("Custom", |(_, n)| n);
+                egui::ComboBox::from_id_salt("close_gaps").selected_text(current).show_ui(ui, |ui| {
+                    for (value, name) in sizes {
+                        ui.selectable_value(&mut editor.close_gaps, value, name);
+                    }
+                });
                 ui.end_row();
             }
             Tool::Gradient => {
@@ -487,6 +522,7 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     instance_section(ui, editor, id);
     effects_section(ui, editor, id);
     deformer_section(ui, editor, id);
+    warp_section(ui, editor, id);
     drawings_section(ui, editor, id);
     shapes_section(ui, editor, id);
 }
@@ -995,6 +1031,50 @@ fn deformer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     }
     if remove {
         layer.deformer = None;
+    }
+    ui.add_space(8.0);
+}
+
+/// The free-form deformer: a grid of control points over the drawing that
+/// warp it when dragged (see `warp.rs` in the core).
+fn warp_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    let frame = editor.frame;
+    let Some(layer) = editor.doc.layer_mut(id).filter(|l| l.instance.is_none()) else { return };
+    let rest_bounds = layer.elements_at(frame).iter().map(|e| e.bounds()).reduce(|a, b| a.union(b));
+
+    ui.strong("Free-Form Deformer");
+    let Some(warp) = &mut layer.warp else {
+        ui.horizontal(|ui| {
+            for size in [3, 4] {
+                let add = ui
+                    .add_enabled(rest_bounds.is_some(), egui::Button::new(format!("Add {size}×{size} Grid")))
+                    .on_hover_text("A grid of points over the drawing: drag them with the Bone tool to squash, bulge and sway it.");
+                if add.clicked()
+                    && let Some(bounds) = rest_bounds
+                {
+                    layer.warp = Some(inkframe_core::Warp::over(bounds, size, size, frame));
+                }
+            }
+        });
+        ui.add_space(8.0);
+        return;
+    };
+    let mut remove = false;
+    ui.horizontal(|ui| {
+        ui.weak(format!("{}×{} grid. Drag its points with the Bone tool (K).", warp.columns, warp.rows));
+        if ui.small_button("Straighten").on_hover_text("Put every point back on this frame").clicked() {
+            for channel in &mut warp.offsets {
+                if channel.sample(frame as f32).is_some_and(|o| o != inkframe_core::Point::ZERO)
+                    || channel.key_at(frame).is_some()
+                {
+                    channel.set(frame, inkframe_core::Point::ZERO);
+                }
+            }
+        }
+        remove = ui.small_button("Remove").clicked();
+    });
+    if remove {
+        layer.warp = None;
     }
     ui.add_space(8.0);
 }

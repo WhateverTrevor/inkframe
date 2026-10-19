@@ -215,6 +215,8 @@ enum Gesture {
     /// Bending a deformer with the Bone tool: bone `bone` of `layer`'s
     /// deformer turns to point at the pointer.
     Bend { layer: LayerId, bone: usize },
+    /// Dragging control point `point` of `layer`'s free-form deformer.
+    Warp { layer: LayerId, point: usize },
     /// Dragging selected pixels with the Selection tool. They're lifted off
     /// (`floating`), leaving `base` behind, and put down at the pointer,
     /// moved by whole pixels from `grab` (canvas pixels).
@@ -599,6 +601,8 @@ struct RenderKey {
     fonts: u64,
     /// The mask layer shown faintly because it's selected.
     shown_mask: Option<LayerId>,
+    /// The layer the light table leaves unfaded, when it's on.
+    light_table: Option<LayerId>,
 }
 
 pub struct StageView {
@@ -810,6 +814,7 @@ impl StageView {
         if editor.tool == Tool::Bone {
             draw_skeleton(&overlay, editor, view);
             draw_deformers(&overlay, editor, view);
+            draw_warps(&overlay, editor, view);
         }
         self.draw_text_editing(ui, &overlay, editor, view);
         self.draw_pen_preview(&overlay, view, response.hover_pos());
@@ -953,6 +958,16 @@ impl StageView {
                             *pixels = moved;
                         }
                         editor.pixel_selection = Some((*canvas, selection.shifted(dx, dy)));
+                    }
+                }
+                Some(Gesture::Warp { layer, point }) => {
+                    let frame = editor.frame;
+                    let to_local =
+                        editor.doc.layer(*layer).and_then(|l| editor.doc.layer_matrix(l, frame).inverse());
+                    if let Some(to_local) = to_local
+                        && let Some(warp) = editor.doc.layer_mut(*layer).and_then(|l| l.warp.as_mut())
+                    {
+                        warp.move_point(*point, to_local.apply(p), frame);
                     }
                 }
                 Some(Gesture::Bend { layer, bone }) => {
@@ -1619,7 +1634,12 @@ impl StageView {
                 Some(Gesture::Camera { camera, how, grab: press, start })
             }
             Tool::Bone => {
-                // A deformer's joints first: they sit on top of the drawing.
+                // A warp grid's points and a deformer's joints first: they
+                // sit on top of the drawing.
+                if let Some((layer, point)) = warp_point_at(editor, view, press) {
+                    editor.select(Some(layer));
+                    return Some(Gesture::Warp { layer, point });
+                }
                 if let Some((layer, bone)) = deformer_joint_at(editor, view, press) {
                     editor.select(Some(layer));
                     return Some(Gesture::Bend { layer, bone });
@@ -2294,7 +2314,7 @@ impl StageView {
             Some(Gesture::Rotate { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Pivot { .. } | Gesture::Hint { .. }) => CursorIcon::Crosshair,
             Some(Gesture::Camera { .. }) => CursorIcon::Grabbing,
-            Some(Gesture::Reach { .. } | Gesture::Bend { .. }) => CursorIcon::Grabbing,
+            Some(Gesture::Reach { .. } | Gesture::Bend { .. } | Gesture::Warp { .. }) => CursorIcon::Grabbing,
             Some(Gesture::EditAnchor { .. }) => CursorIcon::Move,
             Some(Gesture::BendPath { .. } | Gesture::PathHandle { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Scale { handle, .. }) => handle_cursor(HandleHit::Scale(*handle)),
@@ -2362,9 +2382,10 @@ impl StageView {
                         | Tool::MagicWand,
                     ) => CursorIcon::Crosshair,
                     (None, Tool::Bone)
-                        if response
-                            .hover_pos()
-                            .is_some_and(|p| deformer_joint_at(editor, view, p).is_some()) =>
+                        if response.hover_pos().is_some_and(|p| {
+                            deformer_joint_at(editor, view, p).is_some()
+                                || warp_point_at(editor, view, p).is_some()
+                        }) =>
                     {
                         CursorIcon::Grab
                     }
@@ -2399,6 +2420,7 @@ impl StageView {
         let surroundings = editor.surroundings();
         // A selected mask is drawn faintly so it can be seen while moving it.
         let shown_mask = editor.selected_layer().filter(|l| l.mask).map(|l| l.id);
+        let light_table = editor.selection.filter(|_| editor.light_table);
         let key = RenderKey {
             doc: doc.clone(),
             timeline,
@@ -2410,6 +2432,7 @@ impl StageView {
             images: editor.images.generation(),
             fonts: inkframe_render::fonts_generation(),
             shown_mask,
+            light_table,
         };
         if self.rendered.as_ref() == Some(&key) {
             return;
@@ -2432,6 +2455,7 @@ impl StageView {
             images,
             show_guides: true,
             show_mask: None,
+            light_table: None,
         };
         for level in &surroundings {
             render_timeline_into(
@@ -2453,6 +2477,8 @@ impl StageView {
             draw_background: false,
             images,
             show_guides: true,
+            show_mask: shown_mask,
+            light_table,
             ..RenderOptions::default()
         };
         render_timeline_into(&mut pixmap, doc, timeline, editor.frame, to_stage, None, &options);
@@ -2487,6 +2513,7 @@ fn draw_onion_skins(pixmap: &mut tiny_skia::Pixmap, editor: &Editor, onion: Onio
         // only clutter.
         show_guides: false,
         show_mask: None,
+        light_table: None,
         opacity: 0.45 * (count - distance + 1) as f32 / count as f32,
     };
     // Farthest first, so nearer ghosts paint on top.
@@ -2570,6 +2597,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
         | Gesture::Camera { .. }
         | Gesture::Reach { .. }
         | Gesture::Bend { .. }
+        | Gesture::Warp { .. }
         | Gesture::MovePixels { .. }
         | Gesture::EditAnchor { .. }
         | Gesture::BendPath { .. }
@@ -2750,7 +2778,27 @@ fn lay_gradient(painting: &Painting, editor: &mut Editor, view: View, from: Pos2
 
 /// The Paint Bucket: fills on the selected paint layer (made if needed).
 fn fill_at(editor: &mut Editor, view: View, press: Pos2) {
+    // On a vector layer, ink and paint: fill the area its lines enclose.
+    // The selected layer if it's one, or else the one clicked.
     if editor.paint_target().is_none() {
+        let point = view.to_local(press);
+        let frame = editor.frame;
+        let vector = |id: LayerId| {
+            editor
+                .doc
+                .layer(id)
+                .filter(|l| l.draws_vectors() && !l.locked && l.is_shown_at(frame))
+                .map(|l| l.id)
+        };
+        let target = editor
+            .selection
+            .and_then(vector)
+            .or_else(|| editor.hit_test(point, HIT_TOLERANCE / view.zoom).and_then(vector));
+        if let Some(id) = target {
+            editor.select(Some(id));
+            editor.fill_vector(id, point);
+            return;
+        }
         editor.add_paint_layer();
     }
     let Some((layer, canvas, width, height)) = editor.paint_target() else { return };
@@ -2834,6 +2882,56 @@ fn deformer_joint_at(editor: &Editor, view: View, pointer: Pos2) -> Option<(Laye
         let bone = joints.iter().skip(1).position(|j| j.distance(pointer) <= ANCHOR_HIT)?;
         Some((layer, bone))
     })
+}
+
+/// Every warp grid in the timeline being edited, its points on screen,
+/// row by row, with its size.
+fn warp_grids(editor: &Editor, view: View) -> Vec<(LayerId, usize, Vec<Pos2>)> {
+    let frame = editor.frame;
+    editor
+        .layers()
+        .iter()
+        .filter(|l| l.is_shown_at(frame) && !l.locked)
+        .filter_map(|layer| {
+            let warp = layer.warp.as_ref()?;
+            let to_stage = editor.doc.layer_matrix(layer, frame);
+            let points = warp.points_at(frame).into_iter().map(|p| view.to_screen(to_stage.apply(p)));
+            Some((layer.id, warp.columns, points.collect()))
+        })
+        .collect()
+}
+
+/// The warp grid point under `pointer`: its layer and index.
+fn warp_point_at(editor: &Editor, view: View, pointer: Pos2) -> Option<(LayerId, usize)> {
+    warp_grids(editor, view).into_iter().rev().find_map(|(layer, _, points)| {
+        let point = points.iter().position(|p| p.distance(pointer) <= ANCHOR_HIT)?;
+        Some((layer, point))
+    })
+}
+
+/// Warp grids: the lines between their points, and the points as small
+/// squares to drag, in the deformers' green.
+fn draw_warps(painter: &egui::Painter, editor: &Editor, view: View) {
+    let line = (1.0, DEFORMER.gamma_multiply(0.7));
+    for (_, columns, points) in warp_grids(editor, view) {
+        let rows = points.len() / columns.max(1);
+        for row in 0..rows {
+            painter.add(egui::Shape::line(points[row * columns..(row + 1) * columns].to_vec(), line));
+        }
+        for column in 0..columns {
+            painter
+                .add(egui::Shape::line((0..rows).map(|row| points[row * columns + column]).collect(), line));
+        }
+        for &at in &points {
+            painter.rect(
+                Rect::from_center_size(at, Vec2::splat(7.0)),
+                1.0,
+                Color32::WHITE,
+                (1.5, DEFORMER),
+                egui::StrokeKind::Middle,
+            );
+        }
+    }
 }
 
 /// Deformer bones, drawn as a chain through the bent drawing: thinner than
@@ -3161,6 +3259,40 @@ mod tests {
         let layer = doc.layer(dot).unwrap();
         let seen = doc.layer_matrix(layer, 0).apply(Point::ZERO);
         assert!(seen.distance(Point::new(600.0, 500.0)) < 3.0, "{seen:?}");
+    }
+
+    #[test]
+    fn the_paint_bucket_fills_between_a_vector_layers_lines() {
+        // An inked square: four strokes in one drawing, with no fill.
+        let mut doc = Document::default();
+        let line = |a: Point, b: Point| Element {
+            shape: Shape::Path(Path {
+                start: a,
+                segments: vec![inkframe_core::Segment::Line { to: b }],
+                closed: false,
+            }),
+            style: Style { fill: None, stroke: Some(Stroke { color: Color::BLACK, width: 3.0 }) },
+        };
+        let p = Point::new;
+        let lines = vec![
+            line(p(-100.0, -100.0), p(100.0, -100.0)),
+            line(p(100.0, -100.0), p(100.0, 100.0)),
+            line(p(100.0, 100.0), p(-100.0, 100.0)),
+            line(p(-100.0, 100.0), p(-100.0, -100.0)),
+        ];
+        let id = doc.add_layer("Ink", lines, 0, Transform::at(p(500.0, 400.0)));
+        let mut editor = Editor::new(doc);
+        editor.select(Some(id));
+        editor.tool = Tool::PaintBucket;
+        editor.paint_color = Color::rgb(255, 0, 0);
+        let mut h = harness(editor);
+        let inside = screen(&h, 520.0, 410.0);
+        drag(&mut h, inside, &[inside]);
+
+        let layer = h.state().1.doc.layer(id).unwrap();
+        assert_eq!(layer.drawings[0].colour_art.len(), 1, "filled");
+        assert_eq!(layer.drawings[0].colour_art[0].style.fill, Some(Color::rgb(255, 0, 0)));
+        assert!(h.state().1.paint_target().is_none(), "no paint layer was made");
     }
 
     fn text_content(h: &Harness<'_, State>, id: LayerId) -> String {
@@ -3718,6 +3850,33 @@ mod tests {
         assert!(pose(&h, torso).position.distance(Point::new(300.0, 300.0)) < 1.0);
         let hand = on_stage(&h, fore, Point::new(100.0, 0.0));
         assert!(hand.distance(Point::new(800.0, 300.0)) < 1.0, "the arm came along: {hand:?}");
+    }
+
+    #[test]
+    fn dragging_a_warp_point_bulges_the_drawing() {
+        let mut editor = Editor::new(Document::default());
+        let square = Element {
+            shape: Shape::Rect { width: 200.0, height: 200.0, corner_radius: 0.0 },
+            style: Style { stroke: None, ..editor.draw_style },
+        };
+        let id = editor.doc.add_layer("Blob", vec![square], 0, Transform::at(Point::new(400.0, 400.0)));
+        let bounds = inkframe_core::Rect::from_center_size(Point::ZERO, 200.0, 200.0);
+        editor.doc.layer_mut(id).unwrap().warp = Some(inkframe_core::Warp::over(bounds, 3, 3, 0));
+        editor.tool = Tool::Bone;
+        let mut h = harness(editor);
+
+        // Pull the middle of the right edge, at (500, 400), 60 further out.
+        let from = screen(&h, 500.0, 400.0);
+        let to = screen(&h, 560.0, 400.0);
+        drag(&mut h, from, &[from + vec2(5.0, 0.0), to]);
+
+        let editor = &h.state().1;
+        let warp = editor.doc.layer(id).unwrap().warp.as_ref().unwrap();
+        let moved = warp.points_at(0)[5];
+        assert!(moved.distance(Point::new(160.0, 0.0)) < 3.0, "{moved:?}");
+        // The drawing bulges out there, and the layer itself didn't move.
+        assert!(editor.hit_test(Point::new(530.0, 400.0), 1.0) == Some(id));
+        assert_eq!(pose(&h, id), Transform::at(Point::new(400.0, 400.0)));
     }
 
     #[test]

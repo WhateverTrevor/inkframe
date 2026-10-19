@@ -54,6 +54,9 @@ The data model and the math behind animation.
 | `ik.rs` | Inverse kinematics for the Bone tool: `Document::ik_chain` (a layer and its parents below the root) and `Document::reach`, a cyclic-coordinate-descent solver that keys only rotations and honours `Layer::rotation_limits` |
 | `folder.rs` | Layer folders (a `Layer` with `folder` set; members name it in `in_folder` and always sit directly below it, restored by `tidy_folders`), `add_folder`, `place_layer` (a timeline drop), `move_among_siblings`, `folder_block`; layer colours (`Layer::tag_color`, `TAG_COLORS`) |
 | `morph.rs` | Shape tweens: `ShapeTween` (keyed by the drawing swap it morphs into), `Layer::morph_at` (used by `shown_elements`, so drawing, bounds and hit testing all see the morph), and `morph`: shapes to anchors, segments split until the counts match (at least 16 on a closed shape), lined up by the best rotation and direction or by shape hints (`Drawing::hints`), then blended with colours and stroke widths |
+| `palette.rs` | The colour palette: swatches that own their exact colour (every fill and stroke of it is theirs, so `set_swatch_color` recolours them all), in versions (day, night) switched with `use_palette_version`, which maps every swatch at once. `Palette` keeps swatch colours distinct within a version |
+| `warp.rs` | The free-form deformer: a grid of animated control-point offsets over a drawing's rest bounds; each point of the drawing moves by a Bézier-patch blend (Bernstein weights) of them, applied after the bone deformer in `shown_elements` |
+| `vector_fill.rs` | Ink and paint: a drawing's line art (`elements`) and colour art (`colour_art`, drawn beneath); `Layer::fill_enclosed` fills the area the lines enclose (grid flood with lines thickened to close gaps, grown back under them, outline traced and simplified) or recolours the fill already there |
 | `paint.rs` | Painted pixels: `Canvas` (256×256 premultiplied RGBA tiles, shared between undo snapshots with `Arc`), `Shape::Paint` naming a canvas, `Document::element_bounds`/`element_hit` (paint counts only painted pixels), `add_paint_layer`, `separate_canvases` (a duplicated layer or drawing gets its own canvas) |
 | `brush.rs` | The brush engine (and `BrushSettings::presets`, the paper `grain`, and `DabPath`, which every stroke tool uses to place its dabs): a `BrushStroke` lays round dabs along the pen's path into its own coverage mask, then redraws the touched tiles from how they were before the stroke, so opacity caps a whole stroke and flow builds up within it, as in Photoshop |
 | `selection.rs` | Pixel selections: a soft 0–255 mask per canvas pixel (`Selection`), from rectangles, ellipses and polygons (anti-aliased by 4×4 subsampling) or the magic wand; combining (`Combine`); `limit`/`limit_canvas` keep a change only where selected; `keep`/`clear`/`shifted` for moving and cutting; `outline` for marching ants |
@@ -64,6 +67,7 @@ The data model and the math behind animation.
 | `effects.rs` | Colour effects (`ColorEffect`: brightness, tint, advanced) and filters (`Filter`: drop shadow, blur, glow, adjust colour), as pixel operations on premultiplied RGBA. `Effects` (both together) is the value of the track's sixth animated property, `Property::Effects`, blended setting by setting (`Animatable` asks only for `Clone`, so values like this can animate); blurs are three box passes standing in for a Gaussian. The renderer runs a layer with effects through its scratch buffer, widened by `filter_margin` (past the band being drawn, so bands meet seamlessly) |
 | `fill.rs` | The Paint Bucket (`bucket_fill`, a scanline flood fill with a tolerance, or every matching pixel) and `gradient` (linear or radial, blended as straight colours) |
 | `container.rs` | The project file: a zip of `document.json` and each canvas tile as `canvases/<id>/<column>_<row>.png`. Plain-JSON files from before version 17 still open |
+| `controller.rs` | Master controllers: a slider over a set of layers with poses (transforms and drawings) recorded along it; `set_controller` blends the two poses either side and keys the layers on the frame, so what it poses animates like any edit |
 | `deform.rs` | Bone deformers: a `Deformer`'s rest joints and animated bends, bending outlines by blending each point between nearby bones (subdividing segments first). `Layer::shown_elements(frame)` is the drawing as seen (drawing swapped, then bent): use it for drawing, hit testing and bounds. Also `Layer::key_frames`/`insert_key`/`remove_key`/`move_key`, covering the transform and the deformer together |
 | `drawing.rs` | Drawing substitution: a layer's named `Drawing`s and its `Exposure` keys (which drawing shows from which frame). Use `Layer::elements_at(frame)` for what a layer shows, `all_elements` for "is this asset used anywhere" |
 | `lip_sync.rs` | Lip sync: the nine standard `MouthShape`s, reading Rhubarb (`.tsv`) and Papagayo (`.dat`) timing, mouth shapes from loudness, guessing which drawing is which shape (`MouthMap`), and `Layer::apply_lip_sync`. No audio code: the app passes in per-frame loudness |
@@ -120,7 +124,7 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 23. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 26. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
@@ -134,7 +138,9 @@ when project files became zips (see `container.rs`), version 18
 layer blend modes, version 19 layer folders and colours, and version 20
 shape tweens and shape hints, version 21 the camera and layer depth, version 22 colour effects
 and filters, and version 23 animated effects (format 22's fixed ones
-move into the Effects property on load);
+move into the Effects property on load), version 24 colour art in
+drawings, version 25 the free-form deformer, and version 26 master
+controllers;
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 

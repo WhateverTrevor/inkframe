@@ -208,6 +208,71 @@ impl InkframeApp {
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
             }
+            if AutoScreenshot::light_table() {
+                app.editor.light_table = true;
+                let head = app.editor.layers().iter().find(|l| l.name == "Head").map(|l| l.id);
+                app.editor.select(head);
+            }
+            if AutoScreenshot::ink_and_paint() {
+                use inkframe_core::{Color, Element, Path, Point, Segment, Shape, Stroke, Style, Transform};
+                let ink =
+                    Style { fill: None, stroke: Some(Stroke { color: Color::rgb(30, 30, 40), width: 6.0 }) };
+                // An outline as straight pieces round an ellipse, leaving
+                // out the last few: a gap the bucket has to close.
+                let ring = |rx: f32, ry: f32, cx: f32, cy: f32, gap: usize| {
+                    let points: Vec<Point> = (0..=(96 - gap))
+                        .map(|i| {
+                            let a = i as f32 / 96.0 * std::f32::consts::TAU;
+                            Point::new(cx + rx * a.cos(), cy + ry * a.sin())
+                        })
+                        .collect();
+                    Element {
+                        shape: Shape::Path(Path {
+                            start: points[0],
+                            segments: points[1..].iter().map(|&to| Segment::Line { to }).collect(),
+                            closed: false,
+                        }),
+                        style: ink,
+                    }
+                };
+                let lines = vec![
+                    ring(220.0, 180.0, 0.0, 0.0, 1),
+                    ring(40.0, 50.0, -70.0, -30.0, 0),
+                    ring(40.0, 50.0, 70.0, -30.0, 0),
+                ];
+                let doc = &mut app.editor.doc;
+                let id = doc.add_layer("Ink", lines, 0, Transform::at(Point::new(1450.0, 600.0)));
+                if let Some(layer) = doc.layer_mut(id) {
+                    layer.fill_enclosed(0, Point::new(0.0, 100.0), Color::rgb(0xf2, 0xb8, 0x8a), 14.0);
+                    layer.fill_enclosed(0, Point::new(-70.0, -30.0), Color::rgb(0xff, 0xff, 0xff), 14.0);
+                    layer.fill_enclosed(0, Point::new(70.0, -30.0), Color::rgb(0xff, 0xff, 0xff), 14.0);
+                }
+                app.editor.select(Some(id));
+                app.editor.tool = crate::editor::Tool::PaintBucket;
+            }
+            if AutoScreenshot::palette() {
+                let doc = &mut app.editor.doc;
+                let mut colours: Vec<inkframe_core::Color> = Vec::new();
+                for element in doc.all_layers().flat_map(|l| l.all_elements()) {
+                    let used = element.style.fill.into_iter().chain(element.style.stroke.map(|s| s.color));
+                    for colour in used {
+                        if !colours.contains(&colour) {
+                            colours.push(colour);
+                        }
+                    }
+                }
+                for (i, colour) in colours.iter().enumerate() {
+                    doc.add_swatch(format!("Colour {}", i + 1), *colour);
+                }
+                let night = doc.add_palette_version("Night");
+                for swatch in &mut doc.palette.swatches {
+                    let c = swatch.colors[0];
+                    let dim = |v: u8, k: f32| (v as f32 * k) as u8;
+                    swatch.colors[night] =
+                        inkframe_core::Color::rgb(dim(c.r, 0.45), dim(c.g, 0.5), dim(c.b, 0.8));
+                }
+                doc.use_palette_version(night);
+            }
             if AutoScreenshot::effects() {
                 use inkframe_core::{Color, ColorEffect, Effects, Filter, FilterKind};
                 let find = |editor: &crate::editor::Editor, name: &str| {
@@ -801,6 +866,8 @@ impl InkframeApp {
                 ui.weak("Or Shift+Space and drag to turn it freely.");
                 ui.separator();
                 ui.checkbox(&mut self.editor.onion.enabled, "Onion Skin");
+                ui.checkbox(&mut self.editor.light_table, "Light Table")
+                    .on_hover_text("Fade every layer but the selected one, to draw on it");
                 ui.separator();
                 ui.menu_button("Workspace", |ui| {
                     for workspace in Workspace::ALL {
@@ -1108,6 +1175,11 @@ impl InkframeApp {
                 egui::ScrollArea::vertical()
                     .id_salt(("align", area))
                     .show(ui, |ui| panels::align(ui, &mut self.editor, &mut self.panels));
+            }
+            Kind::Controllers => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("controllers", area))
+                    .show(ui, |ui| panels::controllers(ui, &mut self.editor));
             }
             Kind::History => {
                 egui::ScrollArea::vertical()

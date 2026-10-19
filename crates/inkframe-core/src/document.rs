@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::audio::AudioTrack;
 use crate::blend::BlendMode;
 use crate::color::Color;
+use crate::controller::Controller;
 use crate::deform::Deformer;
 use crate::drawing::{Drawing, Exposure};
 use crate::effects::{ColorEffect, Filter};
@@ -15,10 +16,12 @@ use crate::ik::RotationLimits;
 use crate::image::ImageAsset;
 use crate::morph::ShapeTween;
 use crate::paint::{Canvas, CanvasId};
+use crate::palette::Palette;
 use crate::shape::{Shape, Style};
 use crate::symbol::{Instance, Symbol, SymbolId};
 use crate::track::Track;
 use crate::transform::Transform;
+use crate::warp::Warp;
 
 /// Where a layer lives: on the main timeline, or inside a symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -31,7 +34,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 23;
+pub const FORMAT_VERSION: u32 = 26;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,9 +66,18 @@ pub struct Document {
     /// sizes are in the JSON; the pixels are saved beside it.
     #[serde(default)]
     pub canvases: BTreeMap<CanvasId, Canvas>,
-    /// Colours saved in the Swatches panel. Older builds ignore them.
+    /// The colour palette: swatches that own their colours, in one or more
+    /// versions (see `palette.rs`). Older builds ignore it.
+    #[serde(default, skip_serializing_if = "Palette::is_empty")]
+    pub palette: Palette,
+    /// Master controllers: sliders that pose several layers at once (see
+    /// `controller.rs`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub swatches: Vec<Color>,
+    pub controllers: Vec<Controller>,
+    /// Plain colours, as the Swatches panel saved them before there was a
+    /// palette; loading makes each a swatch.
+    #[serde(default, rename = "swatches", skip_serializing)]
+    pub(crate) old_swatches: Vec<Color>,
     pub(crate) next_layer_id: u64,
     #[serde(default = "first_id")]
     pub(crate) next_symbol_id: u64,
@@ -155,6 +167,10 @@ pub struct Layer {
     /// Bones that bend the drawing itself (see `deform.rs`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deformer: Option<Deformer>,
+    /// A free-form grid that warps the drawing (see `warp.rs`), after any
+    /// bones have bent it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warp: Option<Warp>,
     /// How the layer mixes with what's beneath it (see `blend.rs`).
     #[serde(default, skip_serializing_if = "BlendMode::is_normal")]
     pub blend: BlendMode,
@@ -288,7 +304,9 @@ impl Default for Document {
             next_image_id: 1,
             next_font_id: 1,
             canvases: BTreeMap::new(),
-            swatches: Vec::new(),
+            palette: Palette::default(),
+            controllers: Vec::new(),
+            old_swatches: Vec::new(),
             next_canvas_id: 1,
         }
     }
@@ -381,6 +399,7 @@ impl Document {
             pivot: Point::ZERO,
             rotation_limits: None,
             deformer: None,
+            warp: None,
             blend: BlendMode::Normal,
             color: None,
             folder: false,
@@ -583,6 +602,10 @@ impl Document {
             .any(|s| s.layers.iter().filter_map(|l| l.instance).any(|i| self.symbol_contains(i.symbol, s.id)))
         {
             return Err(DocumentError::Invalid("a symbol can't contain an instance of itself"));
+        }
+        self.tidy_controllers();
+        for (i, color) in std::mem::take(&mut self.old_swatches).into_iter().enumerate() {
+            self.add_swatch(format!("Colour {}", i + 1), color);
         }
         // Effects from format 22, which couldn't animate: they become the
         // Effects property's value throughout.
