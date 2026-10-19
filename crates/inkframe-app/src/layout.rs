@@ -52,13 +52,14 @@ pub enum Kind {
     Swatches,
     Align,
     History,
+    Controllers,
 }
 
 impl Kind {
     /// Every kind, grouped as the area menu lists them, Blender-style.
     pub const GROUPS: [(&'static str, &'static [Kind]); 4] = [
         ("General", &[Kind::Stage, Kind::Tools, Kind::ToolSettings, Kind::Properties]),
-        ("Animation", &[Kind::Timeline, Kind::GraphEditor, Kind::ExposureSheet]),
+        ("Animation", &[Kind::Timeline, Kind::GraphEditor, Kind::ExposureSheet, Kind::Controllers]),
         ("Design", &[Kind::Swatches, Kind::Align]),
         ("Project", &[Kind::Library, Kind::Audio, Kind::Document, Kind::History]),
     ];
@@ -78,6 +79,7 @@ impl Kind {
             Kind::Swatches => "Swatches",
             Kind::Align => "Align",
             Kind::History => "History",
+            Kind::Controllers => "Controllers",
         }
     }
 
@@ -96,6 +98,7 @@ impl Kind {
             Kind::Swatches => Icon::Swatches,
             Kind::Align => Icon::AlignLeft,
             Kind::History => Icon::History,
+            Kind::Controllers => Icon::Dial,
         }
     }
 
@@ -112,6 +115,7 @@ impl Kind {
                 | Kind::Swatches
                 | Kind::Align
                 | Kind::History
+                | Kind::Controllers
         )
     }
 
@@ -1180,7 +1184,7 @@ mod tests {
         let listed: Vec<Kind> = Kind::GROUPS.iter().flat_map(|(_, kinds)| kinds.iter().copied()).collect();
         let unique: std::collections::HashSet<Kind> = listed.iter().copied().collect();
         assert_eq!(listed.len(), unique.len());
-        assert_eq!(listed.len(), 13);
+        assert_eq!(listed.len(), 14);
     }
 
     #[test]

@@ -67,6 +67,7 @@ The data model and the math behind animation.
 | `effects.rs` | Colour effects (`ColorEffect`: brightness, tint, advanced) and filters (`Filter`: drop shadow, blur, glow, adjust colour), as pixel operations on premultiplied RGBA. `Effects` (both together) is the value of the track's sixth animated property, `Property::Effects`, blended setting by setting (`Animatable` asks only for `Clone`, so values like this can animate); blurs are three box passes standing in for a Gaussian. The renderer runs a layer with effects through its scratch buffer, widened by `filter_margin` (past the band being drawn, so bands meet seamlessly) |
 | `fill.rs` | The Paint Bucket (`bucket_fill`, a scanline flood fill with a tolerance, or every matching pixel) and `gradient` (linear or radial, blended as straight colours) |
 | `container.rs` | The project file: a zip of `document.json` and each canvas tile as `canvases/<id>/<column>_<row>.png`. Plain-JSON files from before version 17 still open |
+| `controller.rs` | Master controllers: a slider over a set of layers with poses (transforms and drawings) recorded along it; `set_controller` blends the two poses either side and keys the layers on the frame, so what it poses animates like any edit |
 | `deform.rs` | Bone deformers: a `Deformer`'s rest joints and animated bends, bending outlines by blending each point between nearby bones (subdividing segments first). `Layer::shown_elements(frame)` is the drawing as seen (drawing swapped, then bent): use it for drawing, hit testing and bounds. Also `Layer::key_frames`/`insert_key`/`remove_key`/`move_key`, covering the transform and the deformer together |
 | `drawing.rs` | Drawing substitution: a layer's named `Drawing`s and its `Exposure` keys (which drawing shows from which frame). Use `Layer::elements_at(frame)` for what a layer shows, `all_elements` for "is this asset used anywhere" |
 | `lip_sync.rs` | Lip sync: the nine standard `MouthShape`s, reading Rhubarb (`.tsv`) and Papagayo (`.dat`) timing, mouth shapes from loudness, guessing which drawing is which shape (`MouthMap`), and `Layer::apply_lip_sync`. No audio code: the app passes in per-frame loudness |
@@ -123,7 +124,7 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 25. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 26. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
@@ -138,7 +139,8 @@ layer blend modes, version 19 layer folders and colours, and version 20
 shape tweens and shape hints, version 21 the camera and layer depth, version 22 colour effects
 and filters, and version 23 animated effects (format 22's fixed ones
 move into the Effects property on load), version 24 colour art in
-drawings, and version 25 the free-form deformer;
+drawings, version 25 the free-form deformer, and version 26 master
+controllers;
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 

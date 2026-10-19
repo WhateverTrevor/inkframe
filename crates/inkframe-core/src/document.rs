@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::audio::AudioTrack;
 use crate::blend::BlendMode;
 use crate::color::Color;
+use crate::controller::Controller;
 use crate::deform::Deformer;
 use crate::drawing::{Drawing, Exposure};
 use crate::effects::{ColorEffect, Filter};
@@ -33,7 +34,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 25;
+pub const FORMAT_VERSION: u32 = 26;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -69,6 +70,10 @@ pub struct Document {
     /// versions (see `palette.rs`). Older builds ignore it.
     #[serde(default, skip_serializing_if = "Palette::is_empty")]
     pub palette: Palette,
+    /// Master controllers: sliders that pose several layers at once (see
+    /// `controller.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub controllers: Vec<Controller>,
     /// Plain colours, as the Swatches panel saved them before there was a
     /// palette; loading makes each a swatch.
     #[serde(default, rename = "swatches", skip_serializing)]
@@ -300,6 +305,7 @@ impl Default for Document {
             next_font_id: 1,
             canvases: BTreeMap::new(),
             palette: Palette::default(),
+            controllers: Vec::new(),
             old_swatches: Vec::new(),
             next_canvas_id: 1,
         }
@@ -597,6 +603,7 @@ impl Document {
         {
             return Err(DocumentError::Invalid("a symbol can't contain an instance of itself"));
         }
+        self.tidy_controllers();
         for (i, color) in std::mem::take(&mut self.old_swatches).into_iter().enumerate() {
             self.add_swatch(format!("Colour {}", i + 1), color);
         }

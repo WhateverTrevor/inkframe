@@ -1176,6 +1176,11 @@ impl InkframeApp {
                     .id_salt(("align", area))
                     .show(ui, |ui| panels::align(ui, &mut self.editor, &mut self.panels));
             }
+            Kind::Controllers => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("controllers", area))
+                    .show(ui, |ui| panels::controllers(ui, &mut self.editor));
+            }
             Kind::History => {
                 egui::ScrollArea::vertical()
                     .id_salt(("history", area))

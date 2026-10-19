@@ -277,6 +277,80 @@ pub fn align(ui: &mut egui::Ui, editor: &mut Editor, state: &mut PanelState) {
     }
 }
 
+/// Master controllers (see `controller.rs` in the core): a slider each,
+/// its recorded poses, and buttons to record more.
+pub fn controllers(ui: &mut egui::Ui, editor: &mut Editor) {
+    let frame = editor.frame;
+    let mut remove = None;
+    for i in 0..editor.doc.controllers.len() {
+        ui.push_id(("controller", i), |ui| {
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.add(egui::TextEdit::singleline(&mut editor.doc.controllers[i].name).desired_width(140.0));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add(IconButton::new(Icon::Trash, "Remove this controller")).clicked() {
+                        remove = Some(i);
+                    }
+                });
+            });
+            let c = &editor.doc.controllers[i];
+            let driven = c.layers.len();
+            let mut value = c.value;
+            let poses: Vec<(String, f32)> = c.poses.iter().map(|p| (p.name.clone(), p.at)).collect();
+            // Usable with a single pose too: slide to where the next pose
+            // goes, pose the layers, and record it.
+            let slider = ui.add(egui::Slider::new(&mut value, 0.0..=1.0).show_value(false));
+            if slider.changed() {
+                editor.doc.set_controller(i, value, frame);
+            }
+            // Its poses, to jump to (right-click to forget one).
+            let mut forget = None;
+            ui.horizontal_wrapped(|ui| {
+                for (j, (name, at)) in poses.iter().enumerate() {
+                    let chip = ui.small_button(name).on_hover_text(format!("At {:.0}%. Right-click to forget it", at * 100.0));
+                    if chip.clicked() {
+                        editor.doc.set_controller(i, *at, frame);
+                    }
+                    chip.context_menu(|ui| {
+                        if ui.button("Forget Pose").clicked() {
+                            forget = Some(j);
+                            ui.close();
+                        }
+                    });
+                }
+            });
+            if let Some(j) = forget {
+                editor.doc.controllers[i].poses.remove(j);
+            }
+            ui.horizontal(|ui| {
+                let at = editor.doc.controllers[i].value;
+                let hint = "Pose the layers on the stage, then record how they look as a pose at this point on the slider";
+                if ui.button(format!("Record Pose at {:.0}%", at * 100.0)).on_hover_text(hint).clicked() {
+                    let name = format!("Pose {}", editor.doc.controllers[i].poses.len() + 1);
+                    editor.doc.record_pose(i, name, at, frame);
+                }
+                ui.weak(format!("{driven} layers"));
+            });
+        });
+    }
+    if let Some(i) = remove {
+        editor.doc.controllers.remove(i);
+    }
+    ui.separator();
+    let selected = editor.selected_ids();
+    let new = ui
+        .add_enabled(!selected.is_empty(), egui::Button::new("New Controller from Selected Layers"))
+        .on_hover_text("A slider that poses these layers between poses you record along it");
+    if new.clicked() {
+        let name = format!("Controller {}", editor.doc.controllers.len() + 1);
+        let i = editor.doc.add_controller(name, &selected);
+        editor.doc.record_pose(i, "Start", 0.0, frame);
+    }
+    if editor.doc.controllers.is_empty() {
+        ui.weak("Select the layers of a pose (a face, a hand) and make a controller. Record a pose at one end of its slider, move the slider, pose the layers differently and record again; then the slider moves between them.");
+    }
+}
+
 pub fn history(ui: &mut egui::Ui, editor: &mut Editor) {
     let (done, undone): (Vec<String>, Vec<String>) = {
         let (done, undone) = editor.history.labels();

@@ -1345,6 +1345,7 @@ impl Editor {
             self.doc.release_children(id, frame);
             self.doc.remove_layer(id);
         }
+        self.doc.tidy_controllers();
         self.select(None);
     }
 

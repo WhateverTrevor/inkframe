@@ -49,6 +49,8 @@ pub enum Icon {
     History,
     Camera,
     LightTable,
+    /// A dial: master controllers.
+    Dial,
     Plus,
     // The Align panel.
     AlignLeft,
@@ -358,6 +360,11 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
                 egui::StrokeKind::Middle,
             );
         }
+        Icon::Dial => {
+            painter.circle_stroke(r.center(), side * 0.4, stroke);
+            line(&[(0.5, 0.5), (0.74, 0.26)]);
+            painter.circle_filled(at(0.5, 0.5), side * 0.08, color);
+        }
         Icon::Plus => {
             line(&[(0.5, 0.15), (0.5, 0.85)]);
             line(&[(0.15, 0.5), (0.85, 0.5)]);
@@ -525,6 +532,7 @@ mod tests {
             History,
             Camera,
             LightTable,
+            Dial,
             Plus,
             AlignLeft,
             AlignCenterX,

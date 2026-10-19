@@ -1,18 +1,18 @@
 # Handoff: where Inkframe stands
 
-A checkpoint for picking development back up. Last updated 2026-10-15,
-after animated effects.
+A checkpoint for picking development back up. Last updated 2026-10-19,
+after the Harmony features (palettes to master controllers).
 
 ## State
 
 - **Branch:** `main`, clean. Every feature is built on its own branch,
   then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (514 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (517 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
-- **File format:** version 25. Older versions load and upgrade automatically
+- **File format:** version 26. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -304,6 +304,16 @@ after animated effects.
     Properties has a Free-Form Deformer section. Harmony's curve
     deformer is close enough to the existing bend deformer that it was
     left out; envelope deformers aren't done.
+
+57. Master controllers (format v26; `controller.rs`):
+    `Document::controllers`, each a set of layers with `ControllerPose`s
+    (transforms and drawing indices per layer) at points along a 0–1
+    slider. `set_controller` blends the bracketing poses and keys the
+    layers with `set_pose` (and `expose` for drawings), so nothing is
+    evaluated at render time. Deleted layers drop out
+    (`tidy_controllers`, on delete and load). A Controllers panel
+    (`Kind::Controllers`) lists them. Not done: Harmony's on-stage
+    controller widgets (dials, 2D pads).
 
 ## Not yet verified by hand
 
