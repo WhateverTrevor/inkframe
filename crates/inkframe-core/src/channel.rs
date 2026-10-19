@@ -335,6 +335,10 @@ pub trait AnyChannel {
     /// Moves the key at `from` to `to`. Fails if there's no key at `from`
     /// or another key already occupies `to`.
     fn move_key(&mut self, from: u32, to: u32) -> bool;
+    /// Moves every key `by` frames later (or earlier, if negative), keys
+    /// that would land before frame 0 stopping there. Keys that end up on
+    /// one frame keep only the later one.
+    fn shift(&mut self, by: i64);
     fn tweens(&self) -> Vec<Tween>;
     /// The tween covering `frame`, if any.
     fn tween_at(&self, frame: u32) -> Option<Tween>;
@@ -382,6 +386,13 @@ impl<T: Animatable> AnyChannel for Channel<T> {
             }
             _ => false,
         }
+    }
+
+    fn shift(&mut self, by: i64) {
+        for key in &mut self.keys {
+            key.frame = (key.frame as i64 + by).max(0) as u32;
+        }
+        self.normalize();
     }
 
     fn move_key(&mut self, from: u32, to: u32) -> bool {

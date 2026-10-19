@@ -48,6 +48,7 @@ The data model and the math behind animation.
 | `freehand.rs` | Turns jittery pointer samples into a smooth path |
 | `anchor.rs` | Anchor points with in/out handles; conversion between anchors, paths and shapes; nearest-point search and curve-preserving point insertion |
 | `symbol.rs` | `Symbol` (library entry), `Instance` (a symbol placed on a layer) and its timing, Convert to Symbol, and symbol-aware bounds and hit-testing |
+| `template.rs` | Templates: copied layers (with their symbols, pictures, fonts and canvases) saved as a file of their own with the frame they started on; `insert_template` moves their animation to the playhead (`Layer::shift_time`) and pastes them |
 | `text.rs` | `Text`: content, `Font`, size, alignment; its measured extent, which the editor keeps up to date |
 | `guide.rs` | Motion guides: `Document::pose`, a layer's transform following its guide (use it rather than `Layer::transform_at` wherever layers are drawn or edited) |
 | `rig.rs` | Parenting and pivots: `Document::layer_matrix` (parents · pose · −pivot), the one map from a layer's drawing to its timeline that drawing, hit testing and editing all use; `set_parent` and `set_pivot`, which keep the layer where it is on screen |
@@ -244,6 +245,7 @@ callback returns `ControlFlow::Break` to cancel.
 | `xsheet.rs` | The Exposure Sheet window: `column` turns a layer's exposure into cells (starts and holds), `enter` exposes a typed drawing name, making the drawing if it's new |
 | `shortcuts.rs` | Every keyboard shortcut in one place |
 | `motion_path.rs` | The math for showing and bending a layer's motion path on the stage |
+| `templates.rs` | The Templates panel: the template library in the settings folder's Templates folder (`layout::settings_dir`), saving the selected layers and inserting one at the playhead, with thumbnails drawn from each template |
 | `text_edit.rs` | Typing into text on the stage: the text cursor, selection and keys, kept separate from drawing so it can be tested |
 | `screenshot.rs` | `INKFRAME_SCREENSHOT=out.png` captures the window and quits |
 

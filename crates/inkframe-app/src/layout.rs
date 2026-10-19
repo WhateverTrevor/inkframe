@@ -55,6 +55,8 @@ pub enum Kind {
     Controllers,
     /// The layers as a graph of nodes (see `node_view.rs`).
     NodeView,
+    /// The template library (see `templates.rs`).
+    Templates,
 }
 
 impl Kind {
@@ -63,7 +65,7 @@ impl Kind {
         ("General", &[Kind::Stage, Kind::Tools, Kind::ToolSettings, Kind::Properties, Kind::NodeView]),
         ("Animation", &[Kind::Timeline, Kind::GraphEditor, Kind::ExposureSheet, Kind::Controllers]),
         ("Design", &[Kind::Swatches, Kind::Align]),
-        ("Project", &[Kind::Library, Kind::Audio, Kind::Document, Kind::History]),
+        ("Project", &[Kind::Library, Kind::Templates, Kind::Audio, Kind::Document, Kind::History]),
     ];
 
     pub fn name(self) -> &'static str {
@@ -83,6 +85,7 @@ impl Kind {
             Kind::History => "History",
             Kind::Controllers => "Controllers",
             Kind::NodeView => "Node View",
+            Kind::Templates => "Templates",
         }
     }
 
@@ -103,6 +106,7 @@ impl Kind {
             Kind::History => Icon::History,
             Kind::Controllers => Icon::Dial,
             Kind::NodeView => Icon::Nodes,
+            Kind::Templates => Icon::Templates,
         }
     }
 
@@ -120,6 +124,7 @@ impl Kind {
                 | Kind::Align
                 | Kind::History
                 | Kind::Controllers
+                | Kind::Templates
         )
     }
 
@@ -333,6 +338,14 @@ impl Layout {
     /// Turns every timeline into a graph editor (for screenshots).
     pub fn timelines_to_graphs(&mut self) {
         self.replace_kind(Kind::Timeline, Kind::GraphEditor);
+    }
+
+    /// Adds a `new` tab, showing, to the area with a `beside` tab (for
+    /// screenshots).
+    pub fn add_tab_beside(&mut self, beside: Kind, new: Kind) {
+        if let Some((area, _)) = self.all_tabs().into_iter().find(|(_, kind)| *kind == beside) {
+            self.add_tab(area, new);
+        }
     }
 
     /// Shows `to` wherever `from` is showing (for screenshots).
@@ -815,16 +828,7 @@ impl Layout {
 
     /// Where the layout is kept between runs.
     fn file() -> Option<PathBuf> {
-        let base = if cfg!(target_os = "macos") {
-            std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Library/Application Support"))
-        } else if cfg!(windows) {
-            std::env::var_os("APPDATA").map(PathBuf::from)
-        } else {
-            std::env::var_os("XDG_CONFIG_HOME")
-                .map(PathBuf::from)
-                .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
-        };
-        base.map(|dir| dir.join("Inkframe").join("layout.json"))
+        settings_dir().map(|dir| dir.join("layout.json"))
     }
 
     /// The layout saved last time, or the usual one.
@@ -909,6 +913,21 @@ fn tab_width(ui: &egui::Ui, kind: Kind, showing: bool, icon_only: bool, font: &e
 /// The id of a tab's menu of editors.
 fn editors_menu_id(tab: &egui::Response) -> egui::Id {
     tab.id.with("editors")
+}
+
+/// Inkframe's folder for settings and the template library: Application
+/// Support on a Mac, AppData on Windows, the config folder elsewhere.
+pub fn settings_dir() -> Option<PathBuf> {
+    let base = if cfg!(target_os = "macos") {
+        std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Library/Application Support"))
+    } else if cfg!(windows) {
+        std::env::var_os("APPDATA").map(PathBuf::from)
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+    };
+    base.map(|dir| dir.join("Inkframe"))
 }
 
 /// A tab being dragged to another area's header.
@@ -1193,7 +1212,7 @@ mod tests {
         let listed: Vec<Kind> = Kind::GROUPS.iter().flat_map(|(_, kinds)| kinds.iter().copied()).collect();
         let unique: std::collections::HashSet<Kind> = listed.iter().copied().collect();
         assert_eq!(listed.len(), unique.len());
-        assert_eq!(listed.len(), 15);
+        assert_eq!(listed.len(), 16);
     }
 
     #[test]

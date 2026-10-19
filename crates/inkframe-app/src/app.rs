@@ -142,6 +142,7 @@ pub struct InkframeApp {
     adjust: AdjustDialog,
     library: LibraryView,
     panels: panels::PanelState,
+    templates: crate::templates::TemplateLibrary,
     audio: AudioEngine,
     /// The window title we last set, so we only send changes.
     title: String,
@@ -183,6 +184,7 @@ impl InkframeApp {
             adjust: AdjustDialog::default(),
             library: LibraryView::default(),
             panels: panels::PanelState::default(),
+            templates: crate::templates::TemplateLibrary::default(),
             audio: AudioEngine::default(),
             title: String::new(),
             allow_close: false,
@@ -207,6 +209,26 @@ impl InkframeApp {
             }
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
+            }
+            if AutoScreenshot::templates() {
+                let folder = std::env::temp_dir()
+                    .join(format!("inkframe-screenshot-templates-{}", std::process::id()));
+                let _ = std::fs::remove_dir_all(&folder);
+                app.templates.use_folder(folder);
+                for (name, layers) in
+                    [("Arm", &["Upper arm", "Forearm", "Hand"][..]), ("Head", &["Head", "Mouth"][..])]
+                {
+                    let ids: Vec<_> = app
+                        .editor
+                        .layers()
+                        .iter()
+                        .filter(|l| layers.contains(&l.name.as_str()))
+                        .map(|l| l.id)
+                        .collect();
+                    app.editor.select_many(&ids);
+                    app.templates.save_selected(&app.editor, name);
+                }
+                app.layout.add_tab_beside(Kind::Library, Kind::Templates);
             }
             if AutoScreenshot::node_view() {
                 app.layout.replace_kind(Kind::Timeline, Kind::NodeView);
@@ -1178,6 +1200,11 @@ impl InkframeApp {
                 egui::ScrollArea::vertical()
                     .id_salt(("align", area))
                     .show(ui, |ui| panels::align(ui, &mut self.editor, &mut self.panels));
+            }
+            Kind::Templates => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("templates", area))
+                    .show(ui, |ui| self.templates.show(ui, &mut self.editor));
             }
             Kind::NodeView => {
                 if let Some(view) = self.views.nodes.get_mut(&area) {

@@ -53,6 +53,8 @@ pub enum Icon {
     Dial,
     /// Three boxes wired together: the node view.
     Nodes,
+    /// A stack of cards: the template library.
+    Templates,
     Plus,
     // The Align panel.
     AlignLeft,
@@ -380,6 +382,25 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             line(&[(0.38, 0.23), (0.5, 0.23), (0.5, 0.5), (0.62, 0.5)]);
             line(&[(0.38, 0.77), (0.5, 0.77), (0.5, 0.5)]);
         }
+        Icon::Templates => {
+            painter.rect_stroke(
+                Rect::from_min_max(at(0.22, 0.05), at(0.95, 0.62)),
+                2.0,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
+            painter.rect_filled(
+                Rect::from_min_max(at(0.05, 0.35), at(0.78, 0.95)),
+                2.0,
+                color.gamma_multiply(0.35),
+            );
+            painter.rect_stroke(
+                Rect::from_min_max(at(0.05, 0.35), at(0.78, 0.95)),
+                2.0,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
+        }
         Icon::Plus => {
             line(&[(0.5, 0.15), (0.5, 0.85)]);
             line(&[(0.15, 0.5), (0.85, 0.5)]);
@@ -549,6 +570,7 @@ mod tests {
             LightTable,
             Dial,
             Nodes,
+            Templates,
             Plus,
             AlignLeft,
             AlignCenterX,

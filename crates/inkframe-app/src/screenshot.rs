@@ -129,6 +129,12 @@ impl AutoScreenshot {
         std::env::var_os("INKFRAME_SCREENSHOT_CAMERA").is_some()
     }
 
+    /// Whether to show the Templates panel, holding templates made from
+    /// the rig, in a temporary folder.
+    pub fn templates() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_TEMPLATES").is_some()
+    }
+
     /// Whether to show a Node View in place of the timeline.
     pub fn node_view() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_NODES").is_some()

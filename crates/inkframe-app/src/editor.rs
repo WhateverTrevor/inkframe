@@ -1381,6 +1381,26 @@ impl Editor {
         }
     }
 
+    /// The selected layers, with everything in any selected folder.
+    pub fn selected_with_folders(&self) -> Vec<LayerId> {
+        let mut ids: Vec<LayerId> = Vec::new();
+        for id in self.selected_ids().into_iter().flat_map(|id| self.block_of(id)) {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        ids
+    }
+
+    /// Adds a template's layers to the timeline being edited, starting at
+    /// the playhead, and selects them.
+    pub fn insert_template(&mut self, template: &inkframe_core::Template) {
+        let (timeline, frame) = (self.timeline(), self.frame);
+        let project_dir = self.project_dir();
+        let ids = self.doc.insert_template(template, timeline, frame, project_dir.as_deref());
+        self.select_many(&ids);
+    }
+
     /// A layer, or a folder and its contents.
     fn block_of(&self, id: LayerId) -> Vec<LayerId> {
         if self.doc.layer(id).is_some_and(|l| l.folder) { self.doc.folder_block(id) } else { vec![id] }
@@ -1390,13 +1410,7 @@ impl Editor {
 
     /// The selected layers, with everything they need, for the clipboard.
     pub fn copy_selection(&self) -> Option<Clipboard> {
-        // A folder is copied with everything in it.
-        let mut ids: Vec<LayerId> = Vec::new();
-        for id in self.selected_ids().into_iter().flat_map(|id| self.block_of(id)) {
-            if !ids.contains(&id) {
-                ids.push(id);
-            }
-        }
+        let ids = self.selected_with_folders();
         Some(Clipboard::Layers(self.doc.copy_layers(&ids, self.project_dir().as_deref())?))
     }
 
