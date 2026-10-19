@@ -21,6 +21,8 @@ use inkframe_render::ImageLibrary;
 pub enum Tool {
     Select,
     Subselect,
+    /// Shapes a pencil line's thickness point by point (see `line.rs`).
+    Width,
     Pen,
     Rectangle,
     Ellipse,
@@ -58,7 +60,7 @@ impl Tool {
     /// key picks that one, and Shift with the key steps through the rest.
     pub const GROUPS: [&'static [Tool]; 19] = [
         &[Tool::Select],
-        &[Tool::Subselect],
+        &[Tool::Subselect, Tool::Width],
         &[Tool::Bone],
         &[Tool::Camera],
         &[Tool::Pen],
@@ -92,6 +94,7 @@ impl Tool {
         match self {
             Tool::Select => "Selection",
             Tool::Subselect => "Subselection",
+            Tool::Width => "Width",
             Tool::Pen => "Pen",
             Tool::Rectangle => "Rectangle",
             Tool::Ellipse => "Oval",
@@ -272,6 +275,10 @@ pub struct Editor {
     /// Fade every layer but the selected one, to draw on it (Harmony's
     /// light table).
     pub light_table: bool,
+    /// Pencil lines follow the pen's pressure.
+    pub pencil_pressure: bool,
+    /// Pencil lines narrow towards their ends.
+    pub pencil_taper: bool,
     pub gradient_shape: GradientShape,
     /// Fade the gradient to transparent rather than to `second_color`.
     pub gradient_to_clear: bool,
@@ -331,6 +338,8 @@ impl Editor {
             draw_into_layer: false,
             colour_art: false,
             light_table: false,
+            pencil_pressure: true,
+            pencil_taper: true,
             brush: BrushSettings::default(),
             eraser: BrushSettings {
                 size: 40.0,
@@ -787,6 +796,24 @@ impl Editor {
         let Some(to_local) = to_local.map(|m| m.pre_concat(Affine::translate(position))) else {
             return false;
         };
+        // A pencil line keeps its centreline and widths, scaled into the
+        // layer's coordinates.
+        if let Shape::Line { path, widths } = &element.shape {
+            let (anchors, closed) = Shape::Path(path.clone()).to_anchors();
+            let moved: Vec<Anchor> = anchors
+                .iter()
+                .map(|a| Anchor {
+                    point: to_local.apply(a.point),
+                    handle_in: to_local.apply(a.handle_in),
+                    handle_out: to_local.apply(a.handle_out),
+                })
+                .collect();
+            let Some(path) = path_from_anchors(&moved, closed) else { return false };
+            let scale = to_local.average_scale();
+            let widths = widths.iter().map(|w| w * scale).collect();
+            let shape = Shape::Line { path, widths };
+            return self.push_into_drawing(layer.id, Element { shape, style: element.style });
+        }
         let (anchors, closed) = element.shape.to_anchors();
         let moved: Vec<Anchor> = anchors
             .iter()
@@ -798,12 +825,20 @@ impl Editor {
             .collect();
         let Some(path) = path_from_anchors(&moved, closed) else { return false };
         let id = layer.id;
-        let colour_art = self.colour_art;
-        if let Some(layer) = self.doc.layer_mut(id) {
-            let element = Element { shape: Shape::Path(path), style: element.style };
-            let index = layer.drawing_index_at(frame);
-            let drawing = &mut layer.drawings[index];
-            if colour_art { drawing.colour_art.push(element) } else { drawing.elements.push(element) }
+        self.push_into_drawing(id, Element { shape: Shape::Path(path), style: element.style })
+    }
+
+    /// Adds `element` to the drawing `layer` shows now: its line art, or
+    /// its colour art if that's what's being drawn on.
+    fn push_into_drawing(&mut self, layer: LayerId, element: Element) -> bool {
+        let (frame, colour_art) = (self.frame, self.colour_art);
+        let Some(layer) = self.doc.layer_mut(layer) else { return false };
+        let index = layer.drawing_index_at(frame);
+        let drawing = &mut layer.drawings[index];
+        if colour_art {
+            drawing.colour_art.push(element)
+        } else {
+            drawing.elements.push(element)
         }
         true
     }

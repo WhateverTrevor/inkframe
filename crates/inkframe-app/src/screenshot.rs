@@ -129,6 +129,11 @@ impl AutoScreenshot {
         std::env::var_os("INKFRAME_SCREENSHOT_CAMERA").is_some()
     }
 
+    /// Whether to add pencil lines of varying width, with the Width tool.
+    pub fn pressure_lines() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_LINES").is_some()
+    }
+
     /// Whether to show the Templates panel, holding templates made from
     /// the rig, in a temporary folder.
     pub fn templates() -> bool {

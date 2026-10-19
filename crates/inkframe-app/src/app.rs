@@ -210,6 +210,43 @@ impl InkframeApp {
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
             }
+            if AutoScreenshot::pressure_lines() {
+                use inkframe_core::{Color, Element, Path, Point, Segment, Shape, Style, Transform};
+                // Three wavy strokes, pressed hard in the middle and light at
+                // the ends, as a pen would draw them.
+                let strokes: Vec<Element> = (0..3)
+                    .map(|k| {
+                        let points: Vec<Point> = (0..=40)
+                            .map(|i| {
+                                let t = i as f32 / 40.0;
+                                Point::new(
+                                    -300.0 + 600.0 * t,
+                                    k as f32 * 90.0 - 90.0 + 30.0 * (t * 9.0).sin(),
+                                )
+                            })
+                            .collect();
+                        let widths = (0..=40)
+                            .map(|i| {
+                                let t = i as f32 / 40.0;
+                                (2.0 + 22.0 * (t * std::f32::consts::PI).sin()) * (1.0 + k as f32 * 0.4)
+                            })
+                            .collect();
+                        let path = Path {
+                            start: points[0],
+                            segments: points[1..].iter().map(|&to| Segment::Line { to }).collect(),
+                            closed: false,
+                        };
+                        Element {
+                            shape: Shape::Line { path, widths },
+                            style: Style { fill: Some(Color::rgb(30, 30, 40)), stroke: None },
+                        }
+                    })
+                    .collect();
+                let id =
+                    app.editor.doc.add_layer("Ink", strokes, 0, Transform::at(Point::new(1450.0, 650.0)));
+                app.editor.select(Some(id));
+                app.editor.tool = crate::editor::Tool::Width;
+            }
             if AutoScreenshot::templates() {
                 let folder = std::env::temp_dir()
                     .join(format!("inkframe-screenshot-templates-{}", std::process::id()));

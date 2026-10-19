@@ -183,6 +183,23 @@ fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) {
             let anchor = Rect::from_center_size(at(0.9, 0.9), Vec2::splat(5.0));
             painter.rect_filled(anchor, 0.0, stroke.color);
         }
+        Tool::Width => {
+            // A line swelling in the middle, with a handle pulling it out.
+            let outline = [
+                (0.0, 0.62),
+                (0.3, 0.5),
+                (0.5, 0.42),
+                (0.7, 0.5),
+                (1.0, 0.62),
+                (0.7, 0.72),
+                (0.5, 0.78),
+                (0.3, 0.72),
+            ];
+            let points: Vec<Pos2> = outline.iter().map(|&(x, y)| at(x, y)).collect();
+            painter.add(egui::Shape::convex_polygon(points, stroke.color, Stroke::NONE));
+            painter.line_segment([at(0.5, 0.42), at(0.5, 0.05)], stroke);
+            painter.circle_filled(at(0.5, 0.05), 2.5, stroke.color);
+        }
         Tool::Pen => {
             // A fountain-pen nib, point down, with its slit and breather hole.
             let nib = [(0.5, 1.0), (0.18, 0.5), (0.32, 0.12), (0.68, 0.12), (0.82, 0.5)];

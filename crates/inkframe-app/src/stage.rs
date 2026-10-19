@@ -173,7 +173,7 @@ enum Gesture {
     /// Dragging out a new rectangle or ellipse.
     DrawShape { tool: Tool, start: Point, current: Point },
     /// Drawing a freehand stroke.
-    Pencil { points: Vec<Point> },
+    Pencil { points: Vec<Point>, pressures: Vec<f32> },
     /// Dragging a scale handle. `start` is the pose when the drag began;
     /// every update is computed from it, so errors never accumulate.
     /// With several layers selected, `start` is the imaginary layer around
@@ -215,6 +215,8 @@ enum Gesture {
     /// Bending a deformer with the Bone tool: bone `bone` of `layer`'s
     /// deformer turns to point at the pointer.
     Bend { layer: LayerId, bone: usize },
+    /// Widening or narrowing a pencil line at one of its points.
+    Width { layer: LayerId, place: LinePoint },
     /// Dragging control point `point` of `layer`'s free-form deformer.
     Warp { layer: LayerId, point: usize },
     /// Dragging selected pixels with the Selection tool. They're lifted off
@@ -530,6 +532,101 @@ fn draw_camera_frame(painter: &egui::Painter, editor: &Editor, view: View) {
     let back = Rect::from_min_size(at, galley.size()).expand(4.0);
     painter.rect_filled(back, 3.0, CAMERA);
     painter.galley(at, galley, Color32::BLACK);
+}
+
+/// Where a point of a pencil line is: in a layer's showing drawing, its
+/// line art or colour art, which shape, and which of its anchors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LinePoint {
+    colour_art: bool,
+    element: usize,
+    anchor: usize,
+}
+
+/// How near a pencil line's point the pointer must be to grab it, in points.
+const LINE_POINT_GRAB: f32 = 14.0;
+
+/// Every pencil line's points on screen in the timeline being edited, the
+/// selected layer's first, with each point's width on screen.
+fn line_points(editor: &Editor, view: View) -> Vec<(LayerId, LinePoint, Pos2, f32)> {
+    let frame = editor.frame;
+    let mut layers: Vec<&inkframe_core::Layer> =
+        editor.layers().iter().filter(|l| l.is_shown_at(frame) && !l.locked).collect();
+    layers.sort_by_key(|l| !editor.is_selected(l.id));
+    let mut found = Vec::new();
+    for layer in layers {
+        let to_stage = editor.doc.layer_matrix(layer, frame);
+        let scale = to_stage.average_scale() * view.zoom;
+        let drawing = &layer.drawings[layer.drawing_index_at(frame)];
+        for (colour_art, list) in [(false, &drawing.elements), (true, &drawing.colour_art)] {
+            for (element, e) in list.iter().enumerate() {
+                let Shape::Line { path, widths } = &e.shape else { continue };
+                for (anchor, at) in inkframe_core::centreline_anchors(path).into_iter().enumerate() {
+                    let width = widths.get(anchor).copied().unwrap_or(1.0) * scale;
+                    found.push((
+                        layer.id,
+                        LinePoint { colour_art, element, anchor },
+                        view.to_screen(to_stage.apply(at)),
+                        width,
+                    ));
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The pencil line point under `pointer`: the nearest within reach.
+fn line_point_at(editor: &Editor, view: View, pointer: Pos2) -> Option<(LayerId, LinePoint)> {
+    line_points(editor, view)
+        .into_iter()
+        .filter(|(.., at, _)| at.distance(pointer) <= LINE_POINT_GRAB)
+        .min_by(|a, b| a.2.distance(pointer).total_cmp(&b.2.distance(pointer)))
+        .map(|(layer, place, ..)| (layer, place))
+}
+
+/// The pencil line a `LinePoint` is on, to change its widths.
+fn line_shape_mut(editor: &mut Editor, layer: LayerId, place: LinePoint) -> Option<&mut Shape> {
+    let frame = editor.frame;
+    let layer = editor.doc.layer_mut(layer)?;
+    let index = layer.drawing_index_at(frame);
+    let drawing = &mut layer.drawings[index];
+    let list = if place.colour_art { &mut drawing.colour_art } else { &mut drawing.elements };
+    Some(&mut list.get_mut(place.element)?.shape)
+}
+
+/// For the Width tool: each pencil line's points as small dots, and at
+/// the point under the pointer, a bar across the line as wide as it is
+/// there, which is what dragging changes.
+fn draw_line_widths(painter: &egui::Painter, editor: &Editor, view: View) {
+    let points = line_points(editor, view);
+    for (.., at, _) in &points {
+        painter.circle_filled(*at, 2.0, SELECTION.gamma_multiply(0.6));
+    }
+    let pointer = painter.ctx().pointer_hover_pos();
+    let Some(i) = pointer.and_then(|pointer| {
+        (0..points.len())
+            .filter(|&i| points[i].2.distance(pointer) <= LINE_POINT_GRAB)
+            .min_by(|&a, &b| points[a].2.distance(pointer).total_cmp(&points[b].2.distance(pointer)))
+    }) else {
+        return;
+    };
+    let (layer, place, at, width) = points[i];
+    // Square to the line: the way between its neighbours on the same line.
+    let same = |j: usize| {
+        points
+            .get(j)
+            .filter(|p| p.0 == layer && p.1.element == place.element && p.1.colour_art == place.colour_art)
+    };
+    let before = i.checked_sub(1).and_then(same).map_or(at, |p| p.2);
+    let after = same(i + 1).map_or(at, |p| p.2);
+    let along = after - before;
+    let across = if along.length() > 1e-3 { vec2(-along.y, along.x).normalized() } else { vec2(0.0, 1.0) };
+    let half = across * (width / 2.0).max(3.0);
+    painter.line_segment([at - half, at + half], (2.0, SELECTION));
+    for end in [at - half, at + half] {
+        painter.circle(end, 3.5, Color32::WHITE, (1.5, SELECTION));
+    }
 }
 
 /// How near a shape hint the pointer must be to grab it, in points.
@@ -960,6 +1057,23 @@ impl StageView {
                         editor.pixel_selection = Some((*canvas, selection.shifted(dx, dy)));
                     }
                 }
+                Some(Gesture::Width { layer, place }) => {
+                    let frame = editor.frame;
+                    let Some(to_local) =
+                        editor.doc.layer(*layer).and_then(|l| editor.doc.layer_matrix(l, frame).inverse())
+                    else {
+                        return;
+                    };
+                    let local = to_local.apply(p);
+                    if let Some(Shape::Line { path, widths }) = line_shape_mut(editor, *layer, *place) {
+                        let anchor = inkframe_core::centreline_anchors(path).get(place.anchor).copied();
+                        if let (Some(anchor), Some(width)) = (anchor, widths.get_mut(place.anchor)) {
+                            // As wide as twice the pointer's distance from the
+                            // centreline: the edge follows the pointer.
+                            *width = (local.distance(anchor) * 2.0).clamp(0.2, 400.0);
+                        }
+                    }
+                }
                 Some(Gesture::Warp { layer, point }) => {
                     let frame = editor.frame;
                     let to_local =
@@ -1069,11 +1183,12 @@ impl StageView {
                 Some(Gesture::DrawShape { start, current, .. }) => {
                     *current = if shift { constrain_square(*start, p) } else { p };
                 }
-                Some(Gesture::Pencil { points }) => {
+                Some(Gesture::Pencil { points, pressures }) => {
                     // Skip samples closer than half a screen point; they add
                     // nothing but noise for the smoother to clean up.
                     if points.last().is_none_or(|last| last.distance(p) * view.zoom > 0.5) {
                         points.push(p);
+                        pressures.push(pen_pressure());
                     }
                 }
                 Some(Gesture::BendPath { layer, segment, s }) => {
@@ -1618,7 +1733,12 @@ impl StageView {
             tool @ (Tool::Rectangle | Tool::Ellipse) => {
                 Some(Gesture::DrawShape { tool, start: p, current: p })
             }
-            Tool::Pencil => Some(Gesture::Pencil { points: vec![p] }),
+            Tool::Pencil => Some(Gesture::Pencil { points: vec![p], pressures: vec![pen_pressure()] }),
+            Tool::Width => {
+                let (layer, place) = line_point_at(editor, view, press)?;
+                editor.select(Some(layer));
+                Some(Gesture::Width { layer, place })
+            }
             Tool::Camera => {
                 // The first drag adds a camera, if there isn't one.
                 let camera = editor.doc.add_camera();
@@ -2192,6 +2312,10 @@ impl StageView {
     }
 
     fn draw_overlays(&self, painter: &egui::Painter, editor: &Editor, view: View, handles: Option<&Handles>) {
+        if editor.tool == Tool::Width {
+            draw_line_widths(painter, editor, view);
+            return;
+        }
         if editor.tool == Tool::Camera {
             draw_camera_frame(painter, editor, view);
             return;
@@ -2273,10 +2397,19 @@ impl StageView {
                 };
                 painter.add(egui::Shape::closed_line(outline, preview));
             }
-            Some(Gesture::Pencil { points }) => {
+            Some(Gesture::Pencil { points, pressures }) => {
+                // The line as it's drawn, each piece as wide as the pen
+                // pressed there.
                 let stroke = editor.pencil_stroke;
-                let line = points.iter().map(|p| view.to_screen(*p)).collect();
-                painter.line(line, (stroke.width * view.zoom, to_color32(stroke.color)));
+                let color = to_color32(stroke.color);
+                let pressure = |i: usize| {
+                    if editor.pencil_pressure { pressures.get(i).copied().unwrap_or(1.0) } else { 1.0 }
+                };
+                for (i, pair) in points.windows(2).enumerate() {
+                    let width = (stroke.width * pressure(i + 1) * view.zoom).max(0.5);
+                    painter.line_segment([view.to_screen(pair[0]), view.to_screen(pair[1])], (width, color));
+                    painter.circle_filled(view.to_screen(pair[1]), width / 2.0, color);
+                }
             }
             _ => {}
         }
@@ -2314,7 +2447,9 @@ impl StageView {
             Some(Gesture::Rotate { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Pivot { .. } | Gesture::Hint { .. }) => CursorIcon::Crosshair,
             Some(Gesture::Camera { .. }) => CursorIcon::Grabbing,
-            Some(Gesture::Reach { .. } | Gesture::Bend { .. } | Gesture::Warp { .. }) => CursorIcon::Grabbing,
+            Some(
+                Gesture::Reach { .. } | Gesture::Bend { .. } | Gesture::Warp { .. } | Gesture::Width { .. },
+            ) => CursorIcon::Grabbing,
             Some(Gesture::EditAnchor { .. }) => CursorIcon::Move,
             Some(Gesture::BendPath { .. } | Gesture::PathHandle { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Scale { handle, .. }) => handle_cursor(HandleHit::Scale(*handle)),
@@ -2335,6 +2470,13 @@ impl StageView {
                         CursorIcon::Grab
                     }
                     (None, Tool::Select) => CursorIcon::Default,
+                    (None, Tool::Width) => {
+                        if response.hover_pos().is_some_and(|p| line_point_at(editor, view, p).is_some()) {
+                            CursorIcon::ResizeHorizontal
+                        } else {
+                            CursorIcon::Default
+                        }
+                    }
                     (None, Tool::Camera) => CursorIcon::Move,
                     (None, Tool::Subselect) => {
                         let on_anchor =
@@ -2551,15 +2693,24 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
             let element = Element { shape, style: editor.draw_style };
             editor.add_drawn_shape(name, element, rect.center());
         }
-        Gesture::Pencil { points } => {
+        Gesture::Pencil { points, pressures } => {
             // Simplify relative to the screen, so a stroke drawn while zoomed
             // in keeps proportionally more detail.
             let tolerance = 1.5 / view.zoom;
             let Some(path) = fit_freehand_path(&points, tolerance) else {
                 return;
             };
-            let style = Style { fill: None, stroke: Some(editor.pencil_stroke) };
-            add_path_layer(editor, "Stroke", path, style);
+            if editor.pencil_pressure || editor.pencil_taper {
+                // Anchors along the whole line, so its width can change
+                // along it (a straight stroke simplifies to just its ends).
+                let length: f32 = points.windows(2).map(|w| w[0].distance(w[1])).sum();
+                let path = inkframe_core::with_anchors_every(&path, (length / 40.0).max(6.0 / view.zoom));
+                let widths = line_widths(editor, &path, &points, &pressures);
+                add_line_layer(editor, path, widths);
+            } else {
+                let style = Style { fill: None, stroke: Some(editor.pencil_stroke) };
+                add_path_layer(editor, "Stroke", path, style);
+            }
         }
         Gesture::Marquee { start, current, adding } => {
             let area = StageRect::from_points(start, current);
@@ -2598,6 +2749,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
         | Gesture::Reach { .. }
         | Gesture::Bend { .. }
         | Gesture::Warp { .. }
+        | Gesture::Width { .. }
         | Gesture::MovePixels { .. }
         | Gesture::EditAnchor { .. }
         | Gesture::BendPath { .. }
@@ -2995,6 +3147,56 @@ fn insert_point(editor: &mut Editor, hit: OutlineHit) {
 /// The path is recentered on its own middle first, so the layer's pivot
 /// (the point it rotates and scales around) sits in the middle of the
 /// drawing rather than at the stage's top-left corner.
+/// The pen's pressure now, from 0 to 1; 1 with a mouse.
+fn pen_pressure() -> f32 {
+    tablet::current().map_or(1.0, |pen| pen.pressure)
+}
+
+/// How wide a pencil line is at each anchor of `path`: the pencil's width
+/// times the pressure drawn nearest it (if pressure is on), narrowing over
+/// the ends (if tapering is on).
+fn line_widths(editor: &Editor, path: &Path, points: &[Point], pressures: &[f32]) -> Vec<f32> {
+    let anchors = inkframe_core::centreline_anchors(path);
+    // How far along the line each anchor is.
+    let mut along = vec![0.0];
+    for pair in anchors.windows(2) {
+        along.push(along.last().copied().unwrap_or(0.0) + pair[0].distance(pair[1]));
+    }
+    let total = along.last().copied().unwrap_or(0.0);
+    let taper = (total * 0.25).clamp(1e-3, 60.0);
+    anchors
+        .iter()
+        .zip(&along)
+        .map(|(anchor, &distance)| {
+            let nearest = (0..points.len())
+                .min_by(|&a, &b| points[a].distance(*anchor).total_cmp(&points[b].distance(*anchor)))
+                .unwrap_or(0);
+            // Light touches still leave a thin line, as on paper.
+            let pressure = if editor.pencil_pressure {
+                pressures.get(nearest).copied().unwrap_or(1.0).max(0.1)
+            } else {
+                1.0
+            };
+            let end = if editor.pencil_taper {
+                (distance.min(total - distance) / taper).clamp(0.15, 1.0)
+            } else {
+                1.0
+            };
+            editor.pencil_stroke.width * pressure * end
+        })
+        .collect()
+}
+
+/// Adds a pencil line, centred on its own middle, as `add_path_layer`
+/// does for paths.
+fn add_line_layer(editor: &mut Editor, mut path: Path, widths: Vec<f32>) {
+    let Some(bounds) = StageRect::bounding(path.flatten()) else { return };
+    let center = bounds.center();
+    path.translate(-center);
+    let style = Style { fill: Some(editor.pencil_stroke.color), stroke: None };
+    editor.add_drawn_shape("Line", Element { shape: Shape::Line { path, widths }, style }, center);
+}
+
 fn add_path_layer(editor: &mut Editor, prefix: &str, mut path: Path, style: Style) {
     let Some(bounds) = StageRect::bounding(path.flatten()) else {
         return;
@@ -3295,6 +3497,44 @@ mod tests {
         assert!(h.state().1.paint_target().is_none(), "no paint layer was made");
     }
 
+    #[test]
+    fn the_pencil_draws_a_line_that_tapers_and_the_width_tool_widens_it() {
+        let mut editor = Editor::new(Document::default());
+        editor.tool = Tool::Pencil;
+        editor.pencil_stroke.width = 8.0;
+        let mut h = harness(editor);
+        let points: Vec<Pos2> = (0..=20).map(|i| screen(&h, 200.0 + i as f32 * 20.0, 300.0)).collect();
+        drag(&mut h, points[0], &points[1..]);
+
+        let (widths, anchors, id) = {
+            let editor = &h.state().1;
+            let layer = editor.doc.layers.last().unwrap();
+            let Shape::Line { path, widths } = &layer.drawings[0].elements[0].shape else {
+                panic!("a pencil line")
+            };
+            let to_stage = editor.doc.layer_matrix(layer, 0);
+            let anchors: Vec<Point> =
+                inkframe_core::centreline_anchors(path).into_iter().map(|a| to_stage.apply(a)).collect();
+            (widths.clone(), anchors, layer.id)
+        };
+        // Thin at the ends, the pencil's width in the middle (a mouse
+        // presses fully).
+        let middle = widths[widths.len() / 2];
+        assert!(widths[0] < middle && widths[widths.len() - 1] < middle, "{widths:?}");
+        assert!((middle - 8.0).abs() < 1e-3, "{widths:?}");
+
+        // The Width tool: grab the middle point and pull 60 off the line.
+        h.state_mut().1.tool = Tool::Width;
+        h.run();
+        let at = anchors[anchors.len() / 2];
+        let path = [screen(&h, at.x, at.y + 30.0), screen(&h, at.x, at.y + 60.0)];
+        let from = screen(&h, at.x, at.y);
+        drag(&mut h, from, &path);
+        let layer = h.state().1.doc.layer(id).unwrap();
+        let Shape::Line { widths, .. } = &layer.drawings[0].elements[0].shape else { panic!("still a line") };
+        assert!((widths[widths.len() / 2] - 120.0).abs() < 4.0, "{widths:?}");
+    }
+
     fn text_content(h: &Harness<'_, State>, id: LayerId) -> String {
         match &h.state().1.doc.layer(id).unwrap().drawings[0].elements[0].shape {
             Shape::Text(text) => text.content.clone(),
@@ -3458,11 +3698,19 @@ mod tests {
         drag(&mut h, start, &path);
 
         let layer = &h.state().1.doc.layers[0];
-        let Shape::Path(stroke) = &layer.drawings[0].elements[0].shape else { panic!("not a path") };
+        let Shape::Line { path: stroke, .. } = &layer.drawings[0].elements[0].shape else { panic!("not a line") };
         assert!(stroke.segments.len() >= 2, "a wavy stroke should keep several segments");
         // The path was recentered, so its local bounds straddle the origin.
         let bounds = h.state().1.doc.layer_bounds(layer, 0).unwrap();
         assert!(bounds.center().distance(Point::ZERO) < 30.0);
+
+        // With pressure and tapering off, it's a plain stroke.
+        h.state_mut().1.pencil_pressure = false;
+        h.state_mut().1.pencil_taper = false;
+        h.run();
+        drag(&mut h, start, &path);
+        let layer = h.state().1.doc.layers.last().unwrap();
+        assert!(matches!(layer.drawings[0].elements[0].shape, Shape::Path(_)));
     }
 
     /// An editor with a selected 200×200 box centered at (400, 400). It has

@@ -114,6 +114,8 @@ impl Document {
         let to_timeline = self.layer_matrix(layer, frame as u32);
         let outline = layer.elements_at(frame as u32).iter().find_map(|element| match &element.shape {
             Shape::Path(path) => Some(path.flatten()),
+            // A pencil line guides along its centreline, not its outline.
+            Shape::Line { path, .. } => Some(path.flatten()),
             shape @ (Shape::Rect { .. } | Shape::Ellipse { .. }) => {
                 let (anchors, closed) = shape.to_anchors();
                 path_from_anchors(&anchors, closed).map(|path| path.flatten())

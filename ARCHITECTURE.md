@@ -72,6 +72,7 @@ The data model and the math behind animation.
 | `deform.rs` | Bone deformers: a `Deformer`'s rest joints and animated bends, bending outlines by blending each point between nearby bones (subdividing segments first). `Layer::shown_elements(frame)` is the drawing as seen (drawing swapped, then bent): use it for drawing, hit testing and bounds. Also `Layer::key_frames`/`insert_key`/`remove_key`/`move_key`, covering the transform and the deformer together |
 | `drawing.rs` | Drawing substitution: a layer's named `Drawing`s and its `Exposure` keys (which drawing shows from which frame). Use `Layer::elements_at(frame)` for what a layer shows, `all_elements` for "is this asset used anywhere" |
 | `lip_sync.rs` | Lip sync: the nine standard `MouthShape`s, reading Rhubarb (`.tsv`) and Papagayo (`.dat`) timing, mouth shapes from loudness, guessing which drawing is which shape (`MouthMap`), and `Layer::apply_lip_sync`. No audio code: the app passes in per-frame loudness |
+| `line.rs` | Pressure-sensitive lines (`Shape::Line`): a centreline with a width per anchor, eased between anchors and drawn as the filled outline it sweeps out with round ends (`line_outline`). `to_anchors` gives that outline, so deformers, morphs, fills and hit tests treat a line as its shape; the Width tool edits the widths |
 | `mask.rs` | Masks: which mask a layer is seen through, and Animate's "mask the layer below" |
 | `font_file.rs` | `FontFile`: a font file linked to the project, and the families it provides |
 | `image.rs` | `ImageAsset`: an image file the document links to, and its size in pixels |
@@ -125,7 +126,7 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 26. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 27. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
@@ -140,8 +141,8 @@ layer blend modes, version 19 layer folders and colours, and version 20
 shape tweens and shape hints, version 21 the camera and layer depth, version 22 colour effects
 and filters, and version 23 animated effects (format 22's fixed ones
 move into the Effects property on load), version 24 colour art in
-drawings, version 25 the free-form deformer, and version 26 master
-controllers;
+drawings, version 25 the free-form deformer, version 26 master
+controllers, and version 27 pressure-sensitive pencil lines;
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 

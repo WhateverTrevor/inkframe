@@ -90,6 +90,10 @@ impl Shape {
     pub fn to_anchors(&self) -> (Vec<Anchor>, bool) {
         match self {
             Shape::Path(path) => (anchors_from_path(path), path.closed),
+            // The outline it sweeps out: what bends, morphs and bounds a fill.
+            Shape::Line { path, widths } => {
+                (anchors_from_path(&crate::line::line_outline(path, widths)), true)
+            }
             Shape::Rect { width, height, corner_radius } => {
                 let bounds = Rect::from_center_size(Point::ZERO, *width, *height);
                 let radius = corner_radius.clamp(0.0, width.min(*height) / 2.0);
