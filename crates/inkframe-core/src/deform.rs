@@ -286,6 +286,31 @@ impl Layer {
         moved || had_deformer_key || had_warp_key
     }
 
+    /// Moves everything about the layer in time by `by` frames: where it
+    /// starts and ends, every key, drawing swap and shape tween, as
+    /// inserting it at another frame needs. Frames that would go below 0
+    /// stop there.
+    pub fn shift_time(&mut self, by: i64) {
+        let shift = |f: u32| (f as i64 + by).max(0) as u32;
+        self.start = shift(self.start);
+        self.end = self.end.map(shift);
+        for property in crate::track::Property::ALL {
+            self.track.channel_mut(property).shift(by);
+        }
+        for key in &mut self.exposure {
+            key.frame = shift(key.frame);
+        }
+        for tween in &mut self.shape_tweens {
+            tween.end = shift(tween.end);
+        }
+        if let Some(deformer) = &mut self.deformer {
+            deformer.bends.iter_mut().for_each(|c| c.shift(by));
+        }
+        if let Some(warp) = &mut self.warp {
+            warp.offsets.iter_mut().for_each(|c| c.shift(by));
+        }
+    }
+
     /// Every frame with a key: the transform's, the deformer's and the
     /// warp's.
     pub fn key_frames(&self) -> Vec<u32> {

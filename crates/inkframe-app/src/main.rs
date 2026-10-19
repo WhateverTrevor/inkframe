@@ -30,6 +30,7 @@ mod shortcuts;
 mod stage;
 mod subselect;
 mod tablet;
+mod templates;
 mod text_edit;
 mod theme;
 mod timeline;

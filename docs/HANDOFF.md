@@ -8,7 +8,7 @@ after the Harmony features (palettes to master controllers).
 - **Branch:** `main`, clean. Every feature is built on its own branch,
   then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (521 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (524 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
@@ -323,6 +323,17 @@ after the Harmony features (palettes to master controllers).
     saved); unmoved nodes are auto-laid out in rows, and the view fits
     the graph until zoomed or panned. `INKFRAME_SCREENSHOT_NODES=1`
     puts one in place of the timeline.
+
+59. Template library (`template.rs` in the core, `templates.rs` in the
+    app, `Kind::Templates`): a `Template` is `CopiedLayers` plus a name,
+    the format version and the first frame, saved as `.inktemplate` JSON
+    in `<settings>/Templates` (`layout::settings_dir`, shared with
+    layout.json). `Layer::shift_time` / `AnyChannel::shift` move a
+    layer's whole animation in time for inserting at the playhead.
+    Thumbnails are rendered from the template, framed to its drawing.
+    Layers whose parent wasn't saved with them come in unattached (as
+    pasting does). `INKFRAME_SCREENSHOT_TEMPLATES=1` uses a temporary
+    folder, never the real library.
 
 ## Not yet verified by hand
 
