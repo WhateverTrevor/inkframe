@@ -75,6 +75,7 @@ planned (the code is already cross-platform and CI builds it on Windows).
   | Format | Alpha | Use it for |
   |---|---|---|
   | PNG sequence | ✔ | Lossless frames for any tool |
+  | Sprite sheet (PNG + JSON) | ✔ | Games: every frame on one image, cropped to the drawing, held frames packed once, with TexturePacker-style data for Phaser, PixiJS, Godot and Unity |
   | Apple ProRes 4444 / 4444 XQ | ✔ | Masters for editing and compositing |
   | Apple ProRes 422 HQ | — | High quality, smaller files |
   | H.264 MP4 | — | Review copies and the web |
@@ -101,7 +102,7 @@ You need [Rust](https://rustup.rs) (1.85 or newer) and, for video export,
 [ffmpeg](https://ffmpeg.org):
 
 ```sh
-brew install ffmpeg            # macOS; PNG sequences work without it
+brew install ffmpeg            # macOS; PNG sequences and sprite sheets work without it
 git clone <this repository> inkframe && cd inkframe
 cargo run --release -- examples/bouncing-ball.inkf
 ```
@@ -200,7 +201,7 @@ crates/
   inkframe-core/    document model, keyframes, easing, undo (no UI)
   inkframe-render/  draws documents to pixels (tiny-skia)
   inkframe-audio/   decodes, resamples and mixes sound files
-  inkframe-export/  PNG sequences and ffmpeg video encoding
+  inkframe-export/  PNG sequences, sprite sheets and ffmpeg video encoding
   inkframe-app/     the desktop editor (egui)
 xtask/              build tooling: `cargo xtask icon`, `bundle-macos`, `bundle-windows`
 packaging/          per-platform packaging files

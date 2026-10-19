@@ -441,6 +441,9 @@ impl InkframeApp {
                 app.editor.doc.add_folder(TimelineId::Main, &arm);
             }
             app.xsheet.open = AutoScreenshot::exposure_sheet();
+            if let Some(format) = AutoScreenshot::export() {
+                app.export.open_with(&app.editor.doc, format);
+            }
             if let Some(degrees) = AutoScreenshot::view_rotation() {
                 app.views.stage().rotate_view(degrees);
             }

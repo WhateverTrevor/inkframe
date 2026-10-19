@@ -214,7 +214,9 @@ pub(crate) fn build_args(
             // "hvc1" is the tag Apple's players require for HEVC.
             push(&["-tag:v", "hvc1"]);
         }
-        ExportFormat::PngSequence => unreachable!("PNG sequences don't go through ffmpeg"),
+        ExportFormat::PngSequence | ExportFormat::SpriteSheet => {
+            unreachable!("image exports don't go through ffmpeg")
+        }
     }
 
     if audio.is_some() {

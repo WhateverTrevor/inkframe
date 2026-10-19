@@ -13,7 +13,7 @@ start.
                     │      │     │
                     │      ▼     │
                     │  ┌──────────────────┐
-                    │  │ inkframe-export  │  PNG sequences, ffmpeg video
+                    │  │ inkframe-export  │  PNG sequences, sprite sheets, ffmpeg video
                     │  └──┬────────────┬──┘
                     ▼     ▼            ▼
      ┌──────────────────┐        ┌──────────────────┐
@@ -214,6 +214,15 @@ PNG sequence. The ffmpeg arguments
 for every format are in `ffmpeg::build_args`, with comments explaining each
 choice (color matrix, pixel format, padding to even sizes). The progress
 callback returns `ControlFlow::Break` to cancel.
+
+Sprite sheets (`sprite_sheet.rs`) render every frame, crop each to its
+drawn pixels, and keep one copy of frames that come out identical (held
+drawings). Every cell is the union of those areas, so frames stay aligned;
+`Grid::fit` lays the cells out near-square within 8192 px with 2 px
+padding. The JSON beside the PNG is TexturePacker's "JSON hash"
+(`frames` with `trimmed`/`spriteSourceSize`/`sourceSize` recording the
+crop, `animations`, `meta`), plus a per-frame `duration` as Aseprite
+writes. No audio.
 
 ### inkframe-app
 

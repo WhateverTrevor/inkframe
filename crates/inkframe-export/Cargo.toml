@@ -1,6 +1,6 @@
 [package]
 name = "inkframe-export"
-description = "Exports Inkframe animations to PNG sequences and ffmpeg-encoded video."
+description = "Exports Inkframe animations to PNG sequences, sprite sheets and ffmpeg-encoded video."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,5 +10,6 @@ rust-version.workspace = true
 inkframe-core.workspace = true
 inkframe-render.workspace = true
 inkframe-audio.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tiny-skia.workspace = true

@@ -1755,6 +1755,7 @@ dependencies = [
  "inkframe-audio",
  "inkframe-core",
  "inkframe-render",
+ "serde_json",
  "thiserror 2.0.21",
  "tiny-skia 0.12.0",
 ]
