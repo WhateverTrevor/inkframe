@@ -12,6 +12,7 @@ use crate::audio_engine::AudioEngine;
 use crate::batch_dialog::BatchDialog;
 use crate::editor::{Editor, Tool};
 use crate::export_dialog::ExportDialog;
+use crate::guides::SafeAreas;
 use crate::layout::{AreaId, Kind, Layout, Workspace};
 use crate::library::LibraryView;
 use crate::lip_sync_dialog::LipSyncDialog;
@@ -448,6 +449,12 @@ impl InkframeApp {
             app.xsheet.open = AutoScreenshot::exposure_sheet();
             if let Some(format) = AutoScreenshot::export() {
                 app.export.open_with(&app.editor.doc, format);
+            }
+            if let Some(guides) = AutoScreenshot::guides() {
+                app.editor.guides.field_guide = guides.contains("field");
+                if guides.contains("safe") {
+                    app.editor.guides.safe_areas = SafeAreas::Current;
+                }
             }
             if AutoScreenshot::batch()
                 && let Some(path) = app.editor.path.clone()
@@ -989,6 +996,15 @@ impl InkframeApp {
                 ui.checkbox(&mut self.editor.onion.enabled, "Onion Skin");
                 ui.checkbox(&mut self.editor.light_table, "Light Table")
                     .on_hover_text("Fade every layer but the selected one, to draw on it");
+                ui.separator();
+                ui.menu_button("Safe Areas", |ui| {
+                    for kind in SafeAreas::ALL {
+                        ui.radio_value(&mut self.editor.guides.safe_areas, kind, kind.label());
+                    }
+                    ui.weak("Keep action inside the outer line\nand text inside the inner one.");
+                });
+                ui.checkbox(&mut self.editor.guides.field_guide, "Field Guide")
+                    .on_hover_text("A 12-field chart over the camera's frame, for planning moves in fields");
                 ui.separator();
                 ui.menu_button("Workspace", |ui| {
                     for workspace in Workspace::ALL {

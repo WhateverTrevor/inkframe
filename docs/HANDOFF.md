@@ -378,6 +378,14 @@ after the Harmony features (palettes to master controllers).
     neighbours and starts. The queue isn't remembered between runs, and
     the Windows console output is unverified on a real PC.
 
+64. Field guide and safe areas: `guides.rs` in the app (`Guides` on the
+    Editor: `safe_areas: SafeAreas`, `field_guide: bool`), View menu
+    toggles, drawn by `stage::draw_guides` on the stage rectangle via
+    `View::stage_to_screen` (so they stay on the camera frame while
+    editing inside a symbol). Field n is n/12 of the frame at its own
+    aspect. Not saved with the document or between runs.
+    `INKFRAME_SCREENSHOT_GUIDES=safe,field`.
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either

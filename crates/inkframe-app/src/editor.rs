@@ -16,6 +16,8 @@ use inkframe_core::{
 use inkframe_core::{Clipboard, CopiedKeyframe};
 use inkframe_render::ImageLibrary;
 
+use crate::guides::Guides;
+
 /// The tools in the toolbar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
@@ -275,6 +277,8 @@ pub struct Editor {
     /// Fade every layer but the selected one, to draw on it (Harmony's
     /// light table).
     pub light_table: bool,
+    /// Safe areas and the field guide over the stage.
+    pub guides: Guides,
     /// Pencil lines follow the pen's pressure.
     pub pencil_pressure: bool,
     /// Pencil lines narrow towards their ends.
@@ -338,6 +342,7 @@ impl Editor {
             draw_into_layer: false,
             colour_art: false,
             light_table: false,
+            guides: Guides::default(),
             pencil_pressure: true,
             pencil_taper: true,
             brush: BrushSettings::default(),

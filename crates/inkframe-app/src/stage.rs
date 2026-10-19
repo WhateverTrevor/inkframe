@@ -5,7 +5,7 @@
 //! outlines, shapes being dragged out) is painted on top with egui, because
 //! it's interface rather than artwork.
 
-use egui::{Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
+use egui::{Align2, Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{
     Affine, Anchor, Bend, BrushMode, BrushStroke, Canvas, CanvasId, Color, Combine, Document, Element,
     LayerId, MotionCurve, Path, Point, Rect as StageRect, Retouch, RetouchStroke, Selection, Shape, Style,
@@ -15,6 +15,7 @@ use inkframe_render::{RenderOptions, output_size, render_timeline_into};
 
 use crate::convert::{to_color32, to_point};
 use crate::editor::{Editor, OnionSkin, Surrounding, Tool};
+use crate::guides;
 use crate::handles::{RotateDrag, ScaleHandle, ScaleOptions, scale_pose, skew_pose};
 use crate::motion_path;
 use crate::pen::PenPath;
@@ -130,9 +131,14 @@ impl View {
 
     /// The stage's corners on screen, clockwise from its top left.
     fn stage_corners(self) -> [Pos2; 4] {
-        let stage = View { timeline_to_stage: Affine::IDENTITY, ..self };
         let (w, h) = (self.size.x, self.size.y);
-        [(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)].map(|(x, y)| stage.to_screen(Point::new(x, y)))
+        [(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)].map(|(x, y)| self.stage_to_screen(Point::new(x, y)))
+    }
+
+    /// Where a point on the stage (rather than in the timeline being
+    /// edited) is on screen.
+    fn stage_to_screen(self, p: Point) -> Pos2 {
+        View { timeline_to_stage: Affine::IDENTITY, ..self }.to_screen(p)
     }
 }
 
@@ -511,6 +517,62 @@ impl Handles {
             painter.rect_stroke(square, 0.0, (1.0, SELECTION), StrokeKind::Middle);
         }
     }
+}
+
+/// The safe areas and field guide, if they're on, over the stage (the
+/// camera's frame).
+fn draw_guides(painter: &egui::Painter, editor: &Editor, view: View) {
+    const SAFE: Color32 = Color32::from_rgb(0x4c, 0xc9, 0xf0);
+    const FIELD: Color32 = Color32::from_rgb(0x5a, 0x78, 0xc8);
+    let frame = editor.doc.stage_rect();
+    let at = |p: Point| view.stage_to_screen(p);
+
+    if editor.guides.field_guide {
+        let (lines, labels) = guides::field_guide(frame);
+        for line in &lines {
+            let (width, alpha) = match line.weight {
+                guides::Weight::Faint => (1.0, 0.14),
+                guides::Weight::Normal => (1.0, 0.45),
+                guides::Weight::Strong => (1.5, 0.8),
+            };
+            painter.line_segment([at(line.from), at(line.to)], (width, FIELD.gamma_multiply(alpha)));
+        }
+        // The small fields' labels crowd together when zoomed out; each is
+        // shown only if there's room before the next one out.
+        for (i, label) in labels.iter().enumerate() {
+            let next = labels.get(i + 1).filter(|next| next.text.ends_with('F'));
+            if next.is_some_and(|next| at(label.at).distance(at(next.at)) < 18.0) {
+                continue;
+            }
+            let anchor = at(label.at) + label.anchor.to_sign() * -3.0;
+            guide_label(painter, anchor, label.anchor, &label.text, FIELD);
+        }
+    }
+
+    // The two safe areas are only a few pixels apart when zoomed out, so
+    // their names go in opposite corners: action safe top right, title
+    // safe bottom left (clear of the field guide's labels, top left).
+    let safe = guides::safe_areas(frame, editor.guides.safe_areas);
+    for (i, (rect, name)) in safe.iter().enumerate() {
+        let corners = rect.corners().map(at);
+        painter.add(egui::Shape::dashed_line(
+            &[corners.as_slice(), &[corners[0]]].concat(),
+            (1.0, SAFE),
+            6.0,
+            4.0,
+        ));
+        let (corner, anchor) =
+            if i == 0 { (corners[1], Align2::RIGHT_TOP) } else { (corners[3], Align2::LEFT_BOTTOM) };
+        guide_label(painter, corner + anchor.to_sign() * -4.0, anchor, name, SAFE);
+    }
+}
+
+/// A guide's label, on a soft backing so it reads over the artwork.
+fn guide_label(painter: &egui::Painter, at: Pos2, anchor: Align2, text: &str, color: Color32) {
+    let galley = painter.layout_no_wrap(text.to_owned(), egui::FontId::proportional(11.0), color);
+    let rect = anchor.anchor_size(at, galley.size());
+    painter.rect_filled(rect.expand(2.0), 3.0, Color32::from_white_alpha(170));
+    painter.galley(rect.min, galley, color);
 }
 
 /// The Camera tool's view of things: the stage's edge, which is the
@@ -906,6 +968,7 @@ impl StageView {
         if editor.timeline() != TimelineId::Main {
             draw_registration_point(&overlay, view.to_screen(Point::ZERO));
         }
+        draw_guides(&overlay, editor, view);
         self.draw_motion_path(&overlay, editor, view);
         self.draw_overlays(&overlay, editor, view, handles.as_ref());
         if editor.tool == Tool::Bone {
