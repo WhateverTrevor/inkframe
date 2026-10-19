@@ -129,6 +129,11 @@ impl AutoScreenshot {
         std::env::var_os("INKFRAME_SCREENSHOT_CAMERA").is_some()
     }
 
+    /// Whether to show a Node View in place of the timeline.
+    pub fn node_view() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_NODES").is_some()
+    }
+
     /// Whether to turn the light table on, with the rig's head selected.
     pub fn light_table() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_LIGHT_TABLE").is_some()
