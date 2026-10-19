@@ -228,7 +228,8 @@ impl Deformer {
 
 impl Layer {
     /// What the layer draws on `frame`: the drawing showing then (or a
-    /// shape tween's morph), bent by its deformer if it has one. Use this for anything that should match
+    /// shape tween's morph), bent by its bone deformer and then its warp
+    /// grid, if it has them. Use this for anything that should match
     /// what's seen (drawing, hit testing, bounds), and `elements_at` for
     /// editing the drawing itself.
     pub fn shown_elements(&self, frame: u32) -> Cow<'_, [Element]> {
@@ -237,50 +238,62 @@ impl Layer {
             Some(morphed) => Cow::Owned(morphed),
             None => self.drawings.get(self.drawing_index_at(frame)).map_or(Cow::Borrowed(&[]), |d| d.shown()),
         };
-        match &self.deformer {
+        let bent = match &self.deformer {
             Some(deformer) if !deformer.is_at_rest(frame) => Cow::Owned(deformer.deform(&elements, frame)),
             _ => elements,
+        };
+        match &self.warp {
+            Some(warp) if !warp.is_at_rest(frame) => Cow::Owned(warp.deform(&bent, frame)),
+            _ => bent,
         }
     }
 
     /// Whether the transform or the deformer has a key on `frame`.
     pub fn has_key(&self, frame: u32) -> bool {
-        self.track.has_key(frame) || self.deformer.as_ref().is_some_and(|d| d.key_frames().contains(&frame))
+        self.key_frames().contains(&frame)
     }
 
-    /// Keys everything that animates (the transform and any deformer) on
-    /// `frame`, as F6 does.
+    /// Keys everything that animates (the transform, any deformer and any
+    /// warp) on `frame`, as F6 does.
     pub fn insert_key(&mut self, frame: u32) -> bool {
-        let added = self.track.insert_key(frame);
-        self.deformer.as_mut().is_some_and(|d| d.insert_key(frame)) | added
+        let mut added = self.track.insert_key(frame);
+        added |= self.deformer.as_mut().is_some_and(|d| d.insert_key(frame));
+        added | self.warp.as_mut().is_some_and(|w| w.insert_key(frame))
     }
 
     pub fn remove_key(&mut self, frame: u32) -> bool {
-        let removed = self.track.remove_key(frame);
-        self.deformer.as_mut().is_some_and(|d| d.remove_key(frame)) | removed
+        let mut removed = self.track.remove_key(frame);
+        removed |= self.deformer.as_mut().is_some_and(|d| d.remove_key(frame));
+        removed | self.warp.as_mut().is_some_and(|w| w.remove_key(frame))
     }
 
-    /// Moves the keys on `from` to `to`, the transform's and the
-    /// deformer's together. Returns whether anything moved.
+    /// Moves the keys on `from` to `to`: the transform's, the deformer's
+    /// and the warp's together. Returns whether anything moved.
     pub fn move_key(&mut self, from: u32, to: u32) -> bool {
         let had_deformer_key = self.deformer.as_ref().is_some_and(|d| d.key_frames().contains(&from));
+        let had_warp_key = self.warp.as_ref().is_some_and(|w| w.key_frames().contains(&from));
         let moved = self.track.move_key(from, to);
         if let Some(deformer) = &mut self.deformer
             && had_deformer_key
         {
             deformer.move_key(from, to);
         }
-        moved || had_deformer_key
+        if let Some(warp) = &mut self.warp
+            && had_warp_key
+        {
+            warp.move_key(from, to);
+        }
+        moved || had_deformer_key || had_warp_key
     }
 
-    /// Every frame with a key: the transform's and the deformer's.
+    /// Every frame with a key: the transform's, the deformer's and the
+    /// warp's.
     pub fn key_frames(&self) -> Vec<u32> {
         let mut frames = self.track.key_frames();
-        if let Some(deformer) = &self.deformer {
-            frames.extend(deformer.key_frames());
-            frames.sort_unstable();
-            frames.dedup();
-        }
+        frames.extend(self.deformer.iter().flat_map(|d| d.key_frames()));
+        frames.extend(self.warp.iter().flat_map(|w| w.key_frames()));
+        frames.sort_unstable();
+        frames.dedup();
         frames
     }
 }
@@ -288,7 +301,7 @@ impl Layer {
 /// Cuts each segment of an outline into pieces no longer than about
 /// `piece`, keeping its exact shape (de Casteljau), so the pieces can bend
 /// separately.
-fn subdivide(anchors: &[Anchor], closed: bool, piece: f32) -> Vec<Anchor> {
+pub(crate) fn subdivide(anchors: &[Anchor], closed: bool, piece: f32) -> Vec<Anchor> {
     if anchors.len() < 2 {
         return anchors.to_vec();
     }

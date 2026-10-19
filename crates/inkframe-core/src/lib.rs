@@ -48,6 +48,7 @@ mod text;
 mod track;
 mod transform;
 mod vector_fill;
+mod warp;
 
 pub use adjust::{Adjustment, adjust};
 pub use align::{Align, Axis};
@@ -92,3 +93,4 @@ pub use text::{DEFAULT_FAMILY, Font, Text, TextAlign};
 pub use track::{Property, Track};
 pub use transform::Transform;
 pub use vector_fill::{FillResult, enclosed_area};
+pub use warp::Warp;

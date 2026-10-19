@@ -8,11 +8,11 @@ after animated effects.
 - **Branch:** `main`, clean. Every feature is built on its own branch,
   then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (509 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (514 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
-- **File format:** version 24. Older versions load and upgrade automatically
+- **File format:** version 25. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -295,6 +295,15 @@ after animated effects.
     turns it on with the rig's head selected. Note: screenshots need the
     display awake; with it asleep the window never draws and the hook
     never fires.
+
+56. Free-form deformer (format v25; `warp.rs`): `Layer::warp`, a grid
+    (2–8 points a side) of `Channel<Point>` offsets over the drawing's
+    rest bounds, blended as a Bézier patch; applied after the bone
+    deformer in `shown_elements`, its keys part of the layer's keys
+    (F6, delete, drag). Bone tool drags its points (`Gesture::Warp`);
+    Properties has a Free-Form Deformer section. Harmony's curve
+    deformer is close enough to the existing bend deformer that it was
+    left out; envelope deformers aren't done.
 
 ## Not yet verified by hand
 

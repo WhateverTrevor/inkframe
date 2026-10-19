@@ -55,6 +55,7 @@ The data model and the math behind animation.
 | `folder.rs` | Layer folders (a `Layer` with `folder` set; members name it in `in_folder` and always sit directly below it, restored by `tidy_folders`), `add_folder`, `place_layer` (a timeline drop), `move_among_siblings`, `folder_block`; layer colours (`Layer::tag_color`, `TAG_COLORS`) |
 | `morph.rs` | Shape tweens: `ShapeTween` (keyed by the drawing swap it morphs into), `Layer::morph_at` (used by `shown_elements`, so drawing, bounds and hit testing all see the morph), and `morph`: shapes to anchors, segments split until the counts match (at least 16 on a closed shape), lined up by the best rotation and direction or by shape hints (`Drawing::hints`), then blended with colours and stroke widths |
 | `palette.rs` | The colour palette: swatches that own their exact colour (every fill and stroke of it is theirs, so `set_swatch_color` recolours them all), in versions (day, night) switched with `use_palette_version`, which maps every swatch at once. `Palette` keeps swatch colours distinct within a version |
+| `warp.rs` | The free-form deformer: a grid of animated control-point offsets over a drawing's rest bounds; each point of the drawing moves by a Bézier-patch blend (Bernstein weights) of them, applied after the bone deformer in `shown_elements` |
 | `vector_fill.rs` | Ink and paint: a drawing's line art (`elements`) and colour art (`colour_art`, drawn beneath); `Layer::fill_enclosed` fills the area the lines enclose (grid flood with lines thickened to close gaps, grown back under them, outline traced and simplified) or recolours the fill already there |
 | `paint.rs` | Painted pixels: `Canvas` (256×256 premultiplied RGBA tiles, shared between undo snapshots with `Arc`), `Shape::Paint` naming a canvas, `Document::element_bounds`/`element_hit` (paint counts only painted pixels), `add_paint_layer`, `separate_canvases` (a duplicated layer or drawing gets its own canvas) |
 | `brush.rs` | The brush engine (and `BrushSettings::presets`, the paper `grain`, and `DabPath`, which every stroke tool uses to place its dabs): a `BrushStroke` lays round dabs along the pen's path into its own coverage mask, then redraws the touched tiles from how they were before the stroke, so opacity caps a whole stroke and flow builds up within it, as in Photoshop |
@@ -122,7 +123,7 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 24. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 25. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
@@ -136,8 +137,8 @@ when project files became zips (see `container.rs`), version 18
 layer blend modes, version 19 layer folders and colours, and version 20
 shape tweens and shape hints, version 21 the camera and layer depth, version 22 colour effects
 and filters, and version 23 animated effects (format 22's fixed ones
-move into the Effects property on load), and version 24 colour art in
-drawings;
+move into the Effects property on load), version 24 colour art in
+drawings, and version 25 the free-form deformer;
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 

@@ -20,6 +20,7 @@ use crate::shape::{Shape, Style};
 use crate::symbol::{Instance, Symbol, SymbolId};
 use crate::track::Track;
 use crate::transform::Transform;
+use crate::warp::Warp;
 
 /// Where a layer lives: on the main timeline, or inside a symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -32,7 +33,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 24;
+pub const FORMAT_VERSION: u32 = 25;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -161,6 +162,10 @@ pub struct Layer {
     /// Bones that bend the drawing itself (see `deform.rs`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deformer: Option<Deformer>,
+    /// A free-form grid that warps the drawing (see `warp.rs`), after any
+    /// bones have bent it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warp: Option<Warp>,
     /// How the layer mixes with what's beneath it (see `blend.rs`).
     #[serde(default, skip_serializing_if = "BlendMode::is_normal")]
     pub blend: BlendMode,
@@ -388,6 +393,7 @@ impl Document {
             pivot: Point::ZERO,
             rotation_limits: None,
             deformer: None,
+            warp: None,
             blend: BlendMode::Normal,
             color: None,
             folder: false,

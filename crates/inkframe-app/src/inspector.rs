@@ -522,6 +522,7 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     instance_section(ui, editor, id);
     effects_section(ui, editor, id);
     deformer_section(ui, editor, id);
+    warp_section(ui, editor, id);
     drawings_section(ui, editor, id);
     shapes_section(ui, editor, id);
 }
@@ -1030,6 +1031,50 @@ fn deformer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     }
     if remove {
         layer.deformer = None;
+    }
+    ui.add_space(8.0);
+}
+
+/// The free-form deformer: a grid of control points over the drawing that
+/// warp it when dragged (see `warp.rs` in the core).
+fn warp_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    let frame = editor.frame;
+    let Some(layer) = editor.doc.layer_mut(id).filter(|l| l.instance.is_none()) else { return };
+    let rest_bounds = layer.elements_at(frame).iter().map(|e| e.bounds()).reduce(|a, b| a.union(b));
+
+    ui.strong("Free-Form Deformer");
+    let Some(warp) = &mut layer.warp else {
+        ui.horizontal(|ui| {
+            for size in [3, 4] {
+                let add = ui
+                    .add_enabled(rest_bounds.is_some(), egui::Button::new(format!("Add {size}×{size} Grid")))
+                    .on_hover_text("A grid of points over the drawing: drag them with the Bone tool to squash, bulge and sway it.");
+                if add.clicked()
+                    && let Some(bounds) = rest_bounds
+                {
+                    layer.warp = Some(inkframe_core::Warp::over(bounds, size, size, frame));
+                }
+            }
+        });
+        ui.add_space(8.0);
+        return;
+    };
+    let mut remove = false;
+    ui.horizontal(|ui| {
+        ui.weak(format!("{}×{} grid. Drag its points with the Bone tool (K).", warp.columns, warp.rows));
+        if ui.small_button("Straighten").on_hover_text("Put every point back on this frame").clicked() {
+            for channel in &mut warp.offsets {
+                if channel.sample(frame as f32).is_some_and(|o| o != inkframe_core::Point::ZERO)
+                    || channel.key_at(frame).is_some()
+                {
+                    channel.set(frame, inkframe_core::Point::ZERO);
+                }
+            }
+        }
+        remove = ui.small_button("Remove").clicked();
+    });
+    if remove {
+        layer.warp = None;
     }
     ui.add_space(8.0);
 }
