@@ -9,6 +9,7 @@
 //! questions for this crate. The trade-off is that users need ffmpeg
 //! installed (or bundled with the app); see [`ffmpeg::locate`].
 
+pub mod batch;
 pub mod ffmpeg;
 mod png_sequence;
 mod sprite_sheet;
@@ -65,6 +66,23 @@ impl ExportFormat {
             ExportFormat::HevcWithAlpha => "HEVC with Alpha (.mov)",
             ExportFormat::SpriteSheet => "Sprite Sheet (.png + .json)",
         }
+    }
+
+    /// A short name for file names and the command line.
+    pub fn slug(self) -> &'static str {
+        match self {
+            ExportFormat::PngSequence => "png",
+            ExportFormat::SpriteSheet => "sheet",
+            ExportFormat::ProRes4444 => "prores4444",
+            ExportFormat::ProRes4444Xq => "prores4444xq",
+            ExportFormat::ProRes422Hq => "prores422hq",
+            ExportFormat::H264 => "h264",
+            ExportFormat::HevcWithAlpha => "hevc-alpha",
+        }
+    }
+
+    pub fn from_slug(slug: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|f| f.slug().eq_ignore_ascii_case(slug))
     }
 
     pub fn extension(self) -> &'static str {
@@ -141,6 +159,8 @@ impl Progress {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExportError {
+    #[error("couldn't open the project: {0}")]
+    Open(String),
     #[error("the frame range is empty")]
     NoFrames,
     #[error("couldn't allocate a {0}×{1} frame")]

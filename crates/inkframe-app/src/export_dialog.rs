@@ -299,12 +299,12 @@ fn describe(format: ExportFormat) -> &'static str {
     }
 }
 
-fn file_label(path: &Path) -> String {
+pub(crate) fn file_label(path: &Path) -> String {
     path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned())
 }
 
 /// Opens Finder / Explorer with the exported file selected.
-fn reveal_in_file_manager(path: &Path) {
+pub(crate) fn reveal_in_file_manager(path: &Path) {
     let result = if cfg!(target_os = "macos") {
         std::process::Command::new("open").arg("-R").arg(path).spawn()
     } else if cfg!(target_os = "windows") {

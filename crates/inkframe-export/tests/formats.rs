@@ -314,3 +314,57 @@ fn sprite_sheets_pack_frames_with_a_data_file() {
     assert_eq!(data["frames"][names[0].as_str().unwrap()]["sourceSize"]["w"], 64);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_batch_keeps_going_past_a_failed_job() {
+    use inkframe_export::batch::{self, BatchEvent, BatchJob};
+
+    let dir = scratch_dir("batch");
+    let project = dir.join("square.inkf");
+    sample_doc().save(&project).unwrap();
+    let jobs = [
+        BatchJob::new(dir.join("missing.inkf"), ExportFormat::PngSequence),
+        BatchJob::new(&project, ExportFormat::PngSequence),
+        BatchJob::new(&project, ExportFormat::SpriteSheet),
+    ];
+    let out = dir.join("renders");
+    let mut finished = Vec::new();
+    let succeeded = batch::run(&jobs, &out, |event| {
+        if let BatchEvent::Finished(i, result) = event {
+            finished.push((i, result.is_ok()));
+        }
+        ControlFlow::Continue(())
+    });
+
+    assert_eq!(succeeded, 2);
+    assert_eq!(finished, [(0, false), (1, true), (2, true)]);
+    // The sequence and the sheet would both be `square.png`, so each
+    // is named for its format.
+    assert!(out.join("square-png/square-png_0001.png").is_file());
+    assert!(out.join("square-sheet.png").is_file() && out.join("square-sheet.json").is_file());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn stopping_a_batch_skips_the_rest() {
+    use inkframe_export::batch::{self, BatchEvent, BatchJob};
+
+    let dir = scratch_dir("batch-stop");
+    let project = dir.join("square.inkf");
+    sample_doc().save(&project).unwrap();
+    let jobs = [
+        BatchJob::new(&project, ExportFormat::PngSequence),
+        BatchJob::new(&project, ExportFormat::SpriteSheet),
+    ];
+    let mut started = 0;
+    let succeeded = batch::run(&jobs, &dir.join("renders"), |event| match event {
+        BatchEvent::Started(_) => {
+            started += 1;
+            ControlFlow::Continue(())
+        }
+        BatchEvent::Progress(_, p) if p.frames_done == 2 => ControlFlow::Break(()),
+        _ => ControlFlow::Continue(()),
+    });
+    assert_eq!((succeeded, started), (0, 1));
+    std::fs::remove_dir_all(dir).unwrap();
+}

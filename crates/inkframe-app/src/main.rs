@@ -1,6 +1,7 @@
 //! Inkframe: an open-source 2D animation editor.
 //!
-//! Usage: `inkframe [file.inkf]`
+//! Usage: `inkframe [file.inkf]`, or `inkframe --export …` to export
+//! without opening a window (see `cli.rs`).
 
 // On Windows, release builds are GUI programs, so launching Inkframe doesn't
 // also open a console window. Debug builds keep the console for log output.
@@ -9,6 +10,8 @@
 mod adjust_dialog;
 mod app;
 mod audio_engine;
+mod batch_dialog;
+mod cli;
 mod convert;
 mod easing_editor;
 mod editor;
@@ -41,6 +44,10 @@ mod xsheet;
 use std::path::PathBuf;
 
 fn main() -> eframe::Result {
+    let mut args = std::env::args().skip(1).peekable();
+    if args.peek().is_some_and(|a| a == "--export") {
+        std::process::exit(cli::run(args.skip(1).collect()));
+    }
     let open_path = std::env::args_os().nth(1).map(PathBuf::from);
 
     let options = eframe::NativeOptions {

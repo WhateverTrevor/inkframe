@@ -31,6 +31,11 @@ tiny-skia.workspace = true
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSEvent", "block2"] }
 block2 = "0.6.2"
 
+# Lets `inkframe --export` print to the console it was started from (see
+# src/cli.rs). A version eframe's dependencies already use.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_System_Console"] }
+
 # Embeds the icon and version details in inkframe.exe (see build.rs).
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1.34"

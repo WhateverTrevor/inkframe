@@ -9,6 +9,7 @@ use inkframe_render::IMAGE_EXTENSIONS;
 
 use crate::adjust_dialog::{AdjustDialog, AdjustmentKind};
 use crate::audio_engine::AudioEngine;
+use crate::batch_dialog::BatchDialog;
 use crate::editor::{Editor, Tool};
 use crate::export_dialog::ExportDialog;
 use crate::layout::{AreaId, Kind, Layout, Workspace};
@@ -33,6 +34,8 @@ enum Command {
     Save,
     SaveAs,
     Export,
+    /// Opens the Batch Export window.
+    BatchExport,
     Undo,
     Redo,
     SelectAll,
@@ -118,7 +121,7 @@ enum Command {
     DeleteAnchor,
 }
 
-const FILE_EXTENSION: &str = "inkf";
+pub(crate) const FILE_EXTENSION: &str = "inkf";
 /// How much `[` and `]` shrink or grow the brush.
 const BRUSH_STEP: f32 = 1.2;
 /// Font files Inkframe can import.
@@ -137,6 +140,7 @@ pub struct InkframeApp {
     /// The area under the pointer last frame, for Ctrl+Space.
     hovered_area: Option<AreaId>,
     export: ExportDialog,
+    batch: BatchDialog,
     lip_sync: LipSyncDialog,
     xsheet: ExposureSheet,
     adjust: AdjustDialog,
@@ -179,6 +183,7 @@ impl InkframeApp {
             views: Views::default(),
             hovered_area: None,
             export: ExportDialog::default(),
+            batch: BatchDialog::default(),
             lip_sync: LipSyncDialog::default(),
             xsheet: ExposureSheet::default(),
             adjust: AdjustDialog::default(),
@@ -444,6 +449,32 @@ impl InkframeApp {
             if let Some(format) = AutoScreenshot::export() {
                 app.export.open_with(&app.editor.doc, format);
             }
+            if AutoScreenshot::batch()
+                && let Some(path) = app.editor.path.clone()
+            {
+                // This project, then the other projects beside it, in a
+                // few formats, exporting into a temporary folder.
+                let folder = path.parent().map(Path::to_path_buf).unwrap_or_default();
+                let mut others: Vec<PathBuf> = std::fs::read_dir(&folder)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .map(|entry| entry.path())
+                    .filter(|p| p != &path && p.extension().is_some_and(|e| e == FILE_EXTENSION))
+                    .collect();
+                others.sort();
+                app.batch.open();
+                use inkframe_export::ExportFormat;
+                let jobs = [(path.clone(), ExportFormat::SpriteSheet), (path, ExportFormat::PngSequence)]
+                    .into_iter()
+                    .chain(others.into_iter().map(|other| (other, ExportFormat::H264)));
+                for (project, format) in jobs {
+                    app.batch.add(project);
+                    app.batch.set_last_format(format);
+                }
+                app.batch.set_folder(std::env::temp_dir().join("inkframe-batch-screenshot"));
+                app.batch.start(&cc.egui_ctx);
+            }
             if let Some(degrees) = AutoScreenshot::view_rotation() {
                 app.views.stage().rotate_view(degrees);
             }
@@ -480,6 +511,7 @@ impl InkframeApp {
                 self.save_as();
             }
             Command::Export => self.export.open(&self.editor.doc),
+            Command::BatchExport => self.batch.open(),
             Command::ExportPsd => self.export_psd(),
             Command::ToggleMaximize => {
                 if let Some(area) = self.hovered_area {
@@ -789,6 +821,7 @@ impl InkframeApp {
                 ui.separator();
                 item(ui, "Export…", Some(shortcuts::EXPORT), Command::Export, true);
                 item(ui, "Export PSD…", None, Command::ExportPsd, true);
+                item(ui, "Batch Export…", None, Command::BatchExport, true);
             });
             ui.menu_button("Edit", |ui| {
                 item(ui, "Undo", Some(shortcuts::UNDO), Command::Undo, self.editor.history.can_undo());
@@ -1171,7 +1204,7 @@ impl InkframeApp {
             self.allow_close = true;
             return;
         }
-        let export_ok = !self.export.is_running() || {
+        let export_ok = !(self.export.is_running() || self.batch.is_running()) || {
             let answer = rfd::MessageDialog::new()
                 .set_level(rfd::MessageLevel::Warning)
                 .set_title("Export in progress")
@@ -1344,6 +1377,8 @@ impl eframe::App for InkframeApp {
 
         let name = self.editor.display_name();
         self.export.show(&ctx, &self.editor.doc, &name, self.editor.project_dir());
+        let unsaved = self.editor.has_unsaved_changes();
+        self.batch.show(&ctx, self.editor.path.as_deref().map(|path| (path, unsaved)));
         self.lip_sync.show(&ctx, &mut self.editor, &mut self.audio);
         self.xsheet.show(&ctx, &mut self.editor, &mut self.audio);
         self.adjust.show(&ctx, &mut self.editor);
