@@ -86,7 +86,7 @@ pub fn tool_key(tool: Tool) -> Key {
         Tool::Lasso | Tool::PolygonLasso => Key::L,
         Tool::MagicWand => Key::W,
         Tool::Select => Key::V,
-        Tool::Subselect => Key::A,
+        Tool::Subselect | Tool::Width => Key::A,
         Tool::Pen => Key::P,
         Tool::Rectangle => Key::R,
         Tool::Ellipse => Key::O,

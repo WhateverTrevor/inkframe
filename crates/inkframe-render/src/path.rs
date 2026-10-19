@@ -21,23 +21,27 @@ pub fn build_path(shape: &Shape) -> Option<Path> {
         // Images aren't outlines, and text outlines come from its font; the
         // renderer handles both separately.
         Shape::Image { .. } | Shape::Text(_) | Shape::Paint { .. } => None,
-        Shape::Path(ref path) => {
-            let mut pb = PathBuilder::new();
-            pb.move_to(path.start.x, path.start.y);
-            for segment in &path.segments {
-                match *segment {
-                    Segment::Line { to } => pb.line_to(to.x, to.y),
-                    Segment::Cubic { ctrl1, ctrl2, to } => {
-                        pb.cubic_to(ctrl1.x, ctrl1.y, ctrl2.x, ctrl2.y, to.x, to.y)
-                    }
-                }
+        Shape::Path(ref path) => from_path(path),
+        // A pressure line is the outline it sweeps out.
+        Shape::Line { ref path, ref widths } => from_path(&inkframe_core::line_outline(path, widths)),
+    }
+}
+
+fn from_path(path: &inkframe_core::Path) -> Option<Path> {
+    let mut pb = PathBuilder::new();
+    pb.move_to(path.start.x, path.start.y);
+    for segment in &path.segments {
+        match *segment {
+            Segment::Line { to } => pb.line_to(to.x, to.y),
+            Segment::Cubic { ctrl1, ctrl2, to } => {
+                pb.cubic_to(ctrl1.x, ctrl1.y, ctrl2.x, ctrl2.y, to.x, to.y)
             }
-            if path.closed {
-                pb.close();
-            }
-            pb.finish()
         }
     }
+    if path.closed {
+        pb.close();
+    }
+    pb.finish()
 }
 
 /// Builds a rectangle with circular corners, clockwise from the top-left.

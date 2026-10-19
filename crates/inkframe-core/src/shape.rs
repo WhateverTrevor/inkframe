@@ -36,6 +36,12 @@ pub enum Shape {
     },
     /// Lines of text, painted with the element's fill and stroke.
     Text(Text),
+    /// A pressure-sensitive line: a centreline with its width at each anchor,
+    /// drawn as the outline it sweeps out, filled (see `line.rs`).
+    Line {
+        path: Path,
+        widths: Vec<f32>,
+    },
     /// Painted pixels: one of the document's canvases (see `paint.rs`),
     /// one pixel per unit, centered on the origin. Its element's style is
     /// ignored.
@@ -174,6 +180,7 @@ impl Shape {
                 Rect::from_center_size(Point::ZERO, radius_x * 2.0, radius_y * 2.0)
             }
             Shape::Path(path) => path.tight_bounds(),
+            Shape::Line { path, widths } => crate::line::line_outline(path, widths).tight_bounds(),
             Shape::Image { width, height, .. } => Rect::from_center_size(Point::ZERO, *width, *height),
             Shape::Text(text) => text.measured,
             Shape::Paint { width, height, .. } => {
@@ -217,6 +224,11 @@ impl Shape {
                     return false;
                 }
                 (p.x / rx).powi(2) + (p.y / ry).powi(2) <= 1.0
+            }
+            Shape::Line { path, widths } => {
+                let outline = crate::line::line_outline(path, widths).flatten();
+                let near_outline = outline.windows(2).any(|w| p.distance_to_segment(w[0], w[1]) <= tolerance);
+                near_outline || point_in_polygon(p, &outline)
             }
             Shape::Path(path) => {
                 let outline = path.flatten();

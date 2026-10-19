@@ -34,6 +34,7 @@ mod guide;
 mod history;
 mod ik;
 mod image;
+mod line;
 mod lip_sync;
 mod mask;
 mod morph;
@@ -81,6 +82,7 @@ pub use guide::GuidePath;
 pub use history::History;
 pub use ik::RotationLimits;
 pub use image::{ImageAsset, ImageId};
+pub use line::{centreline_anchors, line_outline, with_anchors_every};
 pub use lip_sync::{
     LipSyncError, MouthCue, MouthMap, MouthShape, cues_from_loudness, parse_papagayo, parse_rhubarb,
 };

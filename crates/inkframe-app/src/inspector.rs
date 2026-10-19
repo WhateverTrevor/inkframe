@@ -107,6 +107,13 @@ pub fn tool_settings(ui: &mut egui::Ui, editor: &mut Editor) {
             ui.add(DragValue::new(&mut editor.pencil_stroke.width).range(0.5..=100.0).speed(0.1));
             ui.end_row();
         });
+        ui.checkbox(&mut editor.pencil_pressure, "Pressure")
+            .on_hover_text("Press harder with a pen for a thicker line, lighter for a thinner one");
+        ui.checkbox(&mut editor.pencil_taper, "Taper ends")
+            .on_hover_text("Lines thin out towards their ends, as inked lines do");
+        if editor.pencil_pressure || editor.pencil_taper {
+            ui.weak("Shape a line's thickness afterwards with the Width tool (Shift+A).");
+        }
         drawing_target(ui, editor);
     } else if matches!(editor.tool, Tool::Rectangle | Tool::Ellipse | Tool::Pen | Tool::Text) {
         ui.heading(editor.tool.name());
@@ -1383,6 +1390,7 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 Shape::Rect { .. } => "Rectangle",
                 Shape::Ellipse { .. } => "Oval",
                 Shape::Path(_) => "Stroke",
+                Shape::Line { .. } => "Pencil Line",
                 Shape::Image { .. } => "Image",
                 Shape::Text(_) => "Text",
                 Shape::Paint { .. } => "Painting",
@@ -1537,6 +1545,19 @@ fn shape_size_editor(ui: &mut egui::Ui, shape: &mut Shape) {
         }
         // Freehand paths are edited by redrawing, for now. Images and text
         // have their own editors.
+        // A pencil line's widths are set with the Width tool, on the stage;
+        // here, all of them at once.
+        Shape::Line { widths, .. } => {
+            ui.label("Width")
+                .on_hover_text("Scales the whole line; the Width tool (Shift+A) shapes it point by point");
+            let widest = widths.iter().copied().fold(0.0f32, f32::max).max(0.01);
+            let mut shown = widest;
+            if ui.add(DragValue::new(&mut shown).range(0.1..=200.0).speed(0.1).suffix(" px")).changed() {
+                let factor = shown / widest;
+                widths.iter_mut().for_each(|w| *w *= factor);
+            }
+            ui.end_row();
+        }
         Shape::Path(_) | Shape::Image { .. } | Shape::Text(_) | Shape::Paint { .. } => {}
     });
 }

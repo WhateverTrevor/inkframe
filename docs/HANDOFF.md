@@ -8,11 +8,11 @@ after the Harmony features (palettes to master controllers).
 - **Branch:** `main`, clean. Every feature is built on its own branch,
   then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (524 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (529 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
-- **File format:** version 26. Older versions load and upgrade automatically
+- **File format:** version 27. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -334,6 +334,17 @@ after the Harmony features (palettes to master controllers).
     Layers whose parent wasn't saved with them come in unattached (as
     pasting does). `INKFRAME_SCREENSHOT_TEMPLATES=1` uses a temporary
     folder, never the real library.
+
+60. Pressure-sensitive lines (format v27; `line.rs`): `Shape::Line {
+    path, widths }` with a width per centreline anchor, filled with the
+    element's fill. The Pencil records `tablet::current()` pressure per
+    sample, densifies the fitted path (`with_anchors_every`) so widths can
+    vary, and sets widths from the nearest sample's pressure and an end
+    taper (`pencil_pressure`, `pencil_taper`). Width tool
+    (`Tool::Width`, in the Subselection slot) drags a point's width.
+    Subselection edits a line's outline (turning it into a plain filled
+    shape), as Animate does with brush strokes. Still unverified with a
+    real tablet, like the paint brush's pressure.
 
 ## Not yet verified by hand
 
