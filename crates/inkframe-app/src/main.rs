@@ -16,6 +16,7 @@ mod convert;
 mod easing_editor;
 mod editor;
 mod export_dialog;
+mod guides;
 mod handles;
 mod icons;
 mod inspector;
