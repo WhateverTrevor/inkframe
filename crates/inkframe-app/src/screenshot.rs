@@ -129,6 +129,11 @@ impl AutoScreenshot {
         std::env::var_os("INKFRAME_SCREENSHOT_CAMERA").is_some()
     }
 
+    /// Whether to add a ball that flies across the stage, motion blurred.
+    pub fn motion_blur() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_MOTION_BLUR").is_some()
+    }
+
     /// Whether to add pencil lines of varying width, with the Width tool.
     pub fn pressure_lines() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_LINES").is_some()

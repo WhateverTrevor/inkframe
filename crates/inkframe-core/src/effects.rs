@@ -74,11 +74,18 @@ pub enum FilterKind {
     /// Brightness and contrast (−1 to 1), saturation (−1 grey to 1 vivid)
     /// and hue (degrees round the colour wheel).
     AdjustColor { brightness: f32, contrast: f32, saturation: f32, hue: f32 },
+    /// Smears the layer along its movement, as a film camera's shutter
+    /// does: it's drawn at `samples` moments across `shutter` degrees of
+    /// the frame (360 being the whole frame, 180 the usual film look) and
+    /// those are averaged. Unlike the other filters this needs drawing the
+    /// layer again, so the renderer does it, before the rest; its place in
+    /// the list doesn't matter.
+    MotionBlur { shutter: f32, samples: u32 },
 }
 
 impl FilterKind {
     /// Every filter, as the Add menu lists them, with Animate's defaults.
-    pub const ALL: [FilterKind; 4] = [
+    pub const ALL: [FilterKind; 5] = [
         FilterKind::DropShadow {
             distance: 5.0,
             angle: 45.0,
@@ -89,6 +96,7 @@ impl FilterKind {
         FilterKind::Blur { x: 5.0, y: 5.0 },
         FilterKind::Glow { blur: 5.0, color: Color::rgba(255, 0, 0, 255), strength: 1.0, inner: false },
         FilterKind::AdjustColor { brightness: 0.0, contrast: 0.0, saturation: 0.0, hue: 0.0 },
+        FilterKind::MotionBlur { shutter: 180.0, samples: 8 },
     ];
 
     pub fn label(&self) -> &'static str {
@@ -97,6 +105,7 @@ impl FilterKind {
             FilterKind::Blur { .. } => "Blur",
             FilterKind::Glow { .. } => "Glow",
             FilterKind::AdjustColor { .. } => "Adjust Color",
+            FilterKind::MotionBlur { .. } => "Motion Blur",
         }
     }
 
@@ -113,6 +122,8 @@ impl FilterKind {
                 }
             }
             FilterKind::AdjustColor { .. } => 0.0,
+            // The renderer covers the whole path it moves along.
+            FilterKind::MotionBlur { .. } => 0.0,
         }
     }
 }
@@ -178,6 +189,7 @@ fn neutral(kind: FilterKind) -> FilterKind {
         FilterKind::AdjustColor { .. } => {
             FilterKind::AdjustColor { brightness: 0.0, contrast: 0.0, saturation: 0.0, hue: 0.0 }
         }
+        FilterKind::MotionBlur { samples, .. } => FilterKind::MotionBlur { shutter: 0.0, samples },
     }
 }
 
@@ -220,8 +232,24 @@ fn lerp_filter(a: FilterKind, b: FilterKind, t: f32) -> Option<FilterKind> {
             saturation: mix(sa1, sa2, t),
             hue: mix(h1, h2, t),
         },
+        (MotionBlur { shutter: s1, samples: n1 }, MotionBlur { shutter: s2, samples: n2 }) => {
+            MotionBlur { shutter: mix(s1, s2, t), samples: n1.max(n2) }
+        }
         _ => return None,
     })
+}
+
+impl Effects {
+    /// The motion blur to draw with, if it's on and blurs at all: the
+    /// shutter as a fraction of a frame, and how many moments to draw.
+    pub fn motion_blur(&self) -> Option<(f32, u32)> {
+        self.filters.iter().filter(|f| f.enabled).find_map(|f| match f.kind {
+            FilterKind::MotionBlur { shutter, samples } if shutter > 0.5 && samples > 1 => {
+                Some(((shutter / 360.0).clamp(0.0, 1.0), samples.clamp(2, 64)))
+            }
+            _ => None,
+        })
+    }
 }
 
 /// Two colour effects blended, `None` standing in for "no change" of the
@@ -337,6 +365,8 @@ pub fn apply_filters(pixels: &mut [u8], width: usize, height: usize, filters: &[
             FilterKind::AdjustColor { brightness, contrast, saturation, hue } => {
                 adjust_color(pixels, brightness, contrast, saturation, hue)
             }
+            // Done while drawing; see the variant.
+            FilterKind::MotionBlur { .. } => {}
         }
     }
 }

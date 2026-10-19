@@ -8,7 +8,7 @@ after the Harmony features (palettes to master controllers).
 - **Branch:** `main`, clean. Every feature is built on its own branch,
   then merged into `main` with a merge commit.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (529 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (531 tests)
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
@@ -345,6 +345,15 @@ after the Harmony features (palettes to master controllers).
     Subselection edits a line's outline (turning it into a plain filled
     shape), as Animate does with brush strokes. Still unverified with a
     real tablet, like the paint brush's pressure.
+
+61. Motion blur: `FilterKind::MotionBlur { shutter (degrees), samples }`,
+    animatable like other filters, but drawn by the renderer: it draws
+    the layer at moments across the shutter (`Document::layer_matrix_at`,
+    the fractional-frame placement, through parents and the camera) and
+    averages them, into a buffer covering the whole sweep. Samples rise
+    automatically so moments are at most ~2 px apart (up to 64); a still
+    layer is drawn once. Only movement blurs (shapes changing within a
+    drawing don't). `INKFRAME_SCREENSHOT_MOTION_BLUR=1` adds a fast ball.
 
 ## Not yet verified by hand
 

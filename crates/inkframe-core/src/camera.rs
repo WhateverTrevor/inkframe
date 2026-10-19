@@ -57,8 +57,12 @@ impl Document {
     /// Maps the scene at `depth` to the stage as the camera sees it on
     /// `frame`; `None` with no camera.
     pub fn camera_matrix(&self, depth: f32, frame: u32) -> Option<Affine> {
+        self.camera_matrix_at(depth, frame as f32)
+    }
+
+    fn camera_matrix_at(&self, depth: f32, frame: f32) -> Option<Affine> {
         let camera = self.camera()?;
-        let pose = self.pose(camera, frame);
+        let pose = self.pose_at(camera, frame);
         let centre = self.stage_rect().center();
         let perspective = FOCAL_LENGTH / (FOCAL_LENGTH + depth.max(NEAREST));
         let zoom = pose.scale.x.max(0.01) * perspective;
@@ -74,11 +78,11 @@ impl Document {
 
     /// The camera's part of a top-level layer's placement: the identity
     /// for the camera itself, layers in symbols, or with no camera.
-    pub(crate) fn camera_for(&self, root: &Layer, frame: u32) -> Affine {
+    pub(crate) fn camera_for(&self, root: &Layer, frame: f32) -> Affine {
         if root.camera || !self.in_main_timeline(root) {
             return Affine::IDENTITY;
         }
-        self.camera_matrix(root.depth, frame).unwrap_or(Affine::IDENTITY)
+        self.camera_matrix_at(root.depth, frame).unwrap_or(Affine::IDENTITY)
     }
 
     /// Whether `layer` is one of the main timeline's (rather than a

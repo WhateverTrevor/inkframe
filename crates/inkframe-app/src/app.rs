@@ -210,6 +210,29 @@ impl InkframeApp {
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
             }
+            if AutoScreenshot::motion_blur() {
+                use inkframe_core::{
+                    Color, Effects, Element, Filter, FilterKind, Point, Shape, Stroke, Style, Transform,
+                };
+                let ball = Element {
+                    shape: Shape::Ellipse { radius_x: 70.0, radius_y: 70.0 },
+                    style: Style {
+                        fill: Some(Color::rgb(0xe8, 0x4a, 0x5f)),
+                        stroke: Some(Stroke { color: Color::rgb(30, 30, 40), width: 6.0 }),
+                    },
+                };
+                let doc = &mut app.editor.doc;
+                let id = doc.add_layer("Ball", vec![ball], 0, Transform::at(Point::new(300.0, 760.0)));
+                if let Some(layer) = doc.layer_mut(id) {
+                    layer.track.set_pose(8, Transform::at(Point::new(1700.0, 760.0)));
+                    let blur = Filter {
+                        enabled: true,
+                        kind: FilterKind::MotionBlur { shutter: 180.0, samples: 16 },
+                    };
+                    layer.track.set_effects(0, Effects { filters: vec![blur], ..Default::default() });
+                }
+                app.editor.select(Some(id));
+            }
             if AutoScreenshot::pressure_lines() {
                 use inkframe_core::{Color, Element, Path, Point, Segment, Shape, Style, Transform};
                 // Three wavy strokes, pressed hard in the middle and light at
