@@ -81,6 +81,12 @@ planned (the code is already cross-platform and CI builds it on Windows).
   | H.264 MP4 | — | Review copies and the web |
   | HEVC with alpha (macOS) | ✔ | Small files with alpha for Apple devices and Safari |
 
+  **File › Batch Export** queues several projects, or one project in
+  several formats, and exports them one after another into one folder,
+  each named after its project. A job that fails is marked and the rest
+  carry on. The same works without opening a window (see
+  [Exporting from the command line](#exporting-from-the-command-line)).
+
 - **Paint** like in Photoshop, alongside the vector drawing: paint layers
   hold pixels, painted with a soft or hard round brush (size, hardness,
   opacity, flow, spacing, paper grain, smoothing, and presets from inking
@@ -109,6 +115,21 @@ cargo run --release -- examples/bouncing-ball.inkf
 
 If ffmpeg is somewhere unusual, point Inkframe at it with the
 `INKFRAME_FFMPEG` environment variable.
+
+### Exporting from the command line
+
+`inkframe --export` exports saved projects without opening a window, for
+scripts and render machines. Every project is exported in every format
+listed:
+
+```sh
+inkframe --export walk.inkf run.inkf --format h264,prores4444 --to renders
+```
+
+Formats are `png`, `sheet`, `prores4444`, `prores4444xq`, `prores422hq`,
+`h264` and `hevc-alpha` (macOS). `--scale 0.5` exports at half size,
+`--opaque` draws the stage colour instead of transparency, and `--help`
+lists everything. It exits with 1 if any export failed.
 
 Lip sync from Rhubarb needs
 [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-lip-sync/releases)

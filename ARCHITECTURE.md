@@ -215,6 +215,12 @@ for every format are in `ffmpeg::build_args`, with comments explaining each
 choice (color matrix, pixel format, padding to even sizes). The progress
 callback returns `ControlFlow::Break` to cancel.
 
+Batches (`batch.rs`) are lists of `BatchJob`s, each opening its project
+from disk and exporting the whole animation. `batch::outputs` names files
+after projects, adding the format's slug where two would clash and giving
+PNG sequences their own folder; `batch::run` keeps going past a failed
+job and stops everything when its callback breaks.
+
 Sprite sheets (`sprite_sheet.rs`) render every frame, crop each to its
 drawn pixels, and keep one copy of frames that come out identical (held
 drawings). Every cell is the union of those areas, so frames stay aligned;
@@ -244,6 +250,8 @@ writes. No audio.
 | `audio_engine.rs` | Plays the soundtrack in sync (the audio clock drives playback) and scrubs it; decodes files in the background |
 | `library.rs` | The Library panel, with cached symbol thumbnails |
 | `export_dialog.rs` | Export settings and the background export thread |
+| `batch_dialog.rs` | File › Batch Export: a queue of `BatchJob`s (project, format, size, transparency) run on a thread with `batch::run`, status per row |
+| `cli.rs` | `inkframe --export …`: parses projects and options into `BatchJob`s and runs them without a window (attaching to the parent console on Windows) |
 | `lip_sync_dialog.rs` | The Lip Sync window: picks the dialogue and timing source, maps drawings to mouth shapes, applies `Layer::apply_lip_sync` |
 | `tablet.rs` | Pen pressure: from Windows Ink pens via egui's touch events with force, and on macOS from an AppKit local event monitor that notes each pen event's pressure and tilt. `samples` gives every pointer position since the last frame with its pressure |
 | `rhubarb.rs` | Finding and running Rhubarb Lip Sync on a background thread (`Job`): decodes the dialogue to a temporary WAV, reads progress from its `--machineReadable` log, parses its TSV output |

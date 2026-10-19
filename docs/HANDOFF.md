@@ -366,6 +366,18 @@ after the Harmony features (palettes to master controllers).
     `INKFRAME_SCREENSHOT_EXPORT=sprite` opens the Export window on a format.
     Not yet loaded into an actual engine.
 
+63. Batch export: `inkframe_export::batch` (`BatchJob`, `outputs`, `run`
+    with `BatchEvent`s) shared by File › Batch Export (`batch_dialog.rs`)
+    and `inkframe --export` (`cli.rs`, handled in `main` before eframe
+    starts; on Windows it calls `AttachConsole` so a GUI-subsystem
+    release build can print). Jobs read projects from disk; the window
+    warns when the open project has unsaved changes. Outputs default to
+    `Exports/` beside the first project. `ExportFormat::slug`/`from_slug`
+    name formats for files and the command line.
+    `INKFRAME_SCREENSHOT_BATCH=1` queues the open project and its
+    neighbours and starts. The queue isn't remembered between runs, and
+    the Windows console output is unverified on a real PC.
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either
