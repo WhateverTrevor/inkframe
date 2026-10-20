@@ -468,6 +468,12 @@ after the Harmony features (palettes to master controllers).
     (`xtask/src/samples.rs`); rerun it after a format change. The render
     test `tests/examples.rs` opens and draws every example.
 
+73. Bundled examples: `cargo xtask bundle-macos` / `bundle-windows` copy
+    `examples/*.inkf` into the package (`util::copy_examples`); the app's
+    `examples.rs` gallery (File › Open Example…) finds them and opens one
+    as an untitled copy. Add a line to `ABOUT` for a new example (a test
+    fails otherwise). `INKFRAME_SCREENSHOT_EXAMPLES=1`.
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either

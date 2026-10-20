@@ -17,6 +17,7 @@ mod convert;
 mod depth_view;
 mod easing_editor;
 mod editor;
+mod examples;
 mod export_dialog;
 mod guides;
 mod handles;

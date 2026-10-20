@@ -264,6 +264,7 @@ writes. No audio.
 | `toolbar.rs` | Tool buttons with vector-drawn icons |
 | `audio_engine.rs` | Plays the soundtrack in sync (the audio clock drives playback) and scrubs it; decodes files in the background |
 | `library.rs` | The Library panel, with cached symbol thumbnails |
+| `examples.rs` | File › Open Example: finds the sample projects (bundled in `Contents/Resources/Examples` or an `Examples` folder beside the exe, else the checkout's `examples/`; only a folder holding `.inkf` files counts), lists them with a rendered picture and a note from `ABOUT`, and opens one as an untitled copy (`Editor::untitled_copy`) so saving never writes into the app |
 | `export_dialog.rs` | Export settings and the background export thread |
 | `guides.rs` | Safe areas (`SafeAreas`: current 93/90%, classic 90/80%) and the 12-field chart, as lines and labels in stage pixels; `stage.rs` draws them over the stage (the camera's frame), turned with the view |
 | `batch_dialog.rs` | File › Batch Export: a queue of `BatchJob`s (project, format, size, transparency) run on a thread with `batch::run`, status per row |

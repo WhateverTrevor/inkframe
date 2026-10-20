@@ -32,8 +32,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::util::{
-    build_release, bundle_ffmpeg, bundle_rhubarb, copy, copy_licenses, fresh_dir, output, read, remove_dir,
-    run, write,
+    build_release, bundle_ffmpeg, bundle_rhubarb, copy, copy_examples, copy_licenses, fresh_dir, output,
+    read, remove_dir, run, write,
 };
 use crate::{icon, workspace_root};
 
@@ -91,6 +91,7 @@ pub fn bundle(options: &Options) -> Result<(), String> {
     write(&contents.join("Info.plist"), plist.as_bytes())?;
     make_icns(&release, &resources.join("Inkframe.icns"))?;
     copy_licenses(&root, &resources.join("licenses"))?;
+    copy_examples(&root, &resources.join("Examples"))?;
 
     if let Some(ffmpeg) = &options.ffmpeg {
         bundle_ffmpeg(ffmpeg, &macos_dir.join("ffmpeg"), &resources.join("licenses/ffmpeg"))?;

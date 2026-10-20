@@ -35,6 +35,7 @@
 //!   leave alone; point `HOME` somewhere else first) and opens Batch Export to show them.
 //! * `INKFRAME_SCREENSHOT_RECOVERY=1` shows the Recover Unsaved Work window, for a copy
 //!   of the opened project left in a scratch folder.
+//! * `INKFRAME_SCREENSHOT_EXAMPLES=1` opens File › Open Example.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -139,6 +140,11 @@ impl AutoScreenshot {
     /// and `apply` to vectorise straight away.
     pub fn vectorise() -> Option<String> {
         std::env::var("INKFRAME_SCREENSHOT_VECTORISE").ok()
+    }
+
+    /// Whether to open the examples gallery.
+    pub fn examples() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_EXAMPLES").is_some()
     }
 
     /// Whether to build the multiplane scene.

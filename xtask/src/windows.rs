@@ -7,6 +7,7 @@
 //! ffmpeg.exe          optional; found by inkframe-export's `locate`
 //! rhubarb\            optional; Rhubarb Lip Sync and its speech models
 //! licenses\           Inkframe's licenses (and ffmpeg's and Rhubarb's)
+//! Examples\           the sample projects, for File › Open Example
 //! ```
 //!
 //! [Inno Setup](https://jrsoftware.org/isinfo.php) then turns that folder
@@ -18,7 +19,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::util::{
-    build_release, bundle_ffmpeg, bundle_rhubarb, copy, copy_licenses, fresh_dir, remove_dir, run,
+    build_release, bundle_ffmpeg, bundle_rhubarb, copy, copy_examples, copy_licenses, fresh_dir, remove_dir,
+    run,
 };
 use crate::workspace_root;
 
@@ -71,6 +73,7 @@ pub fn bundle(options: &Options) -> Result<(), String> {
     fresh_dir(&staging.join("licenses"))?;
     copy(&release.join("inkframe.exe"), &staging.join("inkframe.exe"))?;
     copy_licenses(&root, &staging.join("licenses"))?;
+    copy_examples(&root, &staging.join("Examples"))?;
     if let Some(ffmpeg) = &options.ffmpeg {
         bundle_ffmpeg(ffmpeg, &staging.join("ffmpeg.exe"), &staging.join("licenses").join("ffmpeg"))?;
     }
