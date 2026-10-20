@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "Build tooling for Inkframe: app icon and release packaging."
+description = "Build tooling for Inkframe: app icon, sample projects and release packaging."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,4 +8,6 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+# For building the sample projects (`cargo xtask samples`).
+inkframe-core.workspace = true
 tiny-skia.workspace = true

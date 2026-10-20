@@ -460,6 +460,14 @@ after the Harmony features (palettes to master controllers).
     Builds are ad-hoc signed (macOS) and unsigned (Windows); signing and
     notarizing need Apple and Microsoft developer accounts.
 
+72. Getting started: `docs/GETTING_STARTED.md` (a bouncing-ball
+    tutorial and an examples gallery, images in `docs/images/`), linked
+    from the README and Help › Getting Started Guide (Help › Report a
+    Problem opens the issues). Samples `multiplane`, `particles` and
+    `ink-and-paint` are built by `cargo xtask samples`
+    (`xtask/src/samples.rs`); rerun it after a format change. The render
+    test `tests/examples.rs` opens and draws every example.
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either

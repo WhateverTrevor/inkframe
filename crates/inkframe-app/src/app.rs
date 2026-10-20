@@ -130,6 +130,26 @@ enum Command {
 }
 
 pub(crate) const FILE_EXTENSION: &str = "inkf";
+/// The guide that walks through a first animation, and where problems are
+/// reported (Help menu).
+const GUIDE_URL: &str = "https://github.com/WhateverTrevor/inkframe/blob/main/docs/GETTING_STARTED.md";
+const ISSUES_URL: &str = "https://github.com/WhateverTrevor/inkframe/issues";
+
+/// Opens a web page in the default browser.
+fn open_in_browser(url: &str) {
+    let result = if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(url).spawn()
+    } else if cfg!(windows) {
+        // `start` is built into cmd; the empty title keeps it from taking
+        // the URL as the window's title.
+        std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn()
+    } else {
+        std::process::Command::new("xdg-open").arg(url).spawn()
+    };
+    if let Err(err) = result {
+        eprintln!("couldn't open {url}: {err}");
+    }
+}
 /// How much `[` and `]` shrink or grow the brush.
 const BRUSH_STEP: f32 = 1.2;
 /// Font files Inkframe can import.
@@ -1153,6 +1173,17 @@ impl InkframeApp {
                 });
                 item(ui, "Reset Workspace", None, Command::ResetLayout, true);
                 ui.weak("Drag an area's corner to split or join it,\nCtrl+Space to fill the window with it.");
+            });
+            ui.menu_button("Help", |ui| {
+                if ui.button("Getting Started Guide").clicked() {
+                    open_in_browser(GUIDE_URL);
+                    ui.close();
+                }
+                if ui.button("Report a Problem…").clicked() {
+                    open_in_browser(ISSUES_URL);
+                    ui.close();
+                }
+                ui.weak(format!("Inkframe {}", env!("CARGO_PKG_VERSION")));
             });
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
