@@ -1038,6 +1038,14 @@ impl Editor {
         Some(id)
     }
 
+    /// Sets a layer's depth on the current frame, keying it if it changed.
+    pub fn set_depth(&mut self, id: LayerId, depth: f32) {
+        let frame = self.frame;
+        if let Some(layer) = self.doc.layer_mut(id) {
+            layer.track.set_depth(frame, depth);
+        }
+    }
+
     /// Adds a particle layer from `preset`, starting on the current frame:
     /// snow along the top of the stage, the others in the middle.
     pub fn add_particle_layer(&mut self, preset: inkframe_core::Preset) -> Option<LayerId> {

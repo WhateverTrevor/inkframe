@@ -39,7 +39,7 @@ The data model and the math behind animation.
 | File | What's in it |
 |---|---|
 | `document.rs` | `Document` (stage settings plus layers), `Layer`, `Element`, loading and saving |
-| `camera.rs` | The camera: a layer with `camera` set, kept on top of the main timeline (`keep_camera_on_top`), whose pose is the view (`camera_matrix`). Top-level main-timeline layers are placed through it in `parent_matrix`, so everything that draws or edits sees the camera's view; `Layer::depth` gives parallax (`FOCAL_LENGTH`) |
+| `camera.rs` | The camera: a layer with `camera` set, kept on top of the main timeline (`keep_camera_on_top`), whose pose is the view (`camera_matrix`). Top-level main-timeline layers are placed through it in `parent_matrix`, so everything that draws or edits sees the camera's view. A multiplane: each layer's Depth property (`Track::depth`, animatable) against the camera's own Depth (its dolly) gives perspective `F / (F + d - z)` (`FOCAL_LENGTH`), and `camera_fade` fades layers the camera reaches |
 | `channel.rs` | `Channel<T>`, one property's sorted keys, and `sample()`, which tweens between them; `AnyChannel` for type-independent editing; `Bend` and `MotionCurve`, which curve position tweens and travel them at an even speed |
 | `track.rs` | `Track`: a layer's four channels, auto-keying (`set_pose`), and loading older file formats |
 | `transform.rs` | `Transform`, the animatable properties: position, rotation, scale, skew, opacity; `from_affine` turns any matrix back into a pose |
@@ -128,7 +128,7 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 28. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 29. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
@@ -145,7 +145,8 @@ and filters, and version 23 animated effects (format 22's fixed ones
 move into the Effects property on load), version 24 colour art in
 drawings, version 25 the free-form deformer, version 26 master
 controllers, version 27 pressure-sensitive pencil lines, and version 28
-particle layers (`Layer::particles`);
+particle layers (`Layer::particles`), and version 29 animatable depth (the
+track's `depth`; older fixed depths move into it on load);
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 
@@ -249,6 +250,7 @@ writes. No audio.
 | `editor.rs` | `Editor`: document, selection, current frame, tool, and the operations panels call |
 | `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles |
 | `handles.rs` | The math for scale and rotate handles (anchor pinning, multi-turn rotation) |
+| `depth_view.rs` | The Depth View: the main timeline's top-level layers from above, as lines at their depths, with the camera's field of view. Dragging a line sets its depth, dragging the camera dollies and pans it (both through `Editor::set_depth` / `set_pose`, so they key the frame); scroll zooms, empty space pans, Fit fits. What's dragged is decided at the press point |
 | `node_view.rs` | The Node View: the timeline being edited drawn as a graph built from the layers each frame (layer nodes with Parent and Mask inputs and Transform and Image outputs, effect and filter nodes in each layer's image chain, a Composite in stacking order, the Display). `connect` and `disconnect` turn wiring into the same edits the timeline and Properties make (`set_parent`, `masked_by`, `place_layer`, effects); only node positions are the view's own |
 | `pen.rs` | State of the pen path being drawn, which lasts across many clicks |
 | `subselect.rs` | The math for moving, deleting and converting anchors with the Subselection tool |

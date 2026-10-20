@@ -13,6 +13,7 @@ mod audio_engine;
 mod batch_dialog;
 mod cli;
 mod convert;
+mod depth_view;
 mod easing_editor;
 mod editor;
 mod export_dialog;

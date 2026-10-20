@@ -11,10 +11,16 @@
 //!
 //! Every layer at the top level of the main timeline is placed through the
 //! camera, as part of its parent matrix (see `rig.rs`), so drawing, hit
-//! testing, bounds and export all see the scene as the camera does. A
-//! layer's `depth` sets how far behind the stage it sits: at depth `d` it
-//! appears `F / (F + d)` times its size and moves that much less as the
-//! camera pans, `F` being [`FOCAL_LENGTH`]. Negative depths come forward.
+//! testing, bounds and export all see the scene as the camera does.
+//!
+//! This makes a multiplane camera. A layer's Depth (an animatable property)
+//! sets how far behind the stage it sits, and the camera's own Depth how
+//! far it has travelled forward (a dolly). A layer `d` deep, seen by a
+//! camera `z` forward, is `F + d - z` from it and appears `F / (F + d - z)`
+//! times its size, `F` being [`FOCAL_LENGTH`]: far layers move less as the
+//! camera pans, and as it dollies in, near layers grow faster than far
+//! ones, which zooming can't do. Layers the camera reaches fade away
+//! rather than filling the view. Negative depths come forward.
 
 use crate::document::{Document, Layer, LayerId};
 use crate::geometry::{Affine, Point};
@@ -24,8 +30,11 @@ use crate::transform::Transform;
 /// this deep appears half its size.
 pub const FOCAL_LENGTH: f32 = 1000.0;
 
-/// The nearest a layer can come: closer than this it would fill the view.
-const NEAREST: f32 = -0.9 * FOCAL_LENGTH;
+/// The nearest a layer can be to the camera and still be seen. Closer, it
+/// would fill the view; it has faded out by here.
+const NEAREST: f32 = 0.1 * FOCAL_LENGTH;
+/// How far before [`NEAREST`] a layer starts fading as the camera nears.
+const FADE: f32 = 0.15 * FOCAL_LENGTH;
 
 impl Document {
     /// The camera, if the main timeline has one and it's switched on (not
@@ -64,7 +73,8 @@ impl Document {
         let camera = self.camera()?;
         let pose = self.pose_at(camera, frame);
         let centre = self.stage_rect().center();
-        let perspective = FOCAL_LENGTH / (FOCAL_LENGTH + depth.max(NEAREST));
+        let distance = FOCAL_LENGTH + depth - camera.track.depth_at(frame);
+        let perspective = FOCAL_LENGTH / distance.max(NEAREST);
         let zoom = pose.scale.x.max(0.01) * perspective;
         // The point the camera looks at goes to the middle of the stage,
         // turned and zoomed about there.
@@ -82,7 +92,32 @@ impl Document {
         if root.camera || !self.in_main_timeline(root) {
             return Affine::IDENTITY;
         }
-        self.camera_matrix_at(root.depth, frame).unwrap_or(Affine::IDENTITY)
+        self.camera_matrix_at(root.track.depth_at(frame), frame).unwrap_or(Affine::IDENTITY)
+    }
+
+    /// How much of a top-level layer shows as the camera comes near it: 1
+    /// until it's close, then fading to 0 by the time the camera reaches
+    /// it (and 0 once the camera has passed).
+    pub fn camera_fade(&self, layer: &Layer, frame: f32) -> f32 {
+        let Some(camera) = self.camera() else { return 1.0 };
+        if layer.camera || !self.in_main_timeline(layer) {
+            return 1.0;
+        }
+        let distance = FOCAL_LENGTH + layer.track.depth_at(frame) - camera.track.depth_at(frame);
+        ((distance - NEAREST) / FADE).clamp(0.0, 1.0)
+    }
+
+    /// The depth of `layer` on `frame`: for its whole chain of parents,
+    /// the top one's, which is what places it for the camera.
+    pub fn depth_at(&self, layer: &Layer, frame: f32) -> f32 {
+        let mut root = layer;
+        for _ in 0..crate::rig::MAX_DEPTH {
+            match self.parent_of(root) {
+                Some(parent) => root = parent,
+                None => break,
+            }
+        }
+        root.track.depth_at(frame)
     }
 
     /// Whether `layer` is one of the main timeline's (rather than a
@@ -167,12 +202,52 @@ mod tests {
         let mut doc = Document::default();
         let near_dot = dot_at(&mut doc, 960.0, 540.0);
         let far_dot = dot_at(&mut doc, 960.0, 540.0);
-        doc.layer_mut(far_dot).unwrap().depth = FOCAL_LENGTH;
+        doc.layer_mut(far_dot).unwrap().track.set_depth(0, FOCAL_LENGTH);
         let camera = doc.add_camera();
         doc.set_pose(camera, 0, Transform::at(Point::new(1060.0, 540.0)));
         assert!(near(seen(&doc, near_dot, 0), Point::new(860.0, 540.0)));
         // Twice as far from the camera: half the movement.
         assert!(near(seen(&doc, far_dot, 0), Point::new(910.0, 540.0)));
+    }
+
+    #[test]
+    fn dollying_in_grows_near_layers_faster_than_far_ones() {
+        let mut doc = Document::default();
+        let near_dot = dot_at(&mut doc, 1060.0, 540.0);
+        let far_dot = dot_at(&mut doc, 1060.0, 540.0);
+        doc.layer_mut(far_dot).unwrap().track.set_depth(0, 1000.0);
+        let camera = doc.add_camera();
+        // Halfway to the stage: the stage layer is now 500 away (twice its
+        // size), the far one 1500 (two thirds of its size).
+        doc.layer_mut(camera).unwrap().track.set_depth(0, 500.0);
+        let offset = |id| seen(&doc, id, 0).x - 960.0;
+        assert!((offset(near_dot) - 200.0).abs() < 0.01, "{}", offset(near_dot));
+        assert!((offset(far_dot) - 100.0 * 2.0 / 3.0).abs() < 0.01, "{}", offset(far_dot));
+    }
+
+    #[test]
+    fn layers_the_camera_reaches_fade_away() {
+        let mut doc = Document::default();
+        let dot = dot_at(&mut doc, 960.0, 540.0);
+        let camera = doc.add_camera();
+        let layer = |doc: &Document| doc.layer(dot).unwrap().clone();
+        assert_eq!(doc.camera_fade(&layer(&doc), 0.0), 1.0);
+        doc.layer_mut(camera).unwrap().track.set_depth(0, FOCAL_LENGTH);
+        assert_eq!(doc.camera_fade(&layer(&doc), 0.0), 0.0, "reached");
+        doc.layer_mut(camera).unwrap().track.set_depth(0, 0.8 * FOCAL_LENGTH);
+        let fading = doc.camera_fade(&layer(&doc), 0.0);
+        assert!(fading > 0.0 && fading < 1.0, "{fading}");
+    }
+
+    #[test]
+    fn old_fixed_depths_become_the_depth_property() {
+        let mut doc = Document::default();
+        let dot = dot_at(&mut doc, 960.0, 540.0);
+        let mut json: serde_json::Value = serde_json::from_str(&doc.to_json().unwrap()).unwrap();
+        json["version"] = 28.into();
+        json["layers"][0]["depth"] = 250.0.into();
+        let loaded = Document::from_json(&json.to_string()).unwrap();
+        assert_eq!(loaded.layer(dot).unwrap().track.depth_at(30.0), 250.0);
     }
 
     #[test]

@@ -28,7 +28,7 @@ use crate::geometry::{Affine, Point};
 
 /// How many parents deep a chain may go. Setting a parent refuses loops, so
 /// this only guards against a hand-edited file.
-const MAX_DEPTH: usize = 64;
+pub(crate) const MAX_DEPTH: usize = 64;
 
 impl Document {
     /// Maps a layer's own coordinates (where its shapes are drawn) into its
