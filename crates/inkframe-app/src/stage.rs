@@ -2907,6 +2907,12 @@ fn draw_brush_outline(painter: &egui::Painter, editor: &Editor, view: View, poin
     // Dark and light rings, so it shows on any colour.
     painter.circle_stroke(pointer, radius, (2.0, Color32::from_black_alpha(140)));
     painter.circle_stroke(pointer, radius, (1.0, Color32::WHITE));
+    // A soft brush's full-strength core, faintly: inside it the paint goes
+    // on at full strength, and it fades out between the two rings.
+    if settings.hardness < 0.95 && radius > 6.0 {
+        let core = radius * settings.hardness.max(0.05);
+        painter.circle_stroke(pointer, core, (1.0, Color32::from_white_alpha(110)));
+    }
 }
 
 /// Gets a stroke ready on the selected paint layer, first adding a paint

@@ -50,6 +50,10 @@ const PROPERTY_INDENT: f32 = 44.0;
 const TRAILING_FRAMES: u32 = 20;
 /// How far a layer's name must be dragged before it starts to move.
 const REORDER_THRESHOLD: f32 = 4.0;
+/// How long a press on a layer's name must hold still to pick the layer up.
+const HOLD_TO_REORDER: f64 = 0.35;
+/// How far a press on a layer's name must move to scroll instead.
+const SCROLL_THRESHOLD: f32 = 6.0;
 
 /// The index (into `rows`) of each layer's summary row, top to bottom.
 fn layer_starts(rows: &[Row]) -> Vec<usize> {
@@ -122,10 +126,23 @@ enum Drag {
     /// Dragging the left or right end of a layer's bar changes the frames
     /// the layer appears on.
     SpanEdge { layer: LayerId, edge: Edge },
-    /// Dragging a layer's name up or down the list to restack it. `gap` is
-    /// where it would land: before the `gap`th layer from the top (or
-    /// after the last), once the pointer has moved far enough to mean it.
-    Reorder { layer: LayerId, start_y: f32, gap: Option<usize> },
+    /// A press on a layer's name. Moving straight away scrolls the list (so
+    /// a pen, which has no scroll wheel, can get through a long one);
+    /// holding still for a moment first picks the layer up to restack it.
+    Layer { row: Row, start: Pos2, pressed_at: f64, scroll_at_press: f32, mode: LayerDrag },
+}
+
+/// What a press on a layer's name has turned into.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum LayerDrag {
+    /// Not yet clear: released now, it's a click that selects.
+    Pending,
+    /// Moving the list up and down.
+    Scrolling,
+    /// Picked up to restack. `gap` is where it would land: before the
+    /// `gap`th layer from the top (or after the last), once the pointer has
+    /// moved far enough to mean it.
+    Reordering { gap: Option<usize> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -492,11 +509,23 @@ impl TimelineView {
             &audio_rows,
         );
 
-        // Where a dragged layer would land.
-        if let Some(Drag::Reorder { gap: Some(gap), .. }) = self.drag {
-            let y = gap_y(&layout, &rows, gap);
-            let across = layout.names.left()..=layout.frames.right();
-            painter.hline(across, y, (2.0, ui.visuals().selection.stroke.color));
+        // A picked-up layer is lifted, and shows where it would land.
+        if let Some(Drag::Layer { row, mode: LayerDrag::Reordering { gap }, .. }) = self.drag {
+            if let Some(index) = rows.iter().position(|r| r.layer == row.layer && r.property.is_none()) {
+                let lifted = layout.row_rect(index, layout.names);
+                painter.rect_filled(lifted, 3.0, ui.visuals().selection.bg_fill.gamma_multiply(0.5));
+                painter.rect_stroke(
+                    lifted,
+                    3.0,
+                    (2.0, ui.visuals().selection.stroke.color),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            if let Some(gap) = gap {
+                let y = gap_y(&layout, &rows, gap);
+                let across = layout.names.left()..=layout.frames.right();
+                painter.hline(across, y, (2.0, ui.visuals().selection.stroke.color));
+            }
         }
 
         // Header for the names column, in the corner left of the ruler.
@@ -590,10 +619,11 @@ impl TimelineView {
             let adding = ui.input(|i| i.modifiers.shift || i.modifiers.command);
             self.drag = match audio_under(p.y).filter(|_| !layout.ruler.contains(p)) {
                 Some(id) => press_audio(editor, layout, id, p),
-                None => self.press(editor, layout, rows, p, adding),
+                None => self.press(editor, layout, rows, p, adding, ui.input(|i| i.time)),
             };
         }
 
+        let mut scroll_to = None;
         if let (Some(drag), Some(p)) = (&mut self.drag, response.interact_pointer_pos()) {
             let frame = clamp_frame(layout.frame_at(p.x));
             match drag {
@@ -619,11 +649,29 @@ impl TimelineView {
                         }
                     }
                 }
-                Drag::Reorder { start_y, gap, .. } => {
-                    // A few points of movement first, so a click still just
-                    // selects.
-                    if gap.is_some() || (p.y - *start_y).abs() > REORDER_THRESHOLD {
-                        *gap = Some(nearest_gap(layout, rows, p.y));
+                Drag::Layer { row, start, pressed_at, scroll_at_press, mode } => {
+                    if *mode == LayerDrag::Pending {
+                        // The hold is checked first: a pen down that long
+                        // was holding, even if this frame also sees it move.
+                        if ui.input(|i| i.time) - *pressed_at >= HOLD_TO_REORDER {
+                            // Held: picked up, and selected as it is.
+                            *mode = LayerDrag::Reordering { gap: None };
+                            select_row(editor, *row);
+                        } else if (p - *start).length() > SCROLL_THRESHOLD {
+                            *mode = LayerDrag::Scrolling;
+                        } else {
+                            // Come back when the hold time is up.
+                            ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+                        }
+                    }
+                    match mode {
+                        LayerDrag::Scrolling => scroll_to = Some(*scroll_at_press - (p.y - start.y)),
+                        LayerDrag::Reordering { gap } => {
+                            if gap.is_some() || (p.y - start.y).abs() > REORDER_THRESHOLD {
+                                *gap = Some(nearest_gap(layout, rows, p.y));
+                            }
+                        }
+                        LayerDrag::Pending => {}
                     }
                 }
                 Drag::Key { row, frame: from } => {
@@ -639,9 +687,18 @@ impl TimelineView {
             }
         }
 
+        if let Some(y) = scroll_to {
+            self.scroll.y = y.max(0.0);
+        }
+
         if !ui.input(|i| i.pointer.primary_down()) {
-            if let Some(Drag::Reorder { layer, gap: Some(gap), .. }) = self.drag {
-                restack(editor, rows, &self.collapsed, layer, gap);
+            match self.drag {
+                Some(Drag::Layer { row, mode: LayerDrag::Reordering { gap: Some(gap) }, .. }) => {
+                    restack(editor, rows, &self.collapsed, row.layer, gap);
+                }
+                // A click (no move, no hold) selects the layer.
+                Some(Drag::Layer { row, mode: LayerDrag::Pending, .. }) => select_row(editor, row),
+                _ => {}
             }
             self.drag = None;
         }
@@ -670,6 +727,15 @@ impl TimelineView {
         if over_edge || matches!(self.drag, Some(Drag::SpanEdge { .. })) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
+        match self.drag {
+            Some(Drag::Layer { mode: LayerDrag::Reordering { .. }, .. }) => {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            }
+            Some(Drag::Layer { mode: LayerDrag::Scrolling, .. }) => {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+            }
+            _ => {}
+        }
     }
 
     /// Decides what a primary-button press starts, based on where it landed.
@@ -680,6 +746,7 @@ impl TimelineView {
         rows: &[Row],
         p: Pos2,
         adding: bool,
+        now: f64,
     ) -> Option<Drag> {
         if layout.ruler.contains(p) {
             return Some(Drag::Scrub);
@@ -718,13 +785,18 @@ impl TimelineView {
                 editor.toggle_selected(row.layer);
                 return None;
             }
-            select_row(editor, row);
-            // Pressing a layer's name may also be the start of dragging it
-            // to another place in the stack.
-            return row.property.is_none().then_some(Drag::Reorder {
-                layer: row.layer,
-                start_y: p.y,
-                gap: None,
+            // A property row selects at once. A layer's name waits to see
+            // whether this is a click, a scroll or a hold (see `LayerDrag`).
+            if row.property.is_some() {
+                select_row(editor, row);
+                return None;
+            }
+            return Some(Drag::Layer {
+                row,
+                start: p,
+                pressed_at: now,
+                scroll_at_press: self.scroll.y,
+                mode: LayerDrag::Pending,
             });
         }
 
@@ -1757,6 +1829,9 @@ mod tests {
         assert_eq!(layer_names(&h), ["C", "B", "A"]);
         let (from, to) = (name(&h, 2), name(&h, 0) - vec2(0.0, 8.0));
         h.drag_at(from);
+        // Held still for a moment (each step is a quarter second), which
+        // picks the layer up.
+        h.step();
         h.step();
         h.hover_at(from - vec2(0.0, 10.0));
         h.step();
@@ -1799,6 +1874,26 @@ mod tests {
         h.run();
         assert!(!h.state().1.doc.stack_by_depth);
         assert!(h.query_by_label("Stacked by depth").is_none());
+    }
+
+    #[test]
+    fn dragging_a_name_without_holding_scrolls_the_list() {
+        let (mut h, _) = harness();
+        for i in 0..20 {
+            h.state_mut().1.doc.add_layer(format!("L{i}"), vec![], 0, Transform::default());
+        }
+        h.run();
+        let before = layer_names(&h);
+        let selected = h.state().1.selection;
+        let from = name(&h, 4);
+        h.drag_at(from);
+        h.hover_at(from - vec2(0.0, 120.0));
+        h.step();
+        h.drop_at(from - vec2(0.0, 120.0));
+        h.run();
+        assert!(h.state().0.scroll.y > 100.0, "scrolled: {:?}", h.state().0.scroll);
+        assert_eq!(layer_names(&h), before, "nothing restacked");
+        assert_eq!(h.state().1.selection, selected, "nothing selected");
     }
 
     #[test]
@@ -1885,6 +1980,7 @@ mod tests {
         // Drag C (top row) to just below the folder's row.
         let (from, to) = (name(&h, 0), name(&h, 1) + vec2(0.0, LAYER_ROW / 2.0 + 2.0));
         h.drag_at(from);
+        h.step();
         h.step();
         h.hover_at(from + vec2(0.0, 10.0));
         h.step();

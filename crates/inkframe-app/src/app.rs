@@ -565,6 +565,27 @@ impl InkframeApp {
             if AutoScreenshot::examples() {
                 app.examples.open(&cc.egui_ctx);
             }
+            if let Some(open) = AutoScreenshot::group() {
+                // Every layer but the camera into one symbol, as selecting
+                // them all and pressing F8 would.
+                let ids: Vec<_> = app.editor.doc.layers.iter().filter(|l| !l.camera).map(|l| l.id).collect();
+                app.editor.select_many(&ids);
+                match app.editor.convert_selected_to_symbol() {
+                    Ok(symbol) => {
+                        if let Some(symbol) = app.editor.doc.symbol_mut(symbol) {
+                            symbol.duration = 24;
+                        }
+                        // The scene setup ran before the symbol existed, so
+                        // opening it is done here rather than by `_OPEN`.
+                        if open {
+                            if let Some(instance) = app.editor.selected_layer().map(|l| l.id) {
+                                app.editor.enter_instance(instance);
+                            }
+                        }
+                    }
+                    Err(problem) => eprintln!("Couldn't group for the screenshot: {problem}"),
+                }
+            }
             if AutoScreenshot::multiplane() {
                 use inkframe_core::{Color, Element, Point, Shape, Style, Transform};
                 let doc = &mut app.editor.doc;
@@ -740,7 +761,9 @@ impl InkframeApp {
             }
             Command::DeleteLayer => editor.delete_selected_layer(),
             Command::ConvertToSymbol => {
-                editor.convert_selected_to_symbol();
+                if let Err(problem) = editor.convert_selected_to_symbol() {
+                    show_error("Couldn't make a symbol", &problem);
+                }
             }
             Command::MaskLayerBelow => {
                 if let Some(id) = editor.selection {

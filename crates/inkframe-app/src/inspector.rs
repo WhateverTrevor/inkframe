@@ -186,6 +186,13 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
     use crate::editor::Tool;
     let tool = editor.tool;
     ui.heading(tool.name());
+    // What a stroke looks like with these settings, first, so it's in view
+    // while adjusting them.
+    match tool {
+        Tool::Brush => brush_preview(ui, &editor.brush, Some(editor.paint_color)),
+        Tool::Eraser => brush_preview(ui, &editor.eraser, None),
+        _ => {}
+    }
     egui::Grid::new("paint_tool").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
         if matches!(tool, Tool::Brush | Tool::PaintBucket | Tool::Gradient | Tool::Eyedropper) {
             ui.label("Colour");
@@ -312,6 +319,76 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
 
 /// The settings every brush tip has. `paint` adds the ones only painting
 /// (rather than retouching) uses: opacity, flow and the paper grain.
+/// A sample stroke drawn with the brush engine itself, so size, hardness,
+/// opacity, flow, spacing, grain and pressure all show as they will on the
+/// canvas. The pressure swells and fades along it, as a pen's would. For
+/// the eraser (`paint` is `None`), a stroke erased out of a patch of
+/// colour. Redrawn only when the settings change.
+fn brush_preview(
+    ui: &mut egui::Ui,
+    settings: &inkframe_core::BrushSettings,
+    paint: Option<inkframe_core::Color>,
+) {
+    use inkframe_core::{BrushMode, BrushStroke, Canvas, Color, Point};
+    const WIDTH: u32 = 300;
+    const HEIGHT: u32 = 80;
+    // Big brushes are shown smaller, to fit; the caption says so.
+    let shown = settings.size.min(HEIGHT as f32 * 0.6);
+    let key = format!("{settings:?}{paint:?}{}", ui.visuals().dark_mode);
+    let id = egui::Id::new("brush-preview");
+    let cached: Option<(String, egui::TextureHandle)> = ui.data(|d| d.get_temp(id));
+    let texture = match cached {
+        Some((k, texture)) if k == key => texture,
+        _ => {
+            let mut canvas = Canvas::new(WIDTH, HEIGHT);
+            let ink = paint.unwrap_or(Color::rgb(120, 130, 150));
+            if paint.is_none() {
+                // Something to erase from.
+                let patch: Vec<u8> = (0..WIDTH * HEIGHT).flat_map(|_| [ink.r, ink.g, ink.b, 255]).collect();
+                canvas.write_region(0, 0, WIDTH, HEIGHT, &patch);
+            }
+            let mode = if paint.is_some() { BrushMode::Paint(ink) } else { BrushMode::Erase };
+            let mut stroke =
+                BrushStroke::new(inkframe_core::BrushSettings { size: shown, ..*settings }, mode);
+            let steps = 120;
+            for i in 0..=steps {
+                let t = i as f32 / steps as f32;
+                let x = 20.0 + t * (WIDTH as f32 - 40.0);
+                let y = HEIGHT as f32 / 2.0 + (t * std::f32::consts::TAU).sin() * HEIGHT as f32 * 0.22;
+                // Light at the ends, full in the middle.
+                let pressure = 0.15 + 0.85 * (t * std::f32::consts::PI).sin();
+                stroke.add_point(&mut canvas, Point::new(x, y), pressure);
+            }
+            let image = egui::ColorImage::from_rgba_premultiplied(
+                [WIDTH as usize, HEIGHT as usize],
+                &canvas.to_pixels(),
+            );
+            let texture = ui.ctx().load_texture("brush-preview", image, egui::TextureOptions::LINEAR);
+            ui.data_mut(|d| d.insert_temp(id, (key, texture.clone())));
+            texture
+        }
+    };
+    let size = egui::vec2(WIDTH as f32, HEIGHT as f32) * (ui.available_width() / WIDTH as f32).min(1.0);
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    // Paper behind it, light or dark to suit the colour.
+    let paper = if paint.is_some_and(|c| (c.r as u32 + c.g as u32 + c.b as u32) > 600) {
+        egui::Color32::from_gray(60)
+    } else {
+        egui::Color32::from_rgb(0xf4, 0xf1, 0xea)
+    };
+    ui.painter().rect_filled(rect, 4.0, paper);
+    ui.painter().image(
+        texture.id(),
+        rect,
+        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        egui::Color32::WHITE,
+    );
+    if shown < settings.size {
+        ui.weak(format!("Shown at {shown:.0} px of {:.0} px", settings.size));
+    }
+    ui.add_space(6.0);
+}
+
 fn brush_controls(ui: &mut egui::Ui, settings: &mut inkframe_core::BrushSettings, paint: bool) {
     ui.label("Size").on_hover_text("[ and ] make it smaller and bigger");
     ui.add(egui::Slider::new(&mut settings.size, 1.0..=500.0).logarithmic(true).suffix(" px"));
@@ -940,6 +1017,7 @@ fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     };
 
     ui.strong("Symbol instance");
+    ui.weak("Double-click it on the stage (or Modify › Edit Symbol) to work on the layers inside.");
     egui::Grid::new("instance").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
         ui.label("Symbol");
         let current = symbols.iter().find(|(s, _)| *s == instance.symbol).map_or("", |(_, n)| n.as_str());
@@ -978,8 +1056,11 @@ fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     if let Some(symbol) = editor.doc.symbol_mut(instance.symbol) {
         ui.horizontal(|ui| {
             ui.label("Symbol length");
-            ui.add(DragValue::new(&mut symbol.duration).range(1..=100_000).suffix(" frames"))
-                .on_hover_text("Changes the symbol everywhere it's used");
+            ui.add(DragValue::new(&mut symbol.duration).range(1..=100_000).suffix(" frames")).on_hover_text(
+                "How long the symbol's own timeline is. Playing on Loop, the instance repeats every this many \
+                 frames: a 12-frame walk cycle loops for as long as the layer lasts. Changes the symbol everywhere \
+                 it's used.",
+            );
         });
     }
     ui.add_space(8.0);
