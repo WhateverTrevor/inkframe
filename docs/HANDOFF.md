@@ -427,8 +427,9 @@ after the Harmony features (palettes to master controllers).
     used by `render_timeline_into`, `export_psd` and `hit_test_in`;
     `render_layers` now takes `&[&Layer]`. Main timeline only (symbols
     keep their own order). Toggles: Depth View corner, Document
-    properties. The timeline still lists layers in its own order, with
-    nothing marking that depth has overridden it.
+    properties. The timeline still lists layers in its own order; its bar
+    shows a "Stacked by depth" chip while it applies (main timeline),
+    which turns it off when clicked.
     `INKFRAME_SCREENSHOT_MULTIPLANE=stack`.
 
 69. Remembered settings: `prefs.rs` (`Prefs`, `prefs.json` beside

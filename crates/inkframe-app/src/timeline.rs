@@ -1081,6 +1081,19 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) 
                 .on_hover_text("Frames shown after the current one");
         }
 
+        // With the layers drawn by depth, their order here no longer says
+        // what's in front, so say what does. (Symbols keep their order.)
+        if editor.doc.stack_by_depth && editor.timeline() == TimelineId::Main {
+            ui.separator();
+            let chip = ui.add(egui::Button::new("Stacked by depth").small().selected(true)).on_hover_text(
+                "Layers are drawn far to near by their Depth, not in this order. \
+                 Click to go back to the timeline's order.",
+            );
+            if chip.clicked() {
+                editor.doc.stack_by_depth = false;
+            }
+        }
+
         // The layer buttons sit at the right end when there's room. In a
         // narrow area they follow on instead, rather than being drawn over
         // the controls before them.
@@ -1773,6 +1786,19 @@ mod tests {
         drag(&mut h, from, to);
 
         assert_eq!(h.state().1.doc.audio_track(id).unwrap().start, 14);
+    }
+
+    #[test]
+    fn the_bar_says_when_depth_decides_the_order_and_can_turn_it_off() {
+        use egui_kittest::kittest::Queryable;
+        let (mut h, _) = harness();
+        assert!(h.query_by_label("Stacked by depth").is_none());
+        h.state_mut().1.doc.stack_by_depth = true;
+        h.run();
+        h.get_by_label("Stacked by depth").click();
+        h.run();
+        assert!(!h.state().1.doc.stack_by_depth);
+        assert!(h.query_by_label("Stacked by depth").is_none());
     }
 
     #[test]
