@@ -12,6 +12,8 @@ const CMD_SHIFT: Modifiers = Modifiers::COMMAND.plus(Modifiers::SHIFT);
 const CMD_ALT: Modifiers = Modifiers::COMMAND.plus(Modifiers::ALT);
 
 pub const NEW: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::N);
+/// Animate's Insert › Timeline › Layer has no key; ⌘⇧N is Photoshop's.
+pub const NEW_LAYER: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::N);
 pub const OPEN: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::O);
 pub const SAVE: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::S);
 pub const SAVE_AS: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::S);

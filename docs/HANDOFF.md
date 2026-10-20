@@ -517,6 +517,12 @@ after the Harmony features (palettes to master controllers).
     instance at their bounding-box centre; F8 uses it when several are
     selected. Non-adjacent layers collapse together in the stack.
     Screenshot hook `INKFRAME_SCREENSHOT_GROUP=1|open`.
+79. Empty layers: `Editor::add_empty_layer` (timeline + button,
+    Modify › New Layer, ⌘⇧N) adds an empty vector layer just above the
+    selected one, in its folder, origin at the stage centre.
+    `draw_into_layer` now defaults to on (Animate draws into the current
+    layer); `Prefs::shape_per_layer` remembers turning it off. The
+    getting-started guide uses New Layer for the floor.
 
 ## Not yet verified by hand
 

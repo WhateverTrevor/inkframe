@@ -98,6 +98,7 @@ enum Command {
     NextDrawing,
     /// Opens the Lip Sync window for the selected layer.
     LipSync,
+    NewLayer,
     NewPaintLayer,
     NewFolder,
     CreateShapeTween,
@@ -260,6 +261,7 @@ impl InkframeApp {
         if app.screenshot.is_none() || AutoScreenshot::load_prefs() {
             let prefs = Prefs::load();
             app.editor.guides = prefs.guides();
+            app.editor.draw_into_layer = !prefs.shape_per_layer;
             app.batch.restore(prefs.batch_jobs(), prefs.batch_folder.clone());
         }
         app.saved_prefs = app.current_prefs();
@@ -789,6 +791,9 @@ impl InkframeApp {
             Command::NextDrawing if editor.tool.uses_brush() => editor.resize_brush(BRUSH_STEP),
             Command::PreviousDrawing => editor.cycle_drawing(-1),
             Command::NextDrawing => editor.cycle_drawing(1),
+            Command::NewLayer => {
+                editor.add_empty_layer();
+            }
             Command::NewPaintLayer => {
                 editor.add_paint_layer();
             }
@@ -832,6 +837,8 @@ impl InkframeApp {
             (SAVE_AS, Command::SaveAs),
             (SAVE, Command::Save),
             (OPEN, Command::Open),
+            // Before ⌘N, which would otherwise match it too.
+            (NEW_LAYER, Command::NewLayer),
             (NEW, Command::New),
             (EXPORT, Command::Export),
             (IMPORT, Command::ImportImage),
@@ -1083,6 +1090,7 @@ impl InkframeApp {
                 ui.separator();
                 let traceable = VectoriseDialog::can_vectorise(&self.editor);
                 item(ui, "Vectorise…", None, Command::Vectorise, traceable);
+                item(ui, "New Layer", Some(shortcuts::NEW_LAYER), Command::NewLayer, true);
                 item(ui, "New Paint Layer", None, Command::NewPaintLayer, true);
                 ui.menu_button("New Particle Layer", |ui| {
                     for preset in inkframe_core::Preset::ALL {
@@ -1264,7 +1272,10 @@ impl InkframeApp {
 
     /// The settings to keep for next time, as they are now.
     fn current_prefs(&self) -> Prefs {
-        Prefs::gather(self.editor.guides, self.batch.jobs(), self.batch.chosen_folder())
+        Prefs {
+            shape_per_layer: !self.editor.draw_into_layer,
+            ..Prefs::gather(self.editor.guides, self.batch.jobs(), self.batch.chosen_folder())
+        }
     }
 
     fn replace_editor(&mut self, editor: Editor) {
