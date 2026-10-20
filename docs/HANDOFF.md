@@ -500,6 +500,13 @@ after the Harmony features (palettes to master controllers).
     `inkframe-script/tests/examples.rs` runs each on the rig (the video one
     only with ffmpeg). `INKFRAME_SCREENSHOT_CONSOLE=path.js`.
 
+77. Scripting step 4 (plan complete): symbols, rigs, controllers,
+    effects, particles and camera in the API (natives in `native.rs`,
+    wrappers in `prelude.js`, reference in docs/SCRIPTING.md). Effects and
+    emitters round-trip through serde with camelCase keys and type names.
+    `snowy-night.js` example (adds to an existing camera move rather than
+    replacing it).
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either

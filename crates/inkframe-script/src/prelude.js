@@ -45,6 +45,44 @@
       return id === null ? null : new Layer(this.document, id);
     }
     set parent(layer) { this.#set("parent", layer === null ? null : layer.id); }
+    /** The layers attached to this one in a rig. */
+    get children() {
+      return this.document.layers.filter((layer) => layer.parent?.id === this.id);
+    }
+    /** The point it turns and scales around, in its own coordinates: [x, y]. */
+    get pivot() { return this.#info().pivot; }
+    set pivot(point) { this.#set("pivot", point); }
+
+    // Symbols.
+    #instance() { return parse(native.instanceGet(this.document._handle, this.id)); }
+    #setInstance(key, value) { native.instanceSet(this.document._handle, this.id, key, json(value)); }
+    /** The symbol this layer shows, by name, or null if it isn't an instance. */
+    get symbol() { return this.#instance()?.symbol ?? null; }
+    /** How an instance plays its symbol: "loop", "play-once" or "single-frame". */
+    get playback() { return this.#instance()?.playback ?? null; }
+    set playback(value) { this.#setInstance("playback", value); }
+    /** The symbol frame an instance shows on its first frame. */
+    get firstFrame() { return this.#instance()?.firstFrame ?? null; }
+    set firstFrame(frame) { this.#setInstance("firstFrame", frame); }
+    /** Turns the layer into a symbol, the layer becoming an instance of it. Returns the symbol's name. */
+    convertToSymbol(frame = 1) {
+      return native.convertToSymbol(this.document._handle, this.id, frame);
+    }
+
+    // Effects and particles.
+    /** The colour effect and filters on a frame: { color, filters }. */
+    effectsAt(frame) {
+      return parse(native.effectsAt(this.document._handle, this.id, frame));
+    }
+    /** Keys the colour effect and filters on a frame (the form effectsAt gives). */
+    setEffects(frame, effects) {
+      native.setEffects(this.document._handle, this.id, frame, json(effects));
+      return this;
+    }
+    /** A particle layer's emitter settings, or null for other layers. */
+    get particles() { return parse(native.particles(this.document._handle, this.id)); }
+    /** Changes emitter settings; ones left out keep their values. */
+    set particles(changes) { native.setParticles(this.document._handle, this.id, json(changes)); }
 
     /** Every key of one property: [{ frame, value, easing }]. */
     keys(property) {
@@ -114,6 +152,9 @@
     set duration(value) { this.#set("duration", value); }
     get background() { return this.#info().background; }
     set background(value) { this.#set("background", value); }
+    /** Whether layers are drawn far to near by their depth. */
+    get stackByDepth() { return this.#info().stackByDepth; }
+    set stackByDepth(value) { this.#set("stackByDepth", Boolean(value)); }
 
     /** The main timeline's layers, top first, as the timeline lists them. */
     get layers() {
@@ -141,6 +182,34 @@
     select(layers) {
       if (this._handle !== 0) throw new Error("only the project the script runs on has a selection");
       native.select(json(layers.map((layer) => layer.id)));
+    }
+
+    /** The symbol library: [{ name, duration, layers, uses }]. */
+    get symbols() { return parse(native.symbols(this._handle)); }
+    /** Adds an instance of a symbol, by name. Options: `at: [x, y]` and the first `frame`. */
+    addInstance(symbol, options = {}) {
+      return new Layer(this, native.addInstance(this._handle, String(symbol), json(options)));
+    }
+    /** Adds particles from a preset ("sparks", "snow", "smoke" or "fire"). Options: `at`, `frame`. */
+    addParticleLayer(preset, options = {}) {
+      return new Layer(this, native.addParticleLayer(this._handle, String(preset), json(options)));
+    }
+    /** The camera layer, or null. */
+    get camera() {
+      const id = native.camera(this._handle);
+      return id === null || id === undefined ? null : new Layer(this, id);
+    }
+    /** The camera, added if there isn't one. */
+    addCamera() { return new Layer(this, native.addCamera(this._handle)); }
+    /** The master controllers: [{ name, value, poses }]. */
+    get controllers() { return parse(native.controllers(this._handle)); }
+    /** Sets a controller (by name or number) to a value from 0 to 1 on a frame, posing its layers. */
+    setController(controller, value, frame = 1) {
+      const index = typeof controller === "number"
+        ? controller
+        : this.controllers.findIndex((c) => c.name === controller);
+      if (index < 0) throw new Error(`there's no controller called ${controller}`);
+      native.setController(this._handle, index, value, frame);
     }
 
     /** The palette's swatches: [{ name, color }]. */

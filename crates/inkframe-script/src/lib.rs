@@ -359,3 +359,72 @@ mod tests {
         assert_eq!(run_on(Document::default(), script).unwrap().log, ["Skin #e0b890ff"]);
     }
 }
+
+#[cfg(test)]
+mod round_two {
+    use super::*;
+
+    fn run_on(source: &str) -> Outcome {
+        run(Script { limit: Some(Duration::from_secs(5)), ..Script::new(source, Document::default()) })
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    #[test]
+    fn symbols_can_be_made_and_placed() {
+        let out = run_on(
+            r##"
+            const doc = inkframe.document;
+            const star = doc.addLayer("Star", { polygon: [[0, -50], [15, -15], [50, 0], [15, 15], [0, 50], [-15, 15], [-50, 0], [-15, -15]], fill: "#fc0" });
+            const name = star.convertToSymbol();
+            const copy = doc.addInstance(name, { at: [200, 200] });
+            copy.playback = "single-frame";
+            console.log(name, doc.symbols.length, doc.symbols[0].uses, copy.symbol, copy.playback, star.symbol);
+        "##,
+        );
+        assert_eq!(out.log, ["Symbol 1 1 2 Symbol 1 single-frame Symbol 1"]);
+    }
+
+    #[test]
+    fn effects_read_and_key_in_javascript_style() {
+        let out = run_on(
+            r##"
+            const layer = inkframe.document.addLayer("Glow", { rect: [10, 10] });
+            layer.setEffects(1, { color: { type: "tint", color: "#ff0000ff", amount: 0.5 },
+                                  filters: [{ type: "dropShadow", distance: 8, angle: 45, blur: 4, color: "#000000ff", strength: 1 }] });
+            const fx = layer.effectsAt(1);
+            console.log(fx.color.type, fx.filters[0].type, fx.filters[0].distance);
+        "##,
+        );
+        assert_eq!(out.log, ["tint dropShadow 8"]);
+    }
+
+    #[test]
+    fn particles_and_the_camera() {
+        let out = run_on(
+            r##"
+            const doc = inkframe.document;
+            const snow = doc.addParticleLayer("snow");
+            snow.particles = { rate: 99, sizeStart: 4 };
+            const camera = doc.addCamera();
+            camera.setKey(1, { depth: 0 }).setKey(24, { depth: 400 });
+            doc.stackByDepth = true;
+            console.log(snow.kind, snow.particles.rate, snow.particles.sizeStart, snow.particles.speed, doc.camera.kind, doc.stackByDepth);
+        "##,
+        );
+        assert_eq!(out.log, ["particles 99 4 70 camera true"]);
+    }
+
+    #[test]
+    fn rigs_have_pivots_and_children() {
+        let out = run_on(
+            r##"
+            const doc = inkframe.document;
+            const arm = doc.addLayer("Arm"), hand = doc.addLayer("Hand");
+            hand.parent = arm;
+            arm.pivot = [0, -40];
+            console.log(arm.children.map((l) => l.name), arm.pivot);
+        "##,
+        );
+        assert_eq!(out.log, [r#"["Hand"] [0,-40]"#]);
+    }
+}

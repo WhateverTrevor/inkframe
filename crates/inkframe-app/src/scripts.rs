@@ -30,12 +30,13 @@ pub fn folder() -> Option<PathBuf> {
 }
 
 /// The example scripts (`examples/scripts`), built into the app.
-const EXAMPLES: [(&str, &str); 6] = [
+const EXAMPLES: [(&str, &str); 7] = [
     ("bouncing-ball.js", include_str!("../../../examples/scripts/bouncing-ball.js")),
     ("confetti.js", include_str!("../../../examples/scripts/confetti.js")),
     ("export-review.js", include_str!("../../../examples/scripts/export-review.js")),
     ("fade-in-out.js", include_str!("../../../examples/scripts/fade-in-out.js")),
     ("number-layers.js", include_str!("../../../examples/scripts/number-layers.js")),
+    ("snowy-night.js", include_str!("../../../examples/scripts/snowy-night.js")),
     ("stagger-selected.js", include_str!("../../../examples/scripts/stagger-selected.js")),
 ];
 

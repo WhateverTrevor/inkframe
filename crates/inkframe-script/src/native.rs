@@ -14,8 +14,8 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use inkframe_core::{
-    Color, Document, Element, FrameRate, LayerId, Path as Outline, Point, Property, Segment, Shape, Stroke,
-    Style, Transform,
+    Color, Document, Effects, Element, Emitter, FrameRate, LayerId, Path as Outline, Playback, Point, Preset,
+    Property, Segment, Shape, Stroke, Style, Transform,
 };
 use rquickjs::{Ctx, Exception, Function, Object};
 use serde_json::{Value, json};
@@ -67,6 +67,7 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, state: &Shared) -> rquickjs::Result<(
             "frameRate": doc.frame_rate.fps(),
             "duration": doc.duration,
             "background": doc.background.to_string(),
+            "stackByDepth": doc.stack_by_depth,
         })
         .to_string())
     });
@@ -82,6 +83,7 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, state: &Shared) -> rquickjs::Result<(
             "duration" => doc.duration = whole(&ctx, &value, "duration", 1..=1_000_000)?,
             "frameRate" => doc.frame_rate = FrameRate::new(whole(&ctx, &value, "frameRate", 1..=240)?, 1),
             "background" => doc.background = color(&ctx, &value)?,
+            "stackByDepth" => doc.stack_by_depth = flag(&ctx, &value)?,
             _ => return Err(throw(&ctx, format!("documents have no setting called {key}"))),
         }
         Ok(())
@@ -122,6 +124,7 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, state: &Shared) -> rquickjs::Result<(
             "start": layer.start + 1,
             "end": layer.end.map(|e| e + 1),
             "parent": layer.parent.map(id_value),
+            "pivot": [layer.pivot.x, layer.pivot.y],
         })
         .to_string())
     });
@@ -149,6 +152,7 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, state: &Shared) -> rquickjs::Result<(
         }
         let layer = doc.layer_mut(id).ok_or_else(|| gone(&ctx))?;
         match key.as_str() {
+            "pivot" => layer.pivot = point(&ctx, &value)?,
             "name" => {
                 layer.name = value.as_str().ok_or_else(|| throw(&ctx, "a name must be text"))?.to_owned()
             }
@@ -381,8 +385,247 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, state: &Shared) -> rquickjs::Result<(
         Ok(output.display().to_string())
     });
 
+    // ---------------------------------------------------------- symbols
+
+    let s = Rc::clone(state);
+    native!("symbols", move |ctx: Ctx<'js>, d: usize| -> rquickjs::Result<String> {
+        let state = s.borrow();
+        let doc = &doc(&ctx, &state, d)?.doc;
+        let list: Vec<Value> = doc
+            .symbols
+            .iter()
+            .map(|sym| {
+                json!({ "name": sym.name, "duration": sym.duration, "layers": sym.layers.len(), "uses": doc.symbol_use_count(sym.id) })
+            })
+            .collect();
+        Ok(Value::Array(list).to_string())
+    });
+
+    let s = Rc::clone(state);
+    native!("convertToSymbol", move |ctx: Ctx<'js>,
+                                     d: usize,
+                                     id: f64,
+                                     frame: f64|
+          -> rquickjs::Result<String> {
+        let frame = frame_index(&ctx, &json!(frame), "frame")?;
+        let mut state = s.borrow_mut();
+        let doc = &mut doc_mut(&ctx, &mut state, d)?.doc;
+        let symbol = doc
+            .convert_layer_to_symbol(layer_id(id), frame)
+            .ok_or_else(|| throw(&ctx, "that layer can't become a symbol"))?;
+        Ok(doc.symbol(symbol).map(|s| s.name.clone()).unwrap_or_default())
+    });
+
+    let s = Rc::clone(state);
+    native!("addInstance", move |ctx: Ctx<'js>,
+                                 d: usize,
+                                 name: String,
+                                 spec: String|
+          -> rquickjs::Result<f64> {
+        let spec = parse(&ctx, &spec)?;
+        let mut state = s.borrow_mut();
+        let doc = &mut doc_mut(&ctx, &mut state, d)?.doc;
+        let symbol = doc
+            .symbols
+            .iter()
+            .find(|sym| sym.name == name)
+            .map(|sym| sym.id)
+            .ok_or_else(|| throw(&ctx, format!("there's no symbol called {name}")))?;
+        let at = match &spec["at"] {
+            Value::Null => doc.stage_rect().center(),
+            v => point(&ctx, v)?,
+        };
+        let frame = match &spec["frame"] {
+            Value::Null => 0,
+            v => frame_index(&ctx, v, "frame")?,
+        };
+        let id = doc
+            .add_instance_layer(inkframe_core::TimelineId::Main, symbol, frame, at)
+            .ok_or_else(|| throw(&ctx, "couldn't add the instance"))?;
+        Ok(id_number(id))
+    });
+
+    let s = Rc::clone(state);
+    native!("instanceGet", move |ctx: Ctx<'js>, d: usize, id: f64| -> rquickjs::Result<String> {
+        let state = s.borrow();
+        let doc = &doc(&ctx, &state, d)?.doc;
+        let layer = doc.layer(layer_id(id)).ok_or_else(|| gone(&ctx))?;
+        let Some(instance) = layer.instance else { return Ok("null".to_owned()) };
+        Ok(json!({
+            "symbol": doc.symbol(instance.symbol).map(|s| s.name.clone()),
+            "playback": playback_name(instance.playback),
+            "firstFrame": instance.first_frame + 1,
+        })
+        .to_string())
+    });
+
+    let s = Rc::clone(state);
+    native!("instanceSet", move |ctx: Ctx<'js>,
+                                 d: usize,
+                                 id: f64,
+                                 key: String,
+                                 value: String|
+          -> rquickjs::Result<()> {
+        let value = parse(&ctx, &value)?;
+        let mut state = s.borrow_mut();
+        let doc = &mut doc_mut(&ctx, &mut state, d)?.doc;
+        let layer = doc.layer_mut(layer_id(id)).ok_or_else(|| gone(&ctx))?;
+        let instance =
+            layer.instance.as_mut().ok_or_else(|| throw(&ctx, "that layer isn't a symbol instance"))?;
+        match key.as_str() {
+            "playback" => {
+                instance.playback = match value.as_str() {
+                    Some("loop") => Playback::Loop,
+                    Some("play-once") => Playback::PlayOnce,
+                    Some("single-frame") => Playback::SingleFrame,
+                    _ => return Err(throw(&ctx, "playback is \"loop\", \"play-once\" or \"single-frame\"")),
+                }
+            }
+            "firstFrame" => instance.first_frame = frame_index(&ctx, &value, "firstFrame")?,
+            _ => return Err(throw(&ctx, format!("instances have no setting called {key}"))),
+        }
+        Ok(())
+    });
+
+    // ------------------------------------------------------ controllers
+
+    let s = Rc::clone(state);
+    native!("controllers", move |ctx: Ctx<'js>, d: usize| -> rquickjs::Result<String> {
+        let state = s.borrow();
+        let doc = &doc(&ctx, &state, d)?.doc;
+        let list: Vec<Value> = doc
+            .controllers
+            .iter()
+            .map(|c| json!({ "name": c.name, "value": c.value, "poses": c.poses.len() }))
+            .collect();
+        Ok(Value::Array(list).to_string())
+    });
+
+    let s = Rc::clone(state);
+    native!("setController", move |ctx: Ctx<'js>,
+                                   d: usize,
+                                   index: usize,
+                                   value: f64,
+                                   frame: f64|
+          -> rquickjs::Result<()> {
+        let frame = frame_index(&ctx, &json!(frame), "frame")?;
+        let mut state = s.borrow_mut();
+        let doc = &mut doc_mut(&ctx, &mut state, d)?.doc;
+        if index >= doc.controllers.len() {
+            return Err(throw(&ctx, format!("there's no controller {index}")));
+        }
+        doc.set_controller(index, value as f32, frame);
+        Ok(())
+    });
+
+    // ------------------------------------------------ effects, particles
+
+    let s = Rc::clone(state);
+    native!("effectsAt", move |ctx: Ctx<'js>, d: usize, id: f64, frame: f64| -> rquickjs::Result<String> {
+        let state = s.borrow();
+        let doc = &doc(&ctx, &state, d)?.doc;
+        let layer = doc.layer(layer_id(id)).ok_or_else(|| gone(&ctx))?;
+        let effects = layer.track.effects_at((frame - 1.0) as f32);
+        let saved = serde_json::to_value(effects).map_err(|e| throw(&ctx, e.to_string()))?;
+        Ok(crate::values::to_script(saved).to_string())
+    });
+
+    let s = Rc::clone(state);
+    native!("setEffects", move |ctx: Ctx<'js>,
+                                d: usize,
+                                id: f64,
+                                frame: f64,
+                                value: String|
+          -> rquickjs::Result<()> {
+        let frame = frame_index(&ctx, &json!(frame), "frame")?;
+        let value = crate::values::from_script(parse(&ctx, &value)?);
+        let effects: Effects =
+            serde_json::from_value(value).map_err(|e| throw(&ctx, format!("those aren't effects: {e}")))?;
+        let mut state = s.borrow_mut();
+        let doc = &mut doc_mut(&ctx, &mut state, d)?.doc;
+        let layer = doc.layer_mut(layer_id(id)).ok_or_else(|| gone(&ctx))?;
+        layer.track.effects.set(frame, effects);
+        Ok(())
+    });
+
+    let s = Rc::clone(state);
+    native!("particles", move |ctx: Ctx<'js>, d: usize, id: f64| -> rquickjs::Result<String> {
+        let state = s.borrow();
+        let doc = &doc(&ctx, &state, d)?.doc;
+        let layer = doc.layer(layer_id(id)).ok_or_else(|| gone(&ctx))?;
+        let saved = serde_json::to_value(&layer.particles).map_err(|e| throw(&ctx, e.to_string()))?;
+        Ok(crate::values::to_script(saved).to_string())
+    });
+
+    let s = Rc::clone(state);
+    native!("setParticles", move |ctx: Ctx<'js>, d: usize, id: f64, value: String| -> rquickjs::Result<()> {
+        let value = crate::values::from_script(parse(&ctx, &value)?);
+        let mut state = s.borrow_mut();
+        let doc = &mut doc_mut(&ctx, &mut state, d)?.doc;
+        let layer = doc.layer_mut(layer_id(id)).ok_or_else(|| gone(&ctx))?;
+        let current = layer.particles.clone().ok_or_else(|| throw(&ctx, "that isn't a particle layer"))?;
+        // Settings left out keep their values, so a script can change one.
+        let mut merged = serde_json::to_value(current).map_err(|e| throw(&ctx, e.to_string()))?;
+        if let (Some(into), Value::Object(changes)) = (merged.as_object_mut(), value) {
+            into.extend(changes);
+        }
+        let emitter: Emitter = serde_json::from_value(merged)
+            .map_err(|e| throw(&ctx, format!("those aren't particle settings: {e}")))?;
+        layer.particles = Some(emitter);
+        Ok(())
+    });
+
+    let s = Rc::clone(state);
+    native!("addParticleLayer", move |ctx: Ctx<'js>,
+                                      d: usize,
+                                      preset: String,
+                                      spec: String|
+          -> rquickjs::Result<f64> {
+        let spec = parse(&ctx, &spec)?;
+        let preset =
+            Preset::ALL.into_iter().find(|p| p.name().eq_ignore_ascii_case(&preset)).ok_or_else(|| {
+                throw(&ctx, format!("{preset} isn't a particle preset: use sparks, snow, smoke or fire"))
+            })?;
+        let mut state = s.borrow_mut();
+        let doc = &mut doc_mut(&ctx, &mut state, d)?.doc;
+        let at = match &spec["at"] {
+            Value::Null => doc.stage_rect().center(),
+            v => point(&ctx, v)?,
+        };
+        let frame = match &spec["frame"] {
+            Value::Null => 0,
+            v => frame_index(&ctx, v, "frame")?,
+        };
+        let id =
+            doc.add_particle_layer(preset, frame, at).ok_or_else(|| throw(&ctx, "couldn't add particles"))?;
+        Ok(id_number(id))
+    });
+
+    // ----------------------------------------------------------- camera
+
+    let s = Rc::clone(state);
+    native!("camera", move |ctx: Ctx<'js>, d: usize| -> rquickjs::Result<Option<f64>> {
+        let state = s.borrow();
+        let doc = &doc(&ctx, &state, d)?.doc;
+        Ok(doc.camera_layer().map(|c| id_number(c.id)))
+    });
+
+    let s = Rc::clone(state);
+    native!("addCamera", move |ctx: Ctx<'js>, d: usize| -> rquickjs::Result<f64> {
+        let mut state = s.borrow_mut();
+        Ok(id_number(doc_mut(&ctx, &mut state, d)?.doc.add_camera()))
+    });
+
     ctx.globals().set("__native", native)?;
     Ok(())
+}
+
+fn playback_name(playback: Playback) -> &'static str {
+    match playback {
+        Playback::Loop => "loop",
+        Playback::PlayOnce => "play-once",
+        Playback::SingleFrame => "single-frame",
+    }
 }
 
 /// A JavaScript error with `message`, to return from a native.

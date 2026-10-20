@@ -154,3 +154,79 @@ pub(crate) fn set_key(
     }
     Ok(())
 }
+
+/// A saved-file value (effects, an emitter) as scripts see it: keys and
+/// `type` names in JavaScript's camelCase (`sizeStart`, `dropShadow`).
+pub(crate) fn to_script(value: Value) -> Value {
+    convert(value, &snake_to_camel)
+}
+
+/// A script's value back into the saved-file form.
+pub(crate) fn from_script(value: Value) -> Value {
+    convert(value, &camel_to_snake)
+}
+
+fn convert(value: Value, rename: &dyn Fn(&str) -> String) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(key, v)| {
+                    let v = match (key.as_str(), v) {
+                        ("type", Value::String(name)) => Value::String(rename(&name)),
+                        (_, v) => convert(v, rename),
+                    };
+                    (rename(&key), v)
+                })
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.into_iter().map(|v| convert(v, rename)).collect()),
+        other => other,
+    }
+}
+
+fn snake_to_camel(name: &str) -> String {
+    let mut out = String::new();
+    let mut upper = false;
+    for c in name.chars() {
+        match c {
+            '_' => upper = true,
+            c if upper => {
+                out.extend(c.to_uppercase());
+                upper = false;
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+fn camel_to_snake(name: &str) -> String {
+    let mut out = String::new();
+    for c in name.chars() {
+        if c.is_uppercase() {
+            out.push('_');
+            out.extend(c.to_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saved_values_read_as_javascript() {
+        let saved = json!({ "size_start": 10, "shape": { "type": "line", "length": 5 },
+            "filters": [{ "type": "drop_shadow", "enabled": true }] });
+        let script = to_script(saved.clone());
+        assert_eq!(
+            script,
+            json!({ "sizeStart": 10, "shape": { "type": "line", "length": 5 },
+            "filters": [{ "type": "dropShadow", "enabled": true }] })
+        );
+        assert_eq!(from_script(script), saved);
+    }
+}
