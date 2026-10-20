@@ -121,7 +121,7 @@ mod tests {
     #[test]
     fn unknown_formats_and_missing_settings_are_skipped() {
         let json = r#"{"batch": [
-            {"project": "a.inkf", "format": "gif", "scale": 1.0, "transparent": true},
+            {"project": "a.inkf", "format": "flipbook", "scale": 1.0, "transparent": true},
             {"project": "b.inkf", "format": "png", "scale": 1.0, "transparent": true}
         ]}"#;
         let prefs: Prefs = serde_json::from_str(json).unwrap();

@@ -252,6 +252,21 @@ after projects, adding the format's slug where two would clash and giving
 PNG sequences their own folder; `batch::run` keeps going past a failed
 job and stops everything when its callback breaks.
 
+GIFs go through ffmpeg (`palettegen` from the frames, then `paletteuse`
+with a fine ordered dither, `-loop 0`). SVG (`svg.rs`) and Lottie
+(`lottie.rs`) are vector: both walk the layers as `render_layers` does
+(`layer_matrix`, `shown_elements`, `instance_view`, `mask_for`) and take
+outlines from `inkframe_render::shape_outline`, so they match the render.
+What can't be vectors (filters, colour effects, particles) is drawn by
+`inkframe_render::render_layer_alone` and embedded as PNG. Lottie writes
+each layer as a null carrying its local matrix, decomposed every frame
+into hold keys (so rigs, the camera and depth come out exact), with
+shape layers per run of identical frames under it, symbols as
+precompositions fitted to their extent (Lottie clips a precomp to its
+box) and time-remapped, and masks as track mattes. Checked against
+lottie-web by eye (`cargo test -p inkframe-export -- --ignored` writes a
+sample to `target/lottie-check/features`).
+
 Sprite sheets (`sprite_sheet.rs`) render every frame, crop each to its
 drawn pixels, and keep one copy of frames that come out identical (held
 drawings). Every cell is the union of those areas, so frames stay aligned;

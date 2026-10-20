@@ -13,6 +13,13 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Export
+
+- Animated GIF, SVG (a file per frame) and Lottie, which plays as vectors
+  on web pages and in apps. Both vector formats keep gradients, line
+  styles, masks, blend modes and symbols; filters and particles go in as
+  pictures.
+
 ### Styles
 
 - Gradient fills on vector shapes, linear or radial, with as many colours

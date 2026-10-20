@@ -608,6 +608,16 @@ after the Harmony features (palettes to master controllers).
     (inside a layer only, so they don't clash with scale handles). Hook
     `INKFRAME_SCREENSHOT_STYLES=1`. Not yet: gradients in the script API,
     or a gradient on the paint bucket's fills.
+89. GIF, SVG and Lottie export: `ExportFormat::{Gif, Svg, Lottie}`
+    (`is_vector`), GIF through ffmpeg's palettegen/paletteuse, `svg.rs`
+    and `lottie.rs` (see ARCHITECTURE.md). Render gained
+    `shape_outline`, `canvas_image`, `render_layer_alone`. Verified in
+    lottie-web 5.12.2 (cdnjs) in the browser pane against PNG renders:
+    the rig, multiplane camera, ink and paint, a skewed layer, a looping
+    symbol, gradients, dashes, a mask and a blurred layer. Particles
+    embed a picture per frame (6.6 MB at quarter size for the example);
+    the export window warns. Not done: Lottie text as real text (it's
+    outlines), Lottie expressions or markers.
 
 ## Not yet verified by hand
 

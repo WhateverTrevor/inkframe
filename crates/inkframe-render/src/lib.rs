@@ -310,6 +310,52 @@ pub fn render_layer_thumbnail(
     Some(pixmap)
 }
 
+/// A shape's outline as tiny-skia draws it: text laid out into glyph
+/// outlines, a pencil line as the outline it sweeps. `None` for pictures
+/// and paintings, which are pixels, and for shapes with no area. For the
+/// vector exports (SVG, Lottie), so they draw exactly what's on screen.
+pub fn shape_outline(shape: &Shape) -> Option<tiny_skia::Path> {
+    match shape {
+        Shape::Text(text) => text::layout(text).path.clone(),
+        Shape::Image { .. } | Shape::Paint { .. } => None,
+        _ => build_path(shape),
+    }
+}
+
+/// A painting's pixels as an image `width`×`height`, as it's placed: the
+/// canvas centred on its layer's origin. `None` if nothing's painted.
+pub fn canvas_image(
+    doc: &Document,
+    canvas: inkframe_core::CanvasId,
+    width: u32,
+    height: u32,
+) -> Option<Pixmap> {
+    let canvas = doc.canvas(canvas)?;
+    let mut pixmap = Pixmap::new(width, height)?;
+    let centre = Transform::from_translate(width as f32 / 2.0, height as f32 / 2.0);
+    draw_canvas(&mut pixmap.as_mut(), canvas, width, height, centre, None);
+    Some(pixmap)
+}
+
+/// One layer drawn on its own into a `width`×`height` image, as the final
+/// render draws it (effects, particles and nested symbols included).
+/// `to_image` maps the layer's timeline onto the image; the layer brings its
+/// own parents, pose and camera. The vector exports fall back on this for
+/// what they can't express as shapes.
+pub fn render_layer_alone(
+    doc: &Document,
+    images: Option<&ImageLibrary>,
+    layer: &Layer,
+    frame: u32,
+    to_image: Affine,
+    (width, height): (u32, u32),
+) -> Option<Pixmap> {
+    let mut pixmap = Pixmap::new(width, height)?;
+    let style = Style { tint: None, images, show_guides: false, show_mask: None, light_table: None };
+    render_layers(&mut pixmap.as_mut(), doc, &[layer], frame, to_image, 1.0, style, None, 0);
+    Some(pixmap)
+}
+
 /// Settings that apply to everything drawn in one pass, however deeply
 /// nested inside symbols.
 #[derive(Clone, Copy)]

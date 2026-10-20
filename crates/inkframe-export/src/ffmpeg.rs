@@ -214,8 +214,22 @@ pub(crate) fn build_args(
             // "hvc1" is the tag Apple's players require for HEVC.
             push(&["-tag:v", "hvc1"]);
         }
-        ExportFormat::PngSequence | ExportFormat::SpriteSheet => {
-            unreachable!("image exports don't go through ffmpeg")
+        ExportFormat::Gif => {
+            // GIF has one palette of 256 colours. Working one out from the
+            // frames themselves (palettegen) and spreading the error with a
+            // fine ordered dither (paletteuse) keeps gradients smooth;
+            // reserving a colour for clear keeps transparency, and
+            // "rectangle" mode only redraws what changed, which keeps the
+            // file small. -loop 0 plays it forever.
+            let alpha = if transparent { ":reserve_transparent=1" } else { ":reserve_transparent=0" };
+            let graph = format!(
+                "split[a][b];[a]palettegen=stats_mode=diff{alpha}[p];\
+                 [b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle:alpha_threshold=128"
+            );
+            push(&["-filter_complex", &graph, "-loop", "0"]);
+        }
+        ExportFormat::PngSequence | ExportFormat::SpriteSheet | ExportFormat::Svg | ExportFormat::Lottie => {
+            unreachable!("image and vector exports don't go through ffmpeg")
         }
     }
 

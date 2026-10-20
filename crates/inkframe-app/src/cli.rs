@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn mistakes_are_explained() {
         assert!(parse(args("")).unwrap_err().contains("no projects"));
-        assert!(parse(args("a.inkf --format gif")).unwrap_err().contains("unknown format"));
+        assert!(parse(args("a.inkf --format flipbook")).unwrap_err().contains("unknown format"));
         assert!(parse(args("a.inkf --to")).unwrap_err().contains("needs a value"));
         assert!(parse(args("a.inkf --scale big")).is_err());
         assert!(parse(args("a.inkf --help")).unwrap().is_none());
