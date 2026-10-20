@@ -42,6 +42,18 @@ pub enum Clipboard {
     Layers(CopiedLayers),
     /// One layer's pose at one frame, for pasting onto another frame or layer.
     Keyframe(CopiedKeyframe),
+    /// Shapes picked inside a layer, for pasting into a layer.
+    Shapes(CopiedShapes),
+}
+
+/// Shapes copied from inside a layer, in the coordinates of the timeline
+/// they came from (so they land in the same place whichever layer they're
+/// pasted into): its line art, and the colour art beneath.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct CopiedShapes {
+    pub lines: Vec<crate::Element>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub colour: Vec<crate::Element>,
 }
 
 impl Clipboard {

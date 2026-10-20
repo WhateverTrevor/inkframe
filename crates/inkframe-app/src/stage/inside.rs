@@ -1,23 +1,32 @@
 //! The stage while working inside a layer (see `crate::inside`): clicks
 //! pick shapes rather than layers, dragging moves the picked shapes, the
-//! corner handles scale them, and dragging over empty stage picks every
-//! shape the box touches.
+//! corner handles scale them, the knob above turns them, and dragging over
+//! empty stage picks every shape the box touches.
 
 use egui::{Color32, CursorIcon, FontId, Pos2, Rect, StrokeKind, Vec2, vec2};
 use inkframe_core::{Affine, Element, Point};
 
 use super::{HANDLE_SIZE, HIT_TOLERANCE, SELECTION, StageView, View};
 use crate::editor::{Editor, Tool};
+use crate::handles::RotateDrag;
+use crate::inside::ShapeRef;
+
+/// How far the rotate knob sits beyond the top of the picked shapes' box,
+/// on screen.
+const KNOB_DISTANCE: f32 = 22.0;
 
 /// A drag in progress inside a layer. Every update works from the shapes
 /// as they were when it began, so nothing drifts.
 pub(super) enum ShapeDrag {
     /// Moving the picked shapes. `grab` is where the drag began, in the
     /// timeline's coordinates; `to_local` maps those to the layer's.
-    Move { originals: Vec<(usize, Element)>, grab: Point, to_local: Affine },
+    Move { originals: Vec<(ShapeRef, Element)>, grab: Point, to_local: Affine },
     /// Scaling the picked shapes by a corner, about the opposite corner
     /// (`anchor`), both in the layer's coordinates.
-    Scale { originals: Vec<(usize, Element)>, anchor: Point, corner: Point, to_local: Affine },
+    Scale { originals: Vec<(ShapeRef, Element)>, anchor: Point, corner: Point, to_local: Affine },
+    /// Turning the picked shapes about their box's middle (`center`, in
+    /// the layer's coordinates), with Shift snapping to 15°.
+    Rotate { originals: Vec<(ShapeRef, Element)>, drag: RotateDrag, center: Point, to_local: Affine },
     /// Dragging a box over empty stage. `adding` keeps what's picked
     /// (Shift held).
     Box { start: Point, current: Point, adding: bool },
@@ -96,6 +105,14 @@ impl StageView {
                     let originals = originals.clone();
                     editor.transform_shapes(&originals, m);
                 }
+                Some(ShapeDrag::Rotate { originals, drag, center, to_local }) => {
+                    let turned = drag.update(to_local.apply(p), shift).rotation.to_radians();
+                    let m = Affine::translate(*center)
+                        .pre_concat(Affine::rotate(turned))
+                        .pre_concat(Affine::translate(-*center));
+                    let originals = originals.clone();
+                    editor.transform_shapes(&originals, m);
+                }
                 Some(ShapeDrag::Box { current, .. }) => *current = p,
                 None => {}
             }
@@ -137,6 +154,14 @@ impl StageView {
         let layer = editor.doc.layer(editor.inside_layer()?)?;
         let to_local = editor.doc.layer_matrix(layer, editor.frame).inverse()?;
 
+        // The knob above the picked shapes turns them.
+        if let Some((knob, center)) = rotate_knob(editor, view)
+            && knob.distance(press) <= HANDLE_SIZE
+        {
+            let start = inkframe_core::Transform::at(center);
+            let drag = RotateDrag::new(start, to_local.apply(p));
+            return Some(ShapeDrag::Rotate { originals: editor.picked_originals(), drag, center, to_local });
+        }
         // A corner handle of the picked shapes' box scales them.
         if let Some((corner, anchor)) = picked_corners(editor)
             .into_iter()
@@ -170,16 +195,18 @@ impl StageView {
         let on_screen = |p: Point| view.to_screen(to_timeline.apply(p));
 
         // Each picked shape's own box, faintly; then the box around them all.
-        let shapes = layer.elements_at(editor.frame);
-        for &i in editor.picked_shapes() {
-            if let Some(shape) = shapes.get(i) {
-                let corners = shape.bounds().corners().map(on_screen);
-                painter.add(egui::Shape::closed_line(corners.to_vec(), (1.0, SELECTION.gamma_multiply(0.6))));
-            }
+        for (_, shape) in editor.picked_originals() {
+            let corners = shape.bounds().corners().map(on_screen);
+            painter.add(egui::Shape::closed_line(corners.to_vec(), (1.0, SELECTION.gamma_multiply(0.6))));
         }
         if let Some(bounds) = editor.picked_bounds() {
             let corners = bounds.corners().map(on_screen);
             painter.add(egui::Shape::closed_line(corners.to_vec(), (1.0, SELECTION)));
+            if let Some((knob, _)) = rotate_knob(editor, view) {
+                let top = corners[0].lerp(corners[1], 0.5);
+                painter.line_segment([top, knob], (1.0, SELECTION));
+                painter.circle(knob, HANDLE_SIZE / 2.0 + 1.0, Color32::WHITE, (1.0, SELECTION));
+            }
             for ((_, at), _) in picked_corners(editor) {
                 let handle = Rect::from_center_size(view.to_screen(at), Vec2::splat(HANDLE_SIZE));
                 painter.rect_filled(handle, 1.0, Color32::WHITE);
@@ -222,13 +249,18 @@ impl StageView {
         let cursor = match &self.shape_drag {
             Some(ShapeDrag::Move { .. }) => CursorIcon::Grabbing,
             Some(ShapeDrag::Scale { .. }) => CursorIcon::ResizeNwSe,
+            Some(ShapeDrag::Rotate { .. }) => CursorIcon::Grabbing,
             Some(ShapeDrag::Box { .. }) => CursorIcon::Crosshair,
             None => {
                 let Some(pointer) = response.hover_pos() else { return };
                 let on_handle = picked_corners(editor)
                     .iter()
                     .any(|((_, at), _)| view.to_screen(*at).distance(pointer) <= HANDLE_SIZE);
-                if on_handle {
+                let on_knob =
+                    rotate_knob(editor, view).is_some_and(|(knob, _)| knob.distance(pointer) <= HANDLE_SIZE);
+                if on_knob {
+                    CursorIcon::Grab
+                } else if on_handle {
                     CursorIcon::ResizeNwSe
                 } else if editor.shape_at(view.to_local(pointer), HIT_TOLERANCE / view.zoom).is_some() {
                     CursorIcon::Grab
@@ -251,4 +283,21 @@ fn picked_corners(editor: &Editor) -> Vec<((Point, Point), Point)> {
     let to_timeline = editor.doc.layer_matrix(layer, editor.frame);
     let corners = bounds.corners();
     (0..4).map(|i| ((corners[i], to_timeline.apply(corners[i])), corners[(i + 2) % 4])).collect()
+}
+
+/// Where the rotate knob is on screen, beyond the middle of the top of the
+/// picked shapes' box (following the layer if it's turned), and the box's
+/// middle in the layer's coordinates, which they turn about.
+pub(super) fn rotate_knob(editor: &Editor, view: View) -> Option<(Pos2, Point)> {
+    let bounds = editor.picked_bounds()?;
+    let layer = editor.doc.layer(editor.inside_layer()?)?;
+    let to_timeline = editor.doc.layer_matrix(layer, editor.frame);
+    let on_screen = |p: Point| view.to_screen(to_timeline.apply(p));
+    let corners = bounds.corners();
+    let top = on_screen(corners[0].lerp(corners[1], 0.5));
+    let middle = on_screen(bounds.center());
+    let up = (top - middle).normalized();
+    // A shape with no height (a straight line) has no "up"; go up the screen.
+    let up = if up.is_finite() && up.length() > 0.5 { up } else { vec2(0.0, -1.0) };
+    Some((top + up * KNOB_DISTANCE, bounds.center()))
 }
