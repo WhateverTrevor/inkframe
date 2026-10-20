@@ -33,8 +33,14 @@ const AUDIO_ROW: f32 = 34.0;
 const THUMBNAIL: Vec2 = vec2(44.0, 26.0);
 /// The properties the graph editor lists: those with values to plot
 /// (effects are settings, so they're left out).
-const GRAPHED: [Property; 5] =
-    [Property::Position, Property::Rotation, Property::Scale, Property::Skew, Property::Opacity];
+const GRAPHED: [Property; 6] = [
+    Property::Position,
+    Property::Rotation,
+    Property::Scale,
+    Property::Skew,
+    Property::Opacity,
+    Property::Depth,
+];
 /// How far each level of folder indents a layer's name.
 const FOLDER_INDENT: f32 = 14.0;
 const FRAME_WIDTH: f32 = 12.0;
@@ -1775,9 +1781,10 @@ mod tests {
         expand(&mut h);
         let (timeline, editor, _) = h.state();
         let rows = timeline.rows(editor);
-        assert_eq!(rows.len(), 7);
+        assert_eq!(rows.len(), 8);
         assert_eq!(rows[5].property, Some(Property::Opacity));
         assert_eq!(rows[6].property, Some(Property::Effects));
+        assert_eq!(rows[7].property, Some(Property::Depth));
     }
 
     #[test]

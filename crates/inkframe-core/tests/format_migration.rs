@@ -13,9 +13,9 @@ fn version_1_files_open_and_upgrade() {
     assert_eq!(doc.layers.len(), 2);
 
     // Every old keyframe became a key on every transform property
-    // (version 1 had no effects).
+    // (version 1 had no effects or depth).
     let ball = &doc.layers[1];
-    for property in Property::ALL.into_iter().filter(|&p| p != Property::Effects) {
+    for property in Property::ALL.into_iter().filter(|&p| !matches!(p, Property::Effects | Property::Depth)) {
         assert_eq!(ball.track.channel(property).key_frames(), [0, 12, 24, 36, 47], "{property:?}");
     }
 }

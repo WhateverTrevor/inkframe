@@ -57,13 +57,19 @@ pub enum Kind {
     NodeView,
     /// The template library (see `templates.rs`).
     Templates,
+    /// The scene from above, for arranging layers in depth (see
+    /// `depth_view.rs`).
+    DepthView,
 }
 
 impl Kind {
     /// Every kind, grouped as the area menu lists them, Blender-style.
     pub const GROUPS: [(&'static str, &'static [Kind]); 4] = [
         ("General", &[Kind::Stage, Kind::Tools, Kind::ToolSettings, Kind::Properties, Kind::NodeView]),
-        ("Animation", &[Kind::Timeline, Kind::GraphEditor, Kind::ExposureSheet, Kind::Controllers]),
+        (
+            "Animation",
+            &[Kind::Timeline, Kind::GraphEditor, Kind::ExposureSheet, Kind::Controllers, Kind::DepthView],
+        ),
         ("Design", &[Kind::Swatches, Kind::Align]),
         ("Project", &[Kind::Library, Kind::Templates, Kind::Audio, Kind::Document, Kind::History]),
     ];
@@ -86,6 +92,7 @@ impl Kind {
             Kind::Controllers => "Controllers",
             Kind::NodeView => "Node View",
             Kind::Templates => "Templates",
+            Kind::DepthView => "Depth View",
         }
     }
 
@@ -107,6 +114,7 @@ impl Kind {
             Kind::Controllers => Icon::Dial,
             Kind::NodeView => Icon::Nodes,
             Kind::Templates => Icon::Templates,
+            Kind::DepthView => Icon::Camera,
         }
     }
 
@@ -1212,7 +1220,7 @@ mod tests {
         let listed: Vec<Kind> = Kind::GROUPS.iter().flat_map(|(_, kinds)| kinds.iter().copied()).collect();
         let unique: std::collections::HashSet<Kind> = listed.iter().copied().collect();
         assert_eq!(listed.len(), unique.len());
-        assert_eq!(listed.len(), 16);
+        assert_eq!(listed.len(), 17);
     }
 
     #[test]

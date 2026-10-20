@@ -18,16 +18,20 @@ pub enum Property {
     Opacity,
     /// The colour effect and filters (see `effects.rs`).
     Effects,
+    /// How far behind the stage the layer sits, for the camera (see
+    /// `camera.rs`). For the camera itself, how far it has moved forward.
+    Depth,
 }
 
 impl Property {
-    pub const ALL: [Property; 6] = [
+    pub const ALL: [Property; 7] = [
         Property::Position,
         Property::Rotation,
         Property::Scale,
         Property::Skew,
         Property::Opacity,
         Property::Effects,
+        Property::Depth,
     ];
 
     pub fn name(self) -> &'static str {
@@ -38,6 +42,7 @@ impl Property {
             Property::Skew => "Skew",
             Property::Opacity => "Opacity",
             Property::Effects => "Effects",
+            Property::Depth => "Depth",
         }
     }
 }
@@ -63,6 +68,10 @@ pub struct Track {
     /// single key that changes nothing, which is most layers.
     #[serde(skip_serializing_if = "Track::effects_unused")]
     pub effects: Channel<Effects>,
+    /// Depth (see [`Property::Depth`]). Left out of the file while it's a
+    /// single key at 0, which is most layers.
+    #[serde(skip_serializing_if = "Track::depth_unused")]
+    pub depth: Channel<f32>,
     /// Turn the layer to face the way it's moving, as with Animate's
     /// "Orient to path": the direction of travel is added to its rotation.
     /// A layer drawn facing right then points along its motion path.
@@ -80,7 +89,25 @@ impl Track {
             skew: Channel::new(frame, pose.skew),
             opacity: Channel::new(frame, pose.opacity),
             effects: Channel::new(frame, Effects::default()),
+            depth: Channel::new(frame, 0.0),
             orient_to_path: false,
+        }
+    }
+
+    fn depth_unused(depth: &Channel<f32>) -> bool {
+        matches!(depth.keys(), [key] if key.value == 0.0)
+    }
+
+    /// The depth at any point in time.
+    pub fn depth_at(&self, frame: f32) -> f32 {
+        self.depth.sample(frame).unwrap_or(0.0)
+    }
+
+    /// Makes the layer's depth `depth` at `frame`, keying it there if it
+    /// changed or already had a key, as [`Track::set_pose`] does.
+    pub fn set_depth(&mut self, frame: u32, depth: f32) {
+        if self.depth_at(frame as f32) != depth || self.depth.key_at(frame).is_some() {
+            self.depth.set(frame, depth);
         }
     }
 
@@ -110,6 +137,7 @@ impl Track {
             Property::Skew => &self.skew,
             Property::Opacity => &self.opacity,
             Property::Effects => &self.effects,
+            Property::Depth => &self.depth,
         }
     }
 
@@ -121,10 +149,11 @@ impl Track {
             Property::Skew => &mut self.skew,
             Property::Opacity => &mut self.opacity,
             Property::Effects => &mut self.effects,
+            Property::Depth => &mut self.depth,
         }
     }
 
-    fn channels_mut(&mut self) -> [&mut dyn AnyChannel; 6] {
+    fn channels_mut(&mut self) -> [&mut dyn AnyChannel; 7] {
         [
             &mut self.position,
             &mut self.rotation,
@@ -132,10 +161,11 @@ impl Track {
             &mut self.skew,
             &mut self.opacity,
             &mut self.effects,
+            &mut self.depth,
         ]
     }
 
-    fn channels(&self) -> [&dyn AnyChannel; 6] {
+    fn channels(&self) -> [&dyn AnyChannel; 7] {
         Property::ALL.map(|p| self.channel(p))
     }
 
@@ -309,6 +339,10 @@ enum TrackFormat {
         /// and older), and whenever they're unused.
         #[serde(default)]
         effects: Vec<Key<Effects>>,
+        /// Missing in files from before depth could animate (format 28 and
+        /// older; `Layer` moves their fixed depth in), and whenever unused.
+        #[serde(default)]
+        depth: Vec<Key<f32>>,
         #[serde(default)]
         orient_to_path: bool,
     },
@@ -328,7 +362,16 @@ struct KeyframeV1 {
 impl From<TrackFormat> for Track {
     fn from(format: TrackFormat) -> Self {
         match format {
-            TrackFormat::Current { position, rotation, scale, skew, opacity, effects, orient_to_path } => {
+            TrackFormat::Current {
+                position,
+                rotation,
+                scale,
+                skew,
+                opacity,
+                effects,
+                depth,
+                orient_to_path,
+            } => {
                 // Older files have no skew keys; give them one unskewed key
                 // on the same frame as their first position key.
                 let first = position.iter().map(|k| k.frame).min().unwrap_or(0);
@@ -339,6 +382,8 @@ impl From<TrackFormat> for Track {
                 } else {
                     Channel::from_keys(effects)
                 };
+                let depth =
+                    if depth.is_empty() { Channel::new(first, 0.0) } else { Channel::from_keys(depth) };
                 Track {
                     position: Channel::from_keys(position),
                     rotation: Channel::from_keys(rotation),
@@ -346,6 +391,7 @@ impl From<TrackFormat> for Track {
                     skew,
                     opacity: Channel::from_keys(opacity),
                     effects,
+                    depth,
                     orient_to_path,
                 }
             }
@@ -374,6 +420,7 @@ impl From<TrackFormat> for Track {
                     skew: channel(&keys, |t| t.skew),
                     opacity: channel(&keys, |t| t.opacity),
                     effects: Channel::new(keys.first().map_or(0, |k| k.frame), Effects::default()),
+                    depth: Channel::new(keys.first().map_or(0, |k| k.frame), 0.0),
                     orient_to_path: false,
                 }
             }
@@ -463,8 +510,9 @@ mod tests {
         let track: Track = serde_json::from_str(json).unwrap();
 
         assert_eq!(track.key_frames(), [0, 10]);
-        // Every transform property (version 1 had no effects to animate).
-        let transform = Property::ALL.iter().filter(|&&p| p != Property::Effects);
+        // Every transform property (version 1 had no effects or depth to
+        // animate).
+        let transform = Property::ALL.iter().filter(|&&p| !matches!(p, Property::Effects | Property::Depth));
         assert!(transform.clone().all(|&p| track.channel(p).tween_at(0).unwrap().easing == Easing::EaseIn));
         let end = track.sample(10.0);
         assert_eq!((end.position.x, end.rotation, end.opacity), (100.0, 90.0, 0.5));

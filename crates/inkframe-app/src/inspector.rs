@@ -419,6 +419,8 @@ fn camera_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     }
     let before = pose;
     let mut zoom = pose.scale.x * 100.0;
+    let dolly_before = editor.doc.layer(id).map_or(0.0, |c| c.track.depth_at(frame as f32));
+    let mut dolly = dolly_before;
     egui::Grid::new("camera").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
         ui.label("Looks at").on_hover_text("The point of the scene in the middle of the stage");
         ui.horizontal(|ui| {
@@ -432,7 +434,16 @@ fn camera_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         ui.label("Rotation");
         ui.add(DragValue::new(&mut pose.rotation).suffix("°").speed(0.5));
         ui.end_row();
+        ui.label("Dolly").on_hover_text(
+            "How far the camera has moved in among the layers. Unlike zoom, near layers grow \
+             faster than far ones, as with a real multiplane camera; layers it reaches fade away.",
+        );
+        ui.add(DragValue::new(&mut dolly).suffix(" px").speed(5.0));
+        ui.end_row();
     });
+    if dolly != dolly_before {
+        editor.set_depth(id, dolly);
+    }
     pose.scale = inkframe_core::Point::new(zoom / 100.0, zoom / 100.0);
     if pose != before {
         editor.set_pose(id, pose);
@@ -474,7 +485,6 @@ fn folder_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
     let last_frame = editor.last_frame();
-    let editor_timeline_is_main = editor.doc.timeline_of(id) == Some(inkframe_core::TimelineId::Main);
     if editor.doc.layer(id).is_some_and(|l| l.folder) {
         folder_section(ui, editor, id);
         return;
@@ -499,18 +509,6 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         );
     });
     span_editor(ui, layer, last_frame);
-    // Depth, for the camera's parallax: only layers at the top of a rig on
-    // the main timeline sit at a depth; the rest go with them.
-    let top_level = layer.parent.is_none() && editor_timeline_is_main;
-    if top_level {
-        ui.horizontal(|ui| {
-            ui.label("Depth").on_hover_text(
-                "How far behind the stage the layer sits, for the camera: deeper layers look smaller \
-                 and move less as the camera pans. Negative comes forward.",
-            );
-            ui.add(DragValue::new(&mut layer.depth).range(-900.0..=100_000.0).speed(5.0));
-        });
-    }
     ui.horizontal(|ui| {
         ui.label("Blend").on_hover_text("How the layer mixes with what's beneath it");
         egui::ComboBox::from_id_salt("blend").selected_text(layer.blend.label()).show_ui(ui, |ui| {
@@ -1020,6 +1018,12 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
     let has_key = |property: Property| layer.track.channel(property).has_key(frame);
     let keyed = Property::ALL.map(has_key);
     let mut pose = editor.doc.pose(layer, frame);
+    // Depth, for the camera: only layers at the top of a rig on the main
+    // timeline sit at a depth; the rest go with them.
+    let has_depth =
+        layer.parent.is_none() && editor.doc.timeline_of(id) == Some(inkframe_core::TimelineId::Main);
+    let mut depth = layer.track.depth_at(frame as f32);
+    let mut depth_changed = false;
 
     ui.strong(format!("Transform at frame {}", frame + 1));
 
@@ -1035,12 +1039,22 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
     // adds one automatically.
     egui::Grid::new("transform").num_columns(3).spacing([6.0, 4.0]).show(ui, |ui| {
         // Effects have a section of their own, further down.
-        let transform = Property::ALL.into_iter().zip(keyed).filter(|(p, _)| *p != Property::Effects);
+        let transform = Property::ALL
+            .into_iter()
+            .zip(keyed)
+            .filter(|(p, _)| *p != Property::Effects && (*p != Property::Depth || has_depth));
         for (property, is_key) in transform {
             if key_toggle(ui, property, is_key).clicked() {
                 toggled = Some(property);
             }
-            ui.label(property.name());
+            let label = ui.label(property.name());
+            if property == Property::Depth {
+                label.on_hover_text(
+                    "How far behind the stage the layer sits, for the camera: deeper layers look smaller \
+                     and move less as it pans. Negative comes forward. For the camera, how far it has \
+                     moved in.",
+                );
+            }
             ui.horizontal(|ui| match property {
                 Property::Position => {
                     changed |= ui.add(DragValue::new(&mut pose.position.x).prefix("x ").speed(1.0)).changed();
@@ -1067,6 +1081,9 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
                     changed |= ui.add(egui::Slider::new(&mut opacity_pct, 0.0..=100.0).suffix("%")).changed();
                 }
                 Property::Effects => {}
+                Property::Depth => {
+                    depth_changed |= ui.add(DragValue::new(&mut depth).suffix(" px").speed(5.0)).changed();
+                }
             });
             ui.end_row();
         }
@@ -1077,6 +1094,9 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
         pose.scale.y = scale_pct[1] / 100.0;
         pose.opacity = opacity_pct / 100.0;
         editor.set_pose(id, pose);
+    }
+    if depth_changed {
+        editor.set_depth(id, depth);
     }
     if let Some(property) = toggled {
         editor.toggle_property_key(id, property);

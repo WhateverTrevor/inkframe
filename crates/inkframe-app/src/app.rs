@@ -492,6 +492,58 @@ impl InkframeApp {
             if let Some(degrees) = AutoScreenshot::view_rotation() {
                 app.views.stage().rotate_view(degrees);
             }
+            if AutoScreenshot::multiplane() {
+                use inkframe_core::{Color, Element, Point, Shape, Style, Transform};
+                let doc = &mut app.editor.doc;
+                doc.layers.retain(|l| l.camera);
+                doc.background = Color::rgb(150, 200, 235);
+                let block = |w: f32, h: f32, color: Color, round: f32| Element {
+                    shape: Shape::Rect { width: w, height: h, corner_radius: round },
+                    style: Style { fill: Some(color), stroke: None },
+                };
+                let blob = |r: f32, color: Color| Element {
+                    shape: Shape::Ellipse { radius_x: r, radius_y: r * 0.8 },
+                    style: Style { fill: Some(color), stroke: None },
+                };
+                // Far to near, each at its depth.
+                let scene: Vec<(&str, Vec<Element>, Point, f32)> = vec![
+                    ("Sun", vec![blob(120.0, Color::rgb(255, 230, 150))], Point::new(1300.0, 300.0), 4000.0),
+                    (
+                        "Mountains",
+                        vec![block(1800.0, 500.0, Color::rgb(110, 130, 170), 200.0)],
+                        Point::new(960.0, 760.0),
+                        1500.0,
+                    ),
+                    (
+                        "Hills",
+                        vec![block(2200.0, 360.0, Color::rgb(90, 160, 110), 160.0)],
+                        Point::new(960.0, 900.0),
+                        600.0,
+                    ),
+                    (
+                        "Tree",
+                        vec![block(140.0, 360.0, Color::rgb(40, 110, 60), 70.0)],
+                        Point::new(620.0, 800.0),
+                        150.0,
+                    ),
+                    ("Bush", vec![blob(260.0, Color::rgb(30, 80, 40))], Point::new(250.0, 1020.0), -350.0),
+                ];
+                for (name, elements, at, depth) in scene {
+                    let id = doc.add_layer(name, elements, 0, Transform::at(at));
+                    if let Some(layer) = doc.layer_mut(id) {
+                        layer.track.set_depth(0, depth);
+                    }
+                }
+                let camera = doc.add_camera();
+                if let Some(c) = doc.layer_mut(camera) {
+                    c.track.set_depth(47, 700.0);
+                }
+                if std::env::var_os("INKFRAME_SCREENSHOT_FRAME").is_none() {
+                    app.editor.frame = 36;
+                }
+                app.editor.select(Some(camera));
+                app.layout.replace_kind(Kind::Properties, Kind::DepthView);
+            }
             if AutoScreenshot::particles() {
                 app.editor.doc.background = inkframe_core::Color::rgb(24, 28, 44);
                 for preset in [Preset::Snow, Preset::Smoke, Preset::Sparks, Preset::Fire] {
@@ -1370,6 +1422,11 @@ impl InkframeApp {
                     view.show(ui, &mut self.editor);
                 }
             }
+            Kind::DepthView => {
+                if let Some(view) = self.views.depths.get_mut(&area) {
+                    view.show(ui, &mut self.editor);
+                }
+            }
             Kind::Controllers => {
                 egui::ScrollArea::vertical()
                     .id_salt(("controllers", area))
@@ -1484,6 +1541,7 @@ struct Views {
     timelines: BTreeMap<AreaId, TimelineView>,
     sheets: BTreeMap<AreaId, ExposureSheet>,
     nodes: BTreeMap<AreaId, crate::node_view::NodeView>,
+    depths: BTreeMap<AreaId, crate::depth_view::DepthView>,
     /// The stage last pointed at.
     active_stage: Option<AreaId>,
     /// An area to change to another kind once the layout has drawn: a
@@ -1506,6 +1564,11 @@ impl Views {
         self.timelines.retain(|id, _| timelines.contains(id));
         self.sheets.retain(|id, _| sheets.contains(id));
         self.nodes.retain(|id, _| graphs.contains(id));
+        let depths = of(Kind::DepthView);
+        self.depths.retain(|id, _| depths.contains(id));
+        for id in depths {
+            self.depths.entry(id).or_default();
+        }
         for id in graphs {
             self.nodes.entry(id).or_default();
         }

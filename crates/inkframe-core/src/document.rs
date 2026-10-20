@@ -35,7 +35,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 28;
+pub const FORMAT_VERSION: u32 = 29;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -189,10 +189,11 @@ pub struct Layer {
     /// This layer is the camera (see `camera.rs`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub camera: bool,
-    /// How far behind the stage the layer sits, for the camera's parallax:
-    /// 0 is on the stage, positive further away (see `camera.rs`).
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub depth: f32,
+    /// A depth as format 28 and older stored it, before it could animate.
+    /// Loading moves it into the track's Depth property (see `validate`);
+    /// it's never saved.
+    #[serde(default, rename = "depth", skip_serializing)]
+    pub(crate) unanimated_depth: f32,
     /// Makes this a particle layer, spraying particles (see `particles.rs`).
     /// Its drawing, if any, is what each particle looks like.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -410,7 +411,7 @@ impl Document {
             folder: false,
             in_folder: None,
             camera: false,
-            depth: 0.0,
+            unanimated_depth: 0.0,
             particles: None,
             unanimated_color_effect: ColorEffect::None,
             unanimated_filters: Vec::new(),
@@ -617,6 +618,11 @@ impl Document {
         // Effects property's value throughout.
         let layers = self.layers.iter_mut().chain(self.symbols.iter_mut().flat_map(|s| s.layers.iter_mut()));
         for layer in layers {
+            let depth = std::mem::take(&mut layer.unanimated_depth);
+            if depth != 0.0 {
+                let first = layer.track.key_frames().first().copied().unwrap_or(0);
+                layer.track.depth = crate::channel::Channel::new(first, depth);
+            }
             let color = std::mem::take(&mut layer.unanimated_color_effect);
             let filters = std::mem::take(&mut layer.unanimated_filters);
             if !color.is_none() || !filters.is_empty() {
@@ -683,10 +689,6 @@ impl Layer {
     pub fn shape_bounds(&self, frame: u32) -> Option<Rect> {
         self.shown_elements(frame).iter().map(Element::bounds).reduce(Rect::union)
     }
-}
-
-fn is_zero(value: &f32) -> bool {
-    *value == 0.0
 }
 
 fn default_true() -> bool {

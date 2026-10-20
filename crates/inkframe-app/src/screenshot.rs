@@ -28,6 +28,8 @@
 //!   `_PAINT`, the strokes it paints), in line-art mode, or `=colours`; `,apply` vectorises.
 //! * `INKFRAME_SCREENSHOT_PARTICLES=1` adds the four particle presets on a dark stage,
 //!   with the fire selected.
+//! * `INKFRAME_SCREENSHOT_MULTIPLANE=1` builds a scene at several depths with the camera
+//!   dollying in, and shows the Depth View in place of Properties.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -132,6 +134,11 @@ impl AutoScreenshot {
     /// and `apply` to vectorise straight away.
     pub fn vectorise() -> Option<String> {
         std::env::var("INKFRAME_SCREENSHOT_VECTORISE").ok()
+    }
+
+    /// Whether to build the multiplane scene.
+    pub fn multiplane() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_MULTIPLANE").is_some()
     }
 
     /// Whether to add the particle presets.

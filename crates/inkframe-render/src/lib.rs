@@ -306,7 +306,9 @@ fn render_layers(
             _ => 1.0,
         };
         let preview = preview * behind;
-        let opacity = (transform.opacity * opacity * preview).clamp(0.0, 1.0);
+        // Layers the camera is passing fade away (see `camera.rs`).
+        let passing = doc.camera_fade(layer, frame as f32);
+        let opacity = (transform.opacity * opacity * preview * passing).clamp(0.0, 1.0);
         if opacity <= 0.0 {
             continue;
         }

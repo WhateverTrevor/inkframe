@@ -12,7 +12,7 @@ after the Harmony features (palettes to master controllers).
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
-- **File format:** version 28. Older versions load and upgrade automatically
+- **File format:** version 29. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -411,6 +411,17 @@ after the Harmony features (palettes to master controllers).
     (`stage::draw_emitters`). Emitter settings don't animate, and motion
     blur doesn't smear individual particles. The four presets together
     render a full-HD frame in ~14 ms. `INKFRAME_SCREENSHOT_PARTICLES=1`.
+
+67. 3D multiplane (format v29): `Property::Depth` / `Track::depth`
+    (`depth_at`, `set_depth`, left out of files while a single 0 key);
+    the old `Layer::depth` loads into it (`unanimated_depth`, moved in
+    `validate`). The camera's own depth is its dolly: perspective is
+    `F / (F + d - z)` in `camera_matrix_at`, and `camera_fade` (used by
+    `render_layers`) fades layers within 0.25F of the camera. Inspector:
+    Depth row in Transform (top-level main layers), Dolly in the camera
+    section. `depth_view.rs` is a new area kind (Kind::DepthView). Depth
+    doesn't reorder the stack: stacking is still the timeline order.
+    `INKFRAME_SCREENSHOT_MULTIPLANE=1` (with `_FRAME`).
 
 ## Not yet verified by hand
 
