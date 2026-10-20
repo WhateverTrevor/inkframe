@@ -13,7 +13,7 @@ use inkframe_core::{
     Element, GradientShape, History, Layer, LayerId, Point, Property, Selection, Shape, Stroke, Style,
     SymbolId, Text, TimelineId, ToneRange, Transform, path_from_anchors,
 };
-use inkframe_core::{Clipboard, CopiedKeyframe};
+use inkframe_core::{Asset, Clipboard, CopiedKeyframe, ImageId};
 use inkframe_render::ImageLibrary;
 
 use crate::guides::Guides;
@@ -453,26 +453,80 @@ impl Editor {
         if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("psd")) {
             return self.import_psd(path);
         }
-        let (width, height) = inkframe_render::image_size(path)?;
-        let project_dir = self.project_dir();
-        let image = self.doc.add_image(path, project_dir.as_deref(), (width, height));
-
-        let fit = (self.doc.width as f32 / width as f32).min(self.doc.height as f32 / height as f32).min(1.0);
-        let element = Element {
-            shape: Shape::Image { image, width: width as f32 * fit, height: height as f32 * fit },
-            style: Style { fill: None, stroke: None },
-        };
-        // The stage's center, in the coordinates of the timeline being
-        // edited, so inside a symbol the picture still appears mid-stage.
-        let stage_center = self.doc.stage_rect().center();
-        let center =
-            self.timeline_transform().inverse().map_or(stage_center, |to_local| to_local.apply(stage_center));
-
-        let name = self.doc.image(image).map_or_else(|| "Image".to_owned(), |i| i.name.clone());
-        let taken = self.layers().iter().any(|l| l.name == name);
-        let name = if taken { self.doc.next_layer_name_in(self.timeline(), &name) } else { name };
-        self.add_named_layer(name, element, center);
+        let image = self.add_library_image(path)?;
+        self.place_asset_at(Asset::Image(image), self.doc.stage_rect().center());
         Ok(())
+    }
+
+    /// Adds an image file to the Library without putting it on the stage,
+    /// as dropping it onto the Library does.
+    pub fn add_library_image(&mut self, path: &Path) -> Result<ImageId, String> {
+        let size = inkframe_render::image_size(path)?;
+        let project_dir = self.project_dir();
+        Ok(self.doc.add_image(path, project_dir.as_deref(), size))
+    }
+
+    /// Puts a Library asset on the stage at `point` (in stage coordinates)
+    /// on the current frame: a symbol or image on a new layer, selected; a
+    /// sound as another copy on the timeline, starting here. Returns the
+    /// new layer, if there is one.
+    pub fn place_asset_at(&mut self, asset: Asset, point: Point) -> Option<LayerId> {
+        // In the coordinates of the timeline being edited, which may be a
+        // turned or scaled instance's.
+        let at = self.timeline_transform().inverse().map_or(point, |to_timeline| to_timeline.apply(point));
+        let layer = match asset {
+            Asset::Symbol(symbol) => {
+                if !self.can_place(symbol) {
+                    return None;
+                }
+                self.doc.add_instance_layer(self.timeline(), symbol, self.frame, at)?
+            }
+            Asset::Image(image) => {
+                let asset = self.doc.image(image)?;
+                let (width, height) = (asset.width as f32, asset.height as f32);
+                // Big pictures are fitted to the stage, as when imported.
+                let fit = (self.doc.width as f32 / width).min(self.doc.height as f32 / height).min(1.0);
+                let element = Element {
+                    shape: Shape::Image { image, width: width * fit, height: height * fit },
+                    style: Style { fill: None, stroke: None },
+                };
+                let name = asset.name.clone();
+                let taken = self.layers().iter().any(|l| l.name == name);
+                let name = if taken { self.doc.next_layer_name_in(self.timeline(), &name) } else { name };
+                self.add_named_layer(name, element, at);
+                self.selection?
+            }
+            Asset::Sound(sound) => {
+                // Sound plays against the main timeline only.
+                let start = if self.timeline() == TimelineId::Main { self.frame } else { 0 };
+                let track = self.doc.audio_track(sound)?.clone();
+                let project_dir = self.project_dir();
+                let copy =
+                    self.doc.add_audio(&track.resolve(project_dir.as_deref()), project_dir.as_deref(), start);
+                if let Some(added) = self.doc.audio_track_mut(copy) {
+                    added.name = track.name;
+                    added.volume = track.volume;
+                    added.folder = track.folder;
+                }
+                return None;
+            }
+        };
+        self.select(Some(layer));
+        Some(layer)
+    }
+
+    /// Puts a Library asset where it was dropped on the timeline: from
+    /// `frame`, mid-stage, on a new layer just above `above` (or on top).
+    pub fn place_asset_on_timeline(&mut self, asset: Asset, frame: u32, above: Option<LayerId>) {
+        self.set_frame(frame.min(self.last_frame()));
+        let Some(layer) = self.place_asset_at(asset, self.doc.stage_rect().center()) else { return };
+        if let Some(index) = above.and_then(|id| self.layers().iter().position(|l| l.id == id)) {
+            let folder = self.layers()[index].in_folder;
+            self.doc.move_layer_to(layer, index + 1);
+            if let Some(placed) = self.doc.layer_mut(layer) {
+                placed.in_folder = folder;
+            }
+        }
     }
 
     /// Links a font file to the project so its families can be used, and
@@ -1423,23 +1477,6 @@ impl Editor {
         }
     }
 
-    /// Adds a new layer with an instance of `symbol` in the middle of the
-    /// stage, starting on the current frame, and selects it.
-    ///
-    /// Inside a symbol, a symbol that contains it (or itself) can't be
-    /// placed; see [`Editor::can_place`].
-    pub fn place_symbol(&mut self, symbol: SymbolId) {
-        // The middle of the stage, in the coordinates of the timeline being
-        // edited (which may be a rotated or scaled instance).
-        let center = self
-            .timeline_transform()
-            .inverse()
-            .map_or(Point::ZERO, |to_timeline| to_timeline.apply(self.doc.stage_rect().center()));
-        if let Some(id) = self.doc.add_instance_layer(self.timeline(), symbol, self.frame, center) {
-            self.selection = Some(id);
-        }
-    }
-
     pub fn can_place(&self, symbol: SymbolId) -> bool {
         self.doc.can_place(self.timeline(), symbol)
     }
@@ -1926,6 +1963,44 @@ mod tests {
     }
 
     #[test]
+    fn library_assets_are_placed_where_they_are_dropped() {
+        let (mut editor, layer) = editor_with_layer();
+        let symbol = editor.doc.convert_layer_to_symbol(layer, 0).unwrap();
+        let image = editor.doc.add_image(Path::new("/art/sky.png"), None, (3840, 1080));
+        let sound = editor.doc.add_audio(Path::new("/sound/boing.wav"), None, 0);
+        editor.set_frame(5);
+
+        let star = editor.place_asset_at(Asset::Symbol(symbol), Point::new(300.0, 200.0)).unwrap();
+        let placed = editor.doc.layer(star).unwrap();
+        assert_eq!(placed.instance.map(|i| i.symbol), Some(symbol));
+        assert_eq!(placed.track.position.sample(5.0), Some(Point::new(300.0, 200.0)));
+        assert_eq!(editor.selection, Some(star));
+
+        let sky = editor.place_asset_at(Asset::Image(image), Point::new(960.0, 540.0)).unwrap();
+        let sky = editor.doc.layer(sky).unwrap();
+        assert_eq!(sky.name, "sky");
+        // Twice the stage's width, so fitted to it, as when imported.
+        let Shape::Image { width, .. } = sky.elements_at(5)[0].shape else { panic!("not a picture") };
+        assert_eq!(width, 1920.0);
+
+        // A sound goes on the timeline again, from this frame.
+        assert_eq!(editor.place_asset_at(Asset::Sound(sound), Point::ZERO), None);
+        assert_eq!(editor.doc.audio.len(), 2);
+        assert_eq!(editor.doc.audio[1].start, 5);
+        assert_eq!(editor.doc.audio[1].name, "boing");
+    }
+
+    #[test]
+    fn a_symbol_cant_be_placed_inside_itself_from_the_library() {
+        let (mut editor, layer) = editor_with_layer();
+        let symbol = editor.doc.convert_layer_to_symbol(layer, 0).unwrap();
+        editor.enter_symbol(symbol, 0);
+        let layers = editor.layers().len();
+        assert_eq!(editor.place_asset_at(Asset::Symbol(symbol), Point::ZERO), None);
+        assert_eq!(editor.layers().len(), layers);
+    }
+
+    #[test]
     fn a_new_layer_goes_above_the_selected_one_and_takes_drawing() {
         let (mut editor, id) = editor_with_layer();
         let other = editor.doc.add_layer("Top", Vec::new(), 0, Transform::default());
@@ -1978,7 +2053,7 @@ mod tests {
         assert!(editor.doc.layer(id).unwrap().instance.is_some());
 
         editor.set_frame(6);
-        editor.place_symbol(symbol);
+        editor.place_asset_at(Asset::Symbol(symbol), editor.doc.stage_rect().center());
         let placed = editor.selected_layer().unwrap();
         assert_ne!(placed.id, id);
         assert_eq!(placed.start, 6);

@@ -33,6 +33,9 @@ pub struct Symbol {
     pub duration: u32,
     /// Bottom-most layer first, like the document's.
     pub layers: Vec<Layer>,
+    /// The Library folder it's filed in; empty for the top level.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub folder: String,
 }
 
 /// A symbol placed on a layer.
@@ -170,7 +173,13 @@ impl Document {
             Some(Instance { symbol: symbol_id, playback: Playback::Loop, first_frame: layer.start });
         layer.track = crate::track::Track::new(0, Transform::at(pivot));
 
-        self.symbols.push(Symbol { id: symbol_id, name, duration, layers: vec![inner] });
+        self.symbols.push(Symbol {
+            id: symbol_id,
+            name,
+            duration,
+            layers: vec![inner],
+            folder: String::new(),
+        });
         Some(symbol_id)
     }
 
@@ -302,7 +311,7 @@ impl Document {
         let at = kept.iter().position(|(index, _)| *index > top).unwrap_or(kept.len());
         layers.extend(kept.into_iter().map(|(_, layer)| layer));
         layers.insert(at, instance);
-        self.symbols.push(Symbol { id: symbol_id, name, duration, layers: inner });
+        self.symbols.push(Symbol { id: symbol_id, name, duration, layers: inner, folder: String::new() });
         if timeline == TimelineId::Main {
             self.keep_camera_on_top();
         }

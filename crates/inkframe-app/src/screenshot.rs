@@ -44,6 +44,8 @@
 //!   Properties, with that script typed in and run.
 //! * `INKFRAME_SCREENSHOT_GROUP=1` puts every layer into one symbol (a 24-frame loop), as
 //!   selecting them all and pressing F8 would; `=open` then opens it in place.
+//! * `INKFRAME_SCREENSHOT_LIBRARY=1` makes each layer a symbol (some in a folder), adds the
+//!   sample pictures from `docs/images` and a sound, and shows the Library.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -166,6 +168,11 @@ impl AutoScreenshot {
     /// Whether to open the examples gallery.
     pub fn examples() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_EXAMPLES").is_some()
+    }
+
+    /// Whether to fill and show the Library.
+    pub fn library() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_LIBRARY").is_some()
     }
 
     /// Whether to group every layer into a symbol, and whether to open it.
@@ -489,4 +496,48 @@ fn new_layer_demo(editor: &mut Editor) {
     let rect = |width, height| Element { shape: Shape::Rect { width, height, corner_radius: 6.0 }, style };
     editor.add_drawn_shape("Rectangle", rect(220.0, 24.0), Point::new(785.0, 150.0));
     editor.add_drawn_shape("Rectangle", rect(130.0, 110.0), Point::new(785.0, 90.0));
+}
+
+/// Fills the Library for a screenshot: every layer becomes a symbol of its
+/// own, the far ones filed under Scenery, with the sample pictures and a
+/// short silent sound beside them.
+pub fn library_demo(editor: &mut Editor) {
+    use inkframe_core::Asset;
+    let layers: Vec<_> =
+        editor.doc.layers.iter().filter(|l| !l.camera).map(|l| (l.id, l.name.clone())).collect();
+    for (i, (layer, name)) in layers.into_iter().enumerate() {
+        if let Some(symbol) = editor.doc.convert_layer_to_symbol(layer, 0) {
+            editor.doc.rename_asset(Asset::Symbol(symbol), &name);
+            if i < 3 {
+                editor.doc.move_asset(Asset::Symbol(symbol), "Scenery");
+            }
+        }
+    }
+    let pictures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/images");
+    for name in ["sample-rig.png", "sample-particles.png", "sample-ink-and-paint.png"] {
+        if let Ok(image) = editor.add_library_image(&pictures.join(name)) {
+            editor.doc.move_asset(Asset::Image(image), "Reference");
+        }
+    }
+    // A tenth of a second of silence: a valid WAV is a 44-byte header and
+    // the samples.
+    let sound = std::env::temp_dir().join("whoosh.wav");
+    let samples = 4410u32 * 2;
+    let mut wav = Vec::new();
+    for (chunk, value) in [(b"RIFF", 36 + samples), (b"WAVE", 0)] {
+        wav.extend_from_slice(chunk);
+        if chunk == b"RIFF" {
+            wav.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    wav.extend_from_slice(b"fmt ");
+    for value in [16u32, 1 | (1 << 16), 44_100, 88_200, 2 | (16 << 16)] {
+        wav.extend_from_slice(&value.to_le_bytes());
+    }
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&samples.to_le_bytes());
+    wav.resize(wav.len() + samples as usize, 0);
+    if std::fs::write(&sound, wav).is_ok() {
+        editor.import_audio(&sound);
+    }
 }

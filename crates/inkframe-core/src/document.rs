@@ -35,7 +35,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 30;
+pub const FORMAT_VERSION: u32 = 31;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -79,6 +79,10 @@ pub struct Document {
     /// frame, rather than in the timeline's order (see `camera.rs`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stack_by_depth: bool,
+    /// The Library's folders, kept here so an empty one stays (see
+    /// `library.rs`). Symbols, images and sounds say which they're in.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub library_folders: Vec<String>,
     /// Plain colours, as the Swatches panel saved them before there was a
     /// palette; loading makes each a swatch.
     #[serde(default, rename = "swatches", skip_serializing)]
@@ -317,6 +321,7 @@ impl Default for Document {
             palette: Palette::default(),
             controllers: Vec::new(),
             stack_by_depth: false,
+            library_folders: Vec::new(),
             old_swatches: Vec::new(),
             next_canvas_id: 1,
         }

@@ -30,6 +30,9 @@ pub struct ImageAsset {
     /// selection work even while the file is missing or still loading.
     pub width: u32,
     pub height: u32,
+    /// The Library folder it's filed in; empty for the top level.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub folder: String,
 }
 
 impl ImageAsset {
@@ -64,7 +67,7 @@ impl Document {
         let id = ImageId(self.next_image_id);
         self.next_image_id += 1;
         let name = path.file_stem().map_or_else(|| "Image".to_owned(), |s| s.to_string_lossy().into_owned());
-        self.images.push(ImageAsset { id, name, path: stored, width, height });
+        self.images.push(ImageAsset { id, name, path: stored, width, height, folder: String::new() });
         id
     }
 

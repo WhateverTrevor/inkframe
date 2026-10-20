@@ -567,6 +567,10 @@ impl InkframeApp {
             if AutoScreenshot::examples() {
                 app.examples.open(&cc.egui_ctx);
             }
+            if AutoScreenshot::library() {
+                crate::screenshot::library_demo(&mut app.editor);
+                app.layout.replace_kind(Kind::Properties, Kind::Library);
+            }
             if let Some(open) = AutoScreenshot::group() {
                 // Every layer but the camera into one symbol, as selecting
                 // them all and pressing F8 would.
@@ -1345,8 +1349,11 @@ impl InkframeApp {
     }
 
     /// Imports image and sound files dropped onto the window, the same as
-    /// choosing them from the File menu.
+    /// choosing them from the File menu. Images dropped onto the Library go
+    /// into it without being placed on the stage.
     fn import_dropped_files(&mut self, ctx: &egui::Context) {
+        let onto_library =
+            self.hovered_area.is_some_and(|area| self.layout.kind_of(area) == Some(Kind::Library));
         // A file dropped without a path on disk can't be linked to, so skip it.
         let dropped: Vec<PathBuf> = ctx.input(|i| {
             i.raw
@@ -1358,7 +1365,11 @@ impl InkframeApp {
         });
         for path in dropped {
             let extension = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-            if IMAGE_EXTENSIONS.contains(&extension.as_str()) || extension == "psd" {
+            if onto_library && IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+                if let Err(message) = self.editor.add_library_image(&path) {
+                    show_error("Couldn't import the image", &message);
+                }
+            } else if IMAGE_EXTENSIONS.contains(&extension.as_str()) || extension == "psd" {
                 if let Err(message) = self.editor.import_image(&path) {
                     show_error("Couldn't import the image", &message);
                 }

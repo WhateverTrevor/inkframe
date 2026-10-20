@@ -225,6 +225,27 @@ pub fn render_symbol_thumbnail(
     Some(pixmap)
 }
 
+/// An imported picture fitted into a `size`×`size` square, centered, for
+/// the Library. `None` until the file has loaded (or if it couldn't be).
+pub fn render_image_thumbnail(
+    images: &ImageLibrary,
+    image: inkframe_core::ImageId,
+    size: u32,
+) -> Option<Pixmap> {
+    let mipmaps = images.get(image)?;
+    let scale = size as f32 / mipmaps.width().max(mipmaps.height()) as f32;
+    let (width, height) = (mipmaps.width() as f32 * scale, mipmaps.height() as f32 * scale);
+    // Shrinking a big picture straight down skips most of its pixels and
+    // shimmers, so draw from the mipmap level nearest the size wanted.
+    let (level, level_size) = mipmaps.level_for(scale);
+    let at = tiny_skia::Transform::from_scale(scale * level_size, scale * level_size)
+        .post_translate((size as f32 - width) / 2.0, (size as f32 - height) / 2.0);
+    let mut pixmap = Pixmap::new(size, size)?;
+    let paint = tiny_skia::PixmapPaint { quality: tiny_skia::FilterQuality::Bilinear, ..Default::default() };
+    pixmap.draw_pixmap(0, 0, level.as_ref(), &paint, at, None);
+    Some(pixmap)
+}
+
 /// Renders one layer at `frame`, with the whole stage fitted into a
 /// `width`×`height` image, for the timeline's layer thumbnails. The layer
 /// is drawn where it sits on the stage, so its thumbnail shows where it is

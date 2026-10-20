@@ -235,7 +235,13 @@ impl Document {
             let taken = self.symbols.iter().any(|s| s.name == symbol.name);
             let name = if taken { format!("{} copy", symbol.name) } else { symbol.name.clone() };
             let layers = self.fresh_layers(&symbol.layers, &images, &canvases, &symbols, None, Point::ZERO);
-            self.symbols.push(Symbol { id, name, duration: symbol.duration, layers });
+            self.symbols.push(Symbol {
+                id,
+                name,
+                duration: symbol.duration,
+                layers,
+                folder: symbol.folder.clone(),
+            });
         }
 
         let layers = self.fresh_layers(&copied.layers, &images, &canvases, &symbols, Some(timeline), offset);
