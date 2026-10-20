@@ -224,6 +224,11 @@ impl Document {
     }
 
     fn layer_bounds_at_depth(&self, layer: &Layer, frame: u32, depth: usize) -> Option<Rect> {
+        // A particle layer's drawing is the particles' look, not drawn as
+        // itself; what it covers is where the particles are.
+        if layer.particles.is_some() {
+            return self.particle_bounds(layer, frame as f32);
+        }
         let shapes = self.element_bounds(&layer.shown_elements(frame));
         let nested = self.instance_view(layer, frame, depth).and_then(|(symbol, local_frame)| {
             symbol

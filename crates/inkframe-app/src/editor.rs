@@ -1038,6 +1038,19 @@ impl Editor {
         Some(id)
     }
 
+    /// Adds a particle layer from `preset`, starting on the current frame:
+    /// snow along the top of the stage, the others in the middle.
+    pub fn add_particle_layer(&mut self, preset: inkframe_core::Preset) -> Option<LayerId> {
+        let stage = self.doc.stage_rect();
+        let at = match preset {
+            inkframe_core::Preset::Snow => inkframe_core::Point::new(stage.center().x, stage.min.y - 40.0),
+            _ => stage.center(),
+        };
+        let id = self.doc.add_particle_layer(preset, self.frame, at)?;
+        self.select(Some(id));
+        Some(id)
+    }
+
     // ------------------------------------------------------------- drawings
 
     /// Shows the selected layer's drawing `index` from the current frame on.
