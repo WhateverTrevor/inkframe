@@ -44,12 +44,17 @@ painting. **View › Reset Workspace** puts everything back.
 2. Click the **Fill** colour under the tools and pick an orange.
 3. Hold **Shift** and drag on the stage, near the top, to draw a circle.
 
-Every shape you draw gets a layer of its own, so the timeline now has a
-layer called *Oval 1*. Select it, then rename it *Ball* in Properties.
+With no layer to draw into, the first shape starts one, so the timeline
+now has a layer called *Oval 1*, selected. Rename it *Ball* in Properties.
+
+What you draw goes into the selected layer, and the ball and floor need
+layers of their own to move separately. Click **+** (New Layer) at the
+left of the timeline's buttons, or press **⌘⇧N** (Ctrl+Shift+N on
+Windows): an empty layer appears above the ball, selected. Rename it
+*Floor*.
 
 Now press **R** for the **Rectangle** tool, pick a darker colour, and draw
-a wide, flat floor across the bottom of the stage. Rename that layer
-*Floor*.
+a wide, flat floor across the bottom of the stage. It goes into *Floor*.
 
 ## 4. Make it bounce
 

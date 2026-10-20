@@ -126,14 +126,15 @@ pub fn tool_settings(ui: &mut egui::Ui, editor: &mut Editor) {
     }
 }
 
-/// Where the drawing tools put new shapes: each on a layer of its own (as
-/// in Animate), or into the selected layer's drawing (as in Harmony), and
+/// Where the drawing tools put new shapes: into the selected layer's
+/// drawing (as in Animate and Harmony), or each on a layer of its own, and
 /// then into its line art or the colour art beneath.
 fn drawing_target(ui: &mut egui::Ui, editor: &mut Editor) {
     ui.add_space(6.0);
     ui.checkbox(&mut editor.draw_into_layer, "Draw into the selected layer").on_hover_text(
-        "Strokes go into the selected layer's drawing, for inking and painting a drawing together. \
-         Off, each shape gets a layer of its own.",
+        "Strokes and shapes go into the selected layer, so a drawing builds up on one layer. With no layer \
+         selected (or a locked one, a symbol or a paint layer), they start a new layer. Off, every shape gets \
+         a layer of its own.",
     );
     ui.add_enabled_ui(editor.draw_into_layer, |ui| {
         ui.horizontal(|ui| {

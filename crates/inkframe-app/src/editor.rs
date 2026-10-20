@@ -270,8 +270,9 @@ pub struct Editor {
     /// How wide a gap the paint bucket closes on a vector layer, in stage
     /// units (see `vector_fill.rs`).
     pub close_gaps: f32,
-    /// Draw new shapes into the selected layer's drawing, as Harmony does,
-    /// rather than each onto a layer of its own, as Animate does.
+    /// Draw new shapes into the selected layer, as Animate and Harmony do,
+    /// rather than each onto a layer of its own. On by default; turning it
+    /// off is remembered between runs (see `prefs.rs`).
     pub draw_into_layer: bool,
     /// Which part of the drawing new shapes go in: the line art, or the
     /// colour art beneath it.
@@ -342,7 +343,7 @@ impl Editor {
             pencil_stroke: Stroke { color: Color::rgb(0x1a, 0x1a, 0x1a), width: 4.0 },
             paint_color: Color::rgb(0x1a, 0x1a, 0x1a),
             close_gaps: 4.0,
-            draw_into_layer: false,
+            draw_into_layer: true,
             colour_art: false,
             light_table: false,
             guides: Guides::default(),
@@ -1066,6 +1067,32 @@ impl Editor {
         if let Some(layer) = self.doc.layer_mut(id) {
             layer.track.set_depth(frame, depth);
         }
+    }
+
+    /// Adds an empty layer just above the selected one (in the same folder),
+    /// or on top if nothing is selected, and selects it, ready to draw
+    /// into: Animate's New Layer. Its origin is the middle of the stage, so
+    /// it turns and scales around there until its pivot is moved.
+    pub fn add_empty_layer(&mut self) -> Option<LayerId> {
+        let timeline = self.timeline();
+        let name = self.doc.next_layer_name_in(timeline, "Layer");
+        let above = self.selection.and_then(|id| {
+            let index = self.layers().iter().position(|l| l.id == id)?;
+            Some((index, self.layers()[index].in_folder))
+        });
+        let middle = self.doc.stage_rect().center();
+        let id = self.doc.add_layer_to(timeline, name, Vec::new(), 0, Transform::at(middle))?;
+        // A folder sits just above what's in it, so one place up from the
+        // selected row is outside a selected folder but inside the folder
+        // a selected layer is in.
+        if let Some((index, folder)) = above {
+            self.doc.move_layer_to(id, index + 1);
+            if let Some(layer) = self.doc.layer_mut(id) {
+                layer.in_folder = folder;
+            }
+        }
+        self.select(Some(id));
+        Some(id)
     }
 
     /// Adds a particle layer from `preset`, starting on the current frame:
@@ -1874,15 +1901,55 @@ mod tests {
     }
 
     #[test]
-    fn shapes_drawn_with_a_one_drawing_layer_selected_get_their_own_layer() {
-        let (mut editor, _) = editor_with_layer();
+    fn shapes_go_into_the_selected_layer_unless_turned_off() {
+        let (mut editor, id) = editor_with_layer();
         let layers = editor.layers().len();
+        let shapes = |editor: &Editor| editor.doc.layer(id).unwrap().elements_at(0).len();
+        let before = shapes(&editor);
         let dot = Element {
             shape: Shape::Ellipse { radius_x: 10.0, radius_y: 10.0 },
             style: Style { fill: Some(Color::BLACK), stroke: None },
         };
+        editor.add_drawn_shape("Oval", dot.clone(), Point::new(460.0, 400.0));
+        assert_eq!(editor.layers().len(), layers, "no new layer");
+        assert_eq!(shapes(&editor), before + 1);
+
+        editor.draw_into_layer = false;
+        editor.add_drawn_shape("Oval", dot.clone(), Point::new(460.0, 400.0));
+        assert_eq!(editor.layers().len(), layers + 1, "a layer of its own");
+
+        // With nothing selected there's nowhere to draw into.
+        editor.draw_into_layer = true;
+        editor.select(None);
         editor.add_drawn_shape("Oval", dot, Point::new(460.0, 400.0));
-        assert_eq!(editor.layers().len(), layers + 1);
+        assert_eq!(editor.layers().len(), layers + 2);
+    }
+
+    #[test]
+    fn a_new_layer_goes_above_the_selected_one_and_takes_drawing() {
+        let (mut editor, id) = editor_with_layer();
+        let other = editor.doc.add_layer("Top", Vec::new(), 0, Transform::default());
+        editor.select(Some(id));
+        let new = editor.add_empty_layer().unwrap();
+        let order: Vec<_> = editor.layers().iter().map(|l| l.id).collect();
+        assert_eq!(order, vec![id, new, other], "just above the selected layer");
+        assert_eq!(editor.selection, Some(new));
+        assert_eq!(editor.doc.layer(new).unwrap().name, "Layer 1");
+        assert!(editor.doc.layer(new).unwrap().elements_at(0).is_empty());
+
+        let dot = Element {
+            shape: Shape::Ellipse { radius_x: 10.0, radius_y: 10.0 },
+            style: Style { fill: Some(Color::BLACK), stroke: None },
+        };
+        editor.add_drawn_shape("Oval", dot, Point::new(100.0, 100.0));
+        let layer = editor.doc.layer(new).unwrap();
+        assert_eq!(layer.elements_at(0).len(), 1, "drawn into the new layer");
+        // Where it was drawn on the stage: the layer's origin is the middle
+        // of the stage, so in its own coordinates it's up and to the left.
+        let middle = editor.doc.stage_rect().center();
+        let bounds = editor.doc.layer_bounds(layer, 0).unwrap();
+        let on_stage = Point::new(bounds.center().x + middle.x, bounds.center().y + middle.y);
+        assert!(on_stage.distance(Point::new(100.0, 100.0)) < 0.5, "{bounds:?}");
     }
 
     #[test]

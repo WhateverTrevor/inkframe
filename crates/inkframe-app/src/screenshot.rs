@@ -11,6 +11,8 @@
 //! * `INKFRAME_SCREENSHOT_FRAME=12` moves the playhead (1-based, like the timeline).
 //! * `INKFRAME_SCREENSHOT_SELECT=Ball` selects the layer with that name (or `Ball,Floor` for several).
 //! * `INKFRAME_SCREENSHOT_ONION=1` turns on onion skinning.
+//! * `INKFRAME_SCREENSHOT_NEW_LAYER=1` adds an empty layer above the selection (after
+//!   `_SELECT`) and draws a hat into it, as + and two shapes would.
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
 //! * `INKFRAME_SCREENSHOT_EXPAND=1` expands every layer's property rows in the timeline.
 //! * `INKFRAME_SCREENSHOT_EDIT=Ball` opens the named symbol on its own (before `_SELECT`).
@@ -116,6 +118,9 @@ impl AutoScreenshot {
             if paint == "select" {
                 selection_demo(editor);
             }
+        }
+        if var("INKFRAME_SCREENSHOT_NEW_LAYER").is_some() {
+            new_layer_demo(editor);
         }
         if let Some(name) = var("INKFRAME_SCREENSHOT_TOOL") {
             match Tool::all().find(|t| t.name().eq_ignore_ascii_case(&name)) {
@@ -473,4 +478,15 @@ fn selection_demo(editor: &mut Editor) {
         layer.blend = BlendMode::Multiply;
     }
     editor.pixel_selection = Some((canvas, selection));
+}
+
+/// A new layer with a hat drawn into it: a brim and a crown, both going
+/// into the one layer as they would with the Rectangle tool.
+fn new_layer_demo(editor: &mut Editor) {
+    use inkframe_core::{Color, Element, Point, Shape, Style};
+    editor.add_empty_layer();
+    let style = Style { fill: Some(Color::rgb(60, 50, 70)), stroke: None };
+    let rect = |width, height| Element { shape: Shape::Rect { width, height, corner_radius: 6.0 }, style };
+    editor.add_drawn_shape("Rectangle", rect(220.0, 24.0), Point::new(785.0, 150.0));
+    editor.add_drawn_shape("Rectangle", rect(130.0, 110.0), Point::new(785.0, 90.0));
 }

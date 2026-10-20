@@ -1035,10 +1035,12 @@ fn select_row(editor: &mut Editor, row: Row) {
     }
 }
 
-/// Duplicate, raise, lower and delete for the selected layer, in reading
-/// order, or reversed for a right-to-left layout.
+/// New layer, camera, folder, then duplicate, raise, lower and delete for
+/// the selected layer, in reading order, or reversed for a right-to-left
+/// layout.
 fn layer_buttons(ui: &mut egui::Ui, editor: &mut Editor, right_to_left: bool) {
     enum Action {
+        NewLayer,
         Camera,
         Folder,
         Duplicate,
@@ -1047,6 +1049,7 @@ fn layer_buttons(ui: &mut egui::Ui, editor: &mut Editor, right_to_left: bool) {
         Delete,
     }
     let mut buttons = [
+        (Icon::Plus, "New layer: an empty one above the selected layer, to draw into", Action::NewLayer),
         (Icon::Camera, "Add a camera, or select the one there is", Action::Camera),
         (Icon::Folder, "New folder: put the selected layers in a folder", Action::Folder),
         (Icon::Duplicate, "Duplicate layer", Action::Duplicate),
@@ -1059,9 +1062,12 @@ fn layer_buttons(ui: &mut egui::Ui, editor: &mut Editor, right_to_left: bool) {
     }
     let has_selection = editor.selection.is_some();
     for (icon, hover, action) in buttons {
-        let enabled = has_selection || matches!(action, Action::Camera);
+        let enabled = has_selection || matches!(action, Action::NewLayer | Action::Camera);
         if ui.add_enabled(enabled, IconButton::new(icon, hover)).clicked() {
             match action {
+                Action::NewLayer => {
+                    editor.add_empty_layer();
+                }
                 Action::Camera => editor.add_camera(),
                 Action::Folder => editor.new_folder(),
                 Action::Duplicate => editor.duplicate_selected_layer(),

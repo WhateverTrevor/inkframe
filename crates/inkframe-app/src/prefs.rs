@@ -1,5 +1,5 @@
 //! Settings that carry over to the next time Inkframe runs: the framing
-//! guides and the Batch Export queue.
+//! guides, the Batch Export queue and where drawing goes.
 //!
 //! Like the window layout (see `layout.rs`), these are the person's, not
 //! the document's, so they live in their own file in the settings folder.
@@ -25,6 +25,9 @@ pub struct Prefs {
     pub batch: Vec<SavedJob>,
     /// Where Batch Export writes, if a folder was chosen.
     pub batch_folder: Option<PathBuf>,
+    /// Whether "Draw into the selected layer" was turned off. Saved this
+    /// way round so a missing value (an older file) means the default, on.
+    pub shape_per_layer: bool,
 }
 
 /// A Batch Export job as saved: the format by its short name, the same
@@ -49,7 +52,13 @@ impl Prefs {
                 transparent: job.transparent,
             })
             .collect();
-        Self { safe_areas: guides.safe_areas, field_guide: guides.field_guide, batch, batch_folder }
+        Self {
+            safe_areas: guides.safe_areas,
+            field_guide: guides.field_guide,
+            batch,
+            batch_folder,
+            shape_per_layer: false,
+        }
     }
 
     pub fn guides(&self) -> Guides {

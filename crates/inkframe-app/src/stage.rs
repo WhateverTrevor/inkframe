@@ -3815,6 +3815,8 @@ mod tests {
         // With pressure and tapering off, it's a plain stroke.
         h.state_mut().1.pencil_pressure = false;
         h.state_mut().1.pencil_taper = false;
+        // Deselected, so the second stroke starts a layer of its own.
+        h.state_mut().1.select(None);
         h.run();
         drag(&mut h, start, &path);
         let layer = h.state().1.doc.layers.last().unwrap();
