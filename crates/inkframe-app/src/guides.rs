@@ -11,7 +11,7 @@ use egui::Align2;
 use inkframe_core::{Point, Rect};
 
 /// Which safe areas to show, if any.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum SafeAreas {
     #[default]
     Off,

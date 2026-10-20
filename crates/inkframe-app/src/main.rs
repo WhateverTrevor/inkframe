@@ -29,6 +29,7 @@ mod motion_path;
 mod node_view;
 mod panels;
 mod pen;
+mod prefs;
 mod rhubarb;
 mod screenshot;
 mod shortcuts;

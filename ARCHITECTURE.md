@@ -278,6 +278,7 @@ writes. No audio.
 | `xsheet.rs` | The Exposure Sheet window: `column` turns a layer's exposure into cells (starts and holds), `enter` exposes a typed drawing name, making the drawing if it's new |
 | `shortcuts.rs` | Every keyboard shortcut in one place |
 | `motion_path.rs` | The math for showing and bending a layer's motion path on the stage |
+| `prefs.rs` | Settings kept for next time in the settings folder's `prefs.json`: the safe areas, the field guide, and the Batch Export queue and folder (formats by their command-line slug, so a job in a format this build lacks is skipped). `app.rs` gathers them every frame and saves on a change, as it does the layout; screenshot runs neither read nor write them unless `INKFRAME_SCREENSHOT_PREFS` asks |
 | `templates.rs` | The Templates panel: the template library in the settings folder's Templates folder (`layout::settings_dir`), saving the selected layers and inserting one at the playhead, with thumbnails drawn from each template |
 | `text_edit.rs` | Typing into text on the stage: the text cursor, selection and keys, kept separate from drawing so it can be tested |
 | `screenshot.rs` | `INKFRAME_SCREENSHOT=out.png` captures the window and quits |
