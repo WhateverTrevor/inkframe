@@ -12,7 +12,7 @@ after the Harmony features (palettes to master controllers).
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
-- **File format:** version 27. Older versions load and upgrade automatically
+- **File format:** version 28. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -399,6 +399,18 @@ after the Harmony features (palettes to master controllers).
     `INKFRAME_SCREENSHOT_VECTORISE=ink|colours[,apply]` (with `_PAINT`).
     No centreline tracing (lines become filled outlines, not pencil
     lines).
+
+66. Particles (format v28; core `particles.rs`, render `particles.rs`):
+    `Layer::particles: Option<Emitter>`, drawn in `draw_layer` instead of
+    the drawing (which is the sprite when `Sprite::Drawing`). Stateless,
+    seeded (SplitMix64 per particle and channel), world space via
+    `Document::placement_without_camera`; capped at `MAX_PARTICLES`.
+    Presets Sparks/Snow/Smoke/Fire (fire and sparks get blend Add).
+    Modify › New Particle Layer, inspector Particles section, emitter
+    outline and heading drawn on the stage when selected
+    (`stage::draw_emitters`). Emitter settings don't animate, and motion
+    blur doesn't smear individual particles. The four presets together
+    render a full-HD frame in ~14 ms. `INKFRAME_SCREENSHOT_PARTICLES=1`.
 
 ## Not yet verified by hand
 

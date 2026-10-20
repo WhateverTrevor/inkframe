@@ -23,6 +23,7 @@ use crate::timeline::TimelineView;
 use crate::vectorise_dialog::VectoriseDialog;
 use crate::xsheet::ExposureSheet;
 use crate::{inspector, shortcuts, toolbar};
+use inkframe_core::Preset;
 
 /// Everything the user can trigger from a menu or a keyboard shortcut.
 /// Routing both through one enum keeps menus and shortcuts in sync.
@@ -40,6 +41,7 @@ enum Command {
     BatchExport,
     /// Opens the Vectorise window for the selected layer.
     Vectorise,
+    NewParticleLayer(inkframe_core::Preset),
     Undo,
     Redo,
     SelectAll,
@@ -490,6 +492,25 @@ impl InkframeApp {
             if let Some(degrees) = AutoScreenshot::view_rotation() {
                 app.views.stage().rotate_view(degrees);
             }
+            if AutoScreenshot::particles() {
+                app.editor.doc.background = inkframe_core::Color::rgb(24, 28, 44);
+                for preset in [Preset::Snow, Preset::Smoke, Preset::Sparks, Preset::Fire] {
+                    app.editor.add_particle_layer(preset);
+                }
+                let stage = app.editor.doc.stage_rect();
+                // Spread out, with the fire (selected, last) at the bottom.
+                for (name, at) in [
+                    ("Smoke", inkframe_core::Point::new(stage.max.x * 0.75, stage.max.y * 0.85)),
+                    ("Sparks", inkframe_core::Point::new(stage.max.x * 0.25, stage.max.y * 0.65)),
+                    ("Fire", inkframe_core::Point::new(stage.center().x, stage.max.y * 0.88)),
+                ] {
+                    let id = app.editor.doc.layers.iter().find(|l| l.name == name).map(|l| l.id);
+                    if let Some(id) = id {
+                        app.editor.set_pose(id, inkframe_core::Transform::at(at));
+                    }
+                }
+                app.editor.frame = 40;
+            }
             if let Some(how) = AutoScreenshot::vectorise() {
                 if how.contains("colours") {
                     app.vectorise
@@ -612,6 +633,9 @@ impl InkframeApp {
             Command::NextDrawing => editor.cycle_drawing(1),
             Command::NewPaintLayer => {
                 editor.add_paint_layer();
+            }
+            Command::NewParticleLayer(preset) => {
+                editor.add_particle_layer(preset);
             }
             Command::NewFolder => editor.new_folder(),
             Command::CreateShapeTween => editor.set_shape_tween(true),
@@ -901,6 +925,11 @@ impl InkframeApp {
                 let traceable = VectoriseDialog::can_vectorise(&self.editor);
                 item(ui, "Vectorise…", None, Command::Vectorise, traceable);
                 item(ui, "New Paint Layer", None, Command::NewPaintLayer, true);
+                ui.menu_button("New Particle Layer", |ui| {
+                    for preset in inkframe_core::Preset::ALL {
+                        item(ui, preset.name(), None, Command::NewParticleLayer(preset), true);
+                    }
+                });
                 item(ui, "New Folder", None, Command::NewFolder, true);
                 ui.separator();
                 let hints = self.editor.shape_tween_drawings().is_some();

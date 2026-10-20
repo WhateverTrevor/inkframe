@@ -57,6 +57,7 @@ The data model and the math behind animation.
 | `morph.rs` | Shape tweens: `ShapeTween` (keyed by the drawing swap it morphs into), `Layer::morph_at` (used by `shown_elements`, so drawing, bounds and hit testing all see the morph), and `morph`: shapes to anchors, segments split until the counts match (at least 16 on a closed shape), lined up by the best rotation and direction or by shape hints (`Drawing::hints`), then blended with colours and stroke widths |
 | `palette.rs` | The colour palette: swatches that own their exact colour (every fill and stroke of it is theirs, so `set_swatch_color` recolours them all), in versions (day, night) switched with `use_palette_version`, which maps every swatch at once. `Palette` keeps swatch colours distinct within a version |
 | `warp.rs` | The free-form deformer: a grid of animated control-point offsets over a drawing's rest bounds; each point of the drawing moves by a Bézier-patch blend (Bernstein weights) of them, applied after the bone deformer in `shown_elements` |
+| `particles.rs` | Particle layers: `Emitter` (rate, emitter shape, direction and spread, speed, gravity, wind, drag, wander, lifetime, size/opacity/colour over life, spin, sprite) and `Preset`s. No simulation state: particle *i* is born at about *i*/rate and its whole life follows from the seed by formula (closed-form drag, a sine wobble), so any frame stands alone. Births are placed with `placement_without_camera` at the birth time, so particles stay in the scene when the emitter moves; `Document::particles_on_layer` maps them back onto the layer for drawing, and `particle_bounds` is the layer's bounds |
 | `vectorise.rs` | Tracing pixels into shapes (`trace`, `Document::vectorise_layer`): labels pixels (ink by brightness, or colours found as histogram peaks and settled on nearby pixels only, so anti-aliasing doesn't drag them), merges patches under the minimum area into their surroundings, traces each patch's outline and holes along pixel edges (turning right at diagonal touches, so loops never cross), fits curves through the midpoints of the pixel stairs keeping long-run corners sharp, and joins holes to outlines by zero-width slits (holes run the opposite way, and fills are by winding) |
 | `vector_fill.rs` | Ink and paint: a drawing's line art (`elements`) and colour art (`colour_art`, drawn beneath); `Layer::fill_enclosed` fills the area the lines enclose (grid flood with lines thickened to close gaps, grown back under them, outline traced and simplified) or recolours the fill already there |
 | `paint.rs` | Painted pixels: `Canvas` (256×256 premultiplied RGBA tiles, shared between undo snapshots with `Arc`), `Shape::Paint` naming a canvas, `Document::element_bounds`/`element_hit` (paint counts only painted pixels), `add_paint_layer`, `separate_canvases` (a duplicated layer or drawing gets its own canvas) |
@@ -127,7 +128,7 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 27. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 28. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
@@ -143,7 +144,8 @@ shape tweens and shape hints, version 21 the camera and layer depth, version 22 
 and filters, and version 23 animated effects (format 22's fixed ones
 move into the Effects property on load), version 24 colour art in
 drawings, version 25 the free-form deformer, version 26 master
-controllers, and version 27 pressure-sensitive pencil lines;
+controllers, version 27 pressure-sensitive pencil lines, and version 28
+particle layers (`Layer::particles`);
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 
@@ -187,6 +189,14 @@ mask layer is drawn into a second buffer of the same size, whose coverage
 becomes a stencil (`mask_stencil`) cut out of the first before it's
 blended down. Mask layers themselves are never drawn, except faintly on the
 stage while selected (`RenderOptions::show_mask`).
+
+A particle layer draws its particles instead of its drawing
+(`particles.rs`): dots as circles with a radial-gradient edge, or, when the
+layer's drawing is the particle, that drawing rasterised once at the
+largest particle's size and stamped at each particle with its opacity.
+Since this happens in `draw_layer`, opacity, blend modes, masks and
+filters apply to the particles as a whole. Motion blur blurs only the
+emitter's own movement, not each particle's.
 
 Images are drawn from an `ImageLibrary` (`images.rs`), which decodes each
 file once and keeps half-size copies (mipmaps) so shrunken pictures don't

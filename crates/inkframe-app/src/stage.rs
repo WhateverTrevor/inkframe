@@ -575,6 +575,42 @@ fn guide_label(painter: &egui::Painter, at: Pos2, anchor: Align2, text: &str, co
     painter.galley(rect.min, galley, color);
 }
 
+/// The selected particle layers' emitters: the shape particles start
+/// from, and an arrow the way they head.
+fn draw_emitters(painter: &egui::Painter, editor: &Editor, view: View) {
+    use inkframe_core::EmitterShape;
+    const EMITTER: Color32 = Color32::from_rgb(0xff, 0xa0, 0x3c);
+    for layer in editor.selected_ids().iter().filter_map(|id| editor.doc.layer(*id)) {
+        let Some(emitter) = &layer.particles else { continue };
+        let to_stage = editor.doc.layer_matrix(layer, editor.frame);
+        let at = |x: f32, y: f32| view.to_screen(to_stage.apply(Point::new(x, y)));
+        let outline: Vec<Pos2> = match emitter.shape {
+            EmitterShape::Point => Vec::new(),
+            EmitterShape::Line { length } => vec![at(-length / 2.0, 0.0), at(length / 2.0, 0.0)],
+            EmitterShape::Rect { width, height } => {
+                let (w, h) = (width / 2.0, height / 2.0);
+                vec![at(-w, -h), at(w, -h), at(w, h), at(-w, h), at(-w, -h)]
+            }
+            EmitterShape::Circle { radius } => (0..=48)
+                .map(|i| {
+                    let a = i as f32 / 48.0 * std::f32::consts::TAU;
+                    at(radius * a.cos(), radius * a.sin())
+                })
+                .collect(),
+        };
+        if outline.len() > 1 {
+            painter.add(egui::Shape::dashed_line(&outline, (1.5, EMITTER), 6.0, 4.0));
+        }
+        let centre = at(0.0, 0.0);
+        painter.circle_stroke(centre, 5.0, (1.5, EMITTER));
+        // The heading, turned with the layer as the particles are.
+        let turn = to_stage.b.atan2(to_stage.a) + view.rotation;
+        let angle = emitter.direction.to_radians() + turn;
+        let tip = centre + vec2(angle.cos(), angle.sin()) * 40.0;
+        painter.arrow(centre, tip - centre, (1.5, EMITTER));
+    }
+}
+
 /// The Camera tool's view of things: the stage's edge, which is the
 /// camera's frame, and how far it's zoomed and turned.
 fn draw_camera_frame(painter: &egui::Painter, editor: &Editor, view: View) {
@@ -969,6 +1005,7 @@ impl StageView {
             draw_registration_point(&overlay, view.to_screen(Point::ZERO));
         }
         draw_guides(&overlay, editor, view);
+        draw_emitters(&overlay, editor, view);
         self.draw_motion_path(&overlay, editor, view);
         self.draw_overlays(&overlay, editor, view, handles.as_ref());
         if editor.tool == Tool::Bone {

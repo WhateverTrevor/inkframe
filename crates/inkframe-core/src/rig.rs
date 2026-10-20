@@ -63,6 +63,19 @@ impl Document {
         self.camera_for(current, frame).pre_concat(matrix)
     }
 
+    /// Where a layer is placed through its parents, but not the camera: the
+    /// space things in the scene stay put in while the camera moves.
+    pub fn placement_without_camera(&self, layer: &Layer, frame: f32) -> Affine {
+        let mut matrix = self.own_matrix(layer, frame);
+        let mut current = layer;
+        for _ in 0..MAX_DEPTH {
+            let Some(parent) = self.parent_of(current) else { break };
+            matrix = self.own_matrix(parent, frame).pre_concat(matrix);
+            current = parent;
+        }
+        matrix
+    }
+
     /// A layer's pose and pivot, without its parents.
     fn own_matrix(&self, layer: &Layer, frame: f32) -> Affine {
         self.pose_at(layer, frame).to_affine().pre_concat(Affine::translate(Point::ZERO - layer.pivot))

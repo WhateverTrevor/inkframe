@@ -26,6 +26,8 @@
 //! * `INKFRAME_SCREENSHOT_GUIDES=safe,field` shows the safe areas, the field guide, or both.
 //! * `INKFRAME_SCREENSHOT_VECTORISE=ink` opens Vectorise on the selected layer (with
 //!   `_PAINT`, the strokes it paints), in line-art mode, or `=colours`; `,apply` vectorises.
+//! * `INKFRAME_SCREENSHOT_PARTICLES=1` adds the four particle presets on a dark stage,
+//!   with the fire selected.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -130,6 +132,11 @@ impl AutoScreenshot {
     /// and `apply` to vectorise straight away.
     pub fn vectorise() -> Option<String> {
         std::env::var("INKFRAME_SCREENSHOT_VECTORISE").ok()
+    }
+
+    /// Whether to add the particle presets.
+    pub fn particles() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_PARTICLES").is_some()
     }
 
     /// Whether to open Batch Export and start a batch.

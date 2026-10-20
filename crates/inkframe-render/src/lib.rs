@@ -12,6 +12,7 @@
 
 mod color_glyph;
 mod images;
+mod particles;
 mod path;
 mod text;
 
@@ -652,6 +653,11 @@ fn draw_layer(
     style: Style<'_>,
     depth: usize,
 ) {
+    // A particle layer's drawing is what its particles look like.
+    if layer.particles.is_some() {
+        particles::draw_particles(pixmap, doc, layer, frame, matrix, style);
+        return;
+    }
     let skia_matrix = to_skia_transform(matrix);
     // Skip shapes that can't reach this image. tiny-skia would discard them
     // too, but only after building their outlines, and with the image split

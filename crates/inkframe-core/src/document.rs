@@ -17,6 +17,7 @@ use crate::image::ImageAsset;
 use crate::morph::ShapeTween;
 use crate::paint::{Canvas, CanvasId};
 use crate::palette::Palette;
+use crate::particles::Emitter;
 use crate::shape::{Shape, Style};
 use crate::symbol::{Instance, Symbol, SymbolId};
 use crate::track::Track;
@@ -34,7 +35,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 27;
+pub const FORMAT_VERSION: u32 = 28;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -192,6 +193,10 @@ pub struct Layer {
     /// 0 is on the stage, positive further away (see `camera.rs`).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub depth: f32,
+    /// Makes this a particle layer, spraying particles (see `particles.rs`).
+    /// Its drawing, if any, is what each particle looks like.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub particles: Option<Emitter>,
     /// A colour effect and filters as format 22 stored them, before they
     /// could animate. Loading moves them into the track's Effects property
     /// (see `validate`); they're never saved.
@@ -406,6 +411,7 @@ impl Document {
             in_folder: None,
             camera: false,
             depth: 0.0,
+            particles: None,
             unanimated_color_effect: ColorEffect::None,
             unanimated_filters: Vec::new(),
         });
