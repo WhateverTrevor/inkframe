@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-    # A version tag (v0.1.0) also drafts a GitHub release; see `release`.
+    # A version tag (v0.2.0) also drafts a GitHub release; see `release`.
     tags: ["v*"]
   pull_request:
 
@@ -165,6 +165,19 @@ jobs:
       - name: Build the Windows installer
         if: runner.os == 'Windows'
         run: cargo xtask bundle-windows --ffmpeg vendor/ffmpeg/ffmpeg.exe --rhubarb vendor/rhubarb
+      - name: Check the Windows app needs no Visual C++ runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # The runtime is built in (see .cargo/config.toml), so the app runs
+          # on a PC that's never had the Visual C++ redistributable installed.
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
+          $dependents = & $dumpbin.FullName /dependents target\release\inkframe.exe | Out-String
+          Write-Output $dependents
+          if ($dependents -match '(?i)vcruntime|msvcp|api-ms-win-crt') {
+            throw "inkframe.exe still depends on the Visual C++ runtime"
+          }
       - name: Test export with the bundled ffmpeg (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
