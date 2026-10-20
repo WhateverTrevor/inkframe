@@ -800,7 +800,7 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         if key_toggle(ui, Property::Effects, keyed).clicked() {
             editor.toggle_property_key(id, Property::Effects);
         }
-        ui.strong("Effects");
+        ui.label(section_text("Effects"));
         if animated {
             ui.weak("animated");
         }
@@ -1017,7 +1017,7 @@ fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         return;
     };
 
-    ui.strong("Symbol instance");
+    section(ui, "Symbol instance");
     ui.weak("Double-click it on the stage (or Modify › Edit Symbol) to work on the layers inside.");
     egui::Grid::new("instance").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
         ui.label("Symbol");
@@ -1107,7 +1107,7 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
     let mut depth = layer.track.depth_at(frame as f32);
     let mut depth_changed = false;
 
-    ui.strong(format!("Transform at frame {}", frame + 1));
+    section(ui, format!("Transform at frame {}", frame + 1));
 
     // Scale and opacity are stored as fractions but edited as percentages,
     // which is what people expect to type.
@@ -1285,7 +1285,7 @@ fn deformer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     // The drawing as drawn, not bent, is what the bones are laid along.
     let rest_bounds = layer.elements_at(frame).iter().map(|e| e.bounds()).reduce(|a, b| a.union(b));
 
-    ui.strong("Deformer");
+    section(ui, "Deformer");
     let Some(deformer) = &mut layer.deformer else {
         let add = ui
             .add_enabled(rest_bounds.is_some(), egui::Button::new("Add Bend Deformer"))
@@ -1338,7 +1338,7 @@ fn warp_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let Some(layer) = editor.doc.layer_mut(id).filter(|l| l.instance.is_none()) else { return };
     let rest_bounds = layer.elements_at(frame).iter().map(|e| e.bounds()).reduce(|a, b| a.union(b));
 
-    ui.strong("Free-Form Deformer");
+    section(ui, "Free-Form Deformer");
     let Some(warp) = &mut layer.warp else {
         ui.horizontal(|ui| {
             for size in [3, 4] {
@@ -1384,7 +1384,7 @@ fn drawings_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let names: Vec<String> = layer.drawings.iter().map(|d| d.name.clone()).collect();
 
     ui.horizontal(|ui| {
-        ui.strong("Drawings");
+        ui.label(section_text("Drawings"));
         ui.weak("[ ] to flip through");
     });
     if names.len() == 1 {
@@ -1580,7 +1580,7 @@ fn easing_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u3
         editor.focused_property = tweens[0].0;
     }
 
-    ui.strong("Easing");
+    section(ui, "Easing");
     let mut changes = Vec::new();
     egui::Grid::new("easing").num_columns(3).spacing([8.0, 4.0]).show(ui, |ui| {
         for (property, tween) in &tweens {
@@ -2005,4 +2005,27 @@ pub fn audio_section(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEn
 /// file dialog.
 pub enum AudioAction {
     Import,
+}
+/// A section title in the properties panel: small, spaced capitals with a
+/// hairline running on to the panel's edge, so a long panel is easy to
+/// scan for the part you want.
+fn section(ui: &mut egui::Ui, title: impl Into<String>) {
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        ui.label(section_text(title));
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+        ui.painter().hline(
+            rect.x_range(),
+            rect.center().y,
+            (1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+        );
+    });
+}
+
+/// A section title's text, for titles that share their row with controls.
+fn section_text(title: impl Into<String>) -> egui::RichText {
+    egui::RichText::new(title.into().to_uppercase())
+        .size(11.0)
+        .extra_letter_spacing(0.6)
+        .color(crate::theme::TEXT_WEAK)
 }

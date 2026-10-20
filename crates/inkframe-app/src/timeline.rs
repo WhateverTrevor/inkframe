@@ -510,6 +510,19 @@ impl TimelineView {
             &audio_rows,
         );
 
+        // The row under the pointer is lightly lit, names and frames alike,
+        // so it's easy to follow a layer across to its keys.
+        if self.drag.is_none()
+            && let Some(pointer) = response.hover_pos()
+            && let Some(row) = layout.row_at(pointer.y).filter(|&row| row < rows.len())
+        {
+            let across = Rect::from_x_y_ranges(
+                layout.names.left()..=layout.frames.right(),
+                layout.row_rect(row, layout.names).y_range(),
+            );
+            painter.with_clip_rect(rect).rect_filled(across, 0.0, Color32::from_white_alpha(7));
+        }
+
         // A picked-up layer is lifted, and shows where it would land.
         if let Some(Drag::Layer { row, mode: LayerDrag::Reordering { gap }, .. }) = self.drag {
             if let Some(index) = rows.iter().position(|r| r.layer == row.layer && r.property.is_none()) {
@@ -1032,7 +1045,7 @@ impl TimelineView {
         }
 
         if rows.is_empty() {
-            let hint = "Draw on the stage to create a layer";
+            let hint = "Draw on the stage, or press + for an empty layer";
             painter.text(
                 layout.names.left_top() + vec2(10.0, 8.0),
                 Align2::LEFT_TOP,
@@ -1409,8 +1422,14 @@ fn paint_frames(painter: &egui::Painter, editor: &Editor, layout: &Layout, rows:
         painter.vline(x, layout.frames.y_range(), (1.0, Color32::from_white_alpha(alpha)));
     }
 
+    // The current frame's column, faintly tinted, then the playhead line.
+    let column = Rect::from_x_y_ranges(
+        layout.frame_x(editor.frame)..=layout.frame_x(editor.frame + 1),
+        layout.frames.y_range(),
+    );
+    painter.rect_filled(column, 0.0, PLAYHEAD.gamma_multiply(0.08));
     let x = layout.frame_center_x(editor.frame);
-    painter.vline(x, layout.frames.y_range(), (1.0, PLAYHEAD));
+    painter.vline(x, layout.frames.y_range(), (1.5, PLAYHEAD));
 }
 
 /// A layer's summary, drawn as Animate draws a layer: a bar of the layer's
@@ -1637,10 +1656,24 @@ fn paint_ruler(painter: &egui::Painter, ui: &egui::Ui, editor: &Editor, layout: 
         }
     }
 
-    // The playhead handle shows the current frame number.
+    // The playhead handle shows the current frame number: a pill, wider
+    // for longer numbers, with a point leading down into its line.
     let x = layout.frame_center_x(editor.frame);
-    let handle = Rect::from_center_size(pos2(x, ruler.center().y), vec2(26.0, ruler.height() - 4.0));
-    painter.rect_filled(handle, 3.0, PLAYHEAD);
+    let digits = (editor.frame + 1).to_string().len() as f32;
+    let handle = Rect::from_center_size(
+        pos2(x, ruler.center().y - 1.0),
+        vec2(14.0 + digits * 6.0, ruler.height() - 6.0),
+    );
+    painter.rect_filled(handle, handle.height() / 2.0, PLAYHEAD);
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            pos2(x - 4.0, handle.bottom() - 1.0),
+            pos2(x + 4.0, handle.bottom() - 1.0),
+            pos2(x, handle.bottom() + 4.0),
+        ],
+        PLAYHEAD,
+        Stroke::NONE,
+    ));
     painter.text(
         handle.center(),
         Align2::CENTER_CENTER,

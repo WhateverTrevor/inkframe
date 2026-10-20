@@ -543,6 +543,14 @@ after the Harmony features (palettes to master controllers).
     symbol). Hovering an animated card plays it in the card. Thumbnails
     are fitted to `inkframe_render::symbol_extent` (all frames).
     `IconButton` now reports its tooltip as its accessible label.
+82. Visual polish: a soft shadow under the stage (`draw_stage_shadow`,
+    built from the corners so it turns with the view), an empty-stage
+    hint (`draw_empty_stage_hint`), a pill playhead with a pointer and a
+    tinted current-frame column, a light highlight on the timeline row
+    under the pointer, and Properties section titles in small spaced
+    capitals with a hairline (`inspector::section`, `section_text`).
+    Further polish should follow the same approach: look at a
+    screenshot, fix one rough edge at a time.
 
 ## Not yet verified by hand
 

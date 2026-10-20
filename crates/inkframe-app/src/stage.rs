@@ -958,6 +958,7 @@ impl StageView {
         let view = stage_view.with_timeline(editor.timeline_transform());
 
         painter.rect_filled(area, 0.0, crate::theme::PASTEBOARD);
+        draw_stage_shadow(&painter.with_clip_rect(area), &corners);
         if !editor.doc.background.is_opaque() {
             draw_checkerboard(&painter.with_clip_rect(area), stage_view);
         }
@@ -972,7 +973,7 @@ impl StageView {
             mesh.indices.extend([0, 1, 2, 0, 2, 3]);
             painter.add(egui::Shape::mesh(mesh));
         }
-        painter.add(egui::Shape::closed_line(corners.to_vec(), (1.0, Color32::from_gray(20))));
+        painter.add(egui::Shape::closed_line(corners.to_vec(), (1.0, Color32::from_black_alpha(90))));
 
         // Switching away from the pen (or anything else that changes the tool)
         // finishes the path in progress rather than silently dropping it.
@@ -1023,6 +1024,9 @@ impl StageView {
         }
         self.draw_painting(&overlay, editor, view);
         self.draw_selection(ui, &overlay, editor, view);
+        if editor.layers().is_empty() && editor.timeline() == TimelineId::Main {
+            draw_empty_stage_hint(&overlay, &corners, editor.doc.background);
+        }
         if let Some(hit) = response.hover_pos().and_then(|p| self.outline_hit(editor, view, p)) {
             // Show where the new point would land: a hollow anchor with a plus.
             overlay.circle(hit.screen, 5.0, Color32::WHITE, (1.0, SELECTION));
@@ -3489,6 +3493,49 @@ fn asset_drop(
     if let Some(asset) = response.dnd_release_payload::<inkframe_core::Asset>() {
         editor.place_asset_at(*asset, view.to_local(pointer));
     }
+}
+
+/// A soft shadow under the stage, so the page seems to sit above the
+/// pasteboard: a few widening, fading copies of its outline, nudged down.
+/// Built from the corners rather than a rectangle so it turns with the view.
+fn draw_stage_shadow(painter: &egui::Painter, corners: &[Pos2; 4]) {
+    let center = corners.iter().fold(Vec2::ZERO, |sum, c| sum + c.to_vec2()) / 4.0;
+    for step in (1..=6).rev() {
+        let spread = step as f32 * 2.5;
+        let grown: Vec<Pos2> = corners
+            .iter()
+            .map(|&c| c + (c.to_vec2() - center).normalized() * spread + vec2(0.0, 3.0))
+            .collect();
+        let alpha = 34 - step * 5;
+        painter.add(egui::Shape::convex_polygon(
+            grown,
+            Color32::from_black_alpha(alpha as u8),
+            egui::Stroke::NONE,
+        ));
+    }
+}
+
+/// A new, empty project says how to start, in the middle of the stage, in
+/// a grey that reads on light and dark backgrounds alike.
+fn draw_empty_stage_hint(painter: &egui::Painter, corners: &[Pos2; 4], background: inkframe_core::Color) {
+    let center = corners.iter().fold(Vec2::ZERO, |sum, c| sum + c.to_vec2()) / 4.0;
+    let center = center.to_pos2();
+    let light = background.r as u32 + background.g as u32 + background.b as u32 > 3 * 128;
+    let color = if light { Color32::from_black_alpha(110) } else { Color32::from_white_alpha(110) };
+    painter.text(
+        center - vec2(0.0, 12.0),
+        Align2::CENTER_CENTER,
+        "Pick a drawing tool and draw to start",
+        egui::FontId::proportional(16.0),
+        color,
+    );
+    painter.text(
+        center + vec2(0.0, 14.0),
+        Align2::CENTER_CENTER,
+        "Or press + in the timeline for an empty layer, or try File › Open Example…",
+        egui::FontId::proportional(12.0),
+        color,
+    );
 }
 
 #[cfg(test)]
