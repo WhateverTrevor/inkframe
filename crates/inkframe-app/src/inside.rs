@@ -382,7 +382,7 @@ mod tests {
         let square = |x: f32| {
             Element {
                 shape: Shape::Rect { width: 20.0, height: 20.0, corner_radius: 0.0 },
-                style: Style { fill: Some(Color::BLACK), stroke: None },
+                style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
             }
             .transformed(Affine::translate(Point::new(x, 0.0)))
             .unwrap()
@@ -478,7 +478,7 @@ mod tests {
         // A fill under the middle square, wider than it.
         let fill = Element {
             shape: Shape::Rect { width: 40.0, height: 40.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::WHITE), stroke: None },
+            style: Style { fill: Some(Color::WHITE), stroke: None, gradient: None },
         }
         .transformed(Affine::translate(Point::new(50.0, 0.0)))
         .unwrap();

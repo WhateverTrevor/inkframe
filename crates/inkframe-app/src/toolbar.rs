@@ -56,9 +56,11 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
             ui.weak("Stroke");
             let mut stroke_color = editor.draw_style.stroke.map(|s| s.color);
             if swatch(ui, &mut stroke_color) {
+                // A new colour keeps the line's width, ends and dashes.
+                let previous = editor.draw_style.stroke;
                 editor.draw_style.stroke = stroke_color.map(|color| inkframe_core::Stroke {
                     color,
-                    width: editor.draw_style.stroke.map_or(2.0, |s| s.width),
+                    ..previous.unwrap_or(inkframe_core::Stroke::new(color, 2.0))
                 });
             }
         }

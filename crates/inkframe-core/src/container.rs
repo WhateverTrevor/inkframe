@@ -112,7 +112,7 @@ mod tests {
         doc.canvas_mut(canvas).unwrap().tile_mut((2, 1))[..4].copy_from_slice(&[0, 0, 200, 200]);
         let paint = Element {
             shape: Shape::Paint { canvas, width: 600, height: 400 },
-            style: Style { fill: None, stroke: None },
+            style: Style { fill: None, stroke: None, gradient: None },
         };
         doc.add_layer("Paint", vec![paint], 0, Transform::at(Point::ZERO));
 

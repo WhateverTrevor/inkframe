@@ -250,7 +250,7 @@ mod tests {
         let mut editor = Editor::new(Document::default());
         let dot = Element {
             shape: Shape::Ellipse { radius_x: 10.0, radius_y: 10.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         let id = editor.doc.add_layer("Ball", vec![dot], 0, Transform::default());
         editor.doc.layer_mut(id).unwrap().track.position.set(10, Point::new(100.0, 0.0));

@@ -98,7 +98,7 @@ pub use particles::{Emitter, EmitterShape, MAX_PARTICLES, Particle, Preset, Spri
 pub use psd::{Psd, PsdError, PsdLayer};
 pub use retouch::{Retouch, RetouchStroke, ToneRange};
 pub use selection::{Combine, Selection};
-pub use shape::{Path, Segment, Shape, Stroke, Style};
+pub use shape::{Dash, GradientStop, LineCap, LineJoin, Path, Segment, Shape, ShapeGradient, Stroke, Style};
 pub use symbol::{ConvertError, Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId};
 pub use template::{TEMPLATE_EXTENSION, Template};
 pub use text::{DEFAULT_FAMILY, Font, Text, TextAlign};

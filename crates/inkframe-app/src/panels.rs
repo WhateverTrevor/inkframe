@@ -414,7 +414,7 @@ mod tests {
         let mut doc = Document::default();
         let square = Element {
             shape: Shape::Rect { width: 10.0, height: 10.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         let id = doc.add_layer("Square", vec![square], 0, Transform::at(Point::new(100.0, 100.0)));
         let mut editor = Editor::new(doc);

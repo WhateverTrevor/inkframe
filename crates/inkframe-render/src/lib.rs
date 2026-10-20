@@ -779,20 +779,75 @@ fn draw_element(pixmap: &mut PixmapMut, element: &Element, matrix: Transform, st
         paint
     };
 
-    if let Some(fill) = element.style.fill {
-        pixmap.fill_path(&path, &paint_for(fill), FillRule::Winding, matrix, None);
+    let gradient = element.style.gradient.as_ref().and_then(|g| gradient_paint(g, &element.shape, tint));
+    match (gradient, element.style.fill) {
+        (Some(paint), _) => pixmap.fill_path(&path, &paint, FillRule::Winding, matrix, None),
+        (None, Some(fill)) => pixmap.fill_path(&path, &paint_for(fill), FillRule::Winding, matrix, None),
+        (None, None) => {}
     }
     if let Some(stroke) = element.style.stroke.filter(|s| s.width > 0.0) {
         let style = tiny_skia::Stroke {
             width: stroke.width,
-            // Round joins and caps suit hand-drawn strokes and avoid the
-            // spiky miter artifacts sharp pencil turns would otherwise get.
-            line_cap: LineCap::Round,
-            line_join: LineJoin::Round,
+            // Round joins and caps (the default) suit hand-drawn strokes
+            // and avoid the spiky miters sharp pencil turns would get.
+            line_cap: match stroke.cap {
+                inkframe_core::LineCap::Round => LineCap::Round,
+                inkframe_core::LineCap::Butt => LineCap::Butt,
+                inkframe_core::LineCap::Square => LineCap::Square,
+            },
+            line_join: match stroke.join {
+                inkframe_core::LineJoin::Round => LineJoin::Round,
+                inkframe_core::LineJoin::Miter => LineJoin::Miter,
+                inkframe_core::LineJoin::Bevel => LineJoin::Bevel,
+            },
+            dash: stroke.dash.and_then(|d| {
+                // A dot is a dash of (nearly) no length, which round or
+                // square caps then give its size.
+                let length = d.length.max(0.01);
+                tiny_skia::StrokeDash::new(vec![length, d.gap.max(0.01)], 0.0)
+            }),
             ..tiny_skia::Stroke::default()
         };
         pixmap.stroke_path(&path, &paint_for(stroke.color), &style, matrix, None);
     }
+}
+
+/// The paint for a gradient fill, laid over the shape's own box (see
+/// `ShapeGradient::from`). With a tint (onion skin, the light table), the
+/// stops all take the tint, keeping their transparency.
+fn gradient_paint(
+    gradient: &inkframe_core::ShapeGradient,
+    shape: &Shape,
+    tint: Option<Color>,
+) -> Option<Paint<'static>> {
+    let (from, to) = gradient.ends_in(shape.bounds());
+    let stops: Vec<tiny_skia::GradientStop> = gradient
+        .stops
+        .iter()
+        .map(|stop| {
+            let c = tint.map_or(stop.color, |t| t.with_alpha(stop.color.a));
+            tiny_skia::GradientStop::new(stop.at, tiny_skia::Color::from_rgba8(c.r, c.g, c.b, c.a))
+        })
+        .collect();
+    let (start, end) = (tiny_skia::Point::from_xy(from.x, from.y), tiny_skia::Point::from_xy(to.x, to.y));
+    let shader = match gradient.shape {
+        inkframe_core::GradientShape::Linear => {
+            tiny_skia::LinearGradient::new(start, end, stops, SpreadMode::Pad, Transform::identity())
+        }
+        inkframe_core::GradientShape::Radial => {
+            let radius = from.distance(to).max(0.01);
+            tiny_skia::RadialGradient::new(
+                start,
+                0.0,
+                start,
+                radius,
+                stops,
+                SpreadMode::Pad,
+                Transform::identity(),
+            )
+        }
+    }?;
+    Some(Paint { shader, anti_alias: true, ..Paint::default() })
 }
 
 /// Draws a picture stretched over the `width`×`height` rectangle centered on
@@ -932,7 +987,7 @@ mod tests {
         doc.background = Color::WHITE;
         let square = Element {
             shape: Shape::Rect { width: 20.0, height: 20.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None },
+            style: Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None, gradient: None },
         };
         let id = doc.add_layer("Square", vec![square], 0, Pose::at(Point::new(20.0, 50.0)));
         doc.layer_mut(id).unwrap().track.set_pose(10, Pose::at(Point::new(80.0, 50.0)));
@@ -942,6 +997,55 @@ mod tests {
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
         let c = pixmap.pixel(x, y).unwrap().demultiply();
         [c.red(), c.green(), c.blue(), c.alpha()]
+    }
+
+    /// One 80×40 shape in the middle of a white 100×100 stage.
+    fn one_shape(style: Style) -> Pixmap {
+        let mut doc = Document::default();
+        (doc.width, doc.height, doc.background) = (100, 100, Color::WHITE);
+        let shape = Element { shape: Shape::Rect { width: 80.0, height: 40.0, corner_radius: 0.0 }, style };
+        doc.add_layer("Shape", vec![shape], 0, Pose::at(Point::new(50.0, 50.0)));
+        render_frame(&doc, 0, &RenderOptions::default()).unwrap()
+    }
+
+    #[test]
+    fn gradient_fills_blend_across_the_shape() {
+        let black_to_white = inkframe_core::ShapeGradient::linear(Color::BLACK, Color::rgb(255, 255, 255));
+        let picture =
+            one_shape(Style { fill: Some(Color::BLACK), stroke: None, gradient: Some(black_to_white) });
+        let (left, middle, right) =
+            (pixel(&picture, 12, 50)[0], pixel(&picture, 50, 50)[0], pixel(&picture, 88, 50)[0]);
+        assert!(left < 20 && right > 235, "{left} … {right}");
+        assert!((110..=145).contains(&middle), "about halfway: {middle}");
+
+        // Radial: dark in the middle, light at the sides.
+        let radial = inkframe_core::ShapeGradient::radial(Color::BLACK, Color::rgb(255, 255, 255));
+        let picture = one_shape(Style { fill: Some(Color::BLACK), stroke: None, gradient: Some(radial) });
+        assert!(pixel(&picture, 50, 50)[0] < 20);
+        assert!(pixel(&picture, 89, 50)[0] > 230);
+    }
+
+    #[test]
+    fn dashed_lines_have_gaps() {
+        // Butt caps, so each dash is exactly its length (round caps would
+        // add half the width to each end).
+        let stroke = |dash| inkframe_core::Stroke {
+            dash,
+            cap: inkframe_core::LineCap::Butt,
+            ..inkframe_core::Stroke::new(Color::BLACK, 4.0)
+        };
+        let solid = one_shape(Style { fill: None, stroke: Some(stroke(None)), gradient: None });
+        let dashed = one_shape(Style {
+            fill: None,
+            stroke: Some(stroke(Some(inkframe_core::Dash { length: 8.0, gap: 8.0 }))),
+            gradient: None,
+        });
+        // Along the top edge (y 30): the solid line is dark all the way;
+        // the dashed one is white in places.
+        let dark = |p: &Pixmap| (14..86).filter(|&x| pixel(p, x, 30)[0] < 100).count();
+        assert_eq!(dark(&solid), 72);
+        let dashed_dark = dark(&dashed);
+        assert!((25..=50).contains(&dashed_dark), "about half: {dashed_dark}");
     }
 
     #[test]
@@ -993,7 +1097,7 @@ mod tests {
         let square = doc.layers[0].id;
         let blue = Element {
             shape: Shape::Rect { width: 20.0, height: 20.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::rgb(0, 0, 255)), stroke: None },
+            style: Style { fill: Some(Color::rgb(0, 0, 255)), stroke: None, gradient: None },
         };
         let other = doc.add_layer("Blue", vec![blue], 0, Pose::at(Point::new(60.0, 50.0)));
         let lit = |focus| {
@@ -1018,7 +1122,7 @@ mod tests {
         (doc.width, doc.height, doc.background) = (300, 300, Color::WHITE);
         let square = Element {
             shape: Shape::Rect { width: 40.0, height: 40.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::rgb(0, 0, 0)), stroke: None },
+            style: Style { fill: Some(Color::rgb(0, 0, 0)), stroke: None, gradient: None },
         };
         let id = doc.add_layer("Square", vec![square], 0, Pose::at(Point::new(150.0, BAND_HEIGHT as f32)));
         let blur = inkframe_core::Filter {
@@ -1087,7 +1191,7 @@ mod tests {
         (doc.width, doc.height, doc.background) = (40, 30, Color::WHITE);
         let square = Element {
             shape: Shape::Rect { width: 10.0, height: 10.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None },
+            style: Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None, gradient: None },
         };
         let id =
             doc.add_layer("Red", vec![square], 0, Pose { opacity: 0.5, ..Pose::at(Point::new(20.0, 15.0)) });
@@ -1111,7 +1215,7 @@ mod tests {
         (doc.width, doc.height, doc.background) = (10, 10, Color::WHITE);
         let fill = |r, g, b| Element {
             shape: Shape::Rect { width: 10.0, height: 10.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::rgb(r, g, b)), stroke: None },
+            style: Style { fill: Some(Color::rgb(r, g, b)), stroke: None, gradient: None },
         };
         doc.add_layer("Below", vec![fill(200, 100, 50)], 0, Pose::at(Point::new(5.0, 5.0)));
         let top = doc.add_layer("Shade", vec![fill(128, 128, 128)], 0, Pose::at(Point::new(5.0, 5.0)));
@@ -1129,7 +1233,7 @@ mod tests {
         let paint = doc.add_paint_layer(inkframe_core::TimelineId::Main, "Paint", 0).unwrap();
         let square = Element {
             shape: Shape::Rect { width: 20.0, height: 20.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::rgb(0, 0, 255)), stroke: None },
+            style: Style { fill: Some(Color::rgb(0, 0, 255)), stroke: None, gradient: None },
         };
         let shape = doc.add_layer("Square", vec![square], 0, Pose::at(Point::new(30.0, 70.0)));
         assert!(merge_down(&mut doc, shape, 0, None));
@@ -1257,7 +1361,7 @@ mod tests {
         doc.layer_mut(square).unwrap().start = 3;
         let block = |w: f32, h: f32, c: Color| Element {
             shape: Shape::Rect { width: w, height: h, corner_radius: 0.0 },
-            style: Style { fill: Some(c), stroke: None },
+            style: Style { fill: Some(c), stroke: None, gradient: None },
         };
         // Out of the others' way: they're drawn together now, so anything
         // they crossed over or under would swap places with it.
@@ -1324,7 +1428,7 @@ mod tests {
         // scratch buffer covers only part of the image.
         let mut doc = red_square_doc();
         doc.layers[0].drawings[0].elements[0].style.stroke =
-            Some(inkframe_core::Stroke { color: Color::BLACK, width: 3.0 });
+            Some(inkframe_core::Stroke::new(Color::BLACK, 3.0));
         doc.layers[0].track.rotation.set(0, 30.0);
         let mut opaque = doc.clone();
         doc.layers[0].track.opacity.set(0, 0.5);
@@ -1354,7 +1458,8 @@ mod tests {
                 shape: Shape::Ellipse { radius_x: 40.0, radius_y: 70.0 },
                 style: Style {
                     fill: Some(Color::rgba(200, 40 * (i % 6) as u8, 90, 200)),
-                    stroke: Some(inkframe_core::Stroke { color: Color::BLACK, width: 5.0 }),
+                    stroke: Some(inkframe_core::Stroke::new(Color::BLACK, 5.0)),
+                    gradient: None,
                 },
             };
             let mut pose = Pose::at(Point::new(25.0 * i as f32 + 20.0, 45.0 * i as f32 + 30.0));
@@ -1410,7 +1515,7 @@ mod tests {
         let image = doc.add_image(&path, None, (2, 1));
         let element = Element {
             shape: Shape::Image { image, width: 40.0, height: 20.0 },
-            style: Style { fill: None, stroke: None },
+            style: Style { fill: None, stroke: None, gradient: None },
         };
         doc.add_layer("Flag", vec![element], 0, Pose::at(Point::new(50.0, 50.0)));
 
@@ -1436,7 +1541,7 @@ mod tests {
         doc.layers.clear();
         let mut text = inkframe_core::Text::new("I", 80.0);
         text.font.family = "Ubuntu".into(); // bundled, so the same everywhere
-        let style = Style { fill: Some(Color::rgb(0, 0, 255)), stroke: None };
+        let style = Style { fill: Some(Color::rgb(0, 0, 255)), stroke: None, gradient: None };
         doc.add_layer(
             "Label",
             vec![Element { shape: Shape::Text(text), style }],
@@ -1466,9 +1571,11 @@ mod tests {
         let mut doc = Document::default();
         (doc.width, doc.height) = (100, 100);
         doc.background = Color::WHITE;
-        let red = Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None };
-        let page =
-            Element { shape: Shape::Rect { width: 100.0, height: 100.0, corner_radius: 0.0 }, style: red };
+        let red = Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None, gradient: None };
+        let page = Element {
+            shape: Shape::Rect { width: 100.0, height: 100.0, corner_radius: 0.0 },
+            style: red.clone(),
+        };
         let window =
             Element { shape: Shape::Rect { width: 20.0, height: 20.0, corner_radius: 0.0 }, style: red };
         doc.add_layer("Page", vec![page], 0, Pose::at(Point::new(50.0, 50.0)));
@@ -1515,7 +1622,7 @@ mod tests {
         let mut text = inkframe_core::Text::new("😀", 150.0);
         text.font.family = "Ubuntu".into(); // has no emoji, so they fall back
         // Black text: any yellow must come from the emoji's own colors.
-        let style = Style { fill: Some(Color::BLACK), stroke: None };
+        let style = Style { fill: Some(Color::BLACK), stroke: None, gradient: None };
         doc.add_layer(
             "Smile",
             vec![Element { shape: Shape::Text(text), style }],
@@ -1540,7 +1647,7 @@ mod tests {
         let mut doc = red_square_doc();
         let blue = Element {
             shape: Shape::Rect { width: 40.0, height: 40.0, corner_radius: 0.0 },
-            style: inkframe_core::Style { fill: Some(Color::rgb(0, 0, 255)), stroke: None },
+            style: inkframe_core::Style { fill: Some(Color::rgb(0, 0, 255)), stroke: None, gradient: None },
         };
         let red = doc.layers[0].id;
         let centre = doc.layer(red).map(|l| l.transform_at(0).position).unwrap();

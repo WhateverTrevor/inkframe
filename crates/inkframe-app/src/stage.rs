@@ -5,6 +5,7 @@
 //! outlines, shapes being dragged out) is painted on top with egui, because
 //! it's interface rather than artwork.
 
+mod gradient_handles;
 mod inside;
 
 use egui::{Align2, Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
@@ -836,6 +837,8 @@ pub struct StageView {
     shape_drag: Option<inside::ShapeDrag>,
     /// Undo for the text being typed into.
     typing: TypingHistory,
+    /// A gradient's end being dragged (see `gradient_handles.rs`).
+    gradient_drag: Option<gradient_handles::GradientDrag>,
 }
 
 impl Default for StageView {
@@ -856,6 +859,7 @@ impl Default for StageView {
             last_area: Rect::NOTHING,
             shape_drag: None,
             typing: TypingHistory::default(),
+            gradient_drag: None,
         }
     }
 }
@@ -881,9 +885,13 @@ impl StageView {
         // can't be filled, so it gets just a stroke, falling back to the
         // pencil's stroke if the shape style has none.
         let style = if closed {
-            editor.draw_style
+            editor.draw_style.clone()
         } else {
-            Style { fill: None, stroke: editor.draw_style.stroke.or(Some(editor.pencil_stroke)) }
+            Style {
+                fill: None,
+                stroke: editor.draw_style.stroke.or(Some(editor.pencil_stroke)),
+                gradient: None,
+            }
         };
         add_path_layer(editor, "Path", path, style);
     }
@@ -997,8 +1005,11 @@ impl StageView {
         // Typing into text takes the keyboard, and the mouse when it's on
         // the text; the tools get everything else.
         let pointer_on_text = self.handle_text_editing(ui, &response, editor, view);
-        let inside_layer = !pointer_on_text && self.handle_inside(ui, &response, editor, view);
-        if !pointer_on_text && !inside_layer {
+        // A gradient's handles come first: they sit on top of the shape.
+        let on_gradient = !pointer_on_text && self.handle_gradient(ui, &response, editor, view);
+        let inside_layer =
+            !pointer_on_text && !on_gradient && self.handle_inside(ui, &response, editor, view);
+        if !pointer_on_text && !inside_layer && !on_gradient {
             self.handle_tools(ui, &response, editor, view);
         }
         if editor.tool == Tool::Pen {
@@ -1058,6 +1069,7 @@ impl StageView {
             self.draw_inside(&overlay, editor, view);
             self.inside_cursor(ui, &response, editor, view);
         }
+        self.draw_gradient_handles(ui, &overlay, &response, editor, view);
         asset_drop(ui, &overlay, &response, editor, stage_view);
     }
 
@@ -2862,7 +2874,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
                     "Rectangle",
                 ),
             };
-            let element = Element { shape, style: editor.draw_style };
+            let element = Element { shape, style: editor.draw_style.clone() };
             editor.add_drawn_shape(name, element, rect.center());
         }
         Gesture::Pencil { points, pressures } => {
@@ -2880,7 +2892,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
                 let widths = line_widths(editor, &path, &points, &pressures);
                 add_line_layer(editor, path, widths);
             } else {
-                let style = Style { fill: None, stroke: Some(editor.pencil_stroke) };
+                let style = Style { fill: None, stroke: Some(editor.pencil_stroke), gradient: None };
                 add_path_layer(editor, "Stroke", path, style);
             }
         }
@@ -3371,7 +3383,7 @@ fn add_line_layer(editor: &mut Editor, mut path: Path, widths: Vec<f32>) {
     let Some(bounds) = StageRect::bounding(path.flatten()) else { return };
     let center = bounds.center();
     path.translate(-center);
-    let style = Style { fill: Some(editor.pencil_stroke.color), stroke: None };
+    let style = Style { fill: Some(editor.pencil_stroke.color), stroke: None, gradient: None };
     editor.add_drawn_shape("Line", Element { shape: Shape::Line { path, widths }, style }, center);
 }
 
@@ -3690,7 +3702,7 @@ mod tests {
             "Dot",
             vec![Element {
                 shape: Shape::Rect { width: 20.0, height: 20.0, corner_radius: 0.0 },
-                style: Style { fill: Some(Color::BLACK), stroke: None },
+                style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
             }],
             0,
             Transform::at(Point::new(500.0, 500.0)),
@@ -3719,7 +3731,7 @@ mod tests {
                 segments: vec![inkframe_core::Segment::Line { to: b }],
                 closed: false,
             }),
-            style: Style { fill: None, stroke: Some(Stroke { color: Color::BLACK, width: 3.0 }) },
+            style: Style { fill: None, stroke: Some(Stroke::new(Color::BLACK, 3.0)), gradient: None },
         };
         let p = Point::new;
         let lines = vec![
@@ -3929,7 +3941,7 @@ mod tests {
         let mut editor = Editor::new(Document::default());
         let square = Element {
             shape: Shape::Rect { width: 200.0, height: 200.0, corner_radius: 0.0 },
-            style: editor.draw_style,
+            style: editor.draw_style.clone(),
         };
         let id = editor.doc.add_layer("Box", vec![square], 0, Transform::at(Point::new(400.0, 400.0)));
         editor.set_frame(24);
@@ -3991,7 +4003,7 @@ mod tests {
         let mut editor = Editor::new(Document::default());
         let square = Element {
             shape: Shape::Rect { width: 200.0, height: 200.0, corner_radius: 0.0 },
-            style: Style { stroke: None, ..editor.draw_style },
+            style: Style { stroke: None, ..editor.draw_style.clone() },
         };
         let id = editor.doc.add_layer("Box", vec![square], 0, Transform::at(Point::new(400.0, 400.0)));
         editor.selection = Some(id);
@@ -4025,7 +4037,7 @@ mod tests {
         // (500, 500), which is now inside the painted stroke.
         let (mut editor, id) = editor_with_selected_box();
         editor.doc.layer_mut(id).unwrap().drawings[0].elements[0].style.stroke =
-            Some(Stroke { color: Color::BLACK, width: 40.0 });
+            Some(Stroke::new(Color::BLACK, 40.0));
         let mut h = harness(editor);
 
         let corner = screen(&h, 520.0, 520.0);
@@ -4065,7 +4077,7 @@ mod tests {
         let mut editor = Editor::new(Document::default());
         let square = Element {
             shape: Shape::Rect { width: 100.0, height: 100.0, corner_radius: 0.0 },
-            style: Style { fill: Some(inkframe_core::Color::BLACK), stroke: None },
+            style: Style { fill: Some(inkframe_core::Color::BLACK), stroke: None, gradient: None },
         };
         let a = editor.doc.add_layer("A", vec![square.clone()], 0, Transform::at(Point::new(200.0, 200.0)));
         let b = editor.doc.add_layer("B", vec![square], 0, Transform::at(Point::new(600.0, 200.0)));
@@ -4276,7 +4288,7 @@ mod tests {
         editor.set_pose(parent, Transform { rotation: 90.0, ..Transform::at(Point::new(400.0, 400.0)) });
         let small = Element {
             shape: Shape::Rect { width: 100.0, height: 100.0, corner_radius: 0.0 },
-            style: Style { stroke: None, ..editor.draw_style },
+            style: Style { stroke: None, ..editor.draw_style.clone() },
         };
         let child = editor.doc.add_layer("Hand", vec![small], 0, Transform::at(Point::new(700.0, 400.0)));
         assert!(editor.doc.set_parent(child, Some(parent), 0));
@@ -4326,9 +4338,11 @@ mod tests {
     /// picked.
     fn bone_rig() -> (Editor, LayerId, LayerId, LayerId) {
         let mut editor = Editor::new(Document::default());
-        let style = Style { stroke: None, ..editor.draw_style };
-        let rect =
-            |width, height| Element { shape: Shape::Rect { width, height, corner_radius: 0.0 }, style };
+        let style = Style { stroke: None, ..editor.draw_style.clone() };
+        let rect = |width, height| Element {
+            shape: Shape::Rect { width, height, corner_radius: 0.0 },
+            style: style.clone(),
+        };
         let doc = &mut editor.doc;
         let torso =
             doc.add_layer("Torso", vec![rect(100.0, 100.0)], 0, Transform::at(Point::new(300.0, 400.0)));
@@ -4377,7 +4391,7 @@ mod tests {
         let mut editor = Editor::new(Document::default());
         let square = Element {
             shape: Shape::Rect { width: 200.0, height: 200.0, corner_radius: 0.0 },
-            style: Style { stroke: None, ..editor.draw_style },
+            style: Style { stroke: None, ..editor.draw_style.clone() },
         };
         let id = editor.doc.add_layer("Blob", vec![square], 0, Transform::at(Point::new(400.0, 400.0)));
         let bounds = inkframe_core::Rect::from_center_size(Point::ZERO, 200.0, 200.0);
@@ -4404,7 +4418,7 @@ mod tests {
         let mut editor = Editor::new(Document::default());
         let bar = Element {
             shape: Shape::Rect { width: 200.0, height: 40.0, corner_radius: 0.0 },
-            style: Style { stroke: None, ..editor.draw_style },
+            style: Style { stroke: None, ..editor.draw_style.clone() },
         };
         let id = editor.doc.add_layer("Tail", vec![bar], 0, Transform::at(Point::new(400.0, 400.0)));
         let bounds = inkframe_core::Rect::from_center_size(Point::ZERO, 200.0, 40.0);
@@ -4980,7 +4994,7 @@ mod tests {
         let square = |x: f32| {
             Element {
                 shape: Shape::Rect { width: 80.0, height: 80.0, corner_radius: 0.0 },
-                style: Style { fill: Some(Color::BLACK), stroke: None },
+                style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
             }
             .transformed(Affine::translate(Point::new(x, 0.0)))
             .unwrap()
@@ -5073,6 +5087,29 @@ mod tests {
             h.state().1.doc.layer(id).unwrap().track.position.keys().iter().map(|k| k.value).collect();
         assert!(keys[0].distance(Point::new(400.0, 450.0)) < 1.5, "{keys:?}");
         assert!(keys[1].distance(Point::new(700.0, 450.0)) < 1.5, "the end of the move came along: {keys:?}");
+    }
+
+    #[test]
+    fn a_picked_shapes_gradient_ends_are_dragged_on_the_stage() {
+        let (mut editor, id) = editor_with_two_squares();
+        // The right square (80×80 around (500, 400) on the stage) fades
+        // left to right.
+        let gradient = inkframe_core::ShapeGradient::linear(Color::BLACK, Color::WHITE);
+        editor.doc.layer_mut(id).unwrap().drawings[0].elements[1].style.gradient = Some(gradient);
+        editor.enter_layer(id);
+        editor.pick_shapes(vec![ShapeRef::line(1)]);
+        let mut h = harness(editor);
+
+        // Its end handle is at the middle of the right side, (540, 400);
+        // drag it down to the bottom right corner.
+        let (from, to) = (screen(&h, 540.0, 400.0), screen(&h, 540.0, 440.0));
+        drag(&mut h, from, &[to]);
+        let editor = &h.state().1;
+        let square = &editor.doc.layer(id).unwrap().drawings[0].elements[1];
+        let gradient = square.style.gradient.as_ref().unwrap();
+        assert!(gradient.to.distance(Point::new(1.0, 1.0)) < 0.03, "{:?}", gradient.to);
+        assert!(gradient.from.distance(Point::new(0.0, 0.5)) < 1e-6, "the start stays");
+        assert!(square.bounds().center().distance(Point::new(100.0, 0.0)) < 1e-3, "the shape didn't move");
     }
 
     #[test]

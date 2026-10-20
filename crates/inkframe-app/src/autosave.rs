@@ -274,7 +274,7 @@ mod tests {
         editor.path = Some(project.to_owned());
         let dot = Element {
             shape: Shape::Ellipse { radius_x: 5.0, radius_y: 5.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         editor.doc.add_layer("Dot", vec![dot], 0, Transform::at(Point::new(10.0, 10.0)));
         editor

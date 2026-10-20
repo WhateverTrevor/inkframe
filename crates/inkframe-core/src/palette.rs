@@ -201,7 +201,7 @@ mod tests {
         let mut doc = Document::default();
         let face = Element {
             shape: crate::Shape::Ellipse { radius_x: 10.0, radius_y: 10.0 },
-            style: Style { fill: Some(SKIN), stroke: Some(Stroke { color: SHIRT, width: 2.0 }) },
+            style: Style { fill: Some(SKIN), stroke: Some(Stroke::new(SHIRT, 2.0)), gradient: None },
         };
         doc.add_layer("Face", vec![face], 0, Transform::default());
         doc.add_swatch("Skin", SKIN);
@@ -210,7 +210,7 @@ mod tests {
     }
 
     fn face_style(doc: &Document) -> Style {
-        doc.layers[0].drawings[0].elements[0].style
+        doc.layers[0].drawings[0].elements[0].style.clone()
     }
 
     #[test]

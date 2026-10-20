@@ -194,7 +194,7 @@ mod tests {
     fn shape(width: f32) -> Element {
         Element {
             shape: Shape::Rect { width, height: 10.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         }
     }
 

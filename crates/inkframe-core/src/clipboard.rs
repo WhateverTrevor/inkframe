@@ -333,7 +333,7 @@ mod tests {
     fn square() -> Element {
         Element {
             shape: Shape::Rect { width: 10.0, height: 10.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         }
     }
 
@@ -414,7 +414,7 @@ mod tests {
         let shape = Shape::Image { image, width: 8.0, height: 8.0 };
         let id = source.add_layer(
             "Sky",
-            vec![Element { shape, style: Style { fill: None, stroke: None } }],
+            vec![Element { shape, style: Style { fill: None, stroke: None, gradient: None } }],
             0,
             Transform::default(),
         );

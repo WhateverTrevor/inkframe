@@ -318,9 +318,13 @@ impl crate::Element {
             let (anchors, closed) = self.shape.to_anchors();
             Shape::Path(path_from_anchors(&map(anchors), closed)?)
         };
-        let mut style = self.style;
+        let mut style = self.style.clone();
         if let Some(stroke) = &mut style.stroke {
             stroke.width *= m.average_scale();
+            if let Some(dash) = &mut stroke.dash {
+                dash.length *= m.average_scale();
+                dash.gap *= m.average_scale();
+            }
         }
         Some(crate::Element { shape, style })
     }
@@ -476,7 +480,7 @@ mod tests {
         use crate::{Affine, Color, Element, Style};
         let square = Element {
             shape: Shape::Rect { width: 20.0, height: 10.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         let moved = square.transformed(Affine::translate(Point::new(100.0, 50.0))).unwrap();
         assert!(matches!(moved.shape, Shape::Path(_)), "a rectangle becomes a path");

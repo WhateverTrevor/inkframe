@@ -79,9 +79,10 @@ impl Layer {
             drawing.colour_art[i].style.fill = Some(color);
             return FillResult::Recoloured;
         }
-        drawing
-            .colour_art
-            .push(Element { shape: Shape::Path(path), style: Style { fill: Some(color), stroke: None } });
+        drawing.colour_art.push(Element {
+            shape: Shape::Path(path),
+            style: Style { fill: Some(color), stroke: None, gradient: None },
+        });
         FillResult::Filled
     }
 }
@@ -325,7 +326,7 @@ mod tests {
     fn square_lines(gap: f32) -> Vec<Element> {
         let line = |a: Point, b: Point| Element {
             shape: Shape::Path(Path { start: a, segments: vec![Segment::Line { to: b }], closed: false }),
-            style: Style { fill: None, stroke: Some(Stroke { color: Color::BLACK, width: 2.0 }) },
+            style: Style { fill: None, stroke: Some(Stroke::new(Color::BLACK, 2.0)), gradient: None },
         };
         let p = Point::new;
         vec![

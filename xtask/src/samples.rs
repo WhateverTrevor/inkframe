@@ -28,7 +28,7 @@ pub fn write_all(dir: &Path) -> Result<(), String> {
 }
 
 fn filled(shape: Shape, color: Color) -> Element {
-    Element { shape, style: Style { fill: Some(color), stroke: None } }
+    Element { shape, style: Style { fill: Some(color), stroke: None, gradient: None } }
 }
 
 fn block(width: f32, height: f32, corner_radius: f32, color: Color) -> Element {
@@ -120,8 +120,8 @@ fn particles() -> Document {
 fn ink_and_paint() -> Document {
     let mut doc = Document::default();
     doc.background = Color::rgb(245, 240, 228);
-    let ink = Style { fill: None, stroke: Some(Stroke { color: Color::rgb(40, 34, 40), width: 5.0 }) };
-    let line = |outline: Outline| Element { shape: Shape::Path(outline), style: ink };
+    let ink = Style { fill: None, stroke: Some(Stroke::new(Color::rgb(40, 34, 40), 5.0)), gradient: None };
+    let line = |outline: Outline| Element { shape: Shape::Path(outline), style: ink.clone() };
 
     // Drawn around the flower's middle; the stem reaches down to (0, 420).
     let centre = Point::ZERO;

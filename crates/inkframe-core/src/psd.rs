@@ -494,7 +494,7 @@ impl crate::Document {
             }
             let paint = crate::Element {
                 shape: crate::Shape::Paint { canvas, width: psd.width, height: psd.height },
-                style: crate::Style { fill: None, stroke: None },
+                style: crate::Style { fill: None, stroke: None, gradient: None },
             };
             let transform =
                 crate::Transform { opacity: layer.opacity as f32 / 255.0, ..crate::Transform::at(center) };

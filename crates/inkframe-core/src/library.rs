@@ -220,7 +220,7 @@ mod tests {
         let Asset::Image(id) = image else { unreachable!() };
         let picture = crate::Element {
             shape: Shape::Image { image: id, width: 64.0, height: 32.0 },
-            style: Style { fill: None, stroke: None },
+            style: Style { fill: None, stroke: None, gradient: None },
         };
         let layer = doc.add_layer("Sky", vec![picture], 0, Transform::default());
         assert!(!doc.remove_asset(image));

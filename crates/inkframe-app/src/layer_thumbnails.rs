@@ -130,7 +130,7 @@ mod tests {
         let mut doc = Document::default();
         let square = Element {
             shape: Shape::Rect { width: 400.0, height: 400.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None },
+            style: Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None, gradient: None },
         };
         let id = doc.add_layer("Square", vec![square], 0, Transform::at(Point::new(960.0, 540.0)));
         (Editor::new(doc), id)

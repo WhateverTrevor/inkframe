@@ -347,9 +347,10 @@ impl Editor {
             tool: Tool::Select,
             draw_style: Style {
                 fill: Some(Color::rgb(0x3d, 0x8b, 0xfd)),
-                stroke: Some(Stroke { color: Color::rgb(0x1a, 0x1a, 0x1a), width: 2.0 }),
+                stroke: Some(Stroke::new(Color::rgb(0x1a, 0x1a, 0x1a), 2.0)),
+                gradient: None,
             },
-            pencil_stroke: Stroke { color: Color::rgb(0x1a, 0x1a, 0x1a), width: 4.0 },
+            pencil_stroke: Stroke::new(Color::rgb(0x1a, 0x1a, 0x1a), 4.0),
             paint_color: Color::rgb(0x1a, 0x1a, 0x1a),
             close_gaps: 4.0,
             draw_into_layer: true,
@@ -500,7 +501,7 @@ impl Editor {
                 let fit = (self.doc.width as f32 / width).min(self.doc.height as f32 / height).min(1.0);
                 let element = Element {
                     shape: Shape::Image { image, width: width * fit, height: height * fit },
-                    style: Style { fill: None, stroke: None },
+                    style: Style { fill: None, stroke: None, gradient: None },
                 };
                 let name = asset.name.clone();
                 let taken = self.layers().iter().any(|l| l.name == name);
@@ -564,7 +565,7 @@ impl Editor {
     pub fn add_text(&mut self, at: Point) -> Option<LayerId> {
         let element = Element {
             shape: Shape::Text(Text::new("", 48.0)),
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         let name = self.doc.next_layer_name_in(self.timeline(), "Text");
         self.add_named_layer(name, element, at);
@@ -681,7 +682,7 @@ impl Editor {
         }
         let width = self.draw_style.stroke.map_or(2.0, |s| s.width);
         if stroke {
-            self.draw_style.stroke = Some(Stroke { color, width });
+            self.draw_style.stroke = Some(Stroke::new(color, width));
         } else {
             self.draw_style.fill = Some(color);
         }
@@ -694,7 +695,7 @@ impl Editor {
                 }
                 if stroke {
                     let width = element.style.stroke.map_or(width, |s| s.width);
-                    element.style.stroke = Some(Stroke { color, width });
+                    element.style.stroke = Some(Stroke::new(color, width));
                 } else {
                     element.style.fill = Some(color);
                 }
@@ -1727,7 +1728,7 @@ mod tests {
         let mut editor = Editor::new(Document::default());
         let square = |size: f32| Element {
             shape: Shape::Rect { width: size, height: size, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         let scene =
             editor.doc.add_layer("Scene", vec![square(400.0)], 0, Transform::at(Point::new(200.0, 200.0)));
@@ -1746,7 +1747,7 @@ mod tests {
         let mut editor = Editor::new(Document::default());
         let square = Element {
             shape: Shape::Rect { width: 10.0, height: 10.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         let id = editor.doc.add_layer("Box", vec![square], 0, Transform::at(Point::new(100.0, 100.0)));
         editor.selection = Some(id);
@@ -1900,7 +1901,7 @@ mod tests {
         let (mut editor, id) = editor_with_layer();
         let dot = Element {
             shape: Shape::Ellipse { radius_x: 5.0, radius_y: 5.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         editor.doc.layer_mut(id).unwrap().drawings[0].elements.push(dot.clone());
         editor.set_frame(3);
@@ -1925,7 +1926,7 @@ mod tests {
 
         let dot = Element {
             shape: Shape::Ellipse { radius_x: 10.0, radius_y: 10.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         editor.add_drawn_shape("Oval", dot, Point::new(460.0, 400.0));
 
@@ -1947,7 +1948,7 @@ mod tests {
         let before = shapes(&editor);
         let dot = Element {
             shape: Shape::Ellipse { radius_x: 10.0, radius_y: 10.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         editor.add_drawn_shape("Oval", dot.clone(), Point::new(460.0, 400.0));
         assert_eq!(editor.layers().len(), layers, "no new layer");
@@ -2016,7 +2017,7 @@ mod tests {
 
         let dot = Element {
             shape: Shape::Ellipse { radius_x: 10.0, radius_y: 10.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         editor.add_drawn_shape("Oval", dot, Point::new(100.0, 100.0));
         let layer = editor.doc.layer(new).unwrap();
@@ -2113,7 +2114,7 @@ mod tests {
         editor.enter_symbol(symbol, 0);
         let shape = Element {
             shape: inkframe_core::Shape::Ellipse { radius_x: 5.0, radius_y: 5.0 },
-            style: editor.draw_style,
+            style: editor.draw_style.clone(),
         };
         editor.add_drawn_shape("Oval", shape, Point::ZERO);
 
@@ -2171,7 +2172,7 @@ mod tests {
         use inkframe_core::{Color, Element, Style};
         let square = Element {
             shape: Shape::Rect { width: 100.0, height: 100.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         let mut doc = Document::default();
         let id = doc.add_layer("Morph", vec![square], 0, inkframe_core::Transform::default());

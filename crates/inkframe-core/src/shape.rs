@@ -86,16 +86,173 @@ impl Segment {
 }
 
 /// How a shape is painted.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Style {
+    /// The colour inside. With a gradient, it's what the gradient starts
+    /// from, and what everything that wants one colour (the paint bucket,
+    /// hit-testing, palettes) goes by.
     pub fill: Option<Color>,
     pub stroke: Option<Stroke>,
+    /// A gradient painted inside instead of the flat fill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gradient: Option<ShapeGradient>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Stroke {
     pub color: Color,
     pub width: f32,
+    /// How open ends finish.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub cap: LineCap,
+    /// How corners are drawn.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub join: LineJoin,
+    /// Broken into dashes (or dots, with round caps and a short length).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dash: Option<Dash>,
+}
+
+impl Stroke {
+    /// A plain line: round ends and corners, not dashed.
+    pub fn new(color: Color, width: f32) -> Self {
+        Self { color, width, cap: LineCap::default(), join: LineJoin::default(), dash: None }
+    }
+}
+
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
+}
+
+/// How a line's open ends finish.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LineCap {
+    /// Rounded off past the end, as a pen would. What every line had before
+    /// there was a choice.
+    #[default]
+    Round,
+    /// Cut square at the end.
+    Butt,
+    /// Squared off half the line's width past the end.
+    Square,
+}
+
+/// How a line turns its corners.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LineJoin {
+    #[default]
+    Round,
+    /// Sharp, as far as a point can reach.
+    Miter,
+    /// Cut off flat.
+    Bevel,
+}
+
+/// A dashed line: each dash `length` long, then a `gap`, both in the
+/// shape's units. A dash of nearly nothing with round caps makes dots.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Dash {
+    pub length: f32,
+    pub gap: f32,
+}
+
+impl Dash {
+    pub fn dashed(width: f32) -> Self {
+        Self { length: width * 3.0, gap: width * 2.0 }
+    }
+
+    /// Dots one line-width apart, given round caps.
+    pub fn dotted(width: f32) -> Self {
+        Self { length: 0.0, gap: width * 2.0 }
+    }
+
+    pub fn is_dotted(&self) -> bool {
+        self.length <= f32::EPSILON
+    }
+}
+
+/// A fill that blends between colours across a shape, as Animate's linear
+/// and radial gradients do.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ShapeGradient {
+    #[serde(default)]
+    pub shape: crate::GradientShape,
+    /// The colours, each at a place from 0 (the start) to 1 (the end),
+    /// in order.
+    pub stops: Vec<GradientStop>,
+    /// Where it starts and ends, as fractions of the shape's box: (0, 0) is
+    /// its top left and (1, 1) its bottom right. Kept relative so the
+    /// gradient follows the shape when it's moved, resized or reshaped. A
+    /// radial gradient is centred on `from` and reaches its last colour at
+    /// `to`.
+    pub from: Point,
+    pub to: Point,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct GradientStop {
+    pub at: f32,
+    pub color: Color,
+}
+
+impl ShapeGradient {
+    /// Left to right across the shape, from `start` to `end`.
+    pub fn linear(start: Color, end: Color) -> Self {
+        Self {
+            shape: crate::GradientShape::Linear,
+            stops: vec![GradientStop { at: 0.0, color: start }, GradientStop { at: 1.0, color: end }],
+            from: Point::new(0.0, 0.5),
+            to: Point::new(1.0, 0.5),
+        }
+    }
+
+    /// From the middle of the shape out to its sides.
+    pub fn radial(start: Color, end: Color) -> Self {
+        Self {
+            shape: crate::GradientShape::Radial,
+            from: Point::new(0.5, 0.5),
+            to: Point::new(1.0, 0.5),
+            ..Self::linear(start, end)
+        }
+    }
+
+    /// The start and end in the shape's own coordinates, given its box.
+    pub fn ends_in(&self, bounds: Rect) -> (Point, Point) {
+        let place =
+            |p: Point| Point::new(bounds.min.x + p.x * bounds.width(), bounds.min.y + p.y * bounds.height());
+        (place(self.from), place(self.to))
+    }
+
+    /// The colour at `t` along it (0 to 1), blending between the stops.
+    pub fn color_at(&self, t: f32) -> Color {
+        let (Some(first), Some(last)) = (self.stops.first(), self.stops.last()) else { return Color::BLACK };
+        if t <= first.at {
+            return first.color;
+        }
+        if t >= last.at {
+            return last.color;
+        }
+        let next = self.stops.partition_point(|s| s.at <= t);
+        let (a, b) = (self.stops[next - 1], self.stops[next]);
+        let f = (t - a.at) / (b.at - a.at).max(1e-6);
+        let mix = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * f).round() as u8;
+        Color {
+            r: mix(a.color.r, b.color.r),
+            g: mix(a.color.g, b.color.g),
+            b: mix(a.color.b, b.color.b),
+            a: mix(a.color.a, b.color.a),
+        }
+    }
+
+    /// Keeps the stops in order and within 0 to 1, after editing.
+    pub fn tidy(&mut self) {
+        for stop in &mut self.stops {
+            stop.at = stop.at.clamp(0.0, 1.0);
+        }
+        self.stops.sort_by(|a, b| a.at.total_cmp(&b.at));
+    }
 }
 
 impl Path {
@@ -307,7 +464,7 @@ fn point_in_polygon(p: Point, polygon: &[Point]) -> bool {
 mod tests {
     use super::*;
 
-    const FILLED: Style = Style { fill: Some(Color::BLACK), stroke: None };
+    const FILLED: Style = Style { fill: Some(Color::BLACK), stroke: None, gradient: None };
 
     fn triangle() -> Path {
         Path {
@@ -344,7 +501,7 @@ mod tests {
 
     #[test]
     fn unfilled_path_only_hits_near_the_line() {
-        let stroked = Style { fill: None, stroke: Some(Stroke { color: Color::BLACK, width: 2.0 }) };
+        let stroked = Style { fill: None, stroke: Some(Stroke::new(Color::BLACK, 2.0)), gradient: None };
         let shape = Shape::Path(triangle());
         assert!(!shape.hit_test(Point::new(2.0, 2.0), &stroked, 0.0));
         assert!(shape.hit_test(Point::new(5.0, 0.5), &stroked, 0.0));

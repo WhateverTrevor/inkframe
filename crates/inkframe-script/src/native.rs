@@ -731,11 +731,9 @@ fn shape(ctx: &Ctx<'_>, spec: &Value) -> rquickjs::Result<Option<Element>> {
     };
     let stroke = match &spec["stroke"] {
         Value::Null => None,
-        v => {
-            Some(Stroke { color: color(ctx, v)?, width: spec["strokeWidth"].as_f64().unwrap_or(2.0) as f32 })
-        }
+        v => Some(Stroke::new(color(ctx, v)?, spec["strokeWidth"].as_f64().unwrap_or(2.0) as f32)),
     };
-    Ok(Some(Element { shape, style: Style { fill, stroke } }))
+    Ok(Some(Element { shape, style: Style { fill, stroke, gradient: None } }))
 }
 
 /// A project file path a script named, which must be an `.inkf` file.

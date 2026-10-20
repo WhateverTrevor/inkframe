@@ -166,6 +166,10 @@ fn vanish(element: &Element, amount: f32) -> Option<Element> {
     let style = Style {
         fill: element.style.fill.map(fade),
         stroke: element.style.stroke.map(|s| Stroke { color: fade(s.color), ..s }),
+        gradient: element.style.gradient.clone().map(|mut g| {
+            g.stops.iter_mut().for_each(|stop| stop.color = fade(stop.color));
+            g
+        }),
     };
     Some(Element { shape: Shape::Path(path_from_anchors(&shrunk, closed)?), style })
 }
@@ -382,10 +386,49 @@ fn blend_style(a: &Style, b: &Style, t: f32) -> Style {
                 (Some(s), None) | (None, Some(s)) => s.width,
                 (None, None) => 0.0,
             };
-            blend(x.map(|s| s.color), y.map(|s| s.color)).map(|color| Stroke { color, width })
+            // Ends, corners and dashes can't blend; they switch halfway.
+            let look = if t < 0.5 { x.or(y) } else { y.or(x) };
+            blend(x.map(|s| s.color), y.map(|s| s.color)).map(|color| Stroke {
+                color,
+                width,
+                ..look.unwrap_or(Stroke::new(color, width))
+            })
         }
     };
-    Style { fill: blend(a.fill, b.fill), stroke }
+    Style { fill: blend(a.fill, b.fill), stroke, gradient: blend_gradient(a, b, t) }
+}
+
+/// A gradient partway between two shapes' fills: blended stop by stop when
+/// both have one of the same kind with as many stops, otherwise whichever
+/// is nearer.
+fn blend_gradient(a: &Style, b: &Style, t: f32) -> Option<crate::ShapeGradient> {
+    match (&a.gradient, &b.gradient) {
+        (Some(x), Some(y)) if x.shape == y.shape && x.stops.len() == y.stops.len() => {
+            let mix = |p: Point, q: Point| p + (q - p) * t;
+            let stops = x
+                .stops
+                .iter()
+                .zip(&y.stops)
+                .map(|(p, q)| crate::GradientStop {
+                    at: p.at + (q.at - p.at) * t,
+                    color: lerp_color(p.color, q.color, t),
+                })
+                .collect();
+            Some(crate::ShapeGradient {
+                shape: x.shape,
+                stops,
+                from: mix(x.from, y.from),
+                to: mix(x.to, y.to),
+            })
+        }
+        (x, y) => {
+            if t < 0.5 {
+                x.clone()
+            } else {
+                y.clone()
+            }
+        }
+    }
 }
 
 fn lerp_color(a: Color, b: Color, t: f32) -> Color {
@@ -399,7 +442,7 @@ mod tests {
     use crate::{Drawing, Rect};
 
     fn element(shape: Shape, fill: Color) -> Element {
-        Element { shape, style: Style { fill: Some(fill), stroke: None } }
+        Element { shape, style: Style { fill: Some(fill), stroke: None, gradient: None } }
     }
 
     fn square(side: f32) -> Element {

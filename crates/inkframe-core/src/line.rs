@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn a_line_is_hit_on_its_body_and_not_beside_it() {
         let line = straight(vec![10.0, 10.0]);
-        let style = Style { fill: Some(Color::BLACK), stroke: None };
+        let style = Style { fill: Some(Color::BLACK), stroke: None, gradient: None };
         assert!(line.hit_test(Point::new(50.0, 3.0), &style, 0.0));
         assert!(!line.hit_test(Point::new(50.0, 8.0), &style, 0.0));
     }

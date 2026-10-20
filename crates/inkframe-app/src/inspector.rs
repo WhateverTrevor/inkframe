@@ -150,33 +150,7 @@ fn drawing_target(ui: &mut egui::Ui, editor: &mut Editor) {
 
 /// Fill, stroke and stroke width for the shapes the drawing tools make.
 fn shape_style(ui: &mut egui::Ui, editor: &mut Editor) {
-    let style = &mut editor.draw_style;
-    egui::Grid::new("shape_style").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-        ui.label("Fill");
-        ui.horizontal(|ui| {
-            let mut on = style.fill.is_some();
-            if ui.checkbox(&mut on, "").changed() {
-                style.fill = on.then_some(style.fill.unwrap_or(Color::BLACK));
-            }
-            if let Some(fill) = &mut style.fill {
-                color_button(ui, fill);
-            }
-        });
-        ui.end_row();
-        ui.label("Stroke");
-        ui.horizontal(|ui| {
-            let mut on = style.stroke.is_some();
-            if ui.checkbox(&mut on, "").changed() {
-                style.stroke =
-                    on.then_some(style.stroke.unwrap_or(Stroke { color: Color::BLACK, width: 2.0 }));
-            }
-            if let Some(stroke) = &mut style.stroke {
-                color_button(ui, &mut stroke.color);
-                ui.add(DragValue::new(&mut stroke.width).range(0.1..=200.0).speed(0.1).suffix(" px"));
-            }
-        });
-        ui.end_row();
-    });
+    style_editor(ui, &mut editor.draw_style);
 }
 
 /// The document settings on their own, for a Document area.
@@ -1912,36 +1886,187 @@ fn shape_size_editor(ui: &mut egui::Ui, shape: &mut Shape) {
 /// Fill and stroke controls. Shared by selected shapes and the default
 /// style for new shapes.
 pub fn style_editor(ui: &mut egui::Ui, style: &mut Style) {
+    use inkframe_core::{Dash, GradientShape, LineCap, LineJoin, ShapeGradient};
     egui::Grid::new("style").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        // Fill: none, a colour, or a gradient (see `ShapeGradient`).
         ui.label("Fill");
-        optional_color(ui, &mut style.fill, Color::rgb(0x3d, 0x8b, 0xfd));
+        ui.horizontal(|ui| {
+            let mut on = style.fill.is_some() || style.gradient.is_some();
+            if ui.checkbox(&mut on, "").changed() {
+                style.fill = on.then_some(style.fill.unwrap_or(Color::rgb(0x3d, 0x8b, 0xfd)));
+                if !on {
+                    style.gradient = None;
+                }
+            }
+            if !on {
+                return;
+            }
+            let kind = style.gradient.as_ref().map(|g| g.shape);
+            let label = match kind {
+                None => "Solid",
+                Some(GradientShape::Linear) => "Linear",
+                Some(GradientShape::Radial) => "Radial",
+            };
+            let base = style.fill.unwrap_or(Color::BLACK);
+            egui::ComboBox::from_id_salt("fill_kind").selected_text(label).width(80.0).show_ui(ui, |ui| {
+                if ui.selectable_label(kind.is_none(), "Solid").clicked() {
+                    style.gradient = None;
+                }
+                for (shape, name) in [(GradientShape::Linear, "Linear"), (GradientShape::Radial, "Radial")] {
+                    if ui.selectable_label(kind == Some(shape), name).clicked() && kind != Some(shape) {
+                        // Switching between the two keeps the colours; from
+                        // solid it fades the fill colour out to white.
+                        let stops = style.gradient.take().map(|g| g.stops);
+                        let mut gradient = match shape {
+                            GradientShape::Linear => ShapeGradient::linear(base, Color::WHITE),
+                            GradientShape::Radial => ShapeGradient::radial(base, Color::WHITE),
+                        };
+                        if let Some(stops) = stops {
+                            gradient.stops = stops;
+                        }
+                        style.gradient = Some(gradient);
+                    }
+                }
+            });
+            if style.gradient.is_none()
+                && let Some(fill) = &mut style.fill
+            {
+                color_button(ui, fill);
+            }
+        });
         ui.end_row();
+        if let Some(gradient) = &mut style.gradient {
+            ui.label("");
+            ui.vertical(|ui| {
+                gradient_stops(ui, gradient);
+                ui.weak("To move its ends, double-click the shape on the stage, then click it.");
+            });
+            ui.end_row();
+            // What wants one colour (the bucket, palettes) goes by the first.
+            style.fill = gradient.stops.first().map(|s| s.color);
+        }
 
         ui.label("Stroke");
         ui.horizontal(|ui| {
-            let mut enabled = style.stroke.is_some();
-            if ui.checkbox(&mut enabled, "").changed() {
-                style.stroke = enabled.then_some(Stroke { color: Color::BLACK, width: 2.0 });
+            let mut on = style.stroke.is_some();
+            if ui.checkbox(&mut on, "").changed() {
+                style.stroke = on.then_some(style.stroke.unwrap_or(Stroke::new(Color::BLACK, 2.0)));
             }
             if let Some(stroke) = &mut style.stroke {
                 color_button(ui, &mut stroke.color);
-                ui.add(DragValue::new(&mut stroke.width).range(0.0..=200.0).speed(0.1).suffix(" px"));
+                ui.add(DragValue::new(&mut stroke.width).range(0.1..=200.0).speed(0.1).suffix(" px"));
+            }
+        });
+        ui.end_row();
+        let Some(stroke) = &mut style.stroke else { return };
+
+        ui.label("Ends");
+        let caps = [(LineCap::Round, "Round"), (LineCap::Butt, "Flat"), (LineCap::Square, "Square")];
+        choice(ui, "stroke_cap", &mut stroke.cap, &caps);
+        ui.end_row();
+        ui.label("Corners");
+        let joins = [(LineJoin::Round, "Round"), (LineJoin::Miter, "Sharp"), (LineJoin::Bevel, "Bevelled")];
+        choice(ui, "stroke_join", &mut stroke.join, &joins);
+        ui.end_row();
+
+        ui.label("Line");
+        ui.horizontal(|ui| {
+            #[derive(Clone, Copy, PartialEq)]
+            enum Kind {
+                Solid,
+                Dashed,
+                Dotted,
+            }
+            let kind = match stroke.dash {
+                None => Kind::Solid,
+                Some(dash) if dash.is_dotted() => Kind::Dotted,
+                Some(_) => Kind::Dashed,
+            };
+            let mut chosen = kind;
+            choice(
+                ui,
+                "stroke_dash",
+                &mut chosen,
+                &[(Kind::Solid, "Solid"), (Kind::Dashed, "Dashed"), (Kind::Dotted, "Dotted")],
+            );
+            if chosen != kind {
+                stroke.dash = match chosen {
+                    Kind::Solid => None,
+                    Kind::Dashed => Some(Dash::dashed(stroke.width)),
+                    Kind::Dotted => {
+                        // Dots need round ends to be dots.
+                        stroke.cap = LineCap::Round;
+                        Some(Dash::dotted(stroke.width))
+                    }
+                };
+            }
+            if let Some(dash) = &mut stroke.dash {
+                if !dash.is_dotted() {
+                    ui.add(DragValue::new(&mut dash.length).range(0.5..=500.0).speed(0.2).prefix("dash "));
+                }
+                ui.add(DragValue::new(&mut dash.gap).range(0.5..=500.0).speed(0.2).prefix("gap "));
             }
         });
         ui.end_row();
     });
 }
 
-/// A checkbox that turns a color on or off, plus the color button.
-fn optional_color(ui: &mut egui::Ui, color: &mut Option<Color>, default: Color) {
-    ui.horizontal(|ui| {
-        let mut enabled = color.is_some();
-        if ui.checkbox(&mut enabled, "").changed() {
-            *color = enabled.then_some(default);
+/// A drop-down to pick one of a few named values.
+fn choice<T: Copy + PartialEq>(ui: &mut egui::Ui, id: &str, value: &mut T, options: &[(T, &str)]) {
+    let current = options.iter().find(|(v, _)| v == value).map_or("", |(_, name)| *name);
+    egui::ComboBox::from_id_salt(id).selected_text(current).width(90.0).show_ui(ui, |ui| {
+        for &(option, name) in options {
+            ui.selectable_value(value, option, name);
         }
-        if let Some(c) = color {
-            color_button(ui, c);
+    });
+}
+
+/// A gradient's colours: each stop's colour and place along it, with
+/// buttons to add one, take one away, or turn the gradient round.
+fn gradient_stops(ui: &mut egui::Ui, gradient: &mut inkframe_core::ShapeGradient) {
+    ui.vertical(|ui| {
+        let mut remove = None;
+        let count = gradient.stops.len();
+        for (i, stop) in gradient.stops.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                color_button(ui, &mut stop.color);
+                let mut percent = stop.at * 100.0;
+                if ui.add(DragValue::new(&mut percent).range(0.0..=100.0).speed(0.5).suffix("%")).changed() {
+                    stop.at = percent / 100.0;
+                }
+                // A gradient needs two colours to be one.
+                if count > 2 && ui.small_button("×").on_hover_text("Remove this colour").clicked() {
+                    remove = Some(i);
+                }
+            });
         }
+        if let Some(i) = remove {
+            gradient.stops.remove(i);
+        }
+        ui.horizontal(|ui| {
+            if ui
+                .small_button("+ Colour")
+                .on_hover_text("Add a colour halfway along the widest gap")
+                .clicked()
+            {
+                let widest = gradient
+                    .stops
+                    .windows(2)
+                    .enumerate()
+                    .max_by(|a, b| (a.1[1].at - a.1[0].at).total_cmp(&(b.1[1].at - b.1[0].at)));
+                if let Some((i, pair)) = widest {
+                    let at = (pair[0].at + pair[1].at) / 2.0;
+                    let color = gradient.color_at(at);
+                    gradient.stops.insert(i + 1, inkframe_core::GradientStop { at, color });
+                }
+            }
+            if ui.small_button("Reverse").on_hover_text("Swap the start and end colours").clicked() {
+                for stop in &mut gradient.stops {
+                    stop.at = 1.0 - stop.at;
+                }
+            }
+        });
+        gradient.tidy();
     });
 }
 
