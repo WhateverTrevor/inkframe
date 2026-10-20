@@ -10,6 +10,7 @@
 mod adjust_dialog;
 mod app;
 mod audio_engine;
+mod autosave;
 mod batch_dialog;
 mod cli;
 mod convert;

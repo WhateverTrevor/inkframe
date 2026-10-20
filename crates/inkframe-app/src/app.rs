@@ -9,6 +9,7 @@ use inkframe_render::IMAGE_EXTENSIONS;
 
 use crate::adjust_dialog::{AdjustDialog, AdjustmentKind};
 use crate::audio_engine::AudioEngine;
+use crate::autosave::{Autosave, Recovery};
 use crate::batch_dialog::BatchDialog;
 use crate::editor::{Editor, Tool};
 use crate::export_dialog::ExportDialog;
@@ -144,6 +145,11 @@ pub struct InkframeApp {
     saved_layout: Layout,
     /// The settings last saved for next time (see `prefs.rs`).
     saved_prefs: Prefs,
+    /// Copies unsaved work for crash recovery; `None` in screenshot runs.
+    autosave: Option<Autosave>,
+    /// Work left behind by an Inkframe that didn't close properly, offered
+    /// back when Inkframe starts.
+    recoveries: Vec<Recovery>,
     /// The editors in the areas that keep state of their own.
     views: Views,
     /// The area under the pointer last frame, for Ctrl+Space.
@@ -191,6 +197,8 @@ impl InkframeApp {
             layout: Layout::load(),
             saved_layout: Layout::default(),
             saved_prefs: Prefs::default(),
+            autosave: None,
+            recoveries: Vec::new(),
             views: Views::default(),
             hovered_area: None,
             export: ExportDialog::default(),
@@ -226,6 +234,15 @@ impl InkframeApp {
             app.batch.restore(prefs.batch_jobs(), prefs.batch_folder.clone());
         }
         app.saved_prefs = app.current_prefs();
+        if app.screenshot.is_none() {
+            let autosave = Autosave::new();
+            app.recoveries = autosave.left_behind();
+            app.autosave = Some(autosave);
+        } else if AutoScreenshot::recovery() {
+            // Work "left behind" in a scratch folder, to show the window.
+            let dir = std::env::temp_dir().join("inkframe-recovery-screenshot");
+            app.recoveries = Autosave::simulate_crash(&app.editor, dir).left_behind();
+        }
         app.views.prepare(&app.layout);
         if app.screenshot.is_some() {
             AutoScreenshot::set_up_scene(&mut app.editor);
@@ -1312,7 +1329,13 @@ impl InkframeApp {
 
     fn save_to(&mut self, path: &Path) -> bool {
         match self.editor.save_to(path) {
-            Ok(()) => true,
+            Ok(()) => {
+                // Saved, so there's nothing left to recover.
+                if let Some(autosave) = &mut self.autosave {
+                    autosave.clear();
+                }
+                true
+            }
             Err(err) => {
                 show_error(&format!("Couldn't save {}", file_name(path)), &err.to_string());
                 false
@@ -1322,6 +1345,68 @@ impl InkframeApp {
 
     /// If there are unsaved changes, asks whether to save them. Returns
     /// `true` if it's OK to continue (saved or discarded), `false` to stay put.
+    /// Offers back work left behind by an Inkframe that didn't close
+    /// properly, newest first.
+    fn recovery_window(&mut self, ctx: &egui::Context) {
+        if self.recoveries.is_empty() {
+            return;
+        }
+        let mut recover = None;
+        let mut discard = Vec::new();
+        egui::Window::new("Recover Unsaved Work")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.label(
+                    "Inkframe didn't close properly last time. This work was autosaved but never saved:",
+                );
+                ui.add_space(6.0);
+                egui::Grid::new("recoveries").num_columns(3).spacing([12.0, 8.0]).show(ui, |ui| {
+                    for (i, found) in self.recoveries.iter().enumerate() {
+                        ui.vertical(|ui| {
+                            ui.set_min_width(320.0);
+                            ui.strong(&found.name);
+                            let place = found
+                                .original
+                                .as_ref()
+                                .map_or_else(|| "Never saved".to_owned(), |p| p.display().to_string());
+                            ui.add(egui::Label::new(egui::RichText::new(place).weak()).truncate());
+                            ui.weak(format!("Autosaved {}", found.when()));
+                        });
+                        if ui.button("Recover").clicked() {
+                            recover = Some(i);
+                        }
+                        if ui.button("Discard").on_hover_text("Delete this autosaved copy").clicked() {
+                            discard.push(i);
+                        }
+                        ui.end_row();
+                    }
+                });
+                ui.add_space(4.0);
+                if self.recoveries.len() > 1 && ui.button("Discard All").clicked() {
+                    discard.extend(0..self.recoveries.len());
+                }
+            });
+        if let Some(i) = recover
+            && self.confirm_discard_changes()
+        {
+            match self.recoveries[i].open() {
+                Ok(editor) => {
+                    self.replace_editor(editor);
+                    // It's this session's unsaved work now, autosaved as such.
+                    discard.push(i);
+                }
+                Err(err) => show_error(&format!("Couldn't recover {}", self.recoveries[i].name), &err),
+            }
+        }
+        discard.sort_unstable();
+        discard.dedup();
+        for i in discard.into_iter().rev() {
+            self.recoveries.remove(i).discard();
+        }
+    }
+
     fn confirm_discard_changes(&mut self) -> bool {
         if !self.editor.has_unsaved_changes() {
             return true;
@@ -1363,6 +1448,10 @@ impl InkframeApp {
         };
         if export_ok && self.confirm_discard_changes() {
             self.allow_close = true;
+            // A normal quit: whatever wasn't saved was let go on purpose.
+            if let Some(autosave) = &mut self.autosave {
+                autosave.clear();
+            }
         } else {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         }
@@ -1525,6 +1614,10 @@ impl eframe::App for InkframeApp {
             self.layout.save();
             self.saved_layout = self.layout.clone();
         }
+        if let Some(autosave) = &mut self.autosave {
+            autosave.tick(&self.editor);
+        }
+        self.recovery_window(&ctx);
         let prefs = self.current_prefs();
         if prefs != self.saved_prefs && !ctx.input(|i| i.pointer.any_down()) && self.screenshot.is_none() {
             prefs.save();
