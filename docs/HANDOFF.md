@@ -584,6 +584,18 @@ after the Harmony features (palettes to master controllers).
 86. ⌘Z while typing on the stage: `text_edit::TypingHistory` (word-sized
     steps, redo with ⌘⇧Z/Ctrl+Y), reset in `begin_text_editing`. CHANGELOG
     has an Unreleased section; 0.1.0's is marked as never published.
+87. Frame commands and Edit Multiple Frames: core `frames.rs`
+    (`Layer::insert_frames/remove_frames/reverse_frames` over a private
+    `retime`; `AnyChannel::retime`, `reverse_span` swaps bends and
+    reverses easing; reversing keys both ends first). App
+    `frame_commands.rs`: `Editor::frame_range` (picked in the timeline
+    with Shift-click/drag, `Drag::Range`, drawn by `paint_frame_range`),
+    F5/Shift+F5/F7 and Timeline menu items; `edit_multiple` with
+    `MultiFrameMove` carried on `Gesture::Move { multi }`: animated layers
+    shift position keys in range, static ones move the drawings shown in
+    range. `new_drawing_on(id, frame, copy)` split out of `new_drawing`.
+    Hooks `INKFRAME_SCREENSHOT_FRAMES=4-12`, `_MULTIPLE=1`. Not yet:
+    dragging picked frames to move them, scale/rotate across frames.
 
 ## Not yet verified by hand
 

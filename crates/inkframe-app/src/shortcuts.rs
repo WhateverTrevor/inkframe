@@ -56,6 +56,10 @@ pub const ZOOM_OUT: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::Minus);
 // keyframe, Shift+F6 clears it, and comma/period step through frames.
 pub const PLAY: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::Enter);
 pub const INSERT_KEYFRAME: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F6);
+// Animate's frame keys (see `frame_commands.rs`).
+pub const INSERT_FRAMES: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F5);
+pub const REMOVE_FRAMES: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::F5);
+pub const INSERT_BLANK_KEYFRAME: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F7);
 pub const REMOVE_KEYFRAME: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::F6);
 
 // Trimming a layer to the playhead uses After Effects' shortcuts, since

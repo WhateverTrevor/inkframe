@@ -344,6 +344,14 @@ pub trait AnyChannel {
     fn tween_at(&self, frame: u32) -> Option<Tween>;
     /// The easing of the tween covering `frame`, for editing.
     fn tween_easing_mut(&mut self, frame: u32) -> Option<&mut Easing>;
+    /// Moves each key to `map(its frame)`, or drops it where that's `None`
+    /// (see `frames.rs`). If no key is left, the value that was showing on
+    /// `fallback` stays, as a key there, since a channel always has one.
+    fn retime(&mut self, map: &dyn Fn(u32) -> Option<u32>, fallback: u32);
+    /// Plays the keys from `first` to `last` backwards: each moves to the
+    /// mirrored frame, and the tweens between them run the other way, with
+    /// their easing and curves turned round to match.
+    fn reverse_span(&mut self, first: u32, last: u32);
 }
 
 impl<T: Animatable> AnyChannel for Channel<T> {
@@ -428,6 +436,44 @@ impl<T: Animatable> AnyChannel for Channel<T> {
     fn tween_easing_mut(&mut self, frame: u32) -> Option<&mut Easing> {
         let i = self.tween_start_index(frame)?;
         Some(&mut self.keys[i].easing)
+    }
+
+    fn retime(&mut self, map: &dyn Fn(u32) -> Option<u32>, fallback: u32) {
+        let held = self.sample(fallback as f32);
+        let mut keys: Vec<Key<T>> = self
+            .keys
+            .drain(..)
+            .filter_map(|mut key| {
+                key.frame = map(key.frame)?;
+                Some(key)
+            })
+            .collect();
+        if keys.is_empty()
+            && let Some(value) = held
+        {
+            keys.push(Key { frame: fallback, value, easing: Easing::default(), bend: None });
+        }
+        self.keys = keys;
+        self.normalize();
+    }
+
+    fn reverse_span(&mut self, first: u32, last: u32) {
+        let inside: Vec<Key<T>> =
+            self.keys.iter().filter(|k| (first..=last).contains(&k.frame)).cloned().collect();
+        if inside.is_empty() {
+            return;
+        }
+        self.keys.retain(|k| !(first..=last).contains(&k.frame));
+        // Key `i` of the span becomes key `n - i`, at the mirrored frame.
+        // The tween now leaving it is the one that used to arrive at it,
+        // run backwards; the last one keeps the tween that leaves the span.
+        let n = inside.len() - 1;
+        for (j, old) in inside.iter().rev().enumerate() {
+            let easing = if j < n { inside[n - j - 1].easing.reversed() } else { inside[n].easing };
+            let bend = old.bend.map(|b| Bend { into: b.out, out: b.into });
+            self.keys.push(Key { frame: first + last - old.frame, value: old.value.clone(), easing, bend });
+        }
+        self.normalize();
     }
 }
 

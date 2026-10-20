@@ -175,7 +175,11 @@ enum Gesture {
     /// Dragging the selected layers, each from where it started. Each
     /// position is in its layer's parent's space, with the map there from
     /// the timeline's coordinates, which `grab` is in.
-    Move { layers: Vec<(LayerId, Point, Affine)>, grab: Point },
+    Move {
+        layers: Vec<(LayerId, Point, Affine)>,
+        grab: Point,
+        multi: Option<crate::frame_commands::MultiFrameMove>,
+    },
     /// Dragging a selection box over empty stage. `adding` keeps what was
     /// already selected (Shift held).
     Marquee { start: Point, current: Point, adding: bool },
@@ -1129,20 +1133,28 @@ impl StageView {
         if let Some(pointer) = response.interact_pointer_pos() {
             let p = view.to_local(pointer);
             match &mut self.gesture {
-                Some(Gesture::Move { layers, grab }) => {
+                Some(Gesture::Move { layers, grab, multi }) => {
                     let mut delta = p - *grab;
                     if shift {
                         // Constrain to the dominant axis, like every design tool.
                         if delta.x.abs() > delta.y.abs() { delta.y = 0.0 } else { delta.x = 0.0 }
                     }
-                    for &(id, start, into_space) in layers.iter() {
-                        if let Some(layer) = editor.doc.layer(id) {
-                            // The same distance on screen, measured in the
-                            // parent's space, which may be turned or scaled.
-                            let delta = into_space.apply(*grab + delta) - into_space.apply(*grab);
-                            let pose =
-                                Transform { position: start + delta, ..editor.doc.pose(layer, editor.frame) };
-                            editor.set_pose(id, pose);
+                    // Edit Multiple Frames: across the picked frames, not
+                    // just this one (see `frame_commands.rs`).
+                    if let Some(multi) = multi {
+                        editor.apply_multi_frame_move(multi, *grab, delta);
+                    } else {
+                        for &(id, start, into_space) in layers.iter() {
+                            if let Some(layer) = editor.doc.layer(id) {
+                                // The same distance on screen, measured in the
+                                // parent's space, which may be turned or scaled.
+                                let delta = into_space.apply(*grab + delta) - into_space.apply(*grab);
+                                let pose = Transform {
+                                    position: start + delta,
+                                    ..editor.doc.pose(layer, editor.frame)
+                                };
+                                editor.set_pose(id, pose);
+                            }
                         }
                     }
                 }
@@ -1879,8 +1891,12 @@ impl StageView {
                             editor.doc.parent_matrix(l, frame).inverse().unwrap_or(Affine::IDENTITY);
                         (l.id, editor.doc.pose(l, frame).position, into_space)
                     })
-                    .collect();
-                Some(Gesture::Move { layers, grab: p })
+                    .collect::<Vec<_>>();
+                let multi = editor.edit_multiple.then(|| {
+                    let ids: Vec<LayerId> = layers.iter().map(|&(id, _, _)| id).collect();
+                    editor.begin_multi_frame_move(&ids)
+                });
+                Some(Gesture::Move { layers, grab: p, multi })
             }
             tool @ (Tool::Rectangle | Tool::Ellipse) => {
                 Some(Gesture::DrawShape { tool, start: p, current: p })
@@ -1926,6 +1942,7 @@ impl StageView {
                     return Some(Gesture::Move {
                         layers: vec![(layer.id, start, Affine::IDENTITY)],
                         grab: p,
+                        multi: None,
                     });
                 }
                 let local = editor.doc.layer_matrix(layer, editor.frame).inverse()?.apply(p);
@@ -5040,6 +5057,22 @@ mod tests {
         let bounds = square.bounds();
         assert!(bounds.center().distance(Point::new(100.0, 0.0)) < 0.5, "{bounds:?}");
         assert!(path.start.distance(Point::new(140.0, -40.0)) < 1.0, "{:?}", path.start);
+    }
+
+    #[test]
+    fn with_edit_multiple_frames_dragging_moves_the_whole_motion() {
+        let (mut editor, id) = editor_with_selected_box();
+        // It travels 300 to the right by frame 10.
+        editor.doc.layer_mut(id).unwrap().track.position.set(10, Point::new(700.0, 400.0));
+        editor.edit_multiple = true;
+        let mut h = harness(editor);
+        let (from, to) = (screen(&h, 400.0, 400.0), screen(&h, 400.0, 450.0));
+        drag(&mut h, from, &[to]);
+
+        let keys: Vec<Point> =
+            h.state().1.doc.layer(id).unwrap().track.position.keys().iter().map(|k| k.value).collect();
+        assert!(keys[0].distance(Point::new(400.0, 450.0)) < 1.5, "{keys:?}");
+        assert!(keys[1].distance(Point::new(700.0, 450.0)) < 1.5, "the end of the move came along: {keys:?}");
     }
 
     #[test]

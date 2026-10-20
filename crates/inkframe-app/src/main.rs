@@ -21,6 +21,7 @@ mod easing_editor;
 mod editor;
 mod examples;
 mod export_dialog;
+mod frame_commands;
 mod guides;
 mod handles;
 mod icons;

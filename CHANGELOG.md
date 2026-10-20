@@ -13,6 +13,16 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Timeline
+
+- Animate's frame commands: pick frames with Shift-click or Shift-drag,
+  then F5 inserts frames, Shift+F5 removes them, F7 adds a blank keyframe,
+  and Timeline › Convert to Keyframes, Convert to Blank Keyframes and
+  Reverse Frames work on the picked frames.
+- Edit Multiple Frames: dragging on the stage moves layers across the
+  picked frames at once, a whole motion or every drawing of a hand-drawn
+  stretch.
+
 ### Properties
 
 - With several layers selected, changes in the properties panel apply to

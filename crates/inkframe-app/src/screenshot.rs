@@ -14,6 +14,8 @@
 //! * `INKFRAME_SCREENSHOT_NEW_LAYER=1` adds an empty layer above the selection (after
 //!   `_SELECT`) and draws a hat into it, as + and two shapes would.
 //! * `INKFRAME_SCREENSHOT_INSIDE=1` steps inside the selected layer and picks its top shape.
+//! * `INKFRAME_SCREENSHOT_FRAMES=4-12` picks frames in the timeline; `_MULTIPLE=1` turns on
+//!   Edit Multiple Frames.
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
 //! * `INKFRAME_SCREENSHOT_EXPAND=1` expands every layer's property rows in the timeline.
 //! * `INKFRAME_SCREENSHOT_EDIT=Ball` opens the named symbol on its own (before `_SELECT`).
@@ -122,6 +124,16 @@ impl AutoScreenshot {
             if paint == "select" {
                 selection_demo(editor);
             }
+        }
+        // Picked frames, 1-based like the timeline: `_FRAMES=4-12`.
+        if let Some((first, last)) = var("INKFRAME_SCREENSHOT_FRAMES").and_then(|v| {
+            let (a, b) = v.split_once('-')?;
+            Some((a.trim().parse::<u32>().ok()?, b.trim().parse::<u32>().ok()?))
+        }) {
+            editor.frame_range = Some((first.saturating_sub(1), last.saturating_sub(1)));
+        }
+        if var("INKFRAME_SCREENSHOT_MULTIPLE").is_some() {
+            editor.edit_multiple = true;
         }
         if var("INKFRAME_SCREENSHOT_NEW_LAYER").is_some() {
             new_layer_demo(editor);
