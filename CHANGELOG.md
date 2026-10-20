@@ -13,6 +13,13 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Symbols
+
+- Modify › Swap Symbol: pick another symbol for the selected instances,
+  keeping their animation, for the whole layer or from the current frame
+  on (a hand's pose changed mid-shot, the arm still moving). Duplicate
+  Symbol copies one to change separately.
+
 ### Shapes
 
 - Modify › Combine Shapes: Union, Intersect, Punch and Crop on shapes

@@ -32,6 +32,12 @@ impl Layer {
             .collect();
         self.exposure.sort_by_key(|key| key.frame);
         self.exposure.dedup_by_key(|key| key.frame);
+        self.symbol_swaps = std::mem::take(&mut self.symbol_swaps)
+            .into_iter()
+            .filter_map(|swap| Some(crate::SymbolSwap { frame: map(swap.frame)?, ..swap }))
+            .collect();
+        self.symbol_swaps.sort_by_key(|swap| swap.frame);
+        self.symbol_swaps.dedup_by_key(|swap| swap.frame);
         self.shape_tweens.retain_mut(|tween| match map(tween.end) {
             Some(end) => {
                 tween.end = end;
@@ -131,6 +137,22 @@ impl Layer {
         }
         self.exposure.sort_by_key(|key| key.frame);
         self.shape_tweens.retain(|tween| !(first..=last).contains(&tween.end));
+
+        // Symbol swaps likewise, for an instance.
+        if let Some(instance) = self.instance {
+            let shown: Vec<_> = (first..=last + 1).filter_map(|f| self.symbol_at(f)).collect();
+            let before = first.checked_sub(1).and_then(|f| self.symbol_at(f)).unwrap_or(instance.symbol);
+            self.symbol_swaps.retain(|s| !(first..=last + 1).contains(&s.frame));
+            let mut previous = before;
+            for (i, frame) in (first..=last + 1).enumerate() {
+                let symbol = if frame <= last { shown[(last - frame) as usize] } else { shown[i] };
+                if symbol != previous {
+                    self.symbol_swaps.push(crate::SymbolSwap { frame, symbol });
+                }
+                previous = symbol;
+            }
+            self.symbol_swaps.sort_by_key(|s| s.frame);
+        }
     }
 }
 

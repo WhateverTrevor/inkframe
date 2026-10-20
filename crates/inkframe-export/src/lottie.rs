@@ -249,20 +249,28 @@ impl Lottie<'_> {
 
         let mut out = Vec::new();
         // A symbol: a precomposition, time-remapped to the symbol's frame.
-        if let Some(instance) = layer.instance
-            && doc.symbol(instance.symbol).is_some()
-        {
-            let precomp_asset = self.symbol(instance.symbol, depth);
-            let span: Vec<usize> = (0..frames.len()).filter(|&t| shown(t)).collect();
-            if let (Some(&ip), Some(&last)) = (span.first(), span.last()) {
-                let fps = doc.frame_rate.fps();
-                let remap: Vec<Value> = (0..frames.len())
-                    .map(|t| {
-                        let symbol_frame = doc.instance_view(layer, frames[t], depth).map_or(0, |(_, f)| f);
-                        json!(symbol_frame as f64 / fps)
-                    })
-                    .collect();
-                let mut precomp = self.content_layer(0, layer, next, ip, last + 1, &opacity, frames.len());
+        // A swap to another symbol partway starts another one.
+        if layer.instance.is_some() {
+            let fps = doc.frame_rate.fps();
+            let remap: Vec<Value> = (0..frames.len())
+                .map(|t| {
+                    let symbol_frame = doc.instance_view(layer, frames[t], depth).map_or(0, |(_, f)| f);
+                    json!(symbol_frame as f64 / fps)
+                })
+                .collect();
+            let mut t = 0;
+            while t < frames.len() {
+                let symbol = layer.symbol_at(frames[t]).filter(|&s| doc.symbol(s).is_some());
+                let Some(symbol) = symbol.filter(|_| shown(t)) else {
+                    t += 1;
+                    continue;
+                };
+                let mut end = t + 1;
+                while end < frames.len() && shown(end) && layer.symbol_at(frames[end]) == Some(symbol) {
+                    end += 1;
+                }
+                let precomp_asset = self.symbol(symbol, depth);
+                let mut precomp = self.content_layer(0, layer, next, t, end, &opacity, frames.len());
                 precomp["refId"] = json!(precomp_asset.id);
                 precomp["w"] = json!(precomp_asset.size.0);
                 precomp["h"] = json!(precomp_asset.size.1);
@@ -271,6 +279,7 @@ impl Lottie<'_> {
                 precomp["ks"]["a"] = still(precomp_asset.origin);
                 precomp["tm"] = held(&remap);
                 out.push(precomp);
+                t = end;
             }
             return out;
         }

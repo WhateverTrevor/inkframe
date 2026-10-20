@@ -136,11 +136,10 @@ impl Document {
 
         // Symbols used directly, then the ones those use, and so on.
         let mut symbols = BTreeSet::new();
-        let mut to_visit: Vec<SymbolId> =
-            layers.iter().filter_map(|l| l.instance.map(|i| i.symbol)).collect();
+        let mut to_visit: Vec<SymbolId> = layers.iter().flat_map(Layer::symbols_used).collect();
         while let Some(id) = to_visit.pop() {
             if let Some(symbol) = self.symbol(id).filter(|_| symbols.insert(id)) {
-                to_visit.extend(symbol.layers.iter().filter_map(|l| l.instance.map(|i| i.symbol)));
+                to_visit.extend(symbol.layers.iter().flat_map(Layer::symbols_used));
             }
         }
         let symbols: Vec<Symbol> = symbols.into_iter().filter_map(|id| self.symbol(id).cloned()).collect();
@@ -306,6 +305,9 @@ impl Document {
                 copy.in_folder = layer.in_folder.and_then(|folder| ids.get(&folder).copied());
                 if let Some(instance) = &mut copy.instance {
                     instance.symbol = symbols.get(&instance.symbol).copied().unwrap_or(instance.symbol);
+                }
+                for swap in &mut copy.symbol_swaps {
+                    swap.symbol = symbols.get(&swap.symbol).copied().unwrap_or(swap.symbol);
                 }
                 for element in copy.all_elements_mut() {
                     match &mut element.shape {

@@ -38,6 +38,29 @@ pub struct Symbol {
     pub folder: String,
 }
 
+/// From `frame` on, an instance shows `symbol` instead (see
+/// `Layer::symbol_swaps`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SymbolSwap {
+    pub frame: u32,
+    pub symbol: SymbolId,
+}
+
+impl Layer {
+    /// The symbol an instance shows on `frame`: its own, or the last one
+    /// swapped in by then.
+    pub fn symbol_at(&self, frame: u32) -> Option<SymbolId> {
+        let instance = self.instance?;
+        let swapped = self.symbol_swaps.iter().take_while(|s| s.frame <= frame).last();
+        Some(swapped.map_or(instance.symbol, |s| s.symbol))
+    }
+
+    /// Every symbol an instance shows at some point.
+    pub fn symbols_used(&self) -> impl Iterator<Item = SymbolId> + '_ {
+        self.instance.map(|i| i.symbol).into_iter().chain(self.symbol_swaps.iter().map(|s| s.symbol))
+    }
+}
+
 /// A symbol placed on a layer.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Instance {
@@ -119,7 +142,7 @@ impl Document {
 
     /// How many layers, anywhere in the document, hold an instance of `id`.
     pub fn symbol_use_count(&self, id: SymbolId) -> usize {
-        self.all_layers().filter(|l| l.instance.is_some_and(|i| i.symbol == id)).count()
+        self.all_layers().filter(|l| l.symbols_used().any(|used| used == id)).count()
     }
 
     /// Removes a symbol from the library. Refuses (returns `false`) while
@@ -363,7 +386,7 @@ impl Document {
             }
             seen.push(id);
             if let Some(s) = self.symbol(id) {
-                stack.extend(s.layers.iter().filter_map(|l| l.instance.map(|i| i.symbol)));
+                stack.extend(s.layers.iter().flat_map(Layer::symbols_used));
             }
         }
         false
@@ -439,6 +462,75 @@ impl Document {
             })
     }
 
+    /// Has instance layer `id` show `symbol` instead: on every frame
+    /// (`from` is `None`, or at or before the layer's start), or from frame
+    /// `from` on, until any later swap. Its animation, timing and playback
+    /// stay as they were. Refused (false) for a layer that isn't an
+    /// instance, or a swap that would put a symbol inside itself.
+    pub fn swap_symbol(&mut self, id: LayerId, symbol: SymbolId, from: Option<u32>) -> bool {
+        let Some(timeline) = self.timeline_of(id) else { return false };
+        if self.symbol(symbol).is_none() || !self.can_place(timeline, symbol) {
+            return false;
+        }
+        let Some(layer) = self.layer_mut(id).filter(|l| l.instance.is_some()) else { return false };
+        match from.filter(|&f| f > layer.start) {
+            None => {
+                if let Some(instance) = &mut layer.instance {
+                    instance.symbol = symbol;
+                }
+                layer.symbol_swaps.clear();
+            }
+            Some(frame) => {
+                layer.symbol_swaps.retain(|s| s.frame != frame);
+                layer.symbol_swaps.push(SymbolSwap { frame, symbol });
+                layer.symbol_swaps.sort_by_key(|s| s.frame);
+                // A swap to what's already showing does nothing.
+                let mut previous = layer.instance.map(|i| i.symbol);
+                layer.symbol_swaps.retain(|s| {
+                    let changes = Some(s.symbol) != previous;
+                    previous = Some(s.symbol);
+                    changes
+                });
+            }
+        }
+        true
+    }
+
+    /// A copy of a symbol, named "… copy", for changing without changing
+    /// everything that uses the original (Animate's Duplicate Symbol). Its
+    /// layers get new ids, with their rig, masks and guides linked among
+    /// themselves.
+    pub fn duplicate_symbol(&mut self, id: SymbolId) -> Option<SymbolId> {
+        let original = self.symbol(id)?.clone();
+        let new_id = SymbolId(self.next_symbol_id);
+        self.next_symbol_id += 1;
+        let ids: std::collections::HashMap<LayerId, LayerId> =
+            original.layers.iter().map(|l| (l.id, self.allocate_layer_id())).collect();
+        let relink = |old: Option<LayerId>| old.map(|o| ids.get(&o).copied().unwrap_or(o));
+        let layers = original
+            .layers
+            .iter()
+            .map(|layer| {
+                let mut copy = layer.clone();
+                copy.id = ids[&layer.id];
+                copy.parent = relink(layer.parent);
+                copy.masked_by = relink(layer.masked_by);
+                copy.follow = relink(layer.follow);
+                copy.in_folder = relink(layer.in_folder);
+                copy
+            })
+            .collect();
+        let taken: Vec<String> = self.symbols.iter().map(|s| s.name.clone()).collect();
+        let name = (1..)
+            .map(|n| {
+                if n == 1 { format!("{} copy", original.name) } else { format!("{} copy {n}", original.name) }
+            })
+            .find(|name| !taken.contains(name))
+            .expect("there is always an unused name");
+        self.symbols.push(Symbol { id: new_id, name, layers, ..original });
+        Some(new_id)
+    }
+
     /// The symbol an instance layer shows, and which of its frames, if the
     /// layer is an instance and we're not nested impossibly deep.
     pub fn instance_view(&self, layer: &Layer, frame: u32, depth: usize) -> Option<(&Symbol, u32)> {
@@ -446,7 +538,7 @@ impl Document {
             return None;
         }
         let instance = layer.instance?;
-        let symbol = self.symbol(instance.symbol)?;
+        let symbol = self.symbol(layer.symbol_at(frame)?)?;
         Some((symbol, instance.local_frame(layer.start, frame, symbol.duration)))
     }
 }
@@ -607,5 +699,71 @@ mod tests {
         assert_eq!(head_inside.parent, Some(id_of("Body")), "the rig still connects");
         assert_eq!(head_inside.masked_by, Some(id_of("Mask")), "so does the mask");
         assert!(doc.layer(other).is_some(), "the rest stay");
+    }
+
+    /// Two symbols, A and B, and a layer showing A.
+    fn two_symbols() -> (Document, LayerId, SymbolId, SymbolId) {
+        let mut doc = Document::default();
+        let a = doc.add_layer("A", vec![square()], 0, Transform::default());
+        let a = doc.convert_layer_to_symbol(a, 0).unwrap();
+        let b = doc.add_layer("B", vec![square()], 0, Transform::default());
+        let b = doc.convert_layer_to_symbol(b, 0).unwrap();
+        let layer = doc.add_instance_layer(TimelineId::Main, a, 0, Point::ZERO).unwrap();
+        (doc, layer, a, b)
+    }
+
+    #[test]
+    fn a_symbol_swapped_in_from_a_frame_shows_from_then_on() {
+        let (mut doc, layer, a, b) = two_symbols();
+        assert!(doc.swap_symbol(layer, b, Some(10)));
+        let shown = doc.layer(layer).unwrap();
+        assert_eq!(shown.symbol_at(9), Some(a));
+        assert_eq!(shown.symbol_at(10), Some(b));
+        assert_eq!(doc.instance_view(shown, 30, 0).unwrap().0.id, b);
+        // Both are in use now, so neither can be deleted.
+        assert_eq!(doc.symbol_use_count(b), 2, "the converted B layer and the swap");
+        assert!(!doc.remove_symbol(a));
+
+        // Swapping for the whole layer replaces it everywhere.
+        assert!(doc.swap_symbol(layer, b, None));
+        let shown = doc.layer(layer).unwrap();
+        assert_eq!(shown.symbol_at(0), Some(b));
+        assert!(shown.symbol_swaps.is_empty());
+    }
+
+    #[test]
+    fn swaps_move_with_the_frame_commands() {
+        let (mut doc, layer, _, b) = two_symbols();
+        doc.swap_symbol(layer, b, Some(10));
+        doc.layer_mut(layer).unwrap().insert_frames(5, 3);
+        assert_eq!(doc.layer(layer).unwrap().symbol_swaps[0].frame, 13);
+    }
+
+    #[test]
+    fn a_duplicate_symbol_is_separate_with_its_rig_relinked() {
+        let mut doc = Document::default();
+        let arm = doc.add_layer("Arm", vec![square()], 0, Transform::default());
+        let hand = doc.add_layer("Hand", vec![square()], 0, Transform::default());
+        doc.layer_mut(hand).unwrap().parent = Some(arm);
+        let symbol = doc.convert_layers_to_symbol(&[arm, hand], 0).unwrap().0;
+        let copy = doc.duplicate_symbol(symbol).unwrap();
+
+        let (original, duplicate) = (doc.symbol(symbol).unwrap(), doc.symbol(copy).unwrap());
+        assert_eq!(duplicate.name, format!("{} copy", original.name));
+        let ids: Vec<LayerId> = duplicate.layers.iter().map(|l| l.id).collect();
+        assert!(ids.iter().all(|id| original.layers.iter().all(|l| l.id != *id)), "new ids");
+        let copied_hand = duplicate.layers.iter().find(|l| l.name == "Hand").unwrap();
+        assert!(ids.contains(&copied_hand.parent.unwrap()), "the hand hangs off the copied arm");
+
+        doc.symbol_mut(copy).unwrap().layers[0].name = "Changed".into();
+        assert!(doc.symbol(symbol).unwrap().layers.iter().all(|l| l.name != "Changed"));
+    }
+
+    #[test]
+    fn a_symbol_cant_be_swapped_into_itself() {
+        let (mut doc, _, a, b) = two_symbols();
+        // An instance of A inside B: swapping it to B would put B in B.
+        let inside = doc.add_instance_layer(TimelineId::Symbol(b), a, 0, Point::ZERO).unwrap();
+        assert!(!doc.swap_symbol(inside, b, None));
     }
 }

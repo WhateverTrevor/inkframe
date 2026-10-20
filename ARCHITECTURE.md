@@ -51,7 +51,7 @@ The data model and the math behind animation.
 | `boolean.rs` | Union, Intersect, Punch, Crop (`ShapeOp`, `combine`) and Break Apart: outlines flattened, edges split where they cross, kept where the result is on one side only (by winding number either side of each edge's middle), joined into loops, and fitted back into curves (`vectorise::fit_points`) |
 | `frames.rs` | Editing a layer's time: `insert_frames`, `remove_frames` and `reverse_frames`, all through one `retime` that moves every key, deformer key, drawing swap and shape tween (and `AnyChannel::retime` / `reverse_span`, `Easing::reversed`) |
 | `library.rs` | `Asset` (a symbol, image or sound) and the Library's one-level folders: each asset names its folder, `Document::library_folders` keeps empty ones; renaming, moving and deleting assets |
-| `symbol.rs` | `Symbol` (library entry), `Instance` (a symbol placed on a layer) and its timing, Convert to Symbol (one layer, or several with their links via `convert_layers_to_symbol`), and symbol-aware bounds and hit-testing |
+| `symbol.rs` | `Symbol` (library entry), `Instance` (a symbol placed on a layer) and its timing, symbol swaps partway through (`Layer::symbol_swaps`, `symbol_at`, `swap_symbol`), `duplicate_symbol`, Convert to Symbol (one layer, or several with their links via `convert_layers_to_symbol`), and symbol-aware bounds and hit-testing |
 | `template.rs` | Templates: copied layers (with their symbols, pictures, fonts and canvases) saved as a file of their own with the frame they started on; `insert_template` moves their animation to the playhead (`Layer::shift_time`) and pastes them |
 | `text.rs` | `Text`: content, `Font`, size, alignment; its measured extent, which the editor keeps up to date |
 | `guide.rs` | Motion guides: `Document::pose`, a layer's transform following its guide (use it rather than `Layer::transform_at` wherever layers are drawn or edited) |
@@ -287,6 +287,7 @@ writes. No audio.
 | `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles; `stage/inside.rs` handles the pointer while inside a layer (picking, moving and scaling shapes) |
 | `frame_commands.rs` | Animate's frame commands on the frames picked in the timeline (Insert/Remove Frames, Blank Keyframe, Convert to Keyframes, Reverse Frames) and Edit Multiple Frames' move across them (`MultiFrameMove`) |
 | `shape_ops.rs` | Combine Shapes and Break Apart on the picked shapes (text through `inkframe_render::shape_outline`) |
+| `swap_dialog.rs` | Modify › Swap Symbol: a picture of each symbol, swapping the selected instances for the whole layer or from the current frame (`Document::swap_symbol`), and Duplicate Symbol |
 | `multi_edit.rs` | Carrying a change made in the properties panel to every selected layer: position by the same amount, other values set the same, only what changed |
 | `inside.rs` | Working inside one layer: which shapes are picked (by their place in the showing drawing), hit-testing them, moving and scaling them by their points (`Element::transformed`), deleting them, and making a symbol of them |
 | `handles.rs` | The math for scale and rotate handles (anchor pinning, multi-turn rotation) |

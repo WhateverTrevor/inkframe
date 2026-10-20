@@ -44,6 +44,7 @@ mod shape_ops;
 mod shortcuts;
 mod stage;
 mod subselect;
+mod swap_dialog;
 mod tablet;
 mod templates;
 mod text_edit;

@@ -35,7 +35,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 32;
+pub const FORMAT_VERSION: u32 = 33;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -206,6 +206,11 @@ pub struct Layer {
     /// Its drawing, if any, is what each particle looks like.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub particles: Option<Emitter>,
+    /// For an instance, other symbols it switches to partway through, in
+    /// order of frame (see `Layer::symbol_at`): a hand swapped for another
+    /// pose while the arm it's on keeps moving.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub symbol_swaps: Vec<crate::SymbolSwap>,
     /// A colour effect and filters as format 22 stored them, before they
     /// could animate. Loading moves them into the track's Effects property
     /// (see `validate`); they're never saved.
@@ -423,6 +428,7 @@ impl Document {
             camera: false,
             unanimated_depth: 0.0,
             particles: None,
+            symbol_swaps: Vec::new(),
             unanimated_color_effect: ColorEffect::None,
             unanimated_filters: Vec::new(),
         });
@@ -613,11 +619,9 @@ impl Document {
         let max_font_id = self.fonts.iter().map(|f| f.id.0).max().unwrap_or(0);
         self.next_font_id = self.next_font_id.max(max_font_id + 1);
 
-        if self
-            .symbols
-            .iter()
-            .any(|s| s.layers.iter().filter_map(|l| l.instance).any(|i| self.symbol_contains(i.symbol, s.id)))
-        {
+        if self.symbols.iter().any(|s| {
+            s.layers.iter().flat_map(Layer::symbols_used).any(|used| self.symbol_contains(used, s.id))
+        }) {
             return Err(DocumentError::Invalid("a symbol can't contain an instance of itself"));
         }
         self.tidy_controllers();

@@ -22,6 +22,7 @@ use crate::panels;
 use crate::prefs::Prefs;
 use crate::screenshot::AutoScreenshot;
 use crate::stage::StageView;
+use crate::swap_dialog::SwapDialog;
 use crate::timeline::TimelineView;
 use crate::vectorise_dialog::VectoriseDialog;
 use crate::xsheet::ExposureSheet;
@@ -110,6 +111,7 @@ enum Command {
     // Combining shapes (see `shape_ops.rs`).
     CombineShapes(inkframe_core::ShapeOp),
     BreakApart,
+    SwapSymbol,
     NewFolder,
     CreateShapeTween,
     AddCamera,
@@ -196,6 +198,7 @@ pub struct InkframeApp {
     export: ExportDialog,
     batch: BatchDialog,
     vectorise: VectoriseDialog,
+    swap: SwapDialog,
     examples: ExamplesWindow,
     scripts: crate::scripts::Scripts,
     lip_sync: LipSyncDialog,
@@ -245,6 +248,7 @@ impl InkframeApp {
             export: ExportDialog::default(),
             batch: BatchDialog::default(),
             vectorise: VectoriseDialog::default(),
+            swap: SwapDialog::default(),
             examples: ExamplesWindow::default(),
             scripts: crate::scripts::Scripts::default(),
             lip_sync: LipSyncDialog::default(),
@@ -605,6 +609,14 @@ impl InkframeApp {
                     Err(problem) => eprintln!("Couldn't group for the screenshot: {problem}"),
                 }
             }
+            if AutoScreenshot::swap()
+                && let Some(layer) = app.editor.selection
+                && let Some(symbol) = app.editor.doc.layer(layer).and_then(|l| l.symbol_at(0))
+                && let Some(copy) = app.editor.doc.duplicate_symbol(symbol)
+            {
+                app.editor.doc.swap_symbol(layer, copy, Some(12));
+                app.swap.open(&app.editor);
+            }
             if AutoScreenshot::library() {
                 crate::screenshot::library_demo(&mut app.editor);
                 app.layout.replace_kind(Kind::Properties, Kind::Library);
@@ -829,6 +841,7 @@ impl InkframeApp {
                     show_error("Couldn't combine the shapes", &problem);
                 }
             }
+            Command::SwapSymbol => self.swap.open(editor),
             Command::BreakApart => {
                 if editor.break_apart() == 0 {
                     show_error(
@@ -1178,6 +1191,7 @@ impl InkframeApp {
                 ui.separator();
                 let instance_selected = self.editor.selected_layer().is_some_and(|l| l.instance.is_some());
                 item(ui, "Edit Symbol", None, Command::EditSymbol, instance_selected);
+                item(ui, "Swap Symbol…", None, Command::SwapSymbol, SwapDialog::can_open(&self.editor));
                 let in_symbol = self.editor.timeline() != TimelineId::Main;
                 item(ui, "Exit Symbol", None, Command::ExitSymbol, in_symbol);
                 ui.separator();
@@ -1884,6 +1898,7 @@ impl eframe::App for InkframeApp {
         self.xsheet.show(&ctx, &mut self.editor, &mut self.audio);
         self.adjust.show(&ctx, &mut self.editor);
         self.vectorise.show(&ctx, &mut self.editor);
+        self.swap.show(&ctx, &mut self.editor);
         self.scripts.show(&ctx, &mut self.editor);
         if let Some(path) = self.examples.show(&ctx) {
             self.open_example(&path);
