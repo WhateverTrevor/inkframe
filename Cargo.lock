@@ -1718,6 +1718,7 @@ dependencies = [
  "inkframe-core",
  "inkframe-export",
  "inkframe-render",
+ "inkframe-script",
  "objc2-app-kit 0.3.2",
  "rfd",
  "rodio",
@@ -1781,7 +1782,9 @@ name = "inkframe-script"
 version = "0.1.0"
 dependencies = [
  "inkframe-core",
+ "inkframe-export",
  "rquickjs",
+ "serde_json",
  "thiserror 2.0.21",
 ]
 

@@ -137,9 +137,11 @@ pub(crate) const FILE_EXTENSION: &str = "inkf";
 /// reported (Help menu).
 const GUIDE_URL: &str = "https://github.com/WhateverTrevor/inkframe/blob/main/docs/GETTING_STARTED.md";
 const ISSUES_URL: &str = "https://github.com/WhateverTrevor/inkframe/issues";
+pub(crate) const SCRIPTING_URL: &str =
+    "https://github.com/WhateverTrevor/inkframe/blob/main/docs/SCRIPTING.md";
 
 /// Opens a web page in the default browser.
-fn open_in_browser(url: &str) {
+pub(crate) fn open_in_browser(url: &str) {
     let result = if cfg!(target_os = "macos") {
         std::process::Command::new("open").arg(url).spawn()
     } else if cfg!(windows) {
@@ -181,6 +183,7 @@ pub struct InkframeApp {
     batch: BatchDialog,
     vectorise: VectoriseDialog,
     examples: ExamplesWindow,
+    scripts: crate::scripts::Scripts,
     lip_sync: LipSyncDialog,
     xsheet: ExposureSheet,
     adjust: AdjustDialog,
@@ -229,6 +232,7 @@ impl InkframeApp {
             batch: BatchDialog::default(),
             vectorise: VectoriseDialog::default(),
             examples: ExamplesWindow::default(),
+            scripts: crate::scripts::Scripts::default(),
             lip_sync: LipSyncDialog::default(),
             xsheet: ExposureSheet::default(),
             adjust: AdjustDialog::default(),
@@ -548,6 +552,9 @@ impl InkframeApp {
             }
             if let Some(degrees) = AutoScreenshot::view_rotation() {
                 app.views.stage().rotate_view(degrees);
+            }
+            if let Some(script) = AutoScreenshot::script() {
+                app.scripts.run_file(&script, &app.editor);
             }
             if AutoScreenshot::examples() {
                 app.examples.open(&cc.egui_ctx);
@@ -1184,6 +1191,7 @@ impl InkframeApp {
                 item(ui, "Reset Workspace", None, Command::ResetLayout, true);
                 ui.weak("Drag an area's corner to split or join it,\nCtrl+Space to fill the window with it.");
             });
+            ui.menu_button("Scripts", |ui| self.scripts.menu(ui, &self.editor));
             ui.menu_button("Help", |ui| {
                 if ui.button("Getting Started Guide").clicked() {
                     open_in_browser(GUIDE_URL);
@@ -1490,17 +1498,18 @@ impl InkframeApp {
             self.allow_close = true;
             return;
         }
-        let export_ok = !(self.export.is_running() || self.batch.is_running()) || {
-            let answer = rfd::MessageDialog::new()
+        let export_ok = !(self.export.is_running() || self.batch.is_running() || self.scripts.is_running())
+            || {
+                let answer = rfd::MessageDialog::new()
                 .set_level(rfd::MessageLevel::Warning)
-                .set_title("Export in progress")
+                .set_title("Still working")
                 .set_description(
-                    "Quitting now will stop the export and leave an incomplete file. Quit anyway?",
+                    "Quitting now will stop the export or script, which may leave an incomplete file. Quit anyway?",
                 )
                 .set_buttons(rfd::MessageButtons::OkCancel)
                 .show();
-            answer == rfd::MessageDialogResult::Ok
-        };
+                answer == rfd::MessageDialogResult::Ok
+            };
         if export_ok && self.confirm_discard_changes() {
             self.allow_close = true;
             // A normal quit: whatever wasn't saved was let go on purpose.
@@ -1687,6 +1696,7 @@ impl eframe::App for InkframeApp {
         self.xsheet.show(&ctx, &mut self.editor, &mut self.audio);
         self.adjust.show(&ctx, &mut self.editor);
         self.vectorise.show(&ctx, &mut self.editor);
+        self.scripts.show(&ctx, &mut self.editor);
         if let Some(path) = self.examples.show(&ctx) {
             self.open_example(&path);
         }

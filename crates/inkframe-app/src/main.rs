@@ -1,7 +1,8 @@
 //! Inkframe: an open-source 2D animation editor.
 //!
-//! Usage: `inkframe [file.inkf]`, or `inkframe --export …` to export
-//! without opening a window (see `cli.rs`).
+//! Usage: `inkframe [file.inkf]`, or `inkframe --export …` to export or
+//! `inkframe --script …` to run a script without opening a window (see
+//! `cli.rs` and `cli_script.rs`).
 
 // On Windows, release builds are GUI programs, so launching Inkframe doesn't
 // also open a console window. Debug builds keep the console for log output.
@@ -13,6 +14,7 @@ mod audio_engine;
 mod autosave;
 mod batch_dialog;
 mod cli;
+mod cli_script;
 mod convert;
 mod depth_view;
 mod easing_editor;
@@ -34,6 +36,7 @@ mod pen;
 mod prefs;
 mod rhubarb;
 mod screenshot;
+mod scripts;
 mod shortcuts;
 mod stage;
 mod subselect;
@@ -53,6 +56,9 @@ fn main() -> eframe::Result {
     let mut args = std::env::args().skip(1).peekable();
     if args.peek().is_some_and(|a| a == "--export") {
         std::process::exit(cli::run(args.skip(1).collect()));
+    }
+    if args.peek().is_some_and(|a| a == "--script") {
+        std::process::exit(cli_script::run(args.skip(1).collect()));
     }
     let open_path = std::env::args_os().nth(1).map(PathBuf::from);
 

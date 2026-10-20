@@ -131,7 +131,7 @@ fn parse(args: Vec<String>) -> Result<Option<Request>, String> {
 /// Release builds on Windows are GUI programs with no console of their
 /// own, so output would vanish; borrow the console of the shell that
 /// started us instead.
-fn attach_console() {
+pub(crate) fn attach_console() {
     #[cfg(windows)]
     // SAFETY: AttachConsole has no preconditions; failing (when there's no
     // parent console) just leaves output going nowhere, as before.

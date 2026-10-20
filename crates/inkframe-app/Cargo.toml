@@ -15,6 +15,7 @@ inkframe-core.workspace = true
 inkframe-render.workspace = true
 inkframe-export.workspace = true
 inkframe-audio.workspace = true
+inkframe-script.workspace = true
 rodio.workspace = true
 eframe.workspace = true
 egui.workspace = true

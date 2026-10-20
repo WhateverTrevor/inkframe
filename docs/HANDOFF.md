@@ -482,6 +482,16 @@ after the Harmony features (palettes to master controllers).
     `--exclude inkframe-script` locally and rely on CI for Windows. Plan
     and results: docs/SCRIPTING_PLAN.md.
 
+75. Scripting step 2: the API (docs/SCRIPTING.md) in `inkframe-script`
+    (`native.rs`, `prelude.js`, `values.rs`, `files.rs`), the Scripts
+    menu (`scripts.rs`) and `inkframe --script` (`cli_script.rs`).
+    `shiftKeys` moves only keys; `shiftTime` moves the whole layer. The
+    app now depends on the C-built QuickJS, so local Windows clippy must
+    exclude both: `cargo clippy --workspace --exclude inkframe-script
+    --exclude inkframe-app --target x86_64-pc-windows-msvc`.
+    `INKFRAME_SCREENSHOT_SCRIPT=path.js` runs a script at start-up.
+    Next (step 3): the Script Console area and example scripts.
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either

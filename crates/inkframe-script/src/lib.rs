@@ -1,31 +1,74 @@
-//! Running JavaScript against an Inkframe document.
-//!
-//! This is the spike from `docs/SCRIPTING_PLAN.md`: enough to show QuickJS
-//! builds and runs on every platform, that a script can read a document
-//! and change it, and that errors, runaway loops and roll-back behave. The
-//! real API comes next, on top of this.
+//! Running JavaScript against an Inkframe document (see
+//! `docs/SCRIPTING.md` for the API, and `docs/SCRIPTING_PLAN.md` for why
+//! it's shaped this way).
 //!
 //! A script runs against a copy of the document. Only if it finishes
-//! without an error does the copy replace the original, so a script that
-//! fails partway never leaves a project half-changed. QuickJS has no file
-//! or network access of its own; a script sees only the `inkframe` object
-//! and `console` set up here.
+//! without an error does the caller get the copy back to use, so a script
+//! that fails partway never leaves a project half-changed. QuickJS has no
+//! file or network access of its own; a script sees only `inkframe` and
+//! `console` (`prelude.js`, over the functions in `native.rs`), and can
+//! only touch the files `files.rs` allows.
+
+mod files;
+mod native;
+mod values;
 
 use std::cell::{Cell, RefCell};
+use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use inkframe_core::{Document, Point, Transform};
+use inkframe_core::{Document, LayerId};
 use rquickjs::context::EvalOptions;
-use rquickjs::function::Rest;
-use rquickjs::{Coerced, Context, Ctx, Function, Object, Runtime};
+use rquickjs::{Context, Runtime};
+
+use crate::native::{Open, State};
 
 /// The most memory a script may use.
 const MEMORY_LIMIT: usize = 256 * 1024 * 1024;
+const PRELUDE: &str = include_str!("prelude.js");
 
-/// What a script that finished printed.
-#[derive(Debug, Clone, PartialEq, Default)]
+/// What to run, and on what.
+pub struct Script {
+    pub source: String,
+    /// The project it runs on, and its file if it has one.
+    pub document: Document,
+    pub path: Option<PathBuf>,
+    /// Where relative paths start from when the project has no file (the
+    /// command line's current folder); otherwise its folder is used.
+    pub base_dir: Option<PathBuf>,
+    pub selection: Vec<LayerId>,
+    /// Setting this stops the script (a Stop button).
+    pub stop: Arc<AtomicBool>,
+    /// Stops the script after this long, if set.
+    pub limit: Option<Duration>,
+}
+
+impl Script {
+    pub fn new(source: impl Into<String>, document: Document) -> Self {
+        Self {
+            source: source.into(),
+            document,
+            path: None,
+            base_dir: None,
+            selection: Vec::new(),
+            stop: Arc::new(AtomicBool::new(false)),
+            limit: None,
+        }
+    }
+}
+
+/// A script that finished.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Outcome {
+    /// The project with the script's changes.
+    pub document: Document,
+    /// Its file, which `save(path)` may have changed.
+    pub path: Option<PathBuf>,
+    /// The layers to select, if the script chose some.
+    pub selection: Option<Vec<LayerId>>,
     pub log: Vec<String>,
 }
 
@@ -34,96 +77,95 @@ pub enum ScriptError {
     /// The script threw, or had a syntax error.
     #[error("{}{message}", line.map_or_else(String::new, |l| format!("line {l}: ")))]
     Failed { message: String, line: Option<u32>, log: Vec<String> },
-    #[error("the script ran for more than {} seconds and was stopped", .0.as_secs())]
-    TimedOut(Duration),
+    #[error("the script was stopped")]
+    Stopped { log: Vec<String> },
+    #[error("the script ran for more than {} seconds and was stopped", .limit.as_secs())]
+    TimedOut { limit: Duration, log: Vec<String> },
     #[error("couldn't start JavaScript: {0}")]
     Engine(String),
 }
 
-/// Runs `source` against `doc`, stopping it after `limit`. On success the
-/// document holds the script's changes; on any failure it's unchanged.
-pub fn run(doc: &mut Document, source: &str, limit: Duration) -> Result<Outcome, ScriptError> {
+impl ScriptError {
+    /// What the script printed before it went wrong.
+    pub fn log(&self) -> &[String] {
+        match self {
+            ScriptError::Failed { log, .. }
+            | ScriptError::Stopped { log }
+            | ScriptError::TimedOut { log, .. } => log,
+            ScriptError::Engine(_) => &[],
+        }
+    }
+}
+
+/// Runs a script to the end. This blocks, so the app runs it on a thread.
+pub fn run(script: Script) -> Result<Outcome, ScriptError> {
     let engine = |e: rquickjs::Error| ScriptError::Engine(e.to_string());
     let runtime = Runtime::new().map_err(engine)?;
     runtime.set_memory_limit(MEMORY_LIMIT);
     let started = Instant::now();
+    let (limit, stop) = (script.limit, Arc::clone(&script.stop));
     let timed_out = Rc::new(Cell::new(false));
     let flag = Rc::clone(&timed_out);
     runtime.set_interrupt_handler(Some(Box::new(move || {
-        let over = started.elapsed() > limit;
+        let over = limit.is_some_and(|limit| started.elapsed() > limit);
         flag.set(over);
-        over
+        over || stop.load(Ordering::Relaxed)
     })));
     let context = Context::full(&runtime).map_err(engine)?;
 
-    let working = Rc::new(RefCell::new(doc.clone()));
-    let log = Rc::new(RefCell::new(Vec::new()));
+    let base_dir = script.path.as_deref().and_then(|p| p.parent()).map(Into::into).or(script.base_dir);
+    let state = Rc::new(RefCell::new(State {
+        docs: vec![Open { doc: script.document, path: script.path }],
+        base_dir,
+        selection: script.selection,
+        selection_changed: false,
+        log: Vec::new(),
+    }));
     let result = context.with(|ctx| {
-        install(&ctx, &working, &log).map_err(engine)?;
-        let mut options = EvalOptions::default();
-        options.filename = Some("script.js".to_owned());
-        match ctx.eval_with_options::<(), _>(source, options) {
+        native::install(&ctx, &state).map_err(engine)?;
+        let eval = |source: &str, file: &str| {
+            let mut options = EvalOptions::default();
+            options.filename = Some(file.to_owned());
+            options.strict = false;
+            ctx.eval_with_options::<(), _>(source, options)
+        };
+        eval(PRELUDE, "prelude.js").map_err(|e| ScriptError::Engine(format!("the prelude failed: {e}")))?;
+        match eval(&script.source, "script.js") {
             Ok(()) => Ok(()),
             Err(rquickjs::Error::Exception) => {
                 let thrown = ctx.catch();
                 let (message, stack) = match thrown.as_exception() {
                     Some(e) => (e.message().unwrap_or_default(), e.stack().unwrap_or_default()),
-                    None => (format!("{thrown:?}"), String::new()),
+                    None => (describe(&thrown), String::new()),
                 };
-                Err(ScriptError::Failed { message, line: line_of(&stack), log: log.borrow().clone() })
+                Err(ScriptError::Failed { message, line: line_of(&stack), log: state.borrow().log.clone() })
             }
             Err(other) => Err(engine(other)),
         }
     });
+    let log = state.borrow().log.clone();
     if timed_out.get() {
-        return Err(ScriptError::TimedOut(limit));
+        return Err(ScriptError::TimedOut { limit: limit.unwrap_or_default(), log });
+    }
+    if script.stop.load(Ordering::Relaxed) {
+        return Err(ScriptError::Stopped { log });
     }
     result?;
-    *doc = working.borrow().clone();
-    let log = log.borrow().clone();
-    Ok(Outcome { log })
+    // The engine's functions still hold the state, so the results are
+    // taken out of it rather than unwrapped.
+    let mut state = state.borrow_mut();
+    let first = std::mem::take(&mut state.docs).swap_remove(0);
+    let selection = state.selection_changed.then(|| std::mem::take(&mut state.selection));
+    Ok(Outcome { document: first.doc, path: first.path, selection, log })
 }
 
-/// The `inkframe` object and `console`.
-fn install<'js>(
-    ctx: &Ctx<'js>,
-    doc: &Rc<RefCell<Document>>,
-    log: &Rc<RefCell<Vec<String>>>,
-) -> rquickjs::Result<()> {
-    let globals = ctx.globals();
-
-    let console = Object::new(ctx.clone())?;
-    let lines = Rc::clone(log);
-    console.set(
-        "log",
-        Function::new(ctx.clone(), move |parts: Rest<Coerced<String>>| {
-            let line: Vec<String> = parts.0.into_iter().map(|p| p.0).collect();
-            lines.borrow_mut().push(line.join(" "));
-        })?,
-    )?;
-    globals.set("console", console)?;
-
-    let inkframe = Object::new(ctx.clone())?;
-    {
-        let d = doc.borrow();
-        inkframe.set("width", d.width)?;
-        inkframe.set("height", d.height)?;
-        inkframe.set("duration", d.duration)?;
-        inkframe.set("layerNames", d.layers.iter().rev().map(|l| l.name.clone()).collect::<Vec<_>>())?;
-    }
-    let target = Rc::clone(doc);
-    // addLayer(name, frame, x, y): a new empty layer, its position keyed
-    // on `frame` (counted from 1, as the timeline shows).
-    inkframe.set(
-        "addLayer",
-        Function::new(ctx.clone(), move |name: String, frame: u32, x: f32, y: f32| {
-            let mut d = target.borrow_mut();
-            let frame = frame.saturating_sub(1);
-            d.add_layer(name, Vec::new(), frame, Transform::at(Point::new(x, y)));
-        })?,
-    )?;
-    globals.set("inkframe", inkframe)?;
-    Ok(())
+/// A thrown value that isn't an Error object, as text.
+fn describe(value: &rquickjs::Value<'_>) -> String {
+    value
+        .as_string()
+        .and_then(|s| s.to_string().ok())
+        .or_else(|| value.as_number().map(|n| n.to_string()))
+        .unwrap_or_else(|| "the script threw something that isn't an error".to_owned())
 }
 
 /// The line in `script.js` an error's stack points to.
@@ -135,64 +177,185 @@ fn line_of(stack: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use inkframe_core::{Easing, Point};
 
-    const SECOND: Duration = Duration::from_secs(1);
+    /// Runs `source` on `doc`, stopping it after a few seconds.
+    fn run_on(doc: Document, source: &str) -> Result<Outcome, ScriptError> {
+        run(Script { limit: Some(Duration::from_secs(5)), ..Script::new(source, doc) })
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("inkframe-script-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
 
     #[test]
     fn a_script_reads_the_document_and_logs() {
-        let mut doc = Document::default();
-        let outcome =
-            run(&mut doc, "console.log(`${inkframe.width}x${inkframe.height}`, 'at', 24, 'fps');", SECOND);
-        assert_eq!(outcome.unwrap().log, ["1920x1080 at 24 fps"]);
-    }
-
-    #[test]
-    fn a_script_changes_the_document() {
-        let mut doc = Document::default();
-        let script = "for (let i = 1; i <= 3; i++) inkframe.addLayer(`Dot ${i}`, 1, i * 100, 50);";
-        run(&mut doc, script, SECOND).unwrap();
-        let names: Vec<&str> = doc.layers.iter().map(|l| l.name.as_str()).collect();
-        assert_eq!(names, ["Dot 1", "Dot 2", "Dot 3"]);
-        assert_eq!(doc.layers[2].transform_at(0).position, Point::new(300.0, 50.0));
-    }
-
-    #[test]
-    fn a_failing_script_changes_nothing_and_says_where() {
-        let mut doc = Document::default();
-        let script = "inkframe.addLayer('Kept?', 1, 0, 0);\nconsole.log('before');\nnotAFunction();";
-        let error = run(&mut doc, script, SECOND).unwrap_err();
-        let ScriptError::Failed { line, log, message } = &error else { panic!("{error:?}") };
-        assert_eq!(*line, Some(3), "{message}");
-        assert_eq!(log, &["before"]);
-        assert!(doc.layers.is_empty(), "rolled back");
-        assert!(error.to_string().starts_with("line 3: "), "{error}");
-    }
-
-    #[test]
-    fn syntax_errors_are_reported_too() {
-        let error = run(&mut Document::default(), "let x = ;", SECOND).unwrap_err();
-        assert!(matches!(error, ScriptError::Failed { line: Some(1), .. }), "{error:?}");
-    }
-
-    #[test]
-    fn a_runaway_script_is_stopped() {
-        let mut doc = Document::default();
-        let started = Instant::now();
-        let error =
-            run(&mut doc, "inkframe.addLayer('x', 1, 0, 0); while (true) {}", Duration::from_millis(200));
-        assert_eq!(error.unwrap_err(), ScriptError::TimedOut(Duration::from_millis(200)));
-        assert!(started.elapsed() < Duration::from_secs(5));
-        assert!(doc.layers.is_empty());
-    }
-
-    #[test]
-    fn scripts_have_no_file_access() {
-        // QuickJS's own std and os modules aren't loaded, so neither exists.
-        let outcome = run(
-            &mut Document::default(),
-            "console.log(typeof std, typeof os, typeof require, typeof fetch)",
-            SECOND,
+        let out = run_on(
+            Document::default(),
+            "const d = inkframe.document; console.log(d.width, 'x', d.height, d.frameRate);",
         );
-        assert_eq!(outcome.unwrap().log, ["undefined undefined undefined undefined"]);
+        assert_eq!(out.unwrap().log, ["1920 x 1080 24"]);
+    }
+
+    #[test]
+    fn a_script_builds_an_animated_layer() {
+        let script = r##"
+            const doc = inkframe.document;
+            const ball = doc.addLayer("Ball", { ellipse: [80, 80], fill: "#f63", at: [960, 200] });
+            ball.setKey(1, { position: [960, 200] }, { easing: "ease-in" });
+            ball.setKey(12, { position: [960, 880], scale: [1.2, 0.8] }, { easing: "ease-out" });
+            ball.setKey(24, { position: [960, 200], scale: [1, 1] });
+            console.log(ball.valueAt("position", 12), ball.keys("position").length);
+        "##;
+        let out = run_on(Document::default(), script).unwrap();
+        assert_eq!(out.log, ["[960,880] 3"]);
+        let ball = &out.document.layers[0];
+        assert_eq!(ball.name, "Ball");
+        let keys = ball.track.position.keys();
+        assert_eq!(
+            (keys[0].frame, keys[0].easing),
+            (0, Easing::EaseIn),
+            "easing set before the next key holds"
+        );
+        assert_eq!((keys[1].frame, keys[1].easing), (11, Easing::EaseOut));
+        assert_eq!(ball.track.sample(11.0).scale, Point::new(1.2, 0.8));
+        assert_eq!(
+            ball.drawings[0].elements[0].style.fill,
+            Some(inkframe_core::Color::rgb(0xff, 0x66, 0x33))
+        );
+    }
+
+    #[test]
+    fn layers_are_listed_top_first_and_can_be_changed() {
+        let script = r##"
+            const doc = inkframe.document;
+            doc.addLayer("Back"); doc.addLayer("Middle"); doc.addLayer("Front");
+            console.log(doc.layers.map(l => l.name).join(","));
+            const middle = doc.layer("Middle");
+            middle.name = "Renamed"; middle.visible = false; middle.start = 5; middle.moveUp();
+            doc.layer("Back").shiftTime(3);
+            doc.layer("Front").remove();
+            console.log(doc.layers.map(l => `${l.name}:${l.visible}:${l.start}`).join(","));
+        "##;
+        let out = run_on(Document::default(), script).unwrap();
+        assert_eq!(out.log, ["Front,Middle,Back", "Renamed:false:5,Back:true:4"]);
+    }
+
+    #[test]
+    fn shifting_keys_moves_the_animation_and_not_the_layer() {
+        let script = r##"
+            const layer = inkframe.document.addLayer("A");
+            layer.setKey(1, { rotation: 0 }).setKey(10, { rotation: 90 });
+            layer.shiftKeys(4);
+            console.log(layer.start, layer.keys("rotation").map(k => k.frame));
+        "##;
+        assert_eq!(run_on(Document::default(), script).unwrap().log, ["1 [5,14]"]);
+    }
+
+    #[test]
+    fn mistakes_explain_themselves() {
+        let error = |source: &str| run_on(Document::default(), source).unwrap_err().to_string();
+        assert!(
+            error("inkframe.document.addLayer('A').setKey(1, { colour: 1 })")
+                .contains("no property called colour")
+        );
+        assert!(error("inkframe.document.addLayer('A').setKey(0, { rotation: 1 })").contains("from 1"));
+        assert!(
+            error("inkframe.document.addLayer('A').setKey(1, { rotation: 1 }, { easing: 'bouncy' })")
+                .contains("isn't an easing")
+        );
+        assert!(error("inkframe.document.background = 'red'").contains("isn't a colour"));
+    }
+
+    #[test]
+    fn a_failing_script_reports_where_and_its_changes_are_not_kept() {
+        let script = "inkframe.document.addLayer('Kept?');\nconsole.log('before');\nnotAFunction();";
+        let error = run_on(Document::default(), script).unwrap_err();
+        assert!(matches!(&error, ScriptError::Failed { line: Some(3), .. }), "{error:?}");
+        assert_eq!(error.log(), ["before"]);
+        assert!(error.to_string().starts_with("line 3: "), "{error}");
+        assert!(matches!(
+            run_on(Document::default(), "let x = ;"),
+            Err(ScriptError::Failed { line: Some(1), .. })
+        ));
+    }
+
+    #[test]
+    fn a_running_script_can_be_stopped_or_times_out() {
+        let stop = Arc::new(AtomicBool::new(true));
+        let stopped = run(Script { stop, ..Script::new("while (true) {}", Document::default()) });
+        assert!(matches!(stopped, Err(ScriptError::Stopped { .. })));
+        let slow = run(Script {
+            limit: Some(Duration::from_millis(100)),
+            ..Script::new("while (true) {}", Document::default())
+        });
+        assert!(matches!(slow, Err(ScriptError::TimedOut { .. })));
+    }
+
+    #[test]
+    fn scripts_reach_no_files_or_network_but_their_own() {
+        let out =
+            run_on(Document::default(), "console.log(typeof std, typeof os, typeof require, typeof fetch)");
+        assert_eq!(out.unwrap().log, ["undefined undefined undefined undefined"]);
+        // Only projects and exports, and only at paths that make sense.
+        let dir = scratch("paths");
+        let doc = Script {
+            base_dir: Some(dir.clone()),
+            ..Script::new("inkframe.document.save('notes.txt')", Document::default())
+        };
+        assert!(run(doc).unwrap_err().to_string().contains("isn't an Inkframe project"));
+        let export = Script {
+            base_dir: Some(dir.clone()),
+            ..Script::new("inkframe.document.export({ format: 'png', to: 'shot.mp4' })", Document::default())
+        };
+        assert!(run(export).unwrap_err().to_string().contains("needs to end in .png"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_script_saves_opens_and_exports() {
+        let dir = scratch("files");
+        let script = r##"
+            const doc = inkframe.document;
+            doc.duration = 3;
+            doc.addLayer("Box", { rect: [100, 100], fill: "#000" });
+            doc.save("box.inkf");
+            const copy = inkframe.open("box.inkf");
+            copy.layer("Box").name = "Copy";
+            copy.save("copy.inkf");
+            console.log(copy.layers[0].name, doc.export({ format: "png", to: "frames/box.png", scale: 0.1 }).endsWith("box.png"));
+        "##;
+        let out =
+            run(Script { base_dir: Some(dir.clone()), ..Script::new(script, Document::default()) }).unwrap();
+        assert_eq!(out.log, ["Copy true"]);
+        assert_eq!(out.path, Some(dir.join("box.inkf")), "saving gave the project a file");
+        assert_eq!(Document::load(dir.join("copy.inkf")).unwrap().layers[0].name, "Copy");
+        assert!(dir.join("frames/box_0001.png").is_file() && dir.join("frames/box_0003.png").is_file());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_script_reads_and_sets_the_selection() {
+        let mut doc = Document::default();
+        let a = doc.add_layer("A", vec![], 0, inkframe_core::Transform::default());
+        let b = doc.add_layer("B", vec![], 0, inkframe_core::Transform::default());
+        let script = "const doc = inkframe.document; console.log(doc.selectedLayers.map(l => l.name)); doc.select([doc.layer('B')]);";
+        let out = run(Script { selection: vec![a], ..Script::new(script, doc) }).unwrap();
+        assert_eq!(out.log, [r#"["A"]"#]);
+        assert_eq!(out.selection, Some(vec![b]));
+    }
+
+    #[test]
+    fn swatches_can_be_read_added_and_recoloured() {
+        let script = r##"
+            const doc = inkframe.document;
+            doc.addSwatch("Skin", "#f0c8a0");
+            doc.setSwatch(0, "#e0b890");
+            console.log(doc.swatches[0].name, doc.swatches[0].color);
+        "##;
+        assert_eq!(run_on(Document::default(), script).unwrap().log, ["Skin #e0b890ff"]);
     }
 }

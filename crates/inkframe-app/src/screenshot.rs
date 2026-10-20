@@ -36,6 +36,8 @@
 //! * `INKFRAME_SCREENSHOT_RECOVERY=1` shows the Recover Unsaved Work window, for a copy
 //!   of the opened project left in a scratch folder.
 //! * `INKFRAME_SCREENSHOT_EXAMPLES=1` opens File › Open Example.
+//! * `INKFRAME_SCREENSHOT_SCRIPT=path.js` runs a script on the opened project, as the
+//!   Scripts menu does.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -140,6 +142,11 @@ impl AutoScreenshot {
     /// and `apply` to vectorise straight away.
     pub fn vectorise() -> Option<String> {
         std::env::var("INKFRAME_SCREENSHOT_VECTORISE").ok()
+    }
+
+    /// A script to run, as from the Scripts menu.
+    pub fn script() -> Option<std::path::PathBuf> {
+        std::env::var_os("INKFRAME_SCREENSHOT_SCRIPT").map(Into::into)
     }
 
     /// Whether to open the examples gallery.
