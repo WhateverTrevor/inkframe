@@ -264,6 +264,7 @@ impl InkframeApp {
         }
         app.saved_prefs = app.current_prefs();
         if app.screenshot.is_none() {
+            crate::scripts::add_examples_if_new();
             let autosave = Autosave::new();
             app.recoveries = autosave.left_behind();
             app.autosave = Some(autosave);
@@ -552,6 +553,11 @@ impl InkframeApp {
             }
             if let Some(degrees) = AutoScreenshot::view_rotation() {
                 app.views.stage().rotate_view(degrees);
+            }
+            if let Some(script) = AutoScreenshot::console() {
+                app.layout.replace_kind(Kind::Properties, Kind::ScriptConsole);
+                let source = std::fs::read_to_string(script).unwrap_or_default();
+                app.scripts.run_in_console(source, &app.editor);
             }
             if let Some(script) = AutoScreenshot::script() {
                 app.scripts.run_file(&script, &app.editor);
@@ -1606,6 +1612,7 @@ impl InkframeApp {
                     view.show(ui, &mut self.editor);
                 }
             }
+            Kind::ScriptConsole => self.scripts.console(ui, &mut self.editor),
             Kind::DepthView => {
                 if let Some(view) = self.views.depths.get_mut(&area) {
                     view.show(ui, &mut self.editor);

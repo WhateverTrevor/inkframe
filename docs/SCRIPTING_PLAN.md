@@ -177,3 +177,10 @@ Scripts menu with a Stop button and one undo step, and
 `prelude.js` builds the `Document` and `Layer` classes on them, which
 avoided pulling in rquickjs's macro crates.
 
+## Step 3 (2026-10-20)
+
+Built: the Script Console area (`scripts.rs`, Run with Cmd+Enter, Stop,
+output), and six example scripts in `examples/scripts`, built into the app
+and copied into the Scripts folder the first time it's made. A test runs
+every example on the rig sample.
+

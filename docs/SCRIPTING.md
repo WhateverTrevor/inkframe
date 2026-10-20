@@ -13,9 +13,13 @@ console.log(`Staggered ${layers.length} layers`);
 
 ## Running scripts
 
-- **Scripts menu:** lists the `.js` files in your Scripts folder. Choose
-  **Scripts › Open Scripts Folder** to find it, and put scripts there.
-  **Run Script…** runs any other `.js` file.
+- **Scripts menu:** lists the `.js` files in your Scripts folder, which
+  starts out holding the example scripts below. Choose **Scripts › Open
+  Scripts Folder** to find it, and put your own scripts there. **Run
+  Script…** runs any other `.js` file.
+- **Script Console:** an area (in any area's menu, under Project) with a
+  box to type or paste a script, **Run** (Cmd+Enter) and **Stop**, and
+  what it prints underneath. Good for trying things out.
 - **Command line:** `inkframe --script stagger.js walk.inkf run.inkf --save`
   runs a script on each project without opening a window, and `--save`
   saves the ones it changed. With no projects, it runs once on a new,
@@ -131,8 +135,21 @@ ball.setKey(24, { position: [960, 200], scale: [1, 1] });
 `console.log(...)` prints its arguments, separated by spaces: to the
 Script Output window in the app, or the terminal from the command line.
 
+## Example scripts
+
+These come in your Scripts folder, and in `examples/scripts`. Each starts
+with a comment saying what it does and what to change.
+
+| | |
+|---|---|
+| `bouncing-ball.js` | Builds a bouncing ball with squash and stretch: the one to read first |
+| `stagger-selected.js` | Delays each selected layer's animation a little more than the last |
+| `fade-in-out.js` | Fades the selected layers (or all) in and out at their ends |
+| `number-layers.js` | Renames layers to a prefix and a number, top to bottom |
+| `confetti.js` | Generates 40 tumbling pieces of confetti from random numbers |
+| `export-review.js` | Exports a half-size H.264 beside the project, named with today's date |
+
 ## Coming next
 
-The plan (in `SCRIPTING_PLAN.md`) adds a Script Console to type and run
-scripts in, example scripts, and then symbols, rigs, effects, particles
-and the camera.
+The plan (in `SCRIPTING_PLAN.md`) adds symbols, rigs, effects, particles
+and the camera to the API.

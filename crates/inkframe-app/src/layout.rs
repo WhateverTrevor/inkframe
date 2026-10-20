@@ -60,6 +60,8 @@ pub enum Kind {
     /// The scene from above, for arranging layers in depth (see
     /// `depth_view.rs`).
     DepthView,
+    /// Typing and running scripts (see `scripts.rs`).
+    ScriptConsole,
 }
 
 impl Kind {
@@ -71,7 +73,17 @@ impl Kind {
             &[Kind::Timeline, Kind::GraphEditor, Kind::ExposureSheet, Kind::Controllers, Kind::DepthView],
         ),
         ("Design", &[Kind::Swatches, Kind::Align]),
-        ("Project", &[Kind::Library, Kind::Templates, Kind::Audio, Kind::Document, Kind::History]),
+        (
+            "Project",
+            &[
+                Kind::Library,
+                Kind::Templates,
+                Kind::Audio,
+                Kind::Document,
+                Kind::History,
+                Kind::ScriptConsole,
+            ],
+        ),
     ];
 
     pub fn name(self) -> &'static str {
@@ -93,6 +105,7 @@ impl Kind {
             Kind::NodeView => "Node View",
             Kind::Templates => "Templates",
             Kind::DepthView => "Depth View",
+            Kind::ScriptConsole => "Script Console",
         }
     }
 
@@ -115,6 +128,7 @@ impl Kind {
             Kind::NodeView => Icon::Nodes,
             Kind::Templates => Icon::Templates,
             Kind::DepthView => Icon::Camera,
+            Kind::ScriptConsole => Icon::Console,
         }
     }
 
@@ -1220,7 +1234,7 @@ mod tests {
         let listed: Vec<Kind> = Kind::GROUPS.iter().flat_map(|(_, kinds)| kinds.iter().copied()).collect();
         let unique: std::collections::HashSet<Kind> = listed.iter().copied().collect();
         assert_eq!(listed.len(), unique.len());
-        assert_eq!(listed.len(), 17);
+        assert_eq!(listed.len(), 18);
     }
 
     #[test]

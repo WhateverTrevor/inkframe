@@ -279,7 +279,7 @@ writes. No audio.
 | `toolbar.rs` | Tool buttons with vector-drawn icons |
 | `audio_engine.rs` | Plays the soundtrack in sync (the audio clock drives playback) and scrubs it; decodes files in the background |
 | `library.rs` | The Library panel, with cached symbol thumbnails |
-| `scripts.rs` | The Scripts menu: lists the Scripts folder's `.js` files, runs one on a thread against a copy of the project (Running window with Stop), applies the result as one undo step unless the project was edited meanwhile, and shows the log or error (Script Output) |
+| `scripts.rs` | The Scripts menu and Script Console area: lists the Scripts folder's `.js` files (seeded with `EXAMPLES`, built in from `examples/scripts`, when the folder is first made), runs one on a thread against a copy of the project (Running window with Stop), applies the result as one undo step unless the project was edited meanwhile, and shows the log or error (Script Output) |
 | `cli_script.rs` | `inkframe --script SCRIPT [PROJECT...] [--save]` |
 | `examples.rs` | File › Open Example: finds the sample projects (bundled in `Contents/Resources/Examples` or an `Examples` folder beside the exe, else the checkout's `examples/`; only a folder holding `.inkf` files counts), lists them with a rendered picture and a note from `ABOUT`, and opens one as an untitled copy (`Editor::untitled_copy`) so saving never writes into the app |
 | `export_dialog.rs` | Export settings and the background export thread |

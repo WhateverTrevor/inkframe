@@ -38,6 +38,8 @@
 //! * `INKFRAME_SCREENSHOT_EXAMPLES=1` opens File › Open Example.
 //! * `INKFRAME_SCREENSHOT_SCRIPT=path.js` runs a script on the opened project, as the
 //!   Scripts menu does.
+//! * `INKFRAME_SCREENSHOT_CONSOLE=path.js` shows the Script Console in place of
+//!   Properties, with that script typed in and run.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -142,6 +144,11 @@ impl AutoScreenshot {
     /// and `apply` to vectorise straight away.
     pub fn vectorise() -> Option<String> {
         std::env::var("INKFRAME_SCREENSHOT_VECTORISE").ok()
+    }
+
+    /// A script to type into the Script Console and run.
+    pub fn console() -> Option<std::path::PathBuf> {
+        std::env::var_os("INKFRAME_SCREENSHOT_CONSOLE").map(Into::into)
     }
 
     /// A script to run, as from the Scripts menu.
