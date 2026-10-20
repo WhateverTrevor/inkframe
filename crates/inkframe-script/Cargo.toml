@@ -8,7 +8,9 @@ rust-version.workspace = true
 
 [dependencies]
 inkframe-core.workspace = true
+inkframe-export.workspace = true
 # QuickJS, a small JavaScript engine compiled in from C. It starts with no
 # file or network access; scripts get only what this crate hands them.
 rquickjs = "0.14.0"
+serde_json.workspace = true
 thiserror.workspace = true

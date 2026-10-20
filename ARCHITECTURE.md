@@ -207,6 +207,21 @@ show as crossed-out placeholders. `cargo run --release -p inkframe-render
 --example stage_benchmark` times scenes of 10 to 2,000 layers at Retina
 stage size; run it before and after renderer changes.
 
+### inkframe-script
+
+Runs JavaScript against documents with QuickJS (`rquickjs`). `run(Script)`
+evaluates `prelude.js`, which builds the `inkframe`, `Document`, `Layer`
+and `console` API on the plain functions in `native.rs` (ids for documents
+and layers, JSON for anything structured, frames from 1), then the user's
+script, all against a copy of the document; only success returns the copy
+(`Outcome`). An interrupt handler stops it on the `stop` flag or a time
+limit. `values.rs` converts properties and easing; `files.rs` resolves
+paths and allows only `.inkf` projects and exports with their format's
+extension. The app runs scripts on a thread (`scripts.rs`) and the command
+line with `inkframe --script` (`cli_script.rs`). QuickJS is C, so this
+crate (and the app) can't be cross-checked for Windows from a Mac; CI's
+Windows runner builds it.
+
 ### inkframe-audio
 
 Turns sound files into `Clip`s: interleaved stereo `f32` at 48 kHz, whatever
@@ -264,6 +279,8 @@ writes. No audio.
 | `toolbar.rs` | Tool buttons with vector-drawn icons |
 | `audio_engine.rs` | Plays the soundtrack in sync (the audio clock drives playback) and scrubs it; decodes files in the background |
 | `library.rs` | The Library panel, with cached symbol thumbnails |
+| `scripts.rs` | The Scripts menu: lists the Scripts folder's `.js` files, runs one on a thread against a copy of the project (Running window with Stop), applies the result as one undo step unless the project was edited meanwhile, and shows the log or error (Script Output) |
+| `cli_script.rs` | `inkframe --script SCRIPT [PROJECT...] [--save]` |
 | `examples.rs` | File › Open Example: finds the sample projects (bundled in `Contents/Resources/Examples` or an `Examples` folder beside the exe, else the checkout's `examples/`; only a folder holding `.inkf` files counts), lists them with a rendered picture and a note from `ABOUT`, and opens one as an untitled copy (`Editor::untitled_copy`) so saving never writes into the app |
 | `export_dialog.rs` | Export settings and the background export thread |
 | `guides.rs` | Safe areas (`SafeAreas`: current 93/90%, classic 90/80%) and the 12-field chart, as lines and labels in stage pixels; `stage.rs` draws them over the stage (the camera's frame), turned with the view |

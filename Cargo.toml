@@ -16,6 +16,7 @@ inkframe-core = { path = "crates/inkframe-core" }
 inkframe-render = { path = "crates/inkframe-render" }
 inkframe-export = { path = "crates/inkframe-export" }
 inkframe-audio = { path = "crates/inkframe-audio" }
+inkframe-script = { path = "crates/inkframe-script" }
 
 eframe = "0.36.2"
 egui = "0.36.2"

@@ -49,9 +49,9 @@ layers.forEach((layer, i) => layer.shiftKeys(i * 2));
 // Build a scene.
 const doc = inkframe.document;
 const ball = doc.addLayer("Ball", { ellipse: [80, 80], fill: "#ff6633" });
-ball.setKey(1,  { position: [960, 200] });
-ball.setKey(12, { position: [960, 880] }, { easing: "ease-in" });
-ball.setKey(24, { position: [960, 200] }, { easing: "ease-out" });
+ball.setKey(1,  { position: [960, 200] }, { easing: "ease-in" });
+ball.setKey(12, { position: [960, 880] }, { easing: "ease-out" });
+ball.setKey(24, { position: [960, 200] });
 
 // Export with a studio's naming.
 inkframe.export({ format: "h264", to: `renders/${doc.name}_v001.mp4` });
@@ -164,4 +164,16 @@ a time limit.
   will have to leave the app out too, relying on CI.
 
 Pending: the CI run on Windows, which happens once the crate is merged.
+
+The Windows CI run passed (QuickJS builds and its tests run there), so
+JavaScript stays.
+
+## Step 2 (2026-10-20)
+
+Built: the API in `docs/SCRIPTING.md` (documents, layers, keys with
+easing, simple shapes, swatches, open, save, export, console), the
+Scripts menu with a Stop button and one undo step, and
+`inkframe --script`. The natives in `native.rs` pass plain values and JSON;
+`prelude.js` builds the `Document` and `Layer` classes on them, which
+avoided pulling in rquickjs's macro crates.
 
