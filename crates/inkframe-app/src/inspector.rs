@@ -73,12 +73,15 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) -> 
 }
 
 fn layer_tab(ui: &mut egui::Ui, editor: &mut Editor) {
-    // With several layers selected, the panel shows the one picked last.
+    // With several layers selected, the panel shows the one picked last,
+    // and what's changed here is carried to the rest (see `multi_edit.rs`).
     let count = editor.selected_ids().len();
     if count > 1 {
-        ui.weak(format!(
-            "{count} layers selected. Below is the last one picked; drag on the stage to move them all."
-        ));
+        ui.label(egui::RichText::new(format!("{count} layers selected")).strong());
+        ui.weak(
+            "Showing the last one picked. Changes to the layer and transform settings apply to all of them: \
+             position moves them together, other values are set on each. • marks a value that differs.",
+        );
         ui.add_space(4.0);
     }
     match editor.selection {
@@ -571,6 +574,7 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         camera_section(ui, editor, id);
         return;
     }
+    let Some(before) = editor.doc.layer(id).map(crate::multi_edit::LayerSettings::of) else { return };
     let Some(layer) = editor.doc.layer_mut(id) else { return };
 
     ui.heading("Layer");
@@ -595,6 +599,7 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
             }
         });
     });
+    editor.carry_settings(id, before);
 
     ui.add_space(8.0);
     transform_section(ui, editor, id, frame);
@@ -1100,6 +1105,21 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
     let has_key = |property: Property| layer.track.channel(property).has_key(frame);
     let keyed = Property::ALL.map(has_key);
     let mut pose = editor.doc.pose(layer, frame);
+    let before = pose;
+    let several = !editor.also_editing(id).is_empty();
+    // Which rows differ between the selected layers, to mark them.
+    let differs = |property: Property| {
+        several
+            && editor.pose_differs(id, |p| match property {
+                Property::Position => [p.position.x, p.position.y],
+                Property::Rotation => [p.rotation, 0.0],
+                Property::Scale => [p.scale.x, p.scale.y],
+                Property::Skew => [p.skew.x, p.skew.y],
+                Property::Opacity => [p.opacity, 0.0],
+                Property::Effects | Property::Depth => [0.0, 0.0],
+            })
+    };
+    let mixed: Vec<Property> = Property::ALL.into_iter().filter(|&p| differs(p)).collect();
     // Depth, for the camera: only layers at the top of a rig on the main
     // timeline sit at a depth; the rest go with them.
     let has_depth =
@@ -1129,7 +1149,14 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
             if key_toggle(ui, property, is_key).clicked() {
                 toggled = Some(property);
             }
-            let label = ui.label(property.name());
+            let label = if mixed.contains(&property) {
+                ui.label(format!("{} •", property.name())).on_hover_text(
+                    "Differs between the selected layers. Changing it sets them all (position moves them all \
+                     by the same amount).",
+                )
+            } else {
+                ui.label(property.name())
+            };
             if property == Property::Depth {
                 label.on_hover_text(
                     "How far behind the stage the layer sits, for the camera: deeper layers look smaller \
@@ -1176,12 +1203,15 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
         pose.scale.y = scale_pct[1] / 100.0;
         pose.opacity = opacity_pct / 100.0;
         editor.set_pose(id, pose);
+        editor.carry_pose_change(id, before, pose);
     }
     if depth_changed {
         editor.set_depth(id, depth);
+        editor.carry_depth(id, depth);
     }
     if let Some(property) = toggled {
         editor.toggle_property_key(id, property);
+        editor.carry_key(id, property);
     }
     motion_path_section(ui, editor, id);
     mask_section(ui, editor, id);
