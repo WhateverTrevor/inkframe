@@ -47,6 +47,7 @@ The data model and the math behind animation.
 | `shape.rs` | Rectangles, ellipses, Bézier paths, images, styles, and hit-testing |
 | `freehand.rs` | Turns jittery pointer samples into a smooth path |
 | `anchor.rs` | Anchor points with in/out handles; conversion between anchors, paths and shapes; nearest-point search and curve-preserving point insertion |
+| `frames.rs` | Editing a layer's time: `insert_frames`, `remove_frames` and `reverse_frames`, all through one `retime` that moves every key, deformer key, drawing swap and shape tween (and `AnyChannel::retime` / `reverse_span`, `Easing::reversed`) |
 | `library.rs` | `Asset` (a symbol, image or sound) and the Library's one-level folders: each asset names its folder, `Document::library_folders` keeps empty ones; renaming, moving and deleting assets |
 | `symbol.rs` | `Symbol` (library entry), `Instance` (a symbol placed on a layer) and its timing, Convert to Symbol (one layer, or several with their links via `convert_layers_to_symbol`), and symbol-aware bounds and hit-testing |
 | `template.rs` | Templates: copied layers (with their symbols, pictures, fonts and canvases) saved as a file of their own with the frame they started on; `insert_template` moves their animation to the playhead (`Layer::shift_time`) and pastes them |
@@ -267,6 +268,7 @@ writes. No audio.
 | `app.rs` | Window layout, menus, the `Command` enum, file open/save |
 | `editor.rs` | `Editor`: document, selection, current frame, tool, and the operations panels call |
 | `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles; `stage/inside.rs` handles the pointer while inside a layer (picking, moving and scaling shapes) |
+| `frame_commands.rs` | Animate's frame commands on the frames picked in the timeline (Insert/Remove Frames, Blank Keyframe, Convert to Keyframes, Reverse Frames) and Edit Multiple Frames' move across them (`MultiFrameMove`) |
 | `multi_edit.rs` | Carrying a change made in the properties panel to every selected layer: position by the same amount, other values set the same, only what changed |
 | `inside.rs` | Working inside one layer: which shapes are picked (by their place in the showing drawing), hit-testing them, moving and scaling them by their points (`Element::transformed`), deleting them, and making a symbol of them |
 | `handles.rs` | The math for scale and rotate handles (anchor pinning, multi-turn rotation) |

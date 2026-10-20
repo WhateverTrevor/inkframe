@@ -121,6 +121,9 @@ enum Drag {
     Audio { id: AudioId, grab: i64, original_start: u32 },
     /// Dragging along the ruler or empty cells moves the playhead.
     Scrub,
+    /// Shift-dragging along a row picks frames, from `anchor` to the
+    /// pointer, for the frame commands.
+    Range { anchor: u32 },
     /// Dragging a key slides it to another frame. On a summary row this
     /// moves every property's key on that frame together.
     Key { row: Row, frame: u32 },
@@ -497,6 +500,7 @@ impl TimelineView {
 
         painter.rect_filled(rect, 0.0, ui.visuals().extreme_bg_color);
         paint_frames(&painter.with_clip_rect(layout.frames), editor, &layout, &rows);
+        paint_frame_range(&painter.with_clip_rect(layout.frames), ui, editor, &layout, &rows);
         paint_ruler(&painter.with_clip_rect(layout.ruler), ui, editor, &layout);
         self.paint_names(&painter.with_clip_rect(layout.names), ui, editor, &layout, &rows);
         paint_audio_rows(
@@ -678,6 +682,10 @@ impl TimelineView {
             let frame = clamp_frame(layout.frame_at(p.x));
             match drag {
                 Drag::Scrub => editor.set_frame(frame),
+                Drag::Range { anchor } => {
+                    editor.frame_range = Some((*anchor, frame));
+                    editor.set_frame(frame);
+                }
                 Drag::Audio { id, grab, original_start } => {
                     let moved = layout.frame_at(p.x) - *grab;
                     if let Some(track) = editor.doc.audio_track_mut(*id) {
@@ -853,8 +861,22 @@ impl TimelineView {
         if layout.frames.contains(p) {
             let Some(row) = row else {
                 editor.select(None);
+                editor.frame_range = None;
                 return Some(Drag::Scrub);
             };
+            // Shift (or ⌘) picks frames, from the current frame (or the
+            // start of what's picked) to here, for the frame commands.
+            if adding && let Ok(frame) = u32::try_from(layout.frame_at(p.x)) {
+                if !editor.is_selected(row.layer) {
+                    select_row(editor, row);
+                }
+                let frame = frame.min(editor.last_frame());
+                let anchor = editor.frame_range.map_or(editor.frame, |(a, _)| a);
+                editor.frame_range = Some((anchor, frame));
+                editor.set_frame(frame);
+                return Some(Drag::Range { anchor });
+            }
+            editor.frame_range = None;
             select_row(editor, row);
             let doc_last_frame = editor.last_frame();
             let layer = editor.doc.layer(row.layer)?;
@@ -1191,6 +1213,19 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) 
             .clicked()
         {
             editor.light_table = !lit;
+        }
+        if ui
+            .add(
+                IconButton::new(
+                    Icon::MultipleFrames,
+                    "Edit multiple frames: dragging on the stage moves layers across the picked frames (or all of \
+                     them), not just this one",
+                )
+                .selected(editor.edit_multiple),
+            )
+            .clicked()
+        {
+            editor.edit_multiple = !editor.edit_multiple;
         }
         let onion = editor.onion.enabled;
         if ui
@@ -1683,6 +1718,32 @@ fn paint_ruler(painter: &egui::Painter, ui: &egui::Ui, editor: &Editor, layout: 
     );
 }
 
+/// The frames picked for the frame commands, outlined on the selected
+/// layers' rows; and with Edit Multiple Frames on, the frames it moves
+/// across, marked along the top.
+fn paint_frame_range(painter: &egui::Painter, ui: &egui::Ui, editor: &Editor, layout: &Layout, rows: &[Row]) {
+    let accent = ui.visuals().selection.stroke.color;
+    let span_x = |(first, last): (u32, u32)| layout.frame_x(first)..=layout.frame_x(last + 1);
+    if editor.frame_range.is_some() {
+        let across = span_x(editor.frame_span());
+        for (index, row) in rows.iter().enumerate() {
+            if row.property.is_none() && editor.is_selected(row.layer) {
+                let cells =
+                    Rect::from_x_y_ranges(across.clone(), layout.row_rect(index, layout.frames).y_range());
+                painter.rect_filled(cells, 2.0, accent.gamma_multiply(0.25));
+                painter.rect_stroke(cells.shrink(0.5), 2.0, (1.0, accent), egui::StrokeKind::Inside);
+            }
+        }
+    }
+    if editor.edit_multiple {
+        let band = Rect::from_x_y_ranges(
+            span_x(editor.multiple_frames()),
+            layout.frames.top()..=layout.frames.top() + 3.0,
+        );
+        painter.rect_filled(band, 0.0, accent);
+    }
+}
+
 /// Only the frames whose columns are on screen, so long animations stay fast.
 fn visible_frame_range(layout: &Layout, total: u32) -> std::ops::Range<u32> {
     let first = layout.frame_at(layout.frames.left()).max(0) as u32;
@@ -1881,6 +1942,30 @@ mod tests {
         assert_eq!(layers[0].id, id, "A stays at the bottom");
         assert_eq!(layers[1].instance.map(|i| i.symbol), Some(symbol), "placed just above A");
         assert_eq!(editor.selection, Some(layers[1].id));
+    }
+
+    #[test]
+    fn shift_dragging_along_a_row_picks_frames_for_the_frame_commands() {
+        let (mut h, id) = harness();
+        h.state_mut().1.set_frame(3);
+        h.run();
+        let (from, to) = (cell(&h, 0, 3), cell(&h, 0, 6));
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+        drag(&mut h, from, to);
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+        assert_eq!(h.state().1.frame_range, Some((3, 6)));
+        assert_eq!(h.state().1.frame_span(), (3, 6));
+
+        // F5 then holds frame 3 four frames longer: the position key on
+        // 20 moves to 24.
+        h.state_mut().1.insert_frames();
+        let keys = h.state().1.doc.layer(id).unwrap().track.position.key_frames();
+        assert_eq!(keys, vec![0, 24]);
+
+        // A plain click forgets the picked frames.
+        let elsewhere = cell(&h, 0, 12);
+        drag(&mut h, elsewhere, elsewhere);
+        assert_eq!(h.state().1.frame_range, None);
     }
 
     #[test]

@@ -100,6 +100,13 @@ enum Command {
     LipSync,
     NewLayer,
     NewPaintLayer,
+    // Frame commands (see `frame_commands.rs`).
+    InsertFrames,
+    RemoveFrames,
+    InsertBlankKeyframe,
+    ConvertToKeyframes,
+    ConvertToBlankKeyframes,
+    ReverseFrames,
     NewFolder,
     CreateShapeTween,
     AddCamera,
@@ -810,6 +817,20 @@ impl InkframeApp {
             Command::NextDrawing if editor.tool.uses_brush() => editor.resize_brush(BRUSH_STEP),
             Command::PreviousDrawing => editor.cycle_drawing(-1),
             Command::NextDrawing => editor.cycle_drawing(1),
+            Command::InsertFrames => editor.insert_frames(),
+            Command::RemoveFrames => editor.remove_frames(),
+            Command::InsertBlankKeyframe => editor.insert_blank_keyframe(),
+            Command::ConvertToKeyframes => editor.convert_to_keyframes(false),
+            Command::ConvertToBlankKeyframes => editor.convert_to_keyframes(true),
+            Command::ReverseFrames => {
+                if !editor.reverse_frames() {
+                    show_error(
+                        "Pick some frames first",
+                        "Reverse Frames plays a stretch backwards. Shift-click or Shift-drag along a layer's row in \
+                         the timeline to pick the frames.",
+                    );
+                }
+            }
             Command::NewLayer => {
                 editor.add_empty_layer();
             }
@@ -885,6 +906,10 @@ impl InkframeApp {
             (ZOOM_IN, Command::ZoomIn),
             (ZOOM_OUT, Command::ZoomOut),
             (REMOVE_KEYFRAME, Command::RemoveKeyframe),
+            // Shift+F5 before F5, since shortcuts ignore extra Shift.
+            (REMOVE_FRAMES, Command::RemoveFrames),
+            (INSERT_FRAMES, Command::InsertFrames),
+            (INSERT_BLANK_KEYFRAME, Command::InsertBlankKeyframe),
             (LAYER_START_HERE, Command::LayerStartHere),
             (LAYER_END_HERE, Command::LayerEndHere),
             // After the ⌥ versions above, so those don't also swap.
@@ -1201,6 +1226,49 @@ impl InkframeApp {
                     Command::RemoveKeyframe,
                     has_selection,
                 );
+                ui.separator();
+                // Animate's frame commands, on the picked frames (or the
+                // current one); see `frame_commands.rs`.
+                item(
+                    ui,
+                    "Insert Frames",
+                    Some(shortcuts::INSERT_FRAMES),
+                    Command::InsertFrames,
+                    has_selection,
+                );
+                item(
+                    ui,
+                    "Remove Frames",
+                    Some(shortcuts::REMOVE_FRAMES),
+                    Command::RemoveFrames,
+                    has_selection,
+                );
+                item(
+                    ui,
+                    "Insert Blank Keyframe",
+                    Some(shortcuts::INSERT_BLANK_KEYFRAME),
+                    Command::InsertBlankKeyframe,
+                    has_selection,
+                );
+                let picked = self.editor.frame_range.is_some();
+                item(ui, "Convert to Keyframes", None, Command::ConvertToKeyframes, has_selection && picked);
+                item(
+                    ui,
+                    "Convert to Blank Keyframes",
+                    None,
+                    Command::ConvertToBlankKeyframes,
+                    has_selection && picked,
+                );
+                item(ui, "Reverse Frames", None, Command::ReverseFrames, has_selection && picked);
+                if ui
+                    .checkbox(&mut self.editor.edit_multiple, "Edit Multiple Frames")
+                    .on_hover_text(
+                        "Dragging on the stage moves layers across the picked frames (or all of them)",
+                    )
+                    .clicked()
+                {
+                    ui.close();
+                }
                 ui.separator();
                 item(
                     ui,

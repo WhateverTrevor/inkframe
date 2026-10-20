@@ -283,6 +283,12 @@ pub struct Editor {
     /// The layer double-clicked into, to pick out its shapes (see
     /// `inside.rs`).
     pub inside: Option<crate::inside::Inside>,
+    /// Frames picked in the timeline (first and last, either way round),
+    /// for the frame commands (see `frame_commands.rs`).
+    pub frame_range: Option<(u32, u32)>,
+    /// Edit Multiple Frames: dragging on the stage moves layers across the
+    /// picked frames (or all of them) at once.
+    pub edit_multiple: bool,
     /// Safe areas and the field guide over the stage.
     pub guides: Guides,
     /// Pencil lines follow the pen's pressure.
@@ -350,6 +356,8 @@ impl Editor {
             colour_art: false,
             light_table: false,
             inside: None,
+            frame_range: None,
+            edit_multiple: false,
             guides: Guides::default(),
             pencil_pressure: true,
             pencil_taper: true,
@@ -1168,8 +1176,17 @@ impl Editor {
     /// frame on: a blank one, or (`copy`) a copy of the one showing now, to
     /// change a little.
     pub fn new_drawing(&mut self, copy: bool) {
-        let frame = self.frame;
-        let Some(id) = self.selected_layer().filter(|l| l.instance.is_none()).map(|l| l.id) else { return };
+        if let Some(id) = self.selection {
+            self.new_drawing_on(id, self.frame, copy);
+        }
+    }
+
+    /// Adds a drawing to `id` and shows it from `frame` on (see
+    /// [`Editor::new_drawing`]).
+    pub fn new_drawing_on(&mut self, id: LayerId, frame: u32, copy: bool) {
+        if self.doc.layer(id).is_none_or(|l| l.instance.is_some() || l.folder || l.camera) {
+            return;
+        }
         let Some(mut elements) = self.doc.layer(id).map(|l| l.elements_at(frame).to_vec()) else { return };
         // A paint layer's new drawing is a canvas of its own: a copy of the
         // one showing, or a blank one. Other layers' blank drawings are empty.

@@ -28,6 +28,19 @@ pub enum Easing {
 }
 
 impl Easing {
+    /// The same curve run backwards, for a tween that now plays the other
+    /// way: easing in becomes easing out. A hold stays a hold.
+    pub fn reversed(self) -> Easing {
+        match self {
+            Easing::EaseIn => Easing::EaseOut,
+            Easing::EaseOut => Easing::EaseIn,
+            Easing::CubicBezier { x1, y1, x2, y2 } => {
+                Easing::CubicBezier { x1: 1.0 - x2, y1: 1.0 - y2, x2: 1.0 - x1, y2: 1.0 - y1 }
+            }
+            other => other,
+        }
+    }
+
     /// The named presets, in the order they're shown in the UI.
     pub const PRESETS: [Easing; 5] =
         [Easing::Linear, Easing::EaseIn, Easing::EaseOut, Easing::EaseInOut, Easing::Hold];

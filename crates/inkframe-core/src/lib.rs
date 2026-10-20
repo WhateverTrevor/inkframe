@@ -28,6 +28,7 @@ mod effects;
 mod fill;
 mod folder;
 mod font_file;
+mod frames;
 mod freehand;
 mod geometry;
 mod guide;

@@ -31,6 +31,8 @@ pub enum Icon {
     Last,
     Loop,
     Onion,
+    /// Three frames under one bracket: Edit Multiple Frames.
+    MultipleFrames,
     Speaker,
     SpeakerMuted,
     // Area kinds.
@@ -149,6 +151,17 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
                 egui::StrokeKind::Middle,
             );
             line(&[(0.3, 0.3), (0.3, 0.1), (0.9, 0.1), (0.9, 0.7), (0.7, 0.7)]);
+        }
+        Icon::MultipleFrames => {
+            for x in [0.1, 0.4, 0.7] {
+                painter.rect_stroke(
+                    Rect::from_min_max(at(x, 0.35), at(x + 0.2, 0.9)),
+                    1.0,
+                    stroke,
+                    egui::StrokeKind::Middle,
+                );
+            }
+            line(&[(0.1, 0.25), (0.1, 0.1), (0.9, 0.1), (0.9, 0.25)]);
         }
         Icon::Trash => {
             line(&[(0.12, 0.25), (0.88, 0.25)]);
@@ -567,6 +580,7 @@ mod tests {
             Last,
             Loop,
             Onion,
+            MultipleFrames,
             Speaker,
             SpeakerMuted,
             Stage,
