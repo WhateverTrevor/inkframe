@@ -334,6 +334,67 @@ pub fn selection_boxes(layout: &TextLayout, selection: Range<usize>) -> Vec<Rect
         .collect()
 }
 
+/// Undo and redo while typing on the stage. The project's own undo records
+/// a typing session as one step once it's over; inside it, ⌘Z steps back
+/// through what was typed, a word at a time, as in any text field.
+#[derive(Debug, Default)]
+pub struct TypingHistory {
+    undo: Vec<(String, TextCursor)>,
+    redo: Vec<(String, TextCursor)>,
+    /// Typing letters runs on into one step until a space, a deletion or a
+    /// cursor move ends the word.
+    in_word: bool,
+}
+
+impl TypingHistory {
+    /// `Some(false)` for ⌘Z (Ctrl+Z), `Some(true)` for ⌘⇧Z or Ctrl+Y.
+    pub fn undo_key(event: &Event) -> Option<bool> {
+        match event {
+            Event::Key { key: Key::Z, pressed: true, modifiers, .. } if modifiers.command => {
+                Some(modifiers.shift)
+            }
+            Event::Key { key: Key::Y, pressed: true, modifiers, .. } if modifiers.command => Some(true),
+            _ => None,
+        }
+    }
+
+    /// Notes an input event: `before` is the text and cursor before it, and
+    /// `changed` whether it changed the text.
+    pub fn record(&mut self, before: (String, TextCursor), event: &Event, changed: bool) {
+        let letters = matches!(event, Event::Text(t) if !t.chars().any(char::is_whitespace));
+        if changed {
+            if !(self.in_word && letters) {
+                self.undo.push(before);
+            }
+            self.redo.clear();
+            self.in_word = letters;
+        } else if !matches!(event, Event::PointerMoved(_) | Event::Key { pressed: false, .. }) {
+            // A cursor move ends the word, so the next letters are a step
+            // of their own.
+            self.in_word = false;
+        }
+    }
+
+    /// Puts the text back as it was before the last step. Returns whether
+    /// there was one.
+    pub fn undo(&mut self, content: &mut String, cursor: &mut TextCursor) -> bool {
+        let Some((text, at)) = self.undo.pop() else { return false };
+        self.redo.push((std::mem::replace(content, text), *cursor));
+        *cursor = at;
+        self.in_word = false;
+        true
+    }
+
+    /// Takes back an undo.
+    pub fn redo(&mut self, content: &mut String, cursor: &mut TextCursor) -> bool {
+        let Some((text, at)) = self.redo.pop() else { return false };
+        self.undo.push((std::mem::replace(content, text), *cursor));
+        *cursor = at;
+        self.in_word = false;
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -497,5 +558,39 @@ mod tests {
         assert_eq!(boxes.len(), 2);
         assert!(boxes[0].min.y < boxes[1].min.y);
         assert!(selection_boxes(&layout, 2..2).is_empty());
+    }
+
+    #[test]
+    fn typing_undoes_a_word_at_a_time() {
+        let mut history = TypingHistory::default();
+        let mut content = String::new();
+        let mut cursor = TextCursor::select(0, 0);
+        let type_text =
+            |history: &mut TypingHistory, content: &mut String, cursor: &mut TextCursor, t: &str| {
+                let before = (content.clone(), *cursor);
+                content.push_str(t);
+                *cursor = TextCursor::select(content.len(), content.len());
+                history.record(before, &Event::Text(t.to_owned()), true);
+            };
+        for t in ["h", "i", " ", "y", "o", "u"] {
+            type_text(&mut history, &mut content, &mut cursor, t);
+        }
+        assert_eq!(content, "hi you");
+        assert!(history.undo(&mut content, &mut cursor));
+        assert_eq!(content, "hi ", "the last word goes");
+        assert_eq!(cursor.cursor, 3);
+        assert!(history.undo(&mut content, &mut cursor));
+        assert_eq!(content, "hi", "then the space");
+        assert!(history.redo(&mut content, &mut cursor));
+        assert_eq!(content, "hi ");
+
+        let undo = Event::Key {
+            key: Key::Z,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::COMMAND,
+        };
+        assert_eq!(TypingHistory::undo_key(&undo), Some(false));
     }
 }

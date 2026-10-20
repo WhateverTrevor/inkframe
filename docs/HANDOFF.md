@@ -577,8 +577,13 @@ after the Harmony features (palettes to master controllers).
     `carry_pose_change` (position as a delta in each layer's own parent
     space, other components set only if changed), `carry_depth` and
     `carry_key` carry it to `also_editing` (the other selected layers,
-    not folders). `pose_differs` marks rows with •. Easing, effects, rig,
-    instance and shape settings still edit the last-picked layer only.
+    not folders). `pose_differs` marks rows with •. Effects and easing
+    are copied only from an "Apply to the other N selected layers"
+    button (`copy_effects_to_selected`, `copy_easing_to_selected`); rig,
+    instance and shape settings edit the last-picked layer only.
+86. ⌘Z while typing on the stage: `text_edit::TypingHistory` (word-sized
+    steps, redo with ⌘⇧Z/Ctrl+Y), reset in `begin_text_editing`. CHANGELOG
+    has an Unreleased section; 0.1.0's is marked as never published.
 
 ## Not yet verified by hand
 
