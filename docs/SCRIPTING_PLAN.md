@@ -142,3 +142,26 @@ Each step is its own branch, reviewed and merged like the features before.
 
 Still open: the scope of the first version (the list under *What a script
 looks like*), which can be adjusted as step 2 goes.
+
+## Spike results (2026-10-20)
+
+The spike is the `inkframe-script` crate: `run(doc, source, limit)` runs
+a script against a copy of the document, with `console.log`, an
+`inkframe` object that can read the document and add a keyed layer, and
+a time limit.
+
+- **It works on macOS:** a script reads the document, changes it, and
+  logs. A failing script leaves the document untouched and reports its
+  line, syntax errors included. A runaway loop is stopped at the time
+  limit. `std`, `os`, `require` and `fetch` don't exist, so scripts have
+  no file or network access.
+- **Size:** QuickJS adds 1.2 MB to the app (29.6 MB to 30.8 MB), and
+  compiles in about six seconds.
+- **Windows:** QuickJS is C, so the crate can no longer be checked for
+  Windows from a Mac (that needs Microsoft's C compiler). CI's Windows
+  runner builds and tests it for real. Local Windows checks now leave the
+  crate out (`--exclude inkframe-script`), and once the app uses it they
+  will have to leave the app out too, relying on CI.
+
+Pending: the CI run on Windows, which happens once the crate is merged.
+
