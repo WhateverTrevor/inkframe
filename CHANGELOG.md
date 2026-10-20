@@ -3,6 +3,77 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
+## [0.2.0]
+
+Drawing, the Library and the timeline, reworked after first use. Projects
+saved by 0.2.0 use a newer file format, so 0.1.0 can't open them; 0.2.0
+opens 0.1.0's projects as they were.
+
+### Drawing
+
+- What you draw goes into the selected layer, as in Animate, rather than
+  each shape getting a layer of its own. **+** in the timeline (or
+  `⌘⇧N` / `Ctrl+Shift+N`) adds an empty layer to draw into. The old way is
+  one checkbox away in the drawing tools' settings.
+- Double-click a layer on the stage to step inside it and pick out single
+  shapes: move them, scale them, delete them, or turn them into a symbol
+  with F8, without moving or keying the layer.
+- The Brush and Eraser settings show a preview stroke, tapering as a pen
+  would, and the brush cursor marks where a soft brush's edge begins.
+
+### Symbols and the Library
+
+- Select several layers and press F8 to group them into one symbol, rigs
+  and animation included, then double-click it to work on each layer
+  inside. A symbol's length sets how often a looping instance repeats, for
+  walk cycles and other loops.
+- The Library is now a grid of cards for symbols, imported images and
+  sounds, with folders, search and a size slider. Drag a card onto the
+  stage to place it where you let go, or onto the timeline to place it from
+  that frame, above that layer.
+- A preview at the top of the Library plays the selected symbol in a loop
+  (with pause and a frame slider), shows images larger, and plays sounds on
+  their own. Hovering an animated card plays it in the card.
+
+### Timeline
+
+- Works with a pen: drag a layer's name to scroll the list, or press and
+  hold it for a moment to pick it up and restack it.
+- A clearer playhead, the current frame's column tinted down every row,
+  and the row under the pointer lit.
+
+### Scripting
+
+- JavaScript scripts that change projects: set up scenes, change many
+  layers at once, build animation from numbers, or export folders of
+  projects. Run them from the Scripts menu, the Script Console, or
+  `inkframe --script` on the command line. A script's changes undo in one
+  step, and nothing changes if it fails. See docs/SCRIPTING.md, and the
+  example scripts in your Scripts folder. (This was in the 0.1.0 builds but
+  missing from their notes.)
+
+### Look
+
+- A soft shadow under the stage, matching section titles in Properties,
+  and hints on an empty project for how to start.
+
+### Before you install
+
+These builds aren't signed with an Apple or Microsoft developer certificate
+yet, so each system warns the first time:
+
+- **macOS:** open the disk image and drag Inkframe to Applications. If macOS
+  says it can't check the app for malicious software, open **System
+  Settings › Privacy & Security** and click **Open Anyway** beside the
+  message about Inkframe.
+- **Windows:** if SmartScreen says it protected your PC, click **More info**,
+  then **Run anyway**.
+
+Not yet tried by hand: pressure and the timeline's hold-to-restack from a
+real drawing tablet, the Windows installer on a physical PC, Photoshop
+opening the exported PSDs, and a game engine loading the sprite sheets.
+Reports are welcome in the issues.
+
 ## [0.1.0]
 
 The first release: a 2D animation editor in the spirit of Adobe Animate and
