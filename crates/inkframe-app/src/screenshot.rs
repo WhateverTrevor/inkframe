@@ -18,6 +18,8 @@
 //!   Edit Multiple Frames.
 //! * `INKFRAME_SCREENSHOT_STYLES=1` adds shapes with gradient fills and dashed and dotted
 //!   lines, and steps inside the sun to show its gradient's handles.
+//! * `INKFRAME_SCREENSHOT_COMBINE=1` shows shapes combined: two circles in a union, a
+//!   square with a circle punched out, and text broken apart into letters (one picked).
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
 //! * `INKFRAME_SCREENSHOT_EXPAND=1` expands every layer's property rows in the timeline.
 //! * `INKFRAME_SCREENSHOT_EDIT=Ball` opens the named symbol on its own (before `_SELECT`).
@@ -136,6 +138,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_MULTIPLE").is_some() {
             editor.edit_multiple = true;
+        }
+        if var("INKFRAME_SCREENSHOT_COMBINE").is_some() {
+            combine_demo(editor);
         }
         if var("INKFRAME_SCREENSHOT_STYLES").is_some() {
             styles_demo(editor);
@@ -628,5 +633,53 @@ fn styles_demo(editor: &mut Editor) {
         && editor.enter_layer(sun)
     {
         editor.pick_shapes(vec![crate::inside::ShapeRef::line(0)]);
+    }
+}
+
+/// Combined shapes: a union of two circles, a circle punched out of a
+/// square, and a word broken apart into letters, the last of them picked.
+fn combine_demo(editor: &mut Editor) {
+    use inkframe_core::{Affine, Color, Element, Point, Shape, ShapeOp, Style, Transform};
+    let fill = |c: Color| Style {
+        fill: Some(c),
+        stroke: Some(inkframe_core::Stroke::new(Color::rgb(30, 30, 40), 4.0)),
+        gradient: None,
+    };
+    let at = |shape: Shape, c: Color, x: f32, y: f32| {
+        Element { shape, style: fill(c) }.transformed(Affine::translate(Point::new(x, y))).unwrap()
+    };
+    let circle = |r: f32| Shape::Ellipse { radius_x: r, radius_y: r };
+    let shapes = vec![
+        at(circle(130.0), Color::rgb(90, 160, 230), -150.0, 0.0),
+        at(circle(130.0), Color::rgb(90, 160, 230), 0.0, 0.0),
+        at(
+            Shape::Rect { width: 300.0, height: 300.0, corner_radius: 20.0 },
+            Color::rgb(240, 150, 90),
+            400.0,
+            0.0,
+        ),
+        at(circle(90.0), Color::rgb(240, 150, 90), 450.0, 40.0),
+    ];
+    let layer = editor.doc.add_layer("Shapes", shapes, 0, Transform::at(Point::new(700.0, 380.0)));
+    editor.enter_layer(layer);
+    editor.pick_shapes(vec![crate::inside::ShapeRef::line(2), crate::inside::ShapeRef::line(3)]);
+    let _ = editor.combine_shapes(ShapeOp::Punch);
+    editor.pick_shapes(vec![crate::inside::ShapeRef::line(0), crate::inside::ShapeRef::line(1)]);
+    let _ = editor.combine_shapes(ShapeOp::Union);
+    editor.exit_layer();
+
+    let Some(text) = editor.add_text(Point::new(560.0, 800.0)) else { return };
+    if let Some(element) = editor.doc.layer_mut(text).and_then(|l| l.elements_at_mut(0).first_mut()) {
+        if let Shape::Text(t) = &mut element.shape {
+            t.content = "Inkframe".into();
+            t.size = 160.0;
+        }
+        element.style = fill(Color::rgb(120, 200, 140));
+    }
+    editor.select(Some(text));
+    editor.break_apart();
+    if editor.enter_layer(text) {
+        let letters = editor.doc.layer(text).map_or(0, |l| l.elements_at(0).len());
+        editor.pick_shapes(vec![crate::inside::ShapeRef::line(letters.saturating_sub(1))]);
     }
 }

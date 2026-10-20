@@ -618,6 +618,14 @@ after the Harmony features (palettes to master controllers).
     embed a picture per frame (6.6 MB at quarter size for the example);
     the export window warns. Not done: Lottie text as real text (it's
     outlines), Lottie expressions or markers.
+90. Boolean shapes: core `boolean.rs` (`ShapeOp`, `combine`, `break_apart`,
+    `area_of`; written here rather than with a crate, see the module
+    comment), app `shape_ops.rs` (`combine_shapes`, `break_apart`),
+    Modify › Combine Shapes and Break Apart (⌘B). A shape is one path, so
+    holes are slit in (`vectorise::join_hole`); a holed result with a
+    stroke is split into a fill and stroke-only outlines so the slit
+    doesn't show. Hook `INKFRAME_SCREENSHOT_COMBINE=1`. Not yet: combining
+    shapes across layers, or fills and lines together.
 
 ## Not yet verified by hand
 

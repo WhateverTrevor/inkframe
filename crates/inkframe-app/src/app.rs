@@ -107,6 +107,9 @@ enum Command {
     ConvertToKeyframes,
     ConvertToBlankKeyframes,
     ReverseFrames,
+    // Combining shapes (see `shape_ops.rs`).
+    CombineShapes(inkframe_core::ShapeOp),
+    BreakApart,
     NewFolder,
     CreateShapeTween,
     AddCamera,
@@ -821,6 +824,20 @@ impl InkframeApp {
             Command::NextDrawing if editor.tool.uses_brush() => editor.resize_brush(BRUSH_STEP),
             Command::PreviousDrawing => editor.cycle_drawing(-1),
             Command::NextDrawing => editor.cycle_drawing(1),
+            Command::CombineShapes(how) => {
+                if let Err(problem) = editor.combine_shapes(how) {
+                    show_error("Couldn't combine the shapes", &problem);
+                }
+            }
+            Command::BreakApart => {
+                if editor.break_apart() == 0 {
+                    show_error(
+                        "Nothing to break apart",
+                        "Break Apart turns text into a shape for each letter, and pencil lines into filled shapes. \
+                         Select a text layer, or double-click a layer and pick its text or lines.",
+                    );
+                }
+            }
             Command::InsertFrames => editor.insert_frames(),
             Command::RemoveFrames => editor.remove_frames(),
             Command::InsertBlankKeyframe => editor.insert_blank_keyframe(),
@@ -904,6 +921,7 @@ impl InkframeApp {
             (LAYER_VIA_CUT, Command::LayerViaCut),
             (LAYER_VIA_COPY, Command::LayerViaCopy),
             (CONVERT_TO_SYMBOL, Command::ConvertToSymbol),
+            (BREAK_APART, Command::BreakApart),
             (ADD_SHAPE_HINT, Command::AddShapeHint),
             (ZOOM_FIT, Command::ZoomFit),
             (ZOOM_100, Command::ZoomActualSize),
@@ -1140,6 +1158,24 @@ impl InkframeApp {
                     Command::ConvertToSymbol,
                     has_selection,
                 );
+                // On shapes picked inside a layer (see `inside.rs`).
+                let picked = self.editor.picked_shapes().len();
+                ui.menu_button("Combine Shapes", |ui| {
+                    use inkframe_core::ShapeOp;
+                    for (label, how) in [
+                        ("Union", ShapeOp::Union),
+                        ("Intersect", ShapeOp::Intersect),
+                        ("Punch", ShapeOp::Punch),
+                        ("Crop", ShapeOp::Crop),
+                    ] {
+                        item(ui, label, None, Command::CombineShapes(how), picked >= 2);
+                    }
+                    if picked < 2 {
+                        ui.weak("Double-click a layer, then pick two or more of its shapes.");
+                    }
+                });
+                item(ui, "Break Apart", Some(shortcuts::BREAK_APART), Command::BreakApart, has_selection);
+                ui.separator();
                 let instance_selected = self.editor.selected_layer().is_some_and(|l| l.instance.is_some());
                 item(ui, "Edit Symbol", None, Command::EditSymbol, instance_selected);
                 let in_symbol = self.editor.timeline() != TimelineId::Main;
