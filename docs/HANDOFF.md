@@ -431,6 +431,14 @@ after the Harmony features (palettes to master controllers).
     nothing marking that depth has overridden it.
     `INKFRAME_SCREENSHOT_MULTIPLANE=stack`.
 
+69. Remembered settings: `prefs.rs` (`Prefs`, `prefs.json` beside
+    `layout.json`) keeps the guides and the Batch Export queue and
+    folder. Saved like the layout (on change, no pointer down, never in
+    screenshot runs). `replace_editor` now carries the guides over when
+    opening or starting a project (they used to reset). Batch rows whose
+    project is gone say "Project missing". To check loading:
+    `HOME=<scratch> INKFRAME_SCREENSHOT_PREFS=1` with a prefs.json there.
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either

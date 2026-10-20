@@ -17,6 +17,7 @@ use crate::layout::{AreaId, Kind, Layout, Workspace};
 use crate::library::LibraryView;
 use crate::lip_sync_dialog::LipSyncDialog;
 use crate::panels;
+use crate::prefs::Prefs;
 use crate::screenshot::AutoScreenshot;
 use crate::stage::StageView;
 use crate::timeline::TimelineView;
@@ -141,6 +142,8 @@ pub struct InkframeApp {
     /// layout as last saved, to save again only when it changes.
     layout: Layout,
     saved_layout: Layout,
+    /// The settings last saved for next time (see `prefs.rs`).
+    saved_prefs: Prefs,
     /// The editors in the areas that keep state of their own.
     views: Views,
     /// The area under the pointer last frame, for Ctrl+Space.
@@ -187,6 +190,7 @@ impl InkframeApp {
             editor,
             layout: Layout::load(),
             saved_layout: Layout::default(),
+            saved_prefs: Prefs::default(),
             views: Views::default(),
             hovered_area: None,
             export: ExportDialog::default(),
@@ -214,6 +218,14 @@ impl InkframeApp {
             }
         }
         app.saved_layout = app.layout.clone();
+        // Screenshots start from a clean slate and never touch the
+        // person's settings.
+        if app.screenshot.is_none() || AutoScreenshot::load_prefs() {
+            let prefs = Prefs::load();
+            app.editor.guides = prefs.guides();
+            app.batch.restore(prefs.batch_jobs(), prefs.batch_folder.clone());
+        }
+        app.saved_prefs = app.current_prefs();
         app.views.prepare(&app.layout);
         if app.screenshot.is_some() {
             AutoScreenshot::set_up_scene(&mut app.editor);
@@ -462,6 +474,9 @@ impl InkframeApp {
                 if guides.contains("safe") {
                     app.editor.guides.safe_areas = SafeAreas::Current;
                 }
+            }
+            if AutoScreenshot::load_prefs() {
+                app.batch.open();
             }
             if AutoScreenshot::batch()
                 && let Some(path) = app.editor.path.clone()
@@ -1152,10 +1167,17 @@ impl InkframeApp {
 
     // ---------------------------------------------------------------- files
 
+    /// The settings to keep for next time, as they are now.
+    fn current_prefs(&self) -> Prefs {
+        Prefs::gather(self.editor.guides, self.batch.jobs(), self.batch.chosen_folder())
+    }
+
     fn replace_editor(&mut self, editor: Editor) {
-        let tool = self.editor.tool;
+        // The tool and guides are the person's, not the document's.
+        let (tool, guides) = (self.editor.tool, self.editor.guides);
         self.editor = editor;
         self.editor.tool = tool;
+        self.editor.guides = guides;
         self.views.stage().zoom_to_fit();
     }
 
@@ -1502,6 +1524,11 @@ impl eframe::App for InkframeApp {
         {
             self.layout.save();
             self.saved_layout = self.layout.clone();
+        }
+        let prefs = self.current_prefs();
+        if prefs != self.saved_prefs && !ctx.input(|i| i.pointer.any_down()) && self.screenshot.is_none() {
+            prefs.save();
+            self.saved_prefs = prefs;
         }
 
         let name = self.editor.display_name();

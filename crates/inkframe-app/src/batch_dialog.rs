@@ -76,6 +76,17 @@ impl BatchDialog {
         self.finished = None;
     }
 
+    /// Puts back a queue saved last time (see `prefs.rs`).
+    pub fn restore(&mut self, jobs: Vec<BatchJob>, folder: Option<PathBuf>) {
+        self.rows = jobs.into_iter().map(|job| Row { job, status: Status::Waiting }).collect();
+        self.folder = folder;
+    }
+
+    /// The folder chosen to export to, if one was.
+    pub fn chosen_folder(&self) -> Option<PathBuf> {
+        self.folder.clone()
+    }
+
     pub fn set_folder(&mut self, folder: PathBuf) {
         self.folder = Some(folder);
     }
@@ -162,7 +173,7 @@ impl BatchDialog {
                     if alpha {
                         row.job.transparent = transparent;
                     }
-                    status_ui(ui, &row.status, &outputs[i]);
+                    status_ui(ui, &row.status, &row.job.project, &outputs[i]);
                     ui.horizontal(|ui| {
                         if ui
                             .add(IconButton::new(Icon::Duplicate, "Add again, to export in another format"))
@@ -253,7 +264,7 @@ impl BatchDialog {
         });
     }
 
-    fn jobs(&self) -> Vec<BatchJob> {
+    pub fn jobs(&self) -> Vec<BatchJob> {
         self.rows.iter().map(|r| r.job.clone()).collect()
     }
 
@@ -327,8 +338,14 @@ fn format_picker(ui: &mut egui::Ui, row: usize, format: &mut ExportFormat) {
     );
 }
 
-fn status_ui(ui: &mut egui::Ui, status: &Status, output: &Path) {
+fn status_ui(ui: &mut egui::Ui, status: &Status, project: &Path, output: &Path) {
     match status {
+        // A queue kept from last time may name a project that's since
+        // moved; better to say so now than when the batch reaches it.
+        Status::Waiting if !project.exists() => {
+            ui.colored_label(ui.visuals().warn_fg_color, "Project missing")
+                .on_hover_text(project.display().to_string());
+        }
         Status::Waiting => {
             ui.weak(format!("→ {}", file_label(output))).on_hover_text(output.display().to_string());
         }
