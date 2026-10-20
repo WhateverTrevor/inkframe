@@ -117,14 +117,16 @@ Press **Cmd+E** to export. Choose **H.264 (.mp4)** for a video that plays
 anywhere, then **Export…** and a file name. For a master with
 transparency choose ProRes 4444; for a game engine, **Sprite Sheet**.
 
-That's a complete animation. Compare yours with
-`examples/bouncing-ball.inkf`, which is the same idea, or keep it going: a
+That's a complete animation. Compare yours with the *Bouncing ball*
+example (**File › Open Example…**), which is the same idea, or keep it going: a
 second bounce, a shadow on the floor, a character.
 
 ## Explore the examples
 
-The `examples` folder has projects that each show off a bigger feature.
-Open one with **File › Open** and press Enter to play it.
+Inkframe comes with projects that each show off a bigger feature. Open one
+with **File › Open Example…**, which shows a picture of each, and press
+Enter to play it. Each opens as a new project, so you can change it freely
+and save your own copy.
 
 | | |
 |---|---|

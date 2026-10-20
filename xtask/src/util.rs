@@ -109,6 +109,19 @@ pub fn output(command: &mut Command) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// Copies the sample projects (`examples/*.inkf`) into `to`, where the app
+/// finds them for File › Open Example.
+pub fn copy_examples(root: &Path, to: &Path) -> Result<(), String> {
+    fs::create_dir_all(to).map_err(|e| format!("couldn't create {}: {e}", to.display()))?;
+    let examples = root.join("examples");
+    let entries =
+        fs::read_dir(&examples).map_err(|e| format!("couldn't read {}: {e}", examples.display()))?;
+    for path in entries.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "inkf")) {
+        copy(&path, &to.join(path.file_name().unwrap_or_default()))?;
+    }
+    Ok(())
+}
+
 pub fn copy(from: &Path, to: &Path) -> Result<(), String> {
     fs::copy(from, to)
         .map(|_| ())

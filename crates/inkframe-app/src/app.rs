@@ -12,6 +12,7 @@ use crate::audio_engine::AudioEngine;
 use crate::autosave::{Autosave, Recovery};
 use crate::batch_dialog::BatchDialog;
 use crate::editor::{Editor, Tool};
+use crate::examples::ExamplesWindow;
 use crate::export_dialog::ExportDialog;
 use crate::guides::SafeAreas;
 use crate::layout::{AreaId, Kind, Layout, Workspace};
@@ -41,6 +42,8 @@ enum Command {
     Export,
     /// Opens the Batch Export window.
     BatchExport,
+    /// Opens the gallery of example projects.
+    OpenExample,
     /// Opens the Vectorise window for the selected layer.
     Vectorise,
     NewParticleLayer(inkframe_core::Preset),
@@ -177,6 +180,7 @@ pub struct InkframeApp {
     export: ExportDialog,
     batch: BatchDialog,
     vectorise: VectoriseDialog,
+    examples: ExamplesWindow,
     lip_sync: LipSyncDialog,
     xsheet: ExposureSheet,
     adjust: AdjustDialog,
@@ -224,6 +228,7 @@ impl InkframeApp {
             export: ExportDialog::default(),
             batch: BatchDialog::default(),
             vectorise: VectoriseDialog::default(),
+            examples: ExamplesWindow::default(),
             lip_sync: LipSyncDialog::default(),
             xsheet: ExposureSheet::default(),
             adjust: AdjustDialog::default(),
@@ -544,6 +549,9 @@ impl InkframeApp {
             if let Some(degrees) = AutoScreenshot::view_rotation() {
                 app.views.stage().rotate_view(degrees);
             }
+            if AutoScreenshot::examples() {
+                app.examples.open(&cc.egui_ctx);
+            }
             if AutoScreenshot::multiplane() {
                 use inkframe_core::{Color, Element, Point, Shape, Style, Transform};
                 let doc = &mut app.editor.doc;
@@ -668,6 +676,7 @@ impl InkframeApp {
             }
             Command::Export => self.export.open(&self.editor.doc),
             Command::BatchExport => self.batch.open(),
+            Command::OpenExample => self.examples.open(&self.ctx),
             Command::Vectorise => self.vectorise.open(&self.editor),
             Command::ExportPsd => self.export_psd(),
             Command::ToggleMaximize => {
@@ -972,6 +981,7 @@ impl InkframeApp {
             ui.menu_button("File", |ui| {
                 item(ui, "New", Some(shortcuts::NEW), Command::New, true);
                 item(ui, "Open…", Some(shortcuts::OPEN), Command::Open, true);
+                item(ui, "Open Example…", None, Command::OpenExample, true);
                 item(ui, "Import to Stage…", Some(shortcuts::IMPORT), Command::ImportImage, true);
                 item(ui, "Import Audio…", None, Command::ImportAudio, true);
                 item(ui, "Import Font…", None, Command::ImportFont, true);
@@ -1241,6 +1251,20 @@ impl InkframeApp {
         match Editor::open(&path) {
             Ok(editor) => self.replace_editor(editor),
             Err(err) => show_error(&format!("Couldn't open {}", file_name(&path)), &err.to_string()),
+        }
+    }
+
+    /// Opens an example as a new project, so saving it asks where to.
+    fn open_example(&mut self, path: &Path) {
+        if !self.confirm_discard_changes() {
+            return;
+        }
+        match Document::load(path) {
+            Ok(doc) => {
+                let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                self.replace_editor(Editor::untitled_copy(doc, name));
+            }
+            Err(err) => show_error(&format!("Couldn't open {}", file_name(path)), &err.to_string()),
         }
     }
 
@@ -1663,6 +1687,9 @@ impl eframe::App for InkframeApp {
         self.xsheet.show(&ctx, &mut self.editor, &mut self.audio);
         self.adjust.show(&ctx, &mut self.editor);
         self.vectorise.show(&ctx, &mut self.editor);
+        if let Some(path) = self.examples.show(&ctx) {
+            self.open_example(&path);
+        }
 
         let dt = ctx.input(|i| i.stable_dt) as f64;
         let project_dir = self.editor.project_dir();

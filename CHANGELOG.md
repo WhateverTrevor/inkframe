@@ -47,6 +47,9 @@ Toon Boom Harmony, for Apple Silicon Macs and 64-bit Windows.
 
 - Blender-style areas you can split, join and change, with workspaces.
 - Autosave and crash recovery.
+- A getting-started guide (Help › Getting Started Guide) and five example
+  projects to open from File › Open Example: a bouncing ball, a character
+  rig, ink and paint, a multiplane camera move, and particles.
 
 ### Before you install
 

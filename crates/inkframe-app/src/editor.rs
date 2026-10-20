@@ -225,6 +225,8 @@ pub struct Editor {
     pub history: History,
     /// Where the document was last opened from or saved to.
     pub path: Option<PathBuf>,
+    /// What to call the project before it's saved, if not "Untitled".
+    untitled_name: Option<String>,
     /// The document as it was last saved, to detect unsaved changes.
     saved: Document,
 
@@ -327,6 +329,7 @@ impl Editor {
             saved: doc.clone(),
             doc,
             path: None,
+            untitled_name: None,
             frame: 0,
             selection: None,
             also_selected: Vec::new(),
@@ -538,10 +541,18 @@ impl Editor {
 
     /// File name for the title bar and export defaults.
     pub fn display_name(&self) -> String {
-        self.path
-            .as_deref()
-            .and_then(Path::file_stem)
-            .map_or_else(|| "Untitled".to_owned(), |s| s.to_string_lossy().into_owned())
+        match self.path.as_deref().and_then(Path::file_stem) {
+            Some(stem) => stem.to_string_lossy().into_owned(),
+            None => self.untitled_name.clone().unwrap_or_else(|| "Untitled".to_owned()),
+        }
+    }
+
+    /// A copy of a project that isn't saved anywhere yet, called `name`
+    /// until it is (an example opened from File › Open Example).
+    pub fn untitled_copy(doc: Document, name: String) -> Self {
+        let mut editor = Self::new(doc);
+        editor.untitled_name = Some(name);
+        editor
     }
 
     // -------------------------------------------------------------- history
