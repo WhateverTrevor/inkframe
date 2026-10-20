@@ -928,6 +928,31 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     {
         layer.track.set_effects(frame, fx);
     }
+    apply_to_selected_button(ui, editor, id, "these effects", |editor| editor.copy_effects_to_selected(id));
+}
+
+/// With several layers selected, a button that gives the rest what this
+/// layer has (its effects, its easing). A button rather than doing it on
+/// every change, since those are things each layer may have set up itself.
+fn apply_to_selected_button(
+    ui: &mut egui::Ui,
+    editor: &mut Editor,
+    id: LayerId,
+    what: &str,
+    apply: impl FnOnce(&mut Editor) -> usize,
+) {
+    let others = editor.also_editing(id).len();
+    if others == 0 {
+        return;
+    }
+    let plural = if others == 1 { "" } else { "s" };
+    if ui
+        .button(format!("Apply to the other {others} selected layer{plural}"))
+        .on_hover_text(format!("Gives them {what}, replacing their own on this frame"))
+        .clicked()
+    {
+        apply(editor);
+    }
 }
 
 /// One filter's settings.
@@ -1656,6 +1681,9 @@ fn easing_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u3
             }
         }
     }
+    apply_to_selected_button(ui, editor, id, "this easing, for each property tweening here", |editor| {
+        editor.copy_easing_to_selected(id)
+    });
 }
 
 /// The easing picker. Returns true when the choice changed.
@@ -2058,4 +2086,44 @@ fn section_text(title: impl Into<String>) -> egui::RichText {
         .size(11.0)
         .extra_letter_spacing(0.6)
         .color(crate::theme::TEXT_WEAK)
+}
+
+#[cfg(test)]
+mod tests {
+    use egui::vec2;
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    use inkframe_core::{Document, Point, Transform};
+
+    use super::*;
+
+    #[test]
+    fn with_several_layers_selected_effects_can_be_given_to_them_all() {
+        let mut editor = Editor::new(Document::default());
+        let ids: Vec<LayerId> = (0..3)
+            .map(|i| {
+                editor.doc.add_layer(format!("L{i}"), Vec::new(), 0, Transform::at(Point::new(i as f32, 0.0)))
+            })
+            .collect();
+        editor.select_many(&ids);
+        let last = *ids.last().unwrap();
+        let mut fx = editor.doc.layer(last).unwrap().track.effects_at(0.0);
+        fx.color = inkframe_core::ColorEffect::Brightness { amount: 0.4 };
+        editor.doc.layer_mut(last).unwrap().track.set_effects(0, fx.clone());
+
+        let mut h = Harness::new_ui_state(
+            |ui, editor: &mut Editor| {
+                egui::ScrollArea::vertical().show(ui, |ui| layer_tab(ui, editor));
+            },
+            editor,
+        );
+        h.set_size(vec2(360.0, 3000.0));
+        h.run();
+        assert!(h.query_by_label("3 layers selected").is_some());
+        h.get_by_label("Apply to the other 2 selected layers").click();
+        h.run();
+        for &id in &ids {
+            assert_eq!(h.state().doc.layer(id).unwrap().track.effects_at(0.0), fx);
+        }
+    }
 }

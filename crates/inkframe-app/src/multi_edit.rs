@@ -141,6 +141,46 @@ impl Editor {
         }
     }
 
+    /// Gives every other selected layer `primary`'s effects (colour effect
+    /// and filters) on this frame, keyed there, replacing their own. Done
+    /// from a button, not on every change, since a layer's filters are a
+    /// list it may have built up itself. Returns how many layers changed.
+    pub fn copy_effects_to_selected(&mut self, primary: LayerId) -> usize {
+        let frame = self.frame;
+        let Some(fx) = self.doc.layer(primary).map(|l| l.track.effects_at(frame as f32)) else { return 0 };
+        let mut changed = 0;
+        for id in self.also_editing(primary) {
+            if let Some(layer) = self.doc.layer_mut(id) {
+                layer.track.set_effects(frame, fx.clone());
+                changed += 1;
+            }
+        }
+        changed
+    }
+
+    /// Gives the other selected layers' tweens through this frame the same
+    /// easing as `primary`'s, property by property. A layer with no tween
+    /// of that property here is left alone. Returns how many tweens changed.
+    pub fn copy_easing_to_selected(&mut self, primary: LayerId) -> usize {
+        let frame = self.frame;
+        let Some(layer) = self.doc.layer(primary) else { return 0 };
+        let easings: Vec<(Property, inkframe_core::Easing)> = Property::ALL
+            .into_iter()
+            .filter_map(|p| layer.track.channel(p).tween_at(frame).map(|t| (p, t.easing)))
+            .collect();
+        let mut changed = 0;
+        for id in self.also_editing(primary) {
+            let Some(layer) = self.doc.layer_mut(id) else { continue };
+            for &(property, easing) in &easings {
+                if let Some(e) = layer.track.channel_mut(property).tween_easing_mut(frame) {
+                    *e = easing;
+                    changed += 1;
+                }
+            }
+        }
+        changed
+    }
+
     /// Whether some property of the selected layers' poses differs from
     /// `primary`'s, for marking it in the panel.
     pub fn pose_differs(&self, primary: LayerId, part: impl Fn(&Transform) -> [f32; 2]) -> bool {
@@ -238,5 +278,31 @@ mod tests {
         let (editor, [_, _, c]) = three_selected();
         assert!(editor.pose_differs(c, |p| [p.rotation, 0.0]));
         assert!(!editor.pose_differs(c, |p| [p.opacity, 0.0]));
+    }
+
+    #[test]
+    fn effects_and_easing_are_copied_on_request() {
+        use inkframe_core::{AnyChannel, ColorEffect, Easing};
+        let (mut editor, [a, b, c]) = three_selected();
+        // C is faded and tinted; A and B tween their position from frame 0
+        // to 20, as does C.
+        let mut fx = editor.doc.layer(c).unwrap().track.effects_at(0.0);
+        fx.color = ColorEffect::Brightness { amount: 0.3 };
+        editor.doc.layer_mut(c).unwrap().track.set_effects(0, fx.clone());
+        for id in [a, b, c] {
+            editor.doc.layer_mut(id).unwrap().track.position.set(20, Point::new(0.0, 0.0));
+        }
+        *editor.doc.layer_mut(c).unwrap().track.position.tween_easing_mut(10).unwrap() = Easing::EaseIn;
+
+        assert_eq!(editor.copy_effects_to_selected(c), 2);
+        for id in [a, b] {
+            assert_eq!(editor.doc.layer(id).unwrap().track.effects_at(0.0), fx);
+        }
+        editor.set_frame(10);
+        assert_eq!(editor.copy_easing_to_selected(c), 2);
+        for id in [a, b] {
+            let track = &editor.doc.layer(id).unwrap().track;
+            assert_eq!(track.position.tween_at(10).unwrap().easing, Easing::EaseIn);
+        }
     }
 }

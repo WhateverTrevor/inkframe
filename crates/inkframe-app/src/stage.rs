@@ -24,7 +24,7 @@ use crate::motion_path;
 use crate::pen::PenPath;
 use crate::subselect::{AnchorPart, move_part, remove_anchor, toggle_smooth};
 use crate::tablet;
-use crate::text_edit::{TextCursor, caret_position, position_at, selection_boxes, word_at};
+use crate::text_edit::{TextCursor, TypingHistory, caret_position, position_at, selection_boxes, word_at};
 
 /// Gap kept around the stage when it's zoomed to fit the window, in points.
 const FIT_MARGIN: f32 = 24.0;
@@ -830,6 +830,8 @@ pub struct StageView {
     last_area: Rect,
     /// A drag inside a layer (see `inside.rs`).
     shape_drag: Option<inside::ShapeDrag>,
+    /// Undo for the text being typed into.
+    typing: TypingHistory,
 }
 
 impl Default for StageView {
@@ -849,6 +851,7 @@ impl Default for StageView {
             rendered: None,
             last_area: Rect::NOTHING,
             shape_drag: None,
+            typing: TypingHistory::default(),
         }
     }
 }
@@ -1584,6 +1587,9 @@ impl StageView {
         };
         self.text_editing =
             Some(TextEditing { layer, element, cursor: TextCursor::at(position), selecting: false });
+        // Each time typing starts, its undo starts afresh: what came before
+        // is in the project's own undo.
+        self.typing = TypingHistory::default();
     }
 
     /// Stops typing. Text left empty is removed, as in Animate: clicking
@@ -1672,8 +1678,21 @@ impl StageView {
             let events = ui.input(|i| i.events.clone());
             for event in &events {
                 let Some(text) = text_of_mut(editor, editing.layer, editing.element) else { break };
+                // ⌘Z and ⌘⇧Z step through what's been typed (see
+                // `TypingHistory`) rather than the project's undo.
+                if let Some(redo) = TypingHistory::undo_key(event) {
+                    if redo {
+                        self.typing.redo(&mut text.content, &mut editing.cursor);
+                    } else {
+                        self.typing.undo(&mut text.content, &mut editing.cursor);
+                    }
+                    continue;
+                }
                 let layout = inkframe_render::layout_text(text);
+                let before = (text.content.clone(), editing.cursor);
                 let outcome = editing.cursor.handle(&mut text.content, &layout, event);
+                let changed = text.content != before.0;
+                self.typing.record(before, event, changed);
                 if let Some(copied) = outcome.copy {
                     ui.ctx().copy_text(copied);
                 }
@@ -3791,6 +3810,28 @@ mod tests {
         h.key_press(egui::Key::Escape);
         h.run();
         assert_eq!(h.state().1.doc.layers.len(), 1);
+    }
+
+    #[test]
+    fn command_z_while_typing_undoes_the_typing() {
+        let mut editor = Editor::new(Document::default());
+        editor.tool = Tool::Text;
+        let mut h = harness(editor);
+        let at = screen(&h, 300.0, 400.0);
+        click(&mut h, at);
+        let id = h.state().1.selection.expect("the new text is selected");
+
+        for t in ["Hi", " ", "there"] {
+            h.event(egui::Event::Text(t.into()));
+            h.run();
+        }
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+        h.run();
+        assert_eq!(text_content(&h, id), "Hi ", "the last word comes off");
+        h.key_press_modifiers(egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT), egui::Key::Z);
+        h.run();
+        assert_eq!(text_content(&h, id), "Hi there", "and goes back on");
+        assert!(h.state().0.text_editing.is_some(), "still typing");
     }
 
     #[test]

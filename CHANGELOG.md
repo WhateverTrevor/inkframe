@@ -3,6 +3,24 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
+## Unreleased
+
+### Drawing
+
+- Picked shapes inside a layer turn with a knob above them (Shift snaps to
+  15°), copy, cut and paste (landing where they were, in any layer), and
+  the fills under the lines can be picked too.
+- ⌘Z while typing on the stage undoes what's been typed, a word at a time,
+  and ⌘⇧Z redoes it.
+
+### Properties
+
+- With several layers selected, changes in the properties panel apply to
+  all of them: position moves them together, and other values are set the
+  same on each. A • marks a value they differ in. Effects and easing have
+  an **Apply to the other selected layers** button, to give them all the
+  same filters or the same curve.
+
 ## [0.2.0]
 
 Drawing, the Library and the timeline, reworked after first use. Projects
@@ -76,8 +94,11 @@ Reports are welcome in the issues.
 
 ## [0.1.0]
 
-The first release: a 2D animation editor in the spirit of Adobe Animate and
-Toon Boom Harmony, for Apple Silicon Macs and 64-bit Windows.
+Prepared but never published; 0.2.0 is the first public release, and has
+everything below too.
+
+A 2D animation editor in the spirit of Adobe Animate and Toon Boom Harmony,
+for Apple Silicon Macs and 64-bit Windows.
 
 ### Drawing and painting
 
