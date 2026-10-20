@@ -45,7 +45,8 @@
 //! * `INKFRAME_SCREENSHOT_GROUP=1` puts every layer into one symbol (a 24-frame loop), as
 //!   selecting them all and pressing F8 would; `=open` then opens it in place.
 //! * `INKFRAME_SCREENSHOT_LIBRARY=1` makes each layer a symbol (some in a folder), adds the
-//!   sample pictures from `docs/images` and a sound, and shows the Library.
+//!   sample pictures from `docs/images` and a sound, and shows the Library with the first card
+//!   previewed. With `_GROUP=1`, the grouped symbol is the one previewed.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -499,12 +500,16 @@ fn new_layer_demo(editor: &mut Editor) {
 }
 
 /// Fills the Library for a screenshot: every layer becomes a symbol of its
-/// own, the far ones filed under Scenery, with the sample pictures and a
-/// short silent sound beside them.
+/// own (unless there are symbols already, from `_GROUP`), the far ones
+/// filed under Scenery, with the sample pictures and a short silent sound
+/// beside them.
 pub fn library_demo(editor: &mut Editor) {
     use inkframe_core::Asset;
-    let layers: Vec<_> =
-        editor.doc.layers.iter().filter(|l| !l.camera).map(|l| (l.id, l.name.clone())).collect();
+    let layers: Vec<_> = if editor.doc.symbols.is_empty() {
+        editor.doc.layers.iter().filter(|l| !l.camera).map(|l| (l.id, l.name.clone())).collect()
+    } else {
+        Vec::new()
+    };
     for (i, (layer, name)) in layers.into_iter().enumerate() {
         if let Some(symbol) = editor.doc.convert_layer_to_symbol(layer, 0) {
             editor.doc.rename_asset(Asset::Symbol(symbol), &name);
