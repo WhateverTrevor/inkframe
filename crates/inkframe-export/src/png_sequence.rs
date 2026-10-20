@@ -16,7 +16,7 @@ pub(crate) fn write(
     let mut written = Vec::new();
 
     for (done, frame) in settings.frames.clone().enumerate() {
-        let path = frame_path(&settings.output, frame, digits);
+        let path = frame_path(&settings.output, frame, digits, "png");
         let png = renderer.render(frame)?.encode_png().map_err(|e| ExportError::Png(e.to_string()))?;
         std::fs::write(&path, png)?;
         written.push(path);
@@ -42,17 +42,18 @@ pub(crate) fn write(
     Ok(())
 }
 
-/// Builds `dir/name_0001.png` from `dir/name.png`.
+/// Builds `dir/name_0001.png` from `dir/name.png` (or `.svg`, with that
+/// extension).
 ///
 /// Numbers start at 1 to match the frame numbers shown in the timeline, and
 /// are zero-padded so the files sort correctly in every file browser.
-fn frame_path(pattern: &Path, frame: u32, digits: usize) -> PathBuf {
+pub(crate) fn frame_path(pattern: &Path, frame: u32, digits: usize, extension: &str) -> PathBuf {
     let stem = pattern.file_stem().and_then(|s| s.to_str()).unwrap_or("frame");
-    pattern.with_file_name(format!("{stem}_{:0digits$}.png", frame + 1))
+    pattern.with_file_name(format!("{stem}_{:0digits$}.{extension}", frame + 1))
 }
 
 /// Zero-padding width: at least 4 digits, more for very long animations.
-fn digits_for(last_frame_number: u32) -> usize {
+pub(crate) fn digits_for(last_frame_number: u32) -> usize {
     last_frame_number.to_string().len().max(4)
 }
 
@@ -62,7 +63,7 @@ mod tests {
 
     #[test]
     fn frame_paths_are_one_based_and_padded() {
-        let path = frame_path(Path::new("/tmp/out/walk.png"), 0, 4);
+        let path = frame_path(Path::new("/tmp/out/walk.png"), 0, 4, "png");
         assert_eq!(path, Path::new("/tmp/out/walk_0001.png"));
     }
 

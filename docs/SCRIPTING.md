@@ -99,8 +99,9 @@ const ball = inkframe.document.addLayer("Ball", {
 });
 ```
 
-**`export` options:** `format` (`"png"`, `"sheet"`, `"prores4444"`,
-`"prores4444xq"`, `"prores422hq"`, `"h264"`, or `"hevc-alpha"` on macOS) and
+**`export` options:** `format` (`"png"`, `"sheet"`, `"gif"`, `"svg"`,
+`"lottie"`, `"prores4444"`, `"prores4444xq"`, `"prores422hq"`, `"h264"`, or
+`"hevc-alpha"` on macOS) and
 `to`, the file to write, ending in the format's extension. Optional:
 `scale` (0.5 for half size), `transparent` (default `true`) and
 `frames: [first, last]`.

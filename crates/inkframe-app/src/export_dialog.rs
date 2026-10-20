@@ -161,6 +161,27 @@ impl ExportDialog {
         if self.format == ExportFormat::SpriteSheet {
             ui.weak("Frames are cropped to what's drawn, with a .json file beside the image.");
         }
+        // The vector formats draw filters and particles as pictures, which
+        // in a Lottie file means one per frame.
+        if self.format.is_vector() {
+            let pictures = doc
+                .all_layers()
+                .filter(|l| {
+                    l.particles.is_some() || l.track.effects.keys().iter().any(|k| !k.value.is_none())
+                })
+                .count();
+            if pictures > 0 {
+                let what = if self.format == ExportFormat::Lottie {
+                    "as a picture on every frame, which can make the file large; a smaller size helps"
+                } else {
+                    "as pictures, since SVG can't draw them as shapes"
+                };
+                let plural = if pictures == 1 { " has" } else { "s have" };
+                ui.weak(format!(
+                    "{pictures} layer{plural} filters, colour effects or particles: they go in {what}."
+                ));
+            }
+        }
         if self.format.needs_ffmpeg() && !self.ffmpeg_found {
             ui.colored_label(
                 ui.visuals().warn_fg_color,
@@ -296,6 +317,9 @@ fn describe(format: ExportFormat) -> &'static str {
         ExportFormat::H264 => "small files for review and the web, no alpha",
         ExportFormat::HevcWithAlpha => "small files with alpha for Apple devices and Safari",
         ExportFormat::SpriteSheet => "every frame on one image, for game engines",
+        ExportFormat::Gif => "a looping animation to share anywhere, 256 colours",
+        ExportFormat::Svg => "vectors, one file per frame, for the web and drawing programs",
+        ExportFormat::Lottie => "a vector animation for web pages and apps",
     }
 }
 

@@ -145,6 +145,42 @@ fn h264_is_yuv420_mp4() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+#[test]
+fn gif_loops_with_every_frame() {
+    if !ffmpeg_available() {
+        return;
+    }
+    let dir = scratch_dir("gif");
+    let out = dir.join("out.gif");
+    export(&sample_doc(), &settings(ExportFormat::Gif, out.clone(), true), |_| ControlFlow::Continue(()))
+        .unwrap();
+
+    assert_eq!(probe(&out, "codec_name"), "gif");
+    assert_eq!(probe(&out, "width"), "64");
+    let bytes = std::fs::read(&out).unwrap();
+    assert!(bytes.starts_with(b"GIF89a"));
+    // The Netscape block that makes it loop.
+    assert!(bytes.windows(11).any(|w| w == b"NETSCAPE2.0"), "doesn't loop");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn svg_writes_a_file_per_frame_or_one_for_one() {
+    let dir = scratch_dir("svg");
+    export(&sample_doc(), &settings(ExportFormat::Svg, dir.join("shot.svg"), true), |_| {
+        ControlFlow::Continue(())
+    })
+    .unwrap();
+    for n in 1..=3 {
+        let svg = std::fs::read_to_string(dir.join(format!("shot_{n:04}.svg"))).unwrap();
+        assert!(svg.starts_with("<svg") && svg.contains("<path"), "frame {n}");
+    }
+    let one = ExportSettings { frames: 1..=1, ..settings(ExportFormat::Svg, dir.join("one.svg"), false) };
+    export(&sample_doc(), &one, |_| ControlFlow::Continue(())).unwrap();
+    assert!(std::fs::read_to_string(dir.join("one.svg")).unwrap().contains("<rect"), "with its background");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn hevc_with_alpha_encodes() {
@@ -367,4 +403,111 @@ fn stopping_a_batch_skips_the_rest() {
     });
     assert_eq!((succeeded, started), (0, 1));
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// Writes a scene using everything the vector exports handle (skew, a
+/// looping symbol, gradients, dashes, a mask, a filtered layer) as PNG, SVG
+/// and Lottie into `target/lottie-check/features`, to compare by eye in a
+/// Lottie player. Run with `cargo test -p inkframe-export -- --ignored`.
+#[test]
+#[ignore]
+fn write_vector_export_samples() {
+    use inkframe_core::{Dash, Filter, FilterKind, ShapeGradient, Stroke};
+    let mut doc = Document::default();
+    (doc.width, doc.height, doc.duration) = (480, 270, 24);
+    doc.background = Color::rgb(245, 240, 230);
+    let element = |shape, style| Element { shape, style };
+    let fill = |c| Style { fill: Some(c), stroke: None, gradient: None };
+
+    // Skewed and turning.
+    let skewed = doc.add_layer(
+        "Skew",
+        vec![element(
+            Shape::Rect { width: 80.0, height: 50.0, corner_radius: 0.0 },
+            fill(Color::rgb(200, 60, 60)),
+        )],
+        0,
+        Transform::at(Point::new(80.0, 70.0)),
+    );
+    let mut pose = Transform { skew: Point::new(30.0, 0.0), ..Transform::at(Point::new(80.0, 70.0)) };
+    pose.rotation = 20.0;
+    doc.layer_mut(skewed).unwrap().track.set_pose(23, pose);
+
+    // A spinning square made a symbol, looping every 8 frames.
+    let spinner = doc.add_layer(
+        "Spinner",
+        vec![element(
+            Shape::Rect { width: 40.0, height: 40.0, corner_radius: 6.0 },
+            fill(Color::rgb(60, 120, 200)),
+        )],
+        0,
+        Transform::at(Point::new(240.0, 70.0)),
+    );
+    let mut turned = Transform::at(Point::new(240.0, 70.0));
+    turned.rotation = 90.0;
+    doc.layer_mut(spinner).unwrap().track.set_pose(7, turned);
+    let symbol = doc.convert_layer_to_symbol(spinner, 0).unwrap();
+    doc.symbol_mut(symbol).unwrap().duration = 8;
+
+    // Gradients and line styles.
+    let mut gradient = Style {
+        gradient: Some(ShapeGradient::radial(Color::rgb(255, 240, 160), Color::rgb(240, 120, 40))),
+        ..fill(Color::WHITE)
+    };
+    doc.add_layer(
+        "Radial",
+        vec![element(Shape::Ellipse { radius_x: 40.0, radius_y: 40.0 }, gradient.clone())],
+        0,
+        Transform::at(Point::new(400.0, 70.0)),
+    );
+    gradient.gradient = Some(ShapeGradient::linear(Color::rgb(40, 60, 160), Color::rgb(200, 220, 255)));
+    gradient.stroke =
+        Some(Stroke { dash: Some(Dash { length: 10.0, gap: 6.0 }), ..Stroke::new(Color::BLACK, 3.0) });
+    doc.add_layer(
+        "Linear",
+        vec![element(Shape::Rect { width: 120.0, height: 60.0, corner_radius: 10.0 }, gradient)],
+        0,
+        Transform::at(Point::new(90.0, 200.0)),
+    );
+
+    // A stripe masked by a circle.
+    let stripe = doc.add_layer(
+        "Stripe",
+        vec![element(
+            Shape::Rect { width: 160.0, height: 30.0, corner_radius: 0.0 },
+            fill(Color::rgb(40, 160, 90)),
+        )],
+        0,
+        Transform::at(Point::new(260.0, 200.0)),
+    );
+    let mask = doc.add_layer(
+        "Mask",
+        vec![element(Shape::Ellipse { radius_x: 40.0, radius_y: 40.0 }, fill(Color::BLACK))],
+        0,
+        Transform::at(Point::new(260.0, 200.0)),
+    );
+    doc.layer_mut(mask).unwrap().mask = true;
+    doc.layer_mut(stripe).unwrap().masked_by = Some(mask);
+
+    // Blurred: drawn by the renderer.
+    let blurred = doc.add_layer(
+        "Blurred",
+        vec![element(Shape::Ellipse { radius_x: 30.0, radius_y: 30.0 }, fill(Color::rgb(150, 60, 160)))],
+        0,
+        Transform::at(Point::new(410.0, 200.0)),
+    );
+    let mut fx = doc.layer(blurred).unwrap().track.effects_at(0.0);
+    fx.filters.push(Filter { enabled: true, kind: FilterKind::Blur { x: 6.0, y: 6.0 } });
+    doc.layer_mut(blurred).unwrap().track.set_effects(0, fx);
+
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/lottie-check/features");
+    std::fs::create_dir_all(&dir).unwrap();
+    for (format, name) in [
+        (ExportFormat::PngSequence, "features.png"),
+        (ExportFormat::Svg, "features.svg"),
+        (ExportFormat::Lottie, "features.json"),
+    ] {
+        let settings = ExportSettings { frames: 0..=23, ..settings(format, dir.join(name), false) };
+        export(&doc, &settings, |_| ControlFlow::Continue(())).unwrap();
+    }
 }

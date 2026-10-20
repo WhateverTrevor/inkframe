@@ -11,8 +11,10 @@
 
 pub mod batch;
 pub mod ffmpeg;
+mod lottie;
 mod png_sequence;
 mod sprite_sheet;
+pub mod svg;
 
 use std::ops::{ControlFlow, RangeInclusive};
 use std::path::PathBuf;
@@ -43,12 +45,24 @@ pub enum ExportFormat {
     /// Every frame packed into one PNG, with a JSON file saying where each
     /// one is, for game engines (Phaser, PixiJS, Godot, Unity).
     SpriteSheet,
+    /// An animated GIF, looping, for sharing anywhere. 256 colours, and
+    /// transparency is all or nothing per pixel.
+    Gif,
+    /// Vector graphics: one SVG per frame (or one file for one frame), for
+    /// the web, print or another drawing program (see `svg.rs`).
+    Svg,
+    /// A Lottie animation (JSON), which plays as vectors on the web and in
+    /// apps through Airbnb's Lottie players (see `lottie.rs`).
+    Lottie,
 }
 
 impl ExportFormat {
-    pub const ALL: [ExportFormat; 7] = [
+    pub const ALL: [ExportFormat; 10] = [
         ExportFormat::PngSequence,
         ExportFormat::SpriteSheet,
+        ExportFormat::Gif,
+        ExportFormat::Svg,
+        ExportFormat::Lottie,
         ExportFormat::ProRes4444,
         ExportFormat::ProRes4444Xq,
         ExportFormat::ProRes422Hq,
@@ -65,6 +79,9 @@ impl ExportFormat {
             ExportFormat::H264 => "H.264 (.mp4)",
             ExportFormat::HevcWithAlpha => "HEVC with Alpha (.mov)",
             ExportFormat::SpriteSheet => "Sprite Sheet (.png + .json)",
+            ExportFormat::Gif => "Animated GIF (.gif)",
+            ExportFormat::Svg => "SVG (.svg)",
+            ExportFormat::Lottie => "Lottie (.json)",
         }
     }
 
@@ -78,6 +95,9 @@ impl ExportFormat {
             ExportFormat::ProRes422Hq => "prores422hq",
             ExportFormat::H264 => "h264",
             ExportFormat::HevcWithAlpha => "hevc-alpha",
+            ExportFormat::Gif => "gif",
+            ExportFormat::Svg => "svg",
+            ExportFormat::Lottie => "lottie",
         }
     }
 
@@ -89,6 +109,9 @@ impl ExportFormat {
         match self {
             ExportFormat::PngSequence | ExportFormat::SpriteSheet => "png",
             ExportFormat::H264 => "mp4",
+            ExportFormat::Gif => "gif",
+            ExportFormat::Svg => "svg",
+            ExportFormat::Lottie => "json",
             _ => "mov",
         }
     }
@@ -101,11 +124,23 @@ impl ExportFormat {
                 | ExportFormat::ProRes4444
                 | ExportFormat::ProRes4444Xq
                 | ExportFormat::HevcWithAlpha
+                | ExportFormat::Gif
+                | ExportFormat::Svg
+                | ExportFormat::Lottie
         )
     }
 
     pub fn needs_ffmpeg(self) -> bool {
-        !matches!(self, ExportFormat::PngSequence | ExportFormat::SpriteSheet)
+        !matches!(
+            self,
+            ExportFormat::PngSequence | ExportFormat::SpriteSheet | ExportFormat::Svg | ExportFormat::Lottie
+        )
+    }
+
+    /// Whether the export keeps the drawing as vectors rather than pixels,
+    /// so the scale setting doesn't matter for quality.
+    pub fn is_vector(self) -> bool {
+        matches!(self, ExportFormat::Svg | ExportFormat::Lottie)
     }
 
     /// Whether this format can be produced on the current platform.
@@ -209,7 +244,12 @@ pub fn export(
 
     // Game engines play their own sound, so sprite sheets have none (and
     // a missing audio file shouldn't stop one).
-    let audio = if settings.format == ExportFormat::SpriteSheet { None } else { soundtrack(doc, settings)? };
+    // GIFs, SVGs and Lottie files have no sound either.
+    let silent = matches!(
+        settings.format,
+        ExportFormat::SpriteSheet | ExportFormat::Gif | ExportFormat::Svg | ExportFormat::Lottie
+    );
+    let audio = if silent { None } else { soundtrack(doc, settings)? };
     // As with audio, a missing picture fails the export up front instead of
     // putting a placeholder into the final render.
     let images = ImageLibrary::load(doc, settings.project_dir.as_deref());
@@ -229,6 +269,8 @@ pub fn export(
         ExportFormat::SpriteSheet => {
             sprite_sheet::write(&renderer, settings, doc.frame_rate.fps(), on_progress)
         }
+        ExportFormat::Svg => svg::write(doc, &images, settings, on_progress),
+        ExportFormat::Lottie => lottie::write(doc, &images, settings, on_progress),
         _ => ffmpeg::encode(&renderer, settings, audio.as_ref(), on_progress),
     }
 }

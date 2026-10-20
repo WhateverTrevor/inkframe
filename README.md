@@ -85,6 +85,16 @@ planned (the code is already cross-platform and CI builds it on Windows).
   | Apple ProRes 422 HQ | — | High quality, smaller files |
   | H.264 MP4 | — | Review copies and the web |
   | HEVC with alpha (macOS) | ✔ | Small files with alpha for Apple devices and Safari |
+  | Animated GIF | ✔ (on/off per pixel) | Sharing anywhere: loops forever, 256 colours |
+  | SVG | ✔ | Vectors, one file per frame (or one for one frame), for the web, print and drawing programs |
+  | Lottie (JSON) | ✔ | A vector animation that plays on web pages (lottie-web) and in iOS and Android apps |
+
+  SVG and Lottie keep shapes as vectors, with gradients, line styles,
+  masks, blend modes and symbols. A layer with filters, colour effects or
+  particles goes in as pictures instead (in a Lottie file, one per frame,
+  so a smaller size keeps it small). Lottie files play back exactly what
+  Inkframe shows: every layer's placement (rigs, the camera, depth) is
+  written for every frame.
 
   **File › Batch Export** queues several projects, or one project in
   several formats, and exports them one after another into one folder,
@@ -254,7 +264,7 @@ crates/
   inkframe-core/    document model, keyframes, easing, undo (no UI)
   inkframe-render/  draws documents to pixels (tiny-skia)
   inkframe-audio/   decodes, resamples and mixes sound files
-  inkframe-export/  PNG sequences, sprite sheets and ffmpeg video encoding
+  inkframe-export/  PNG sequences, sprite sheets, ffmpeg video and GIF, SVG and Lottie
   inkframe-app/     the desktop editor (egui)
 xtask/              build tooling: `cargo xtask icon`, `bundle-macos`, `bundle-windows`
 packaging/          per-platform packaging files
