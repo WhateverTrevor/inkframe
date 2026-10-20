@@ -184,3 +184,13 @@ output), and six example scripts in `examples/scripts`, built into the app
 and copied into the Scripts folder the first time it's made. A test runs
 every example on the rig sample.
 
+## Step 4 (2026-10-20)
+
+Built: symbols (library, convert, instances and their playback), rigs
+(pivots, children, master controllers), effects (`effectsAt` /
+`setEffects`), particles (`addParticleLayer`, `particles`) and the camera
+(`camera`, `addCamera`, `stackByDepth`). Effects and emitters use their
+saved-file form with keys and type names in camelCase (`values::to_script`
+and `from_script`). A seventh example, `snowy-night.js`, uses them. This
+completes the plan.
+

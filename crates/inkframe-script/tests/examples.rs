@@ -44,7 +44,7 @@ fn every_example_script_runs() {
         .filter(|n| n.ends_with(".js"))
         .collect();
     names.sort();
-    assert!(names.len() >= 6, "{names:?}");
+    assert!(names.len() >= 7, "{names:?}");
     for name in names {
         // Making a video needs ffmpeg, which a fresh machine may not have.
         // (CI has it, and requires it for the export tests.)
@@ -73,6 +73,10 @@ fn the_examples_do_what_they_say() {
         first_key(&before, 2) + 4,
         "third selected layer two steps later"
     );
+
+    let (_, after) = try_script("snowy-night.js");
+    assert!(after.document.layers.iter().any(|l| l.particles.is_some()));
+    assert!(after.document.camera_layer().is_some());
 
     let (_, after) = try_script("confetti.js");
     assert_eq!(after.document.layers.iter().filter(|l| l.name.starts_with("Confetti")).count(), 40);

@@ -68,11 +68,19 @@ for a new project, the current folder). `~/` means your home folder.
 | `width`, `height` | Stage size in pixels; can be set |
 | `frameRate`, `duration` | Frames per second and length in frames; can be set |
 | `background` | Stage colour; can be set |
+| `stackByDepth` | Whether layers are drawn far to near by depth; can be set |
 | `layers` | The main timeline's layers, top first, as the timeline lists them |
 | `layer(name)` | The first layer with that name, or `null` |
 | `addLayer(name, options)` | Adds a layer on top and returns it (below) |
 | `selectedLayers` | The layers selected in the editor |
 | `select(layers)` | Selects these layers when the script finishes |
+| `symbols` | The symbol library: `[{ name, duration, layers, uses }]` |
+| `addInstance(symbol, options)` | Adds an instance of a symbol (by name); options `at` and `frame` |
+| `addParticleLayer(preset, options)` | Adds particles: `"sparks"`, `"snow"`, `"smoke"` or `"fire"`; options `at` and `frame` |
+| `camera` | The camera layer, or `null` |
+| `addCamera()` | The camera, added if there isn't one |
+| `controllers` | The master controllers: `[{ name, value, poses }]` |
+| `setController(controller, value, frame)` | Sets a controller (by name or number) from 0 to 1 on a frame, posing its layers |
 | `swatches` | The palette: `[{ name, color }]` |
 | `addSwatch(name, color)` | Adds a swatch |
 | `setSwatch(index, color)` | Changes a swatch, recolouring everything painted in it |
@@ -109,6 +117,12 @@ doc.export({ format: "h264", to: `renders/${doc.name}_v001.mp4`, scale: 0.5 });
 | `kind` | `"vector"`, `"paint"`, `"symbol"`, `"particles"`, `"folder"` or `"camera"` |
 | `start`, `end` | The first and last frame it shows on (`end` is `null` to stay to the end); can be set |
 | `parent` | The layer it's attached to in a rig, or `null`; can be set |
+| `children` | The layers attached to it |
+| `pivot` | The point it turns and scales around, in its own coordinates; can be set |
+| `symbol`, `playback`, `firstFrame` | For an instance: its symbol's name, how it plays (`"loop"`, `"play-once"`, `"single-frame"`) and the symbol frame it starts on; the last two can be set |
+| `convertToSymbol(frame)` | Turns the layer into a symbol, the layer becoming its instance; returns the symbol's name |
+| `effectsAt(frame)`, `setEffects(frame, effects)` | Its colour effect and filters on a frame (below) |
+| `particles` | A particle layer's emitter settings (below); set some to change just those |
 | `setKey(frame, values, { easing })` | Keys some properties: `setKey(12, { position: [960, 880], rotation: 15 })` |
 | `keys(property)` | Every key of one property: `[{ frame, value, easing }]` |
 | `valueAt(property, frame)` | A property's value on a frame, tweens included |
@@ -119,7 +133,33 @@ doc.export({ format: "h264", to: `renders/${doc.name}_v001.mp4`, scale: 0.5 });
 | `remove()` | Deletes it |
 
 The properties are `position`, `rotation`, `scale`, `skew`, `opacity` and
-`depth`.
+`depth`. For the camera, `position` is the point it looks at, `rotation`
+turns the view, `scale` zooms, and `depth` is how far it has dollied in.
+
+**Effects** are `{ color, filters }`. `color` is `{ type: "none" }`,
+`{ type: "brightness", amount }`, `{ type: "tint", color, amount }` or
+`{ type: "advanced", ... }`. Each filter has a `type` (`"dropShadow"`,
+`"blur"`, `"glow"`, `"adjustColor"`, `"motionBlur"`), `enabled`, and its
+settings. Read a layer's with `effectsAt` to see the exact form, change
+it, and give it back to `setEffects`. Colours here are full `"#rrggbbaa"`.
+
+```js
+const fx = layer.effectsAt(1);
+fx.filters.push({ type: "blur", enabled: true, x: 6, y: 6 });
+layer.setEffects(1, fx);
+```
+
+**Particle settings** are the ones in the Particles section of a layer's
+Properties, in camelCase: `rate`, `startFull`, `shape`, `direction`,
+`spread`, `speed`, `speedVariance`, `gravity`, `wind`, `drag`,
+`turbulence`, `turbulenceFrequency`, `lifetime`, `lifetimeVariance`,
+`sizeStart`, `sizeEnd`, `sizeVariance`, `opacityStart`, `opacityEnd`,
+`colorStart`, `colorEnd`, `spin`, `spinVariance`, `sprite` and `seed`.
+
+```js
+const snow = doc.addParticleLayer("snow");
+snow.particles = { rate: 80, sizeStart: 6 };
+```
 
 ```js
 // A bouncing ball.
@@ -148,8 +188,5 @@ with a comment saying what it does and what to change.
 | `number-layers.js` | Renames layers to a prefix and a number, top to bottom |
 | `confetti.js` | Generates 40 tumbling pieces of confetti from random numbers |
 | `export-review.js` | Exports a half-size H.264 beside the project, named with today's date |
+| `snowy-night.js` | Adds snow, tints every layer blue and pushes the camera in: particles, effects and the camera |
 
-## Coming next
-
-The plan (in `SCRIPTING_PLAN.md`) adds symbols, rigs, effects, particles
-and the camera to the API.
