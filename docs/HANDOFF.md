@@ -492,6 +492,14 @@ after the Harmony features (palettes to master controllers).
     `INKFRAME_SCREENSHOT_SCRIPT=path.js` runs a script at start-up.
     Next (step 3): the Script Console area and example scripts.
 
+76. Scripting step 3: Kind::ScriptConsole (Icon::Console) drawn by
+    `Scripts::console`; console runs report into its log instead of the
+    Script Output window. Example scripts in `examples/scripts`, built in
+    (`EXAMPLES`, a test keeps the list complete) and written to the
+    Scripts folder by `add_examples_if_new` when it doesn't exist yet.
+    `inkframe-script/tests/examples.rs` runs each on the rig (the video one
+    only with ffmpeg). `INKFRAME_SCREENSHOT_CONSOLE=path.js`.
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either

@@ -1,8 +1,10 @@
-//! The Scripts menu: running JavaScript on the open project (see
-//! `inkframe-script` and docs/SCRIPTING.md).
+//! The Scripts menu and the Script Console: running JavaScript on the open
+//! project (see `inkframe-script` and docs/SCRIPTING.md).
 //!
-//! Scripts live in the Scripts folder in the settings folder, and any
-//! other `.js` file can be run with Run Script…. A script runs on its own
+//! Scripts live in the Scripts folder in the settings folder, which starts
+//! out holding the example scripts, and any other `.js` file can be run
+//! with Run Script…. The Script Console is an area for typing a script
+//! and seeing what it prints. A script runs on its own
 //! thread, against a copy of the project, with a Stop button; when it
 //! finishes its copy becomes the project, as one undo step. If it fails,
 //! nothing changes and the error is shown with its line. If the project is
@@ -25,6 +27,30 @@ use crate::layout::settings_dir;
 /// The folder scripts are listed from.
 pub fn folder() -> Option<PathBuf> {
     settings_dir().map(|dir| dir.join("Scripts"))
+}
+
+/// The example scripts (`examples/scripts`), built into the app.
+const EXAMPLES: [(&str, &str); 6] = [
+    ("bouncing-ball.js", include_str!("../../../examples/scripts/bouncing-ball.js")),
+    ("confetti.js", include_str!("../../../examples/scripts/confetti.js")),
+    ("export-review.js", include_str!("../../../examples/scripts/export-review.js")),
+    ("fade-in-out.js", include_str!("../../../examples/scripts/fade-in-out.js")),
+    ("number-layers.js", include_str!("../../../examples/scripts/number-layers.js")),
+    ("stagger-selected.js", include_str!("../../../examples/scripts/stagger-selected.js")),
+];
+
+/// Puts the example scripts in the Scripts folder the first time there is
+/// one, so the Scripts menu has something in it to try and to learn from.
+/// Once the folder exists it's left alone, so scripts someone deletes stay
+/// deleted.
+pub fn add_examples_if_new() {
+    let Some(dir) = folder() else { return };
+    if dir.exists() || std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    for (name, source) in EXAMPLES {
+        let _ = std::fs::write(dir.join(name), source);
+    }
 }
 
 /// The scripts in the Scripts folder, by name.
@@ -50,7 +76,20 @@ struct Running {
     /// was edited meanwhile.
     before: Document,
     result: Receiver<Result<Outcome, ScriptError>>,
+    /// Run from the Script Console, which shows what it prints.
+    from_console: bool,
 }
+
+/// A line in the Script Console.
+enum Line {
+    /// The start of a run.
+    Ran(String),
+    Printed(String),
+    Failed(String),
+}
+
+/// What the Script Console starts with.
+const CONSOLE_START: &str = "// Type a script and press Run (Cmd+Enter).\nconsole.log(inkframe.document.layers.map((layer) => layer.name));\n";
 
 /// What the last script said, shown until dismissed.
 struct Report {
@@ -59,10 +98,22 @@ struct Report {
     problem: Option<String>,
 }
 
-#[derive(Default)]
 pub struct Scripts {
     running: Option<Running>,
     report: Option<Report>,
+    console_source: String,
+    console_lines: Vec<Line>,
+}
+
+impl Default for Scripts {
+    fn default() -> Self {
+        Self {
+            running: None,
+            report: None,
+            console_source: CONSOLE_START.to_owned(),
+            console_lines: Vec::new(),
+        }
+    }
 }
 
 impl Scripts {
@@ -103,9 +154,17 @@ impl Scripts {
         }
     }
 
+    /// Puts `source` in the Script Console and runs it there, for
+    /// screenshots.
+    pub fn run_in_console(&mut self, source: String, editor: &Editor) {
+        self.console_source = source.clone();
+        self.console_lines.push(Line::Ran(format!("Ran at frame {}", editor.frame + 1)));
+        self.run("Script Console".to_owned(), source, editor, true);
+    }
+
     pub fn run_file(&mut self, path: &Path, editor: &Editor) {
         match std::fs::read_to_string(path) {
-            Ok(source) => self.run(name_of(path), source, editor),
+            Ok(source) => self.run(name_of(path), source, editor, false),
             Err(err) => {
                 self.report = Some(Report {
                     name: name_of(path),
@@ -117,7 +176,7 @@ impl Scripts {
     }
 
     /// Starts `source` on its own thread, against a copy of the project.
-    pub fn run(&mut self, name: String, source: String, editor: &Editor) {
+    pub fn run(&mut self, name: String, source: String, editor: &Editor, from_console: bool) {
         if self.is_running() {
             return;
         }
@@ -133,15 +192,22 @@ impl Scripts {
             let _ = sender.send(inkframe_script::run(script));
         });
         self.report = None;
-        self.running =
-            Some(Running { name, stop, started: Instant::now(), before: editor.doc.clone(), result });
+        self.running = Some(Running {
+            name,
+            stop,
+            started: Instant::now(),
+            before: editor.doc.clone(),
+            result,
+            from_console,
+        });
     }
 
     /// Shows a running script's progress, and what the last one said; takes
     /// a finished script's result.
     pub fn show(&mut self, ctx: &egui::Context, editor: &mut Editor) {
         self.finish(editor);
-        if let Some(running) = &self.running {
+        // The console has its own Stop button and shows its own output.
+        if let Some(running) = self.running.as_ref().filter(|r| !r.from_console) {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
             egui::Window::new("Running Script")
                 .collapsible(false)
@@ -194,7 +260,7 @@ impl Scripts {
         let Ok(result) = running.result.try_recv() else { return };
         let running = self.running.take().expect("running");
         let name = running.name;
-        self.report = match result {
+        let report = match result {
             Ok(outcome) if editor.doc != running.before => Some(Report {
                 name,
                 log: outcome.log,
@@ -214,10 +280,111 @@ impl Scripts {
             }
             Err(error) => Some(Report { name, log: error.log().to_vec(), problem: Some(error.to_string()) }),
         };
+        if !running.from_console {
+            self.report = report;
+            return;
+        }
+        if let Some(report) = report {
+            self.console_lines.extend(report.log.into_iter().map(Line::Printed));
+            if let Some(problem) = report.problem {
+                self.console_lines.push(Line::Failed(problem));
+            }
+        }
+    }
+
+    /// The Script Console: a box to type a script in, Run and Stop, and
+    /// what scripts printed.
+    pub fn console(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+        let running = self.running.as_ref().filter(|r| r.from_console);
+        let mut run = false;
+        ui.horizontal(|ui| {
+            match running {
+                Some(running) => {
+                    if ui.button("Stop").clicked() {
+                        running.stop.store(true, Ordering::Relaxed);
+                    }
+                    ui.spinner();
+                }
+                None => {
+                    run |= ui
+                        .add_enabled(self.running.is_none(), egui::Button::new("Run"))
+                        .on_hover_text(
+                            "Run the script on the open project (Cmd+Enter). Edit › Undo takes it back.",
+                        )
+                        .clicked();
+                }
+            }
+            if ui.button("Clear").on_hover_text("Clear the output").clicked() {
+                self.console_lines.clear();
+            }
+        });
+        let height = ui.available_height();
+        let editor_box =
+            egui::ScrollArea::vertical().id_salt("console-source").max_height(height * 0.55).show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.console_source)
+                        .code_editor()
+                        .desired_width(f32::INFINITY)
+                        .desired_rows(8),
+                )
+            });
+        // Cmd+Enter runs, from the box. (Enter alone types a new line; the
+        // timeline's Enter-to-play stands aside while typing.)
+        if editor_box.inner.has_focus()
+            && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter))
+        {
+            run = true;
+        }
+        if run && self.running.is_none() {
+            self.console_lines.push(Line::Ran(format!("Ran at frame {}", editor.frame + 1)));
+            self.run("Script Console".to_owned(), self.console_source.clone(), editor, true);
+        }
+        ui.separator();
+        egui::ScrollArea::vertical().id_salt("console-output").stick_to_bottom(true).auto_shrink(false).show(
+            ui,
+            |ui| {
+                if self.console_lines.is_empty() {
+                    ui.weak("What the script prints with console.log appears here.");
+                }
+                for line in &self.console_lines {
+                    match line {
+                        Line::Ran(text) => {
+                            ui.add_space(4.0);
+                            ui.weak(text);
+                        }
+                        Line::Printed(text) => {
+                            ui.monospace(text);
+                        }
+                        Line::Failed(text) => {
+                            ui.colored_label(ui.visuals().error_fg_color, text);
+                        }
+                    }
+                }
+            },
+        );
     }
 }
 
 /// "stagger-layers.js" → "stagger-layers".
 fn name_of(path: &Path) -> String {
     path.file_stem().map_or_else(|| "script".to_owned(), |s| s.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_example_script_is_built_in() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/scripts");
+        let mut on_disk: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".js"))
+            .collect();
+        on_disk.sort();
+        let built_in: Vec<&str> = EXAMPLES.iter().map(|(name, _)| *name).collect();
+        assert_eq!(on_disk, built_in, "add new example scripts to EXAMPLES");
+    }
 }

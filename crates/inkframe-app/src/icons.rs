@@ -55,6 +55,8 @@ pub enum Icon {
     Nodes,
     /// A stack of cards: the template library.
     Templates,
+    /// A prompt, for the Script Console.
+    Console,
     Plus,
     // The Align panel.
     AlignLeft,
@@ -382,6 +384,16 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             line(&[(0.38, 0.23), (0.5, 0.23), (0.5, 0.5), (0.62, 0.5)]);
             line(&[(0.38, 0.77), (0.5, 0.77), (0.5, 0.5)]);
         }
+        Icon::Console => {
+            painter.rect_stroke(
+                Rect::from_min_max(at(0.05, 0.12), at(0.95, 0.88)),
+                2.0,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
+            line(&[(0.22, 0.35), (0.38, 0.5), (0.22, 0.65)]);
+            line(&[(0.46, 0.66), (0.72, 0.66)]);
+        }
         Icon::Templates => {
             painter.rect_stroke(
                 Rect::from_min_max(at(0.22, 0.05), at(0.95, 0.62)),
@@ -571,6 +583,7 @@ mod tests {
             Dial,
             Nodes,
             Templates,
+            Console,
             Plus,
             AlignLeft,
             AlignCenterX,
