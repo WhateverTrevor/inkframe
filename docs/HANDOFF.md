@@ -523,6 +523,18 @@ after the Harmony features (palettes to master controllers).
     `draw_into_layer` now defaults to on (Animate draws into the current
     layer); `Prefs::shape_per_layer` remembers turning it off. The
     getting-started guide uses New Layer for the floor.
+80. Asset library (format v31): core `library.rs` (`Asset`, folder
+    names on Symbol/ImageAsset/AudioTrack, `Document::library_folders`),
+    app `library.rs` rewritten as a card grid (search, size slider,
+    folders, context menus). Cards drag out as an `Asset` payload:
+    `stage::asset_drop` places at the drop point
+    (`Editor::place_asset_at`), `TimelineView::asset_drop` from that frame
+    above that row (`place_asset_on_timeline`). Images dropped onto the
+    Library area are added without placing (`add_library_image`). Image
+    cards use `inkframe_render::render_image_thumbnail` (mipmapped).
+    Screenshot hook `INKFRAME_SCREENSHOT_LIBRARY=1`. `Editor::place_symbol`
+    was folded into `place_asset_at`. Next: the symbol previewer
+    (`LibraryView::selected` is the card to preview).
 
 ## Not yet verified by hand
 

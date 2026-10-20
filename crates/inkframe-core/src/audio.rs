@@ -30,6 +30,9 @@ pub struct AudioTrack {
     pub volume: f32,
     #[serde(default)]
     pub muted: bool,
+    /// The Library folder it's filed in; empty for the top level.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub folder: String,
 }
 
 impl AudioTrack {
@@ -66,7 +69,15 @@ impl Document {
             .and_then(|dir| path.strip_prefix(dir).ok())
             .map_or_else(|| path.to_path_buf(), Path::to_path_buf);
         let name = path.file_stem().map_or_else(|| "Audio".to_owned(), |s| s.to_string_lossy().into_owned());
-        self.audio.push(AudioTrack { id, name, path: stored, start, volume: 1.0, muted: false });
+        self.audio.push(AudioTrack {
+            id,
+            name,
+            path: stored,
+            start,
+            volume: 1.0,
+            muted: false,
+            folder: String::new(),
+        });
         id
     }
 

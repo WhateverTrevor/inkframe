@@ -20,6 +20,7 @@ use crate::convert::to_color32;
 use crate::editor::Editor;
 use crate::icons::{self, Icon, IconButton};
 use crate::layer_thumbnails::LayerThumbnails;
+use crate::library;
 use crate::value_graph::{self, FrameAxis, ValueGraph};
 
 const NAME_WIDTH: f32 = 270.0;
@@ -528,6 +529,8 @@ impl TimelineView {
             }
         }
 
+        self.asset_drop(ui, &painter, &response, editor, &layout, &rows);
+
         // Header for the names column, in the corner left of the ruler.
         let corner = Rect::from_min_max(rect.min, pos2(layout.names.right(), layout.ruler.bottom()));
         painter.rect_filled(corner, 0.0, ui.visuals().panel_fill);
@@ -542,6 +545,40 @@ impl TimelineView {
         let line = Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color);
         painter.vline(layout.frames.left(), rect.y_range(), line);
         painter.hline(rect.x_range(), layout.frames.top(), line);
+    }
+
+    /// A card dragged from the Library onto the rows: shows the frame and
+    /// the place in the stack it would go, and places it there when let go.
+    /// A sound starts on that frame instead.
+    fn asset_drop(
+        &mut self,
+        ui: &egui::Ui,
+        painter: &egui::Painter,
+        response: &egui::Response,
+        editor: &mut Editor,
+        layout: &Layout,
+        rows: &[Row],
+    ) {
+        if library::dragged_asset(ui.ctx()).is_none() || !response.contains_pointer() {
+            return;
+        }
+        let Some(pointer) = response.hover_pos() else { return };
+        let frame = layout.frame_at(pointer.x).clamp(0, editor.last_frame() as i64) as u32;
+        // Dropped on a row, the new layer goes just above that row's layer;
+        // anywhere below the layers, on top of them all.
+        let row = layout.row_at(pointer.y).filter(|&row| row < rows.len());
+        let accent = ui.visuals().selection.stroke.color;
+        let gap = row.map_or_else(|| layout.row_top(0), |row| layout.row_top(row));
+        painter.hline(layout.names.left()..=layout.frames.right(), gap, (2.0, accent));
+        let column = Rect::from_x_y_ranges(
+            layout.frame_x(frame)..=layout.frame_x(frame + 1),
+            layout.frames.top()..=layout.frames.bottom(),
+        );
+        painter.rect_filled(column, 0.0, accent.gamma_multiply(0.25));
+
+        if let Some(asset) = response.dnd_release_payload::<inkframe_core::Asset>() {
+            editor.place_asset_on_timeline(*asset, frame, row.map(|row| rows[row].layer));
+        }
     }
 
     fn update_scroll(
@@ -1785,6 +1822,32 @@ mod tests {
         let timeline = &h.state().0;
         let layout = Layout::new(timeline.grid_rect.unwrap(), timeline.scroll, &timeline.heights);
         pos2(layout.frame_x(frame), layout.row_rect(row, layout.frames).center().y)
+    }
+
+    #[test]
+    fn a_library_card_dropped_on_a_row_goes_above_it_from_that_frame() {
+        let (mut h, id) = harness();
+        let symbol = {
+            let doc = &mut h.state_mut().1.doc;
+            let star = doc.add_layer("Star", vec![], 0, Transform::default());
+            doc.convert_layer_to_symbol(star, 0).unwrap()
+        };
+        h.run();
+        // Rows read top first: the Star instance, then A.
+        let target = cell(&h, 1, 6);
+        egui::DragAndDrop::set_payload(&h.ctx, inkframe_core::Asset::Symbol(symbol));
+        h.hover_at(target);
+        h.step();
+        h.drop_at(target);
+        h.run();
+
+        let editor = &h.state().1;
+        assert_eq!(editor.frame, 6);
+        let layers = editor.layers();
+        assert_eq!(layers.len(), 3);
+        assert_eq!(layers[0].id, id, "A stays at the bottom");
+        assert_eq!(layers[1].instance.map(|i| i.symbol), Some(symbol), "placed just above A");
+        assert_eq!(editor.selection, Some(layers[1].id));
     }
 
     #[test]

@@ -17,6 +17,7 @@ use crate::convert::{to_color32, to_point};
 use crate::editor::{Editor, OnionSkin, Surrounding, Tool};
 use crate::guides;
 use crate::handles::{RotateDrag, ScaleHandle, ScaleOptions, scale_pose, skew_pose};
+use crate::library;
 use crate::motion_path;
 use crate::pen::PenPath;
 use crate::subselect::{AnchorPart, move_part, remove_anchor, toggle_smooth};
@@ -1031,6 +1032,7 @@ impl StageView {
                 .line_segment([hit.screen - vec2(0.0, 3.0), hit.screen + vec2(0.0, 3.0)], (1.0, SELECTION));
         }
         self.update_cursor(ui, &response, editor, view, handles.as_ref());
+        asset_drop(ui, &overlay, &response, editor, stage_view);
     }
 
     fn view(&self, area: Rect, doc: &Document) -> View {
@@ -3463,6 +3465,29 @@ fn draw_checkerboard(painter: &egui::Painter, view: View) {
                 painter.add(egui::Shape::convex_polygon(square, Color32::from_gray(153), egui::Stroke::NONE));
             }
         }
+    }
+}
+
+/// A card dragged from the Library over the stage: marks where it would
+/// land, and places it there when let go.
+fn asset_drop(
+    ui: &egui::Ui,
+    painter: &egui::Painter,
+    response: &egui::Response,
+    editor: &mut Editor,
+    view: View,
+) {
+    if library::dragged_asset(ui.ctx()).is_none() || !response.contains_pointer() {
+        return;
+    }
+    let Some(pointer) = response.hover_pos() else { return };
+    let accent = ui.visuals().selection.stroke.color;
+    painter.add(egui::Shape::closed_line(view.stage_corners().to_vec(), (2.0, accent)));
+    painter.circle_stroke(pointer, 6.0, (1.5, accent));
+    painter.line_segment([pointer - vec2(10.0, 0.0), pointer + vec2(10.0, 0.0)], (1.0, accent));
+    painter.line_segment([pointer - vec2(0.0, 10.0), pointer + vec2(0.0, 10.0)], (1.0, accent));
+    if let Some(asset) = response.dnd_release_payload::<inkframe_core::Asset>() {
+        editor.place_asset_at(*asset, view.to_local(pointer));
     }
 }
 
