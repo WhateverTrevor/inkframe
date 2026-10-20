@@ -35,7 +35,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 29;
+pub const FORMAT_VERSION: u32 = 30;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -75,6 +75,10 @@ pub struct Document {
     /// `controller.rs`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub controllers: Vec<Controller>,
+    /// Draw the main timeline's layers far to near by their depth on each
+    /// frame, rather than in the timeline's order (see `camera.rs`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stack_by_depth: bool,
     /// Plain colours, as the Swatches panel saved them before there was a
     /// palette; loading makes each a swatch.
     #[serde(default, rename = "swatches", skip_serializing)]
@@ -312,6 +316,7 @@ impl Default for Document {
             canvases: BTreeMap::new(),
             palette: Palette::default(),
             controllers: Vec::new(),
+            stack_by_depth: false,
             old_swatches: Vec::new(),
             next_canvas_id: 1,
         }
@@ -514,8 +519,8 @@ impl Document {
         frame: u32,
         tolerance: f32,
     ) -> Option<LayerId> {
-        self.layers_of(timeline)
-            .iter()
+        self.stacking_order(timeline, frame)
+            .into_iter()
             .rev()
             // Mask layers aren't drawn, so clicking where one is should
             // reach what's visible there instead. (The editor still lets

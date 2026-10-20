@@ -29,7 +29,8 @@
 //! * `INKFRAME_SCREENSHOT_PARTICLES=1` adds the four particle presets on a dark stage,
 //!   with the fire selected.
 //! * `INKFRAME_SCREENSHOT_MULTIPLANE=1` builds a scene at several depths with the camera
-//!   dollying in, and shows the Depth View in place of Properties.
+//!   dollying in, and shows the Depth View in place of Properties; `=stack` also has the
+//!   tree drift back past the hills, stacked by depth.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet

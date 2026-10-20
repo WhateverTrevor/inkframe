@@ -127,10 +127,11 @@ pub fn render_timeline_into(
         show_mask: options.show_mask,
         light_table: options.light_table,
     };
-    let layers = doc.layers_of(timeline);
+    // Usually the timeline's order; by depth when the document says so.
+    let layers = doc.stacking_order(timeline, frame);
     in_bands(pixmap, |band, shift| {
         let to_band = shift.pre_concat(to_pixels);
-        render_layers(band, doc, layers, frame, to_band, options.opacity, style, skip, 0);
+        render_layers(band, doc, &layers, frame, to_band, options.opacity, style, skip, 0);
     });
 }
 
@@ -219,7 +220,8 @@ pub fn render_symbol_thumbnail(
 
     let mut pixmap = Pixmap::new(size, size)?;
     let style = Style { tint: None, images, show_guides: true, show_mask: None, light_table: None };
-    render_layers(&mut pixmap.as_mut(), doc, &symbol.layers, frame, fit, 1.0, style, None, 0);
+    let layers: Vec<&Layer> = symbol.layers.iter().collect();
+    render_layers(&mut pixmap.as_mut(), doc, &layers, frame, fit, 1.0, style, None, 0);
     Some(pixmap)
 }
 
@@ -249,7 +251,7 @@ pub fn render_layer_thumbnail(
 
     let mut pixmap = Pixmap::new(width, height)?;
     let style = Style { tint: None, images, show_guides: true, show_mask: Some(layer.id), light_table: None };
-    render_layers(&mut pixmap.as_mut(), doc, std::slice::from_ref(&layer), frame, fit, 1.0, style, None, 0);
+    render_layers(&mut pixmap.as_mut(), doc, &[&layer], frame, fit, 1.0, style, None, 0);
     Some(pixmap)
 }
 
@@ -280,7 +282,7 @@ const MASK_PREVIEW_OPACITY: f32 = 0.35;
 fn render_layers(
     pixmap: &mut PixmapMut,
     doc: &Document,
-    layers: &[Layer],
+    layers: &[&Layer],
     frame: u32,
     parent: Affine,
     opacity: f32,
@@ -297,7 +299,7 @@ fn render_layers(
             && (style.show_guides || !l.guide)
             && (!l.mask || style.show_mask == Some(l.id))
     };
-    for layer in layers.iter().filter(drawn) {
+    for layer in layers.iter().copied().filter(drawn) {
         let transform = doc.pose(layer, frame);
         let preview = if layer.mask { MASK_PREVIEW_OPACITY } else { 1.0 };
         // Only the top level is faded: a symbol's own layers go with it.
@@ -480,8 +482,10 @@ pub fn export_psd(doc: &Document, frame: u32, images: Option<&ImageLibrary>) -> 
             blend: inkframe_core::BlendMode::Normal,
         });
     }
-    // Folders hold nothing to draw; their layers are exported one by one.
-    for layer in doc.layers.iter().filter(|l| !l.guide && !l.mask && !l.folder) {
+    // Folders hold nothing to draw; their layers are exported one by one,
+    // stacked as the frame shows them.
+    let stacked = doc.stacking_order(TimelineId::Main, frame);
+    for layer in stacked.into_iter().filter(|l| !l.guide && !l.mask && !l.folder) {
         // Drawn fully opaque and blending normally: Photoshop applies the
         // layer's own opacity and blend mode, kept as settings.
         let mut alone = layer.clone();
@@ -493,17 +497,7 @@ pub fn export_psd(doc: &Document, frame: u32, images: Option<&ImageLibrary>) -> 
             continue;
         }
         let Some(mut pixmap) = Pixmap::new(width, height) else { continue };
-        render_layers(
-            &mut pixmap.as_mut(),
-            doc,
-            std::slice::from_ref(&alone),
-            frame,
-            Affine::IDENTITY,
-            1.0,
-            style,
-            None,
-            0,
-        );
+        render_layers(&mut pixmap.as_mut(), doc, &[&alone], frame, Affine::IDENTITY, 1.0, style, None, 0);
         let Some((left, top, w, h)) = opaque_bounds(&pixmap) else { continue };
         let mut pixels = Vec::with_capacity((w * h * 4) as usize);
         for y in top..top + h {
@@ -685,7 +679,8 @@ fn draw_layer(
     // `instance_view` stops at the nesting limit, so a malformed file can't
     // recurse forever.
     if let Some((symbol, symbol_frame)) = doc.instance_view(layer, frame, depth) {
-        render_layers(pixmap, doc, &symbol.layers, symbol_frame, matrix, 1.0, style, None, depth + 1);
+        let layers: Vec<&Layer> = symbol.layers.iter().collect();
+        render_layers(pixmap, doc, &layers, symbol_frame, matrix, 1.0, style, None, depth + 1);
     }
 }
 
@@ -1269,7 +1264,8 @@ mod tests {
         let to_pixels = Affine::scale(1.3, 1.3);
         let style =
             super::Style { tint: None, images: None, show_guides: false, show_mask: None, light_table: None };
-        render_layers(&mut whole.as_mut(), &doc, &doc.layers, 0, to_pixels, 1.0, style, None, 0);
+        let layers: Vec<&Layer> = doc.layers.iter().collect();
+        render_layers(&mut whole.as_mut(), &doc, &layers, 0, to_pixels, 1.0, style, None, 0);
 
         // tiny-skia clips each shape's outline where a band starts and ends,
         // which can nudge the anti-aliasing of pixels on that outline. That's
@@ -1430,6 +1426,28 @@ mod tests {
             })
             .count();
         assert!(yellow > 2000, "a big yellow face, found {yellow} yellow pixels");
+    }
+
+    #[test]
+    fn stacking_by_depth_puts_far_layers_behind() {
+        // Red on top in the timeline, but further away.
+        let mut doc = red_square_doc();
+        let blue = Element {
+            shape: Shape::Rect { width: 40.0, height: 40.0, corner_radius: 0.0 },
+            style: inkframe_core::Style { fill: Some(Color::rgb(0, 0, 255)), stroke: None },
+        };
+        let red = doc.layers[0].id;
+        let centre = doc.layer(red).map(|l| l.transform_at(0).position).unwrap();
+        doc.add_layer("Blue", vec![blue], 0, inkframe_core::Transform::at(centre));
+        doc.move_layer(red, 1);
+        doc.layer_mut(red).unwrap().track.set_depth(0, 100.0);
+        let at_centre = |doc: &Document| {
+            let pixmap = render_frame(doc, 0, &RenderOptions::default()).unwrap();
+            pixel(&pixmap, centre.x as u32, centre.y as u32)
+        };
+        assert_eq!(at_centre(&doc)[0], 255, "red in front, by the timeline");
+        doc.stack_by_depth = true;
+        assert_eq!(at_centre(&doc)[2], 255, "blue in front, by depth");
     }
 
     #[test]

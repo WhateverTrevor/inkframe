@@ -1836,10 +1836,19 @@ fn document_section(ui: &mut egui::Ui, editor: &mut Editor) {
         ui.label("Background");
         color_button(ui, &mut doc.background);
         ui.end_row();
+
+        ui.label("Stacking");
+        ui.checkbox(&mut doc.stack_by_depth, "By depth").on_hover_text(STACK_BY_DEPTH);
+        ui.end_row();
     });
     // Shortening the animation can strand the playhead past the end.
     editor.set_frame(editor.frame);
 }
+
+/// What "stack by depth" does, for its checkboxes.
+pub const STACK_BY_DEPTH: &str = "Draw layers far to near by their Depth on each frame, so a layer that moves back \
+     passes behind the others. Layers at the same depth keep the timeline's order. Off, the timeline's order \
+     decides what's in front.";
 
 /// The document's audio tracks: when each starts, how loud it is, and
 /// whether it plays at all. Sound files are added with File › Import Audio.

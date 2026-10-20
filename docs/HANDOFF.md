@@ -12,7 +12,7 @@ after the Harmony features (palettes to master controllers).
   all pass, on macOS locally and on macOS and Windows in CI. Clippy can
   also be run for Windows from the Mac:
   `cargo clippy --target x86_64-pc-windows-msvc --workspace --all-targets`.
-- **File format:** version 29. Older versions load and upgrade automatically
+- **File format:** version 30. Older versions load and upgrade automatically
   (see `crates/inkframe-core/tests/format_migration.rs`).
 - **Git identity:** set for this repository only (`git config user.name` /
   `user.email`), since the Mac has no global identity.
@@ -420,8 +420,16 @@ after the Harmony features (palettes to master controllers).
     `render_layers`) fades layers within 0.25F of the camera. Inspector:
     Depth row in Transform (top-level main layers), Dolly in the camera
     section. `depth_view.rs` is a new area kind (Kind::DepthView). Depth
-    doesn't reorder the stack: stacking is still the timeline order.
     `INKFRAME_SCREENSHOT_MULTIPLANE=1` (with `_FRAME`).
+
+68. Stack by depth (format v30): `Document::stack_by_depth`, off by
+    default. `Document::stacking_order(timeline, frame)` (camera.rs) is
+    used by `render_timeline_into`, `export_psd` and `hit_test_in`;
+    `render_layers` now takes `&[&Layer]`. Main timeline only (symbols
+    keep their own order). Toggles: Depth View corner, Document
+    properties. The timeline still lists layers in its own order, with
+    nothing marking that depth has overridden it.
+    `INKFRAME_SCREENSHOT_MULTIPLANE=stack`.
 
 ## Not yet verified by hand
 
