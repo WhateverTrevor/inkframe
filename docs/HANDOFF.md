@@ -535,8 +535,19 @@ after the Harmony features (palettes to master controllers).
     Screenshot hook `INKFRAME_SCREENSHOT_LIBRARY=1`. `Editor::place_symbol`
     was folded into `place_asset_at`. Next: the symbol previewer
     (`LibraryView::selected` is the card to preview).
+81. Symbol previewer: the Library's Preview (always shown, so picking a
+    card never moves the grid) plays the selected symbol in a loop with
+    pause and a scrubber (`Preview { clock }`), shows images larger, and
+    draws a sound's waveform with play/stop (`AudioEngine::preview`,
+    `preview_position`, `duration`; a preview survives entering a
+    symbol). Hovering an animated card plays it in the card. Thumbnails
+    are fitted to `inkframe_render::symbol_extent` (all frames).
+    `IconButton` now reports its tooltip as its accessible label.
 
 ## Not yet verified by hand
+
+- Hearing a sound from the Library's preview (`AudioEngine::preview`)
+  has only been exercised without an output device.
 
 - The hold-to-reorder delay (0.35 s) and drag-to-scroll were tuned in
   tests, not with a real pen; adjust `HOLD_TO_REORDER` and

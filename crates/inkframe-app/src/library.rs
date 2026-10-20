@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use egui::{Align2, Color32, CursorIcon, FontId, Id, Rect, Sense, Stroke, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{Asset, Symbol};
 
+use crate::audio_engine::AudioEngine;
 use crate::editor::Editor;
 use crate::icons::{self, Icon, IconButton};
 
@@ -30,8 +31,83 @@ struct Thumbnail {
     /// The image library's and fonts' generations when rendered, so a
     /// picture redraws once a file inside it has loaded.
     generations: (u64, u64),
-    pixels: u32,
+    /// Size in pixels.
+    size: (u32, u32),
+    /// The symbol frame shown.
+    frame: u32,
+    /// The box around everything the symbol shows over its whole length,
+    /// which every frame is fitted to, so playing it doesn't jitter.
+    extent: Option<inkframe_core::Rect>,
     texture: Option<egui::TextureHandle>,
+}
+
+impl Thumbnail {
+    /// A picture of `asset` on `frame` at `size` pixels, reusing `old` if
+    /// it's still right (and its extent, if only the frame or size moved).
+    fn render(
+        old: Option<&Thumbnail>,
+        ctx: &egui::Context,
+        editor: &Editor,
+        asset: Asset,
+        frame: u32,
+        size: (u32, u32),
+        name: &str,
+    ) -> Option<Thumbnail> {
+        let generations = (editor.images.generation(), inkframe_render::fonts_generation());
+        let symbol = match asset {
+            Asset::Symbol(id) => editor.doc.symbol(id),
+            _ => None,
+        };
+        let same_source = old.is_some_and(|t| t.symbol.as_ref() == symbol && t.generations == generations);
+        if same_source && old.is_some_and(|t| t.size == size && t.frame == frame) {
+            return None;
+        }
+        let extent = match (asset, old) {
+            (Asset::Symbol(_), Some(old)) if same_source => old.extent,
+            (Asset::Symbol(id), _) => inkframe_render::symbol_extent(&editor.doc, id),
+            _ => None,
+        };
+        let pixmap = match asset {
+            Asset::Symbol(id) => extent.and_then(|extent| {
+                inkframe_render::render_symbol_frame(
+                    &editor.doc,
+                    Some(&editor.images),
+                    id,
+                    frame,
+                    size,
+                    extent,
+                )
+            }),
+            Asset::Image(id) => {
+                inkframe_render::render_image_thumbnail(&editor.images, id, size.0.min(size.1))
+            }
+            Asset::Sound(_) => None,
+        };
+        let texture = pixmap.map(|pixmap| {
+            let pixels = [pixmap.width() as usize, pixmap.height() as usize];
+            let image = egui::ColorImage::from_rgba_premultiplied(pixels, pixmap.data());
+            ctx.load_texture(name, image, egui::TextureOptions::LINEAR)
+        });
+        Some(Thumbnail { symbol: symbol.cloned(), generations, size, frame, extent, texture })
+    }
+}
+
+/// The big picture of the selected card at the top of the Library: a
+/// symbol playing in a loop, an image, or a sound's waveform.
+struct Preview {
+    asset: Option<Asset>,
+    picture: Option<Thumbnail>,
+    playing: bool,
+    /// Where a playing symbol has got to, in frames (fractional, so slow
+    /// UI frames don't lose time).
+    clock: f64,
+}
+
+impl Preview {
+    /// The symbol frame showing, given the symbol's length.
+    fn frame(&self, duration: u32) -> u32 {
+        self.clock as u32 % duration.max(1)
+    }
 }
 
 /// A name being typed in place of a card's or folder's label.
@@ -62,6 +138,7 @@ pub struct LibraryView {
     renaming: Option<Renaming>,
     /// Folders shown closed.
     closed: HashSet<String>,
+    preview: Preview,
 }
 
 impl Default for LibraryView {
@@ -73,6 +150,7 @@ impl Default for LibraryView {
             selected: None,
             renaming: None,
             closed: HashSet::new(),
+            preview: Preview { asset: None, picture: None, playing: false, clock: 0.0 },
         }
     }
 }
@@ -84,7 +162,7 @@ pub fn dragged_asset(ctx: &egui::Context) -> Option<Asset> {
 }
 
 impl LibraryView {
-    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) {
         let assets = editor.doc.library_assets();
         self.thumbnails.retain(|asset, _| assets.contains(asset));
         if self.selected.is_some_and(|s| !assets.contains(&s)) {
@@ -93,6 +171,16 @@ impl LibraryView {
 
         let mut actions = Vec::new();
         self.toolbar(ui, &mut actions);
+        // Always there (while there's anything to preview), so choosing a
+        // card doesn't push the cards down under the pointer.
+        if !assets.is_empty() {
+            egui::CollapsingHeader::new("Preview").id_salt("library-preview").default_open(true).show(
+                ui,
+                |ui| {
+                    self.preview(ui, editor, audio);
+                },
+            );
+        }
         ui.add_space(2.0);
 
         // Dropping a card on the panel's empty space takes it out of its
@@ -288,7 +376,18 @@ impl LibraryView {
         let fill =
             if response.hovered() { visuals.widgets.hovered.weak_bg_fill } else { visuals.extreme_bg_color };
         painter.rect_filled(picture, 6.0, fill);
-        self.paint_picture(ui, editor, asset, picture.shrink(5.0));
+        // Hovering an animated symbol's card plays it in the card.
+        let frame = match asset {
+            Asset::Symbol(id) if response.hovered() => editor.doc.symbol(id).map_or(0, |s| {
+                let elapsed = ui.input(|i| i.time) * editor.doc.frame_rate.fps();
+                if s.duration > 1 {
+                    ui.ctx().request_repaint();
+                }
+                elapsed as u32 % s.duration.max(1)
+            }),
+            _ => 0,
+        };
+        self.paint_picture(ui, editor, asset, frame, picture.shrink(5.0));
         let painter = ui.painter();
         let outline = if selected || dropping_here {
             Stroke::new(2.0, visuals.selection.stroke.color)
@@ -404,53 +503,165 @@ impl LibraryView {
         }
     }
 
-    /// Draws an asset's picture into `rect`: a rendering for a symbol or an
-    /// image, re-made only when it's out of date, or a speaker for a sound.
-    fn paint_picture(&mut self, ui: &egui::Ui, editor: &Editor, asset: Asset, rect: Rect) {
+    /// Draws an asset's picture into `rect`: a rendering of a symbol's
+    /// `frame` or of an image, re-made only when it's out of date, or a
+    /// speaker for a sound.
+    fn paint_picture(&mut self, ui: &egui::Ui, editor: &Editor, asset: Asset, frame: u32, rect: Rect) {
         if let Asset::Sound(_) = asset {
             let icon = Rect::from_center_size(rect.center(), Vec2::splat(rect.width() * 0.45));
             icons::paint(ui.painter(), Icon::Speaker, icon, ui.visuals().weak_text_color());
             return;
         }
-        let generations = (editor.images.generation(), inkframe_render::fonts_generation());
         // Render at the display's pixel density so pictures are sharp.
         let pixels = (rect.width() * ui.ctx().pixels_per_point()).round().max(1.0) as u32;
-        let symbol = match asset {
-            Asset::Symbol(id) => editor.doc.symbol(id),
-            _ => None,
-        };
-        let stale = self.thumbnails.get(&asset).is_none_or(|t| {
-            t.symbol.as_ref() != symbol || t.generations != generations || t.pixels != pixels
-        });
-        if stale {
-            let pixmap = match asset {
-                Asset::Symbol(id) => {
-                    inkframe_render::render_symbol_thumbnail(&editor.doc, Some(&editor.images), id, 0, pixels)
-                }
-                Asset::Image(id) => inkframe_render::render_image_thumbnail(&editor.images, id, pixels),
-                Asset::Sound(_) => None,
-            };
-            let texture = pixmap.map(|pixmap| {
-                let size = [pixmap.width() as usize, pixmap.height() as usize];
-                let image = egui::ColorImage::from_rgba_premultiplied(size, pixmap.data());
-                ui.ctx().load_texture(format!("library-{asset:?}"), image, egui::TextureOptions::LINEAR)
-            });
-            self.thumbnails
-                .insert(asset, Thumbnail { symbol: symbol.cloned(), generations, pixels, texture });
+        let name = format!("library-{asset:?}");
+        let old = self.thumbnails.get(&asset);
+        if let Some(fresh) = Thumbnail::render(old, ui.ctx(), editor, asset, frame, (pixels, pixels), &name) {
+            self.thumbnails.insert(asset, fresh);
         }
-        match self.thumbnails.get(&asset).and_then(|t| t.texture.as_ref()) {
-            Some(texture) => {
-                let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-                ui.painter().image(texture.id(), rect, uv, Color32::WHITE);
+        paint_texture(ui, self.thumbnails.get(&asset), rect);
+    }
+
+    /// The selected card, big: a symbol plays in a loop (with play, pause
+    /// and a scrubber), an image shows larger, and a sound shows its
+    /// waveform with a button to hear it.
+    fn preview(&mut self, ui: &mut egui::Ui, editor: &Editor, audio: &mut AudioEngine) {
+        let width = ui.available_width();
+        let height = (width * 0.6).clamp(110.0, 260.0);
+        let Some(asset) = self.selected else {
+            if self.preview.asset.take().is_some() {
+                audio.stop_preview();
             }
-            None => {
-                ui.painter().text(
-                    rect.center(),
-                    Align2::CENTER_CENTER,
-                    "empty",
-                    FontId::proportional(10.0),
-                    ui.visuals().weak_text_color(),
-                );
+            let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+            ui.painter().rect_filled(rect, 6.0, ui.visuals().extreme_bg_color);
+            ui.painter().text(
+                rect.center(),
+                Align2::CENTER_CENTER,
+                "Click a card to preview it",
+                FontId::proportional(12.0),
+                ui.visuals().weak_text_color(),
+            );
+            ui.add_space(controls_height(ui));
+            return;
+        };
+        if self.preview.asset != Some(asset) {
+            // A new card starts from the top, playing if it's animated.
+            let animated =
+                matches!(asset, Asset::Symbol(id) if editor.doc.symbol(id).is_some_and(|s| s.duration > 1));
+            self.preview = Preview { asset: Some(asset), picture: None, playing: animated, clock: 0.0 };
+            audio.stop_preview();
+        }
+        let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+        // The controls and details underneath get the same room for every
+        // kind of card, so switching cards never moves the ones below.
+        let (below, _) = ui.allocate_exact_size(vec2(width, controls_height(ui)), Sense::hover());
+        let mut controls = ui.new_child(
+            egui::UiBuilder::new().max_rect(below).layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        let background = crate::convert::to_color32(editor.doc.background);
+        ui.painter().rect_filled(rect, 6.0, background);
+        ui.painter().rect_stroke(
+            rect,
+            6.0,
+            Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+            StrokeKind::Inside,
+        );
+        let inside = rect.shrink(6.0);
+        let doc = &editor.doc;
+        let project_dir = editor.project_dir();
+
+        match asset {
+            Asset::Symbol(id) => {
+                let Some(symbol) = doc.symbol(id) else { return };
+                let duration = symbol.duration.max(1);
+                if self.preview.playing {
+                    let dt = ui.input(|i| i.stable_dt).min(0.1) as f64;
+                    self.preview.clock = (self.preview.clock + dt * doc.frame_rate.fps()) % duration as f64;
+                    ui.ctx().request_repaint();
+                }
+                let frame = self.preview.frame(duration);
+                let pixels = |side: f32| (side * ui.ctx().pixels_per_point()).round().max(1.0) as u32;
+                let size = (pixels(inside.width()), pixels(inside.height()));
+                let name = format!("library-preview-{asset:?}");
+                let old = self.preview.picture.as_ref();
+                if let Some(fresh) = Thumbnail::render(old, ui.ctx(), editor, asset, frame, size, &name) {
+                    self.preview.picture = Some(fresh);
+                }
+                paint_texture(ui, self.preview.picture.as_ref(), inside);
+
+                controls.horizontal(|ui| {
+                    let (icon, tip) = if self.preview.playing {
+                        (Icon::Pause, "Pause preview")
+                    } else {
+                        (Icon::Play, "Play preview")
+                    };
+                    if ui.add_enabled(duration > 1, IconButton::new(icon, tip)).clicked() {
+                        self.preview.playing = !self.preview.playing;
+                    }
+                    // Frames count from 1 here, as in the timeline.
+                    let mut shown = frame + 1;
+                    ui.spacing_mut().slider_width = (ui.available_width() - 70.0).max(40.0);
+                    let scrub = ui.add_enabled(
+                        duration > 1,
+                        egui::Slider::new(&mut shown, 1..=duration).show_value(false),
+                    );
+                    if scrub.changed() {
+                        self.preview.clock = (shown - 1) as f64;
+                        self.preview.playing = false;
+                    }
+                    ui.weak(format!("{shown} / {duration}"));
+                });
+                let uses = doc.symbol_use_count(id);
+                let plural = if uses == 1 { "" } else { "s" };
+                controls.weak(format!("Symbol · {duration} frames · used {uses} time{plural}"));
+            }
+            Asset::Image(id) => {
+                let side = inside.width().min(inside.height());
+                let square = Rect::from_center_size(inside.center(), Vec2::splat(side));
+                let pixels = (side * ui.ctx().pixels_per_point()).round().max(1.0) as u32;
+                let name = format!("library-preview-{asset:?}");
+                let old = self.preview.picture.as_ref();
+                if let Some(fresh) =
+                    Thumbnail::render(old, ui.ctx(), editor, asset, 0, (pixels, pixels), &name)
+                {
+                    self.preview.picture = Some(fresh);
+                }
+                paint_texture(ui, self.preview.picture.as_ref(), square);
+                if let Some(image) = doc.image(id) {
+                    let placed = if doc.image_in_use(id) { "on the stage" } else { "not on the stage" };
+                    controls.weak(format!("Image · {} × {} px · {placed}", image.width, image.height));
+                }
+            }
+            Asset::Sound(id) => {
+                let Some(track) = doc.audio_track(id) else { return };
+                let fps = doc.frame_rate.fps();
+                let peaks = audio.peaks(track, project_dir.as_deref(), fps);
+                paint_waveform(ui, peaks.as_deref().map(Vec::as_slice), inside);
+                let length = audio.duration(track, project_dir.as_deref());
+                let position = audio.preview_position(track, project_dir.as_deref());
+                if let (Some(position), Some(length)) = (position, length) {
+                    let x = inside.left() + inside.width() * (position / length.max(1e-6)).min(1.0) as f32;
+                    ui.painter().vline(
+                        x,
+                        inside.y_range(),
+                        Stroke::new(2.0, ui.visuals().selection.stroke.color),
+                    );
+                    ui.ctx().request_repaint();
+                }
+                controls.horizontal(|ui| {
+                    let playing = position.is_some();
+                    let (icon, tip) =
+                        if playing { (Icon::Pause, "Stop sound") } else { (Icon::Play, "Play sound") };
+                    if ui.add_enabled(peaks.is_some(), IconButton::new(icon, tip)).clicked() {
+                        if playing {
+                            audio.stop_preview();
+                        } else {
+                            audio.preview(track, project_dir.as_deref());
+                        }
+                    }
+                    let seconds = length.map_or_else(|| "loading…".to_owned(), |s| format!("{s:.1} s"));
+                    ui.weak(format!("Sound · {seconds} · starts on frame {}", track.start + 1));
+                });
             }
         }
     }
@@ -482,6 +693,57 @@ impl LibraryView {
                 self.closed.remove(&folder);
             }
         }
+    }
+}
+
+/// Room under the preview for a row of controls and a line of details.
+fn controls_height(ui: &egui::Ui) -> f32 {
+    ui.spacing().interact_size.y * 2.0 + ui.spacing().item_spacing.y * 2.0
+}
+
+/// Draws a rendered picture into `rect`, or says there's nothing to show.
+fn paint_texture(ui: &egui::Ui, picture: Option<&Thumbnail>, rect: Rect) {
+    match picture.and_then(|t| t.texture.as_ref()) {
+        Some(texture) => {
+            let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+            ui.painter().image(texture.id(), rect, uv, Color32::WHITE);
+        }
+        None => {
+            ui.painter().text(
+                rect.center(),
+                Align2::CENTER_CENTER,
+                "empty",
+                FontId::proportional(10.0),
+                ui.visuals().weak_text_color(),
+            );
+        }
+    }
+}
+
+/// A sound's loudness across its length, as bars, mirrored about the
+/// middle like the timeline's waveforms.
+fn paint_waveform(ui: &egui::Ui, peaks: Option<&[f32]>, rect: Rect) {
+    let color = ui.visuals().weak_text_color();
+    let Some(peaks) = peaks.filter(|p| !p.is_empty()) else {
+        ui.painter().text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            "Loading…",
+            FontId::proportional(11.0),
+            color,
+        );
+        return;
+    };
+    // One bar per couple of points, each the loudest of the frames it covers.
+    let bars = (rect.width() / 2.0).floor().max(1.0) as usize;
+    let middle = rect.center().y;
+    for bar in 0..bars {
+        let from = bar * peaks.len() / bars;
+        let to = ((bar + 1) * peaks.len() / bars).max(from + 1).min(peaks.len());
+        let loudest = peaks[from..to].iter().fold(0.0f32, |a, &b| a.max(b)).min(1.0);
+        let x = rect.left() + (bar as f32 + 0.5) * rect.width() / bars as f32;
+        let half = (loudest * rect.height() / 2.0).max(0.5);
+        ui.painter().vline(x, (middle - half)..=(middle + half), Stroke::new(1.0, color));
     }
 }
 
@@ -577,7 +839,7 @@ mod tests {
 
     use super::*;
 
-    type State = (LibraryView, Editor);
+    type State = (LibraryView, Editor, AudioEngine);
 
     /// Two symbols, Ball at the top level and Box in the Props folder.
     fn harness() -> (Harness<'static, State>, Asset, Asset) {
@@ -590,11 +852,11 @@ mod tests {
         editor.doc.rename_asset(box_, "Box");
         editor.doc.move_asset(box_, "Props");
         // At 60 fps, so two clicks a step apart count as a double-click.
-        let mut h = Harness::builder().with_size(vec2(400.0, 500.0)).with_step_dt(1.0 / 60.0).build_ui_state(
-            |ui, (library, editor): &mut State| library.show(ui, editor),
-            (LibraryView::default(), editor),
+        let mut h = Harness::builder().with_size(vec2(400.0, 600.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+            |ui, (library, editor, audio): &mut State| library.show(ui, editor, audio),
+            (LibraryView::default(), editor, AudioEngine::without_output()),
         );
-        h.run();
+        h.run_steps(4);
         (h, ball, box_)
     }
 
@@ -620,7 +882,7 @@ mod tests {
         h.hover_at(to);
         h.step();
         h.drop_at(to);
-        h.run();
+        h.run_steps(4);
         assert_eq!(h.state().1.doc.asset_folder(ball), Some("Props"));
     }
 
@@ -631,16 +893,48 @@ mod tests {
         let card = center_of(&h, "Ball");
         click(&mut h, card);
         click(&mut h, card);
-        h.run();
+        h.run_steps(4);
         assert_eq!(h.state().0.selected, Some(ball));
         assert_eq!(h.state().1.timeline(), TimelineId::Symbol(symbol));
+    }
+
+    #[test]
+    fn the_preview_plays_the_selected_symbol_and_can_be_paused_and_scrubbed() {
+        let (mut h, ball, _) = harness();
+        let card = center_of(&h, "Ball");
+        click(&mut h, card);
+        assert_eq!(h.state().0.preview.asset, Some(ball));
+        assert!(h.state().0.preview.playing, "an animated symbol starts playing");
+
+        // Half a second at 24 fps is about 12 frames.
+        for _ in 0..30 {
+            h.step();
+        }
+        let frame = h.state().0.preview.frame(48);
+        assert!((10..=14).contains(&frame), "on frame {frame}");
+
+        h.get_by_label("Pause preview").click();
+        h.run_steps(4);
+        let paused = h.state().0.preview.frame(48);
+        for _ in 0..30 {
+            h.step();
+        }
+        assert_eq!(h.state().0.preview.frame(48), paused, "paused");
+        h.get_by_label("Play preview").click();
+        h.run_steps(4);
+        assert!(h.state().0.preview.playing);
+
+        // Choosing another card starts it from its first frame.
+        let other = center_of(&h, "Box");
+        click(&mut h, other);
+        assert_eq!(h.state().0.preview.frame(48), 0);
     }
 
     #[test]
     fn searching_shows_only_matching_cards() {
         let (mut h, ..) = harness();
         h.state_mut().0.search = "bo".to_owned();
-        h.run();
+        h.run_steps(4);
         assert!(h.query_by_label("Box").is_some(), "found inside its folder");
         assert!(h.query_by_label("Ball").is_none());
     }

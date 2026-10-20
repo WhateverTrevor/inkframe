@@ -188,8 +188,9 @@ fn in_bands(pixmap: &mut Pixmap, draw: impl Fn(&mut PixmapMut, Affine) + Sync) {
     });
 }
 
-/// Renders one frame of a symbol, scaled to fit a `size`×`size` square, for
-/// library thumbnails. Returns `None` for symbols with nothing to draw.
+/// Renders a symbol's frame into a square of `size` pixels, fitted to what
+/// that frame shows, for a thumbnail. `None` for a symbol with nothing to
+/// draw on that frame.
 pub fn render_symbol_thumbnail(
     doc: &Document,
     images: Option<&ImageLibrary>,
@@ -197,8 +198,17 @@ pub fn render_symbol_thumbnail(
     frame: u32,
     size: u32,
 ) -> Option<Pixmap> {
-    let symbol = doc.symbol(symbol)?;
-    let bounds = symbol
+    let bounds = symbol_bounds_at(doc, doc.symbol(symbol)?, frame)?;
+    render_symbol_frame(doc, images, symbol, frame, (size, size), bounds)
+}
+
+/// What a symbol shows on one of its own frames, in its coordinates.
+fn symbol_bounds_at(
+    doc: &Document,
+    symbol: &inkframe_core::Symbol,
+    frame: u32,
+) -> Option<inkframe_core::Rect> {
+    symbol
         .layers
         .iter()
         .filter(|l| l.is_shown_at(frame))
@@ -207,18 +217,42 @@ pub fn render_symbol_thumbnail(
             let to_symbol = doc.layer_matrix(l, frame);
             inkframe_core::Rect::bounding(local.corners().map(|c| to_symbol.apply(c)))
         })
-        .reduce(inkframe_core::Rect::union)?;
+        .reduce(inkframe_core::Rect::union)
+}
 
-    // Fit the drawing into the square with a little margin, centered.
+/// The box around everything a symbol shows over its whole length, so a
+/// preview playing it can hold still instead of re-fitting every frame.
+/// Long symbols are measured on a sample of their frames.
+pub fn symbol_extent(doc: &Document, symbol: SymbolId) -> Option<inkframe_core::Rect> {
+    let symbol = doc.symbol(symbol)?;
+    let frames = symbol.duration.max(1);
+    let step = (frames / 240).max(1) as usize;
+    (0..frames)
+        .step_by(step)
+        .filter_map(|frame| symbol_bounds_at(doc, symbol, frame))
+        .reduce(inkframe_core::Rect::union)
+}
+
+/// Renders a symbol's frame into a `width`×`height` image with `extent`
+/// (in the symbol's coordinates) fitted inside it, centered, with a little
+/// margin. The background is left transparent.
+pub fn render_symbol_frame(
+    doc: &Document,
+    images: Option<&ImageLibrary>,
+    symbol: SymbolId,
+    frame: u32,
+    (width, height): (u32, u32),
+    extent: inkframe_core::Rect,
+) -> Option<Pixmap> {
+    let symbol = doc.symbol(symbol)?;
     let padding = 0.9;
-    let scale = padding * size as f32 / bounds.width().max(bounds.height()).max(1e-3);
-    let center = bounds.center();
-    let half = size as f32 / 2.0;
-    let fit = Affine::translate(Point::new(half, half))
+    let scale =
+        padding * (width as f32 / extent.width().max(1e-3)).min(height as f32 / extent.height().max(1e-3));
+    let fit = Affine::translate(Point::new(width as f32 / 2.0, height as f32 / 2.0))
         .pre_concat(Affine::scale(scale, scale))
-        .pre_concat(Affine::translate(-center));
+        .pre_concat(Affine::translate(-extent.center()));
 
-    let mut pixmap = Pixmap::new(size, size)?;
+    let mut pixmap = Pixmap::new(width, height)?;
     let style = Style { tint: None, images, show_guides: true, show_mask: None, light_table: None };
     let layers: Vec<&Layer> = symbol.layers.iter().collect();
     render_layers(&mut pixmap.as_mut(), doc, &layers, frame, fit, 1.0, style, None, 0);

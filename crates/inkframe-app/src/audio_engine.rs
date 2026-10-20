@@ -54,6 +54,8 @@ pub struct AudioEngine {
     /// playback (as opposed to a short scrub snippet).
     started_at: Option<u32>,
     last_frame: Option<u32>,
+    /// The file playing on its own for the Library's preview, if any.
+    previewing: Option<PathBuf>,
     /// Play a frame's worth of sound when the playhead moves while paused,
     /// which is how animators find the exact frame for each mouth shape.
     pub scrub: bool,
@@ -87,6 +89,7 @@ impl AudioEngine {
             peaks: HashMap::new(),
             started_at: None,
             last_frame: None,
+            previewing: None,
             scrub: true,
         }
     }
@@ -128,6 +131,41 @@ impl AudioEngine {
         Some(self.peaks.entry(key).or_insert_with(|| Arc::new(clip.peaks_per_frame(fps))).clone())
     }
 
+    /// Plays one sound's file on its own from the start, at its volume, for
+    /// the Library's preview. Returns false if the file isn't decoded yet
+    /// (or couldn't be). Timeline playback or scrubbing replaces it.
+    pub fn preview(&mut self, track: &AudioTrack, project_dir: Option<&Path>) -> bool {
+        let path = track.resolve(project_dir);
+        let Some(Decoded::Ready(clip)) = self.clips.get(&path) else { return false };
+        let samples: Vec<f32> = clip.samples.iter().map(|s| s * track.volume).collect();
+        self.started_at = None;
+        self.play(&samples);
+        self.previewing = Some(path);
+        true
+    }
+
+    pub fn stop_preview(&mut self) {
+        if self.previewing.is_some() {
+            self.stop();
+        }
+    }
+
+    /// How far into a sound's file the preview has played, in seconds, if
+    /// it's the one playing.
+    pub fn preview_position(&self, track: &AudioTrack, project_dir: Option<&Path>) -> Option<f64> {
+        if self.previewing.as_ref() != Some(&track.resolve(project_dir)) {
+            return None;
+        }
+        let sink = self.sink.as_ref().filter(|s| !s.empty())?;
+        Some(sink.get_pos().as_secs_f64())
+    }
+
+    /// A sound file's length in seconds, once decoded.
+    pub fn duration(&self, track: &AudioTrack, project_dir: Option<&Path>) -> Option<f64> {
+        let Some(Decoded::Ready(clip)) = self.clips.get(&track.resolve(project_dir)) else { return None };
+        Some(clip.samples.len() as f64 / (CHANNELS as f64 * SAMPLE_RATE as f64))
+    }
+
     /// Advances playback and keeps sound and picture together. Call once
     /// per UI frame, after the panels have handled input, in place of
     /// `Editor::advance_playback`.
@@ -146,7 +184,10 @@ impl AudioEngine {
         // Sound belongs to the main timeline; inside a symbol, frames count
         // the symbol's time, which has nothing to do with the soundtrack.
         if editor.timeline() != TimelineId::Main {
-            self.stop();
+            // A Library preview isn't the soundtrack, so it can play on.
+            if self.previewing.is_none() {
+                self.stop();
+            }
             self.started_at = None;
             self.last_frame = None;
             editor.advance_playback(dt);
@@ -204,6 +245,7 @@ impl AudioEngine {
     }
 
     fn stop(&mut self) {
+        self.previewing = None;
         if let Some(sink) = self.sink.take() {
             sink.stop();
         }

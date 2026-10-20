@@ -511,6 +511,10 @@ impl<'a> IconButton<'a> {
 impl Widget for IconButton<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let (rect, response) = ui.allocate_exact_size(vec2(self.size, self.size - 2.0), Sense::click());
+        // An icon has no words, so screen readers (and tests) know the
+        // button by its tooltip.
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), self.hover));
         let enabled = ui.is_enabled();
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();

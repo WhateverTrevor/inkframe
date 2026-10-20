@@ -567,10 +567,6 @@ impl InkframeApp {
             if AutoScreenshot::examples() {
                 app.examples.open(&cc.egui_ctx);
             }
-            if AutoScreenshot::library() {
-                crate::screenshot::library_demo(&mut app.editor);
-                app.layout.replace_kind(Kind::Properties, Kind::Library);
-            }
             if let Some(open) = AutoScreenshot::group() {
                 // Every layer but the camera into one symbol, as selecting
                 // them all and pressing F8 would.
@@ -591,6 +587,11 @@ impl InkframeApp {
                     }
                     Err(problem) => eprintln!("Couldn't group for the screenshot: {problem}"),
                 }
+            }
+            if AutoScreenshot::library() {
+                crate::screenshot::library_demo(&mut app.editor);
+                app.layout.replace_kind(Kind::Properties, Kind::Library);
+                app.library.selected = app.editor.doc.library_assets().first().copied();
             }
             if AutoScreenshot::multiplane() {
                 use inkframe_core::{Color, Element, Point, Shape, Style, Transform};
@@ -1608,11 +1609,8 @@ impl InkframeApp {
                     .id_salt(("tools", area))
                     .show(ui, |ui| toolbar::show(ui, &mut self.editor));
             }
-            Kind::Library => {
-                egui::ScrollArea::vertical().id_salt(("library", area)).show(ui, |ui| {
-                    self.library.show(ui, &mut self.editor);
-                });
-            }
+            // The Library scrolls its cards itself, under the preview.
+            Kind::Library => self.library.show(ui, &mut self.editor, &mut self.audio),
             Kind::ExposureSheet => {
                 if let Some(sheet) = self.views.sheets.get_mut(&area) {
                     sheet.contents(ui, &mut self.editor, &mut self.audio);
