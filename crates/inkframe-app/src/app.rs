@@ -749,7 +749,10 @@ impl InkframeApp {
             Command::Adjust(adjustment) => self.adjust.open(editor, adjustment),
             Command::Cut => {
                 self.copy(false);
-                self.editor.delete_selected_layer();
+                // Inside a layer with shapes picked, they're what was cut.
+                if !self.editor.delete_shapes() {
+                    self.editor.delete_selected_layer();
+                }
             }
             Command::Copy => self.copy(false),
             Command::CopyFrames => self.copy(true),
@@ -923,8 +926,8 @@ impl InkframeApp {
                         Some(clipboard) => {
                             let command = match (&clipboard, shift) {
                                 (Clipboard::Keyframe(_), _) => Command::PasteFrames,
-                                (Clipboard::Layers(_), true) => Command::PasteInPlace,
-                                (Clipboard::Layers(_), false) => Command::Paste,
+                                (Clipboard::Layers(_) | Clipboard::Shapes(_), true) => Command::PasteInPlace,
+                                (Clipboard::Layers(_) | Clipboard::Shapes(_), false) => Command::Paste,
                             };
                             self.clipboard = Some(clipboard);
                             commands.push(command);
@@ -1081,7 +1084,7 @@ impl InkframeApp {
                 );
                 item(ui, "Delete Layer", None, Command::DeleteLayer, has_selection);
                 ui.separator();
-                let layers = matches!(self.clipboard, Some(Clipboard::Layers(_)));
+                let layers = matches!(self.clipboard, Some(Clipboard::Layers(_) | Clipboard::Shapes(_)));
                 let keyframe = matches!(self.clipboard, Some(Clipboard::Keyframe(_)));
                 item(ui, "Select All", Some(shortcuts::SELECT_ALL), Command::SelectAll, true);
                 item(ui, "Deselect All", Some(shortcuts::DESELECT_ALL), Command::Deselect, has_selection);

@@ -561,8 +561,12 @@ after the Harmony features (palettes to master controllers).
     rectangles and ovals into paths; `add_to_shown_drawing` uses it too.
     Inside, the light table fades the other layers and the layer's own
     box and handles hide. Keys: Esc → ExitLayer, Delete → DeleteShapes,
-    F8 → shapes_to_symbol, ⌘A → pick_all_shapes. Not yet: rotating
-    picked shapes, copying them, or picking colour art.
+    F8 → shapes_to_symbol, ⌘A → pick_all_shapes. Then: picked shapes are
+    `ShapeRef { colour_art, index }` (line art over colour art), turn with
+    a knob (`ShapeDrag::Rotate`, reusing `handles::RotateDrag`), and copy,
+    cut and paste as `Clipboard::Shapes(CopiedShapes)`, stored in timeline
+    coordinates so they land in place in any layer (`paste_shapes` steps
+    into the selected layer, or a new one).
 84. Windows builds link the C runtime statically
     (`.cargo/config.toml`, `+crt-static` for x86_64-pc-windows-msvc), so
     inkframe.exe needs no Visual C++ redistributable; CI's "Check the

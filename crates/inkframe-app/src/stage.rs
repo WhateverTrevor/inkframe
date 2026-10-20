@@ -3592,6 +3592,8 @@ mod tests {
     use egui_kittest::Harness;
     use inkframe_core::{Color, Stroke};
 
+    use crate::inside::ShapeRef;
+
     type State = (StageView, Editor);
 
     fn harness(editor: Editor) -> Harness<'static, State> {
@@ -4947,7 +4949,7 @@ mod tests {
         let (from, to) = (screen(&h, 500.0, 400.0), screen(&h, 500.0, 460.0));
         drag(&mut h, from, &[to]);
         let editor = &h.state().1;
-        assert_eq!(editor.picked_shapes(), &[1]);
+        assert_eq!(editor.picked_shapes(), &[ShapeRef::line(1)]);
         let layer = editor.doc.layer(id).unwrap();
         let shapes = layer.elements_at(0);
         assert!(
@@ -4966,11 +4968,37 @@ mod tests {
         let mut h = harness(editor);
         let (from, to) = (screen(&h, 250.0, 300.0), screen(&h, 560.0, 500.0));
         drag(&mut h, from, &[to]);
-        assert_eq!(h.state().1.picked_shapes(), &[0, 1]);
+        assert_eq!(h.state().1.picked_shapes(), &[ShapeRef::line(0), ShapeRef::line(1)]);
 
         let empty = screen(&h, 900.0, 800.0);
         double_click(&mut h, empty);
         assert_eq!(h.state().1.inside_layer(), None);
+    }
+
+    #[test]
+    fn the_knob_above_picked_shapes_turns_them() {
+        let (mut editor, id) = editor_with_two_squares();
+        editor.enter_layer(id);
+        editor.pick_shapes(vec![ShapeRef::line(1)]);
+        let mut h = harness(editor);
+        // The knob is above the right-hand square's top edge (the square is
+        // 360..440 high on the stage); drag it round to its right side, a
+        // quarter turn about the square's middle at (500, 400).
+        let knob = {
+            let view = h.state().0.view(h.state().0.last_area, &h.state().1.doc);
+            super::inside::rotate_knob(&h.state().1, view).unwrap().0
+        };
+        let right = screen(&h, 640.0, 400.0);
+        drag(&mut h, knob, &[right]);
+
+        let editor = &h.state().1;
+        let square = &editor.doc.layer(id).unwrap().elements_at(0)[1];
+        let Shape::Path(path) = &square.shape else { panic!("turned into a path") };
+        // A square turned a quarter keeps its box, and its first corner
+        // (top-left) has gone round to the top-right.
+        let bounds = square.bounds();
+        assert!(bounds.center().distance(Point::new(100.0, 0.0)) < 0.5, "{bounds:?}");
+        assert!(path.start.distance(Point::new(140.0, -40.0)) < 1.0, "{:?}", path.start);
     }
 
     #[test]

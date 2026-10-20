@@ -1560,8 +1560,12 @@ impl Editor {
 
     // ------------------------------------------------------------ clipboard
 
-    /// The selected layers, with everything they need, for the clipboard.
+    /// The selected layers, with everything they need, for the clipboard;
+    /// or, inside a layer with shapes picked, just those shapes.
     pub fn copy_selection(&self) -> Option<Clipboard> {
+        if let Some(shapes) = self.copy_shapes() {
+            return Some(Clipboard::Shapes(shapes));
+        }
         let ids = self.selected_with_folders();
         Some(Clipboard::Layers(self.doc.copy_layers(&ids, self.project_dir().as_deref())?))
     }
@@ -1597,6 +1601,7 @@ impl Editor {
                     keyframe.paste_into(&mut layer.track, frame);
                 }
             }
+            Clipboard::Shapes(shapes) => self.paste_shapes(shapes, centered_on),
         }
     }
 

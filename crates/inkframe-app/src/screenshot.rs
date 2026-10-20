@@ -131,7 +131,7 @@ impl AutoScreenshot {
             && editor.enter_layer(layer)
         {
             let last = editor.doc.layer(layer).map_or(0, |l| l.elements_at(editor.frame).len());
-            editor.pick_shapes(vec![last.saturating_sub(1)]);
+            editor.pick_shapes(vec![crate::inside::ShapeRef::line(last.saturating_sub(1))]);
         }
         if let Some(name) = var("INKFRAME_SCREENSHOT_TOOL") {
             match Tool::all().find(|t| t.name().eq_ignore_ascii_case(&name)) {
