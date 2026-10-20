@@ -563,6 +563,11 @@ after the Harmony features (palettes to master controllers).
     box and handles hide. Keys: Esc → ExitLayer, Delete → DeleteShapes,
     F8 → shapes_to_symbol, ⌘A → pick_all_shapes. Not yet: rotating
     picked shapes, copying them, or picking colour art.
+84. Windows builds link the C runtime statically
+    (`.cargo/config.toml`, `+crt-static` for x86_64-pc-windows-msvc), so
+    inkframe.exe needs no Visual C++ redistributable; CI's "Check the
+    Windows app needs no Visual C++ runtime" step fails if `dumpbin
+    /dependents` shows vcruntime/msvcp/api-ms-win-crt.
 
 ## Not yet verified by hand
 

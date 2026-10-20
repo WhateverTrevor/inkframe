@@ -1,3 +1,9 @@
 # `cargo xtask <task>` runs the project's build tooling (see xtask/).
 [alias]
 xtask = "run --quiet --package xtask --"
+
+# Windows: build the C runtime into inkframe.exe (and the C code it compiles,
+# such as QuickJS) instead of needing Microsoft's Visual C++ runtime DLLs,
+# which a freshly installed PC may not have. CI checks the result.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
