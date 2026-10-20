@@ -54,6 +54,8 @@
 //! * `INKFRAME_SCREENSHOT_LIBRARY=1` makes each layer a symbol (some in a folder), adds the
 //!   sample pictures from `docs/images` and a sound, and shows the Library with the first card
 //!   previewed. With `_GROUP=1`, the grouped symbol is the one previewed.
+//! * `INKFRAME_SCREENSHOT_SWAP=1` (after `_GROUP`) duplicates the instance's symbol, swaps the
+//!   copy in from frame 13, and opens Swap Symbol.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -199,6 +201,12 @@ impl AutoScreenshot {
     /// Whether to open the examples gallery.
     pub fn examples() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_EXAMPLES").is_some()
+    }
+
+    /// Whether to swap the selected instance's symbol partway and open
+    /// Swap Symbol.
+    pub fn swap() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_SWAP").is_some()
     }
 
     /// Whether to fill and show the Library.

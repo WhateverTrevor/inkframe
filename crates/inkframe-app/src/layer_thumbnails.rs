@@ -116,7 +116,7 @@ fn source(editor: &Editor, id: LayerId, size: [u32; 2]) -> Option<Source> {
         layer: layer.clone(),
         matrix: doc.layer_matrix(layer, frame),
         canvases,
-        symbol: layer.instance.and_then(|instance| doc.symbol(instance.symbol)).cloned(),
+        symbol: layer.symbol_at(frame).and_then(|symbol| doc.symbol(symbol)).cloned(),
         loaded: (images, fonts),
     })
 }

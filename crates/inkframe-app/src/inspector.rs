@@ -1023,17 +1023,28 @@ fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 
     section(ui, "Symbol instance");
     ui.weak("Double-click it on the stage (or Modify › Edit Symbol) to work on the layers inside.");
+    let frame = editor.frame;
+    let (showing, swaps) = editor.doc.layer(id).map_or((instance.symbol, 0), |l| {
+        (l.symbol_at(frame).unwrap_or(instance.symbol), l.symbol_swaps.len())
+    });
     egui::Grid::new("instance").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
         ui.label("Symbol");
-        let current = symbols.iter().find(|(s, _)| *s == instance.symbol).map_or("", |(_, n)| n.as_str());
-        egui::ComboBox::from_id_salt("instance_symbol").selected_text(current).show_ui(ui, |ui| {
-            // Inside a symbol, leave out anything that would end up
-            // containing itself.
-            for (symbol, name) in symbols.iter().filter(|(s, _)| editor.can_place(*s)) {
-                ui.selectable_value(&mut instance.symbol, *symbol, name);
+        ui.horizontal(|ui| {
+            let name = symbols.iter().find(|(s, _)| *s == showing).map_or("", |(_, n)| n.as_str());
+            ui.strong(name);
+            // Modify › Swap Symbol, from the panel.
+            if ui.button("Swap…").on_hover_text("Show another symbol here, keeping the animation").clicked()
+            {
+                crate::swap_dialog::request(ui.ctx());
             }
         });
         ui.end_row();
+        if swaps > 0 {
+            ui.label("");
+            let plural = if swaps == 1 { "" } else { "s" };
+            ui.weak(format!("Swapped {swaps} time{plural} along the way: see the timeline"));
+            ui.end_row();
+        }
 
         ui.label("Playback");
         egui::ComboBox::from_id_salt("instance_playback").selected_text(instance.playback.label()).show_ui(
@@ -1058,7 +1069,8 @@ fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     if let Some(layer) = editor.doc.layer_mut(id) {
         layer.instance = Some(instance);
     }
-    if let Some(symbol) = editor.doc.symbol_mut(instance.symbol) {
+    // The symbol showing on this frame, which may be one swapped in.
+    if let Some(symbol) = editor.doc.symbol_mut(showing) {
         ui.horizontal(|ui| {
             ui.label("Symbol length");
             ui.add(DragValue::new(&mut symbol.duration).range(1..=100_000).suffix(" frames")).on_hover_text(

@@ -101,7 +101,7 @@ pub use psd::{Psd, PsdError, PsdLayer};
 pub use retouch::{Retouch, RetouchStroke, ToneRange};
 pub use selection::{Combine, Selection};
 pub use shape::{Dash, GradientStop, LineCap, LineJoin, Path, Segment, Shape, ShapeGradient, Stroke, Style};
-pub use symbol::{ConvertError, Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId};
+pub use symbol::{ConvertError, Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId, SymbolSwap};
 pub use template::{TEMPLATE_EXTENSION, Template};
 pub use text::{DEFAULT_FAMILY, Font, Text, TextAlign};
 pub use track::{Property, Track};

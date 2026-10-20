@@ -626,6 +626,16 @@ after the Harmony features (palettes to master controllers).
     stroke is split into a fill and stroke-only outlines so the slit
     doesn't show. Hook `INKFRAME_SCREENSHOT_COMBINE=1`. Not yet: combining
     shapes across layers, or fills and lines together.
+91. Swap Symbol (format v33): `Layer::symbol_swaps: Vec<SymbolSwap>`,
+    `symbol_at(frame)` (used by `instance_view`, so rendering, hit tests,
+    SVG and editing follow it), `symbols_used` (use counts, nesting
+    checks, clipboard), `Document::swap_symbol(layer, symbol, from)` and
+    `duplicate_symbol` (layer ids remapped, rig relinked). Frame commands
+    retime and reverse swaps; Lottie makes a precomp layer per run of one
+    symbol. App `swap_dialog.rs` (requested from the inspector through
+    egui memory, `swap_dialog::request`), swap marks in the timeline row
+    (`paint_symbol_swaps`). Hook `INKFRAME_SCREENSHOT_SWAP=1` with
+    `_GROUP=1`.
 
 ## Not yet verified by hand
 

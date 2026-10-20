@@ -1548,6 +1548,7 @@ fn paint_summary_row(painter: &egui::Painter, editor: &Editor, layout: &Layout, 
     }
     paint_keys(painter, editor, layout, layer, &frames, row, dim, KeyMark::Dot);
     paint_drawing_swaps(painter, layout, layer, row, dim);
+    paint_symbol_swaps(painter, editor, layout, layer, row, dim);
 }
 
 /// A thin line from `x0` to `x1` at height `y` with an arrowhead at `x1`:
@@ -1604,6 +1605,30 @@ fn paint_drawing_swaps(
         let x = layout.frame_x(frame);
         painter.vline(x, row.y_range().shrink(3.0), (1.5, color));
         let name = &layer.drawings[layer.drawing_index_at(frame)].name;
+        painter.text(pos2(x + 3.0, row.bottom() - 2.0), Align2::LEFT_BOTTOM, name, font.clone(), color);
+    }
+}
+
+/// For an instance that swaps symbols partway (see `swap_dialog.rs`): a
+/// mark where each swap happens, with the symbol it swaps to, and the one
+/// it starts with named at its start.
+fn paint_symbol_swaps(
+    painter: &egui::Painter,
+    editor: &Editor,
+    layout: &Layout,
+    layer: &Layer,
+    row: Rect,
+    dim: impl Fn(Color32) -> Color32,
+) {
+    let Some(instance) = layer.instance.filter(|_| !layer.symbol_swaps.is_empty()) else { return };
+    let font = FontId::proportional(9.0);
+    let color = dim(SWAP);
+    let first = std::iter::once((layer.start, instance.symbol));
+    let swaps = first.chain(layer.symbol_swaps.iter().map(|s| (s.frame, s.symbol)));
+    for (frame, symbol) in swaps {
+        let x = layout.frame_x(frame);
+        painter.vline(x, row.y_range().shrink(3.0), (1.5, color));
+        let name = editor.doc.symbol(symbol).map_or("?", |s| s.name.as_str());
         painter.text(pos2(x + 3.0, row.bottom() - 2.0), Align2::LEFT_BOTTOM, name, font.clone(), color);
     }
 }
