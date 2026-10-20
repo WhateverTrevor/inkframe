@@ -40,6 +40,7 @@ mod theme;
 mod timeline;
 mod toolbar;
 mod value_graph;
+mod vectorise_dialog;
 mod xsheet;
 
 use std::path::PathBuf;
