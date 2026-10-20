@@ -382,6 +382,17 @@ impl Editor {
 
     // ---------------------------------------------------------------- files
 
+    /// Work brought back after a crash (see `autosave.rs`): `doc` as the
+    /// project at `path`, with its changes still to be saved.
+    pub fn recovered(doc: Document, path: Option<PathBuf>) -> Self {
+        let mut editor = Self::new(doc);
+        editor.path = path;
+        // Nothing of it is saved yet. (A recovered copy only exists because
+        // it had changes, so it's never the blank document.)
+        editor.saved = Document::default();
+        editor
+    }
+
     pub fn open(path: &Path) -> Result<Self, DocumentError> {
         let mut editor = Self::new(Document::load(path)?);
         editor.path = Some(path.to_owned());

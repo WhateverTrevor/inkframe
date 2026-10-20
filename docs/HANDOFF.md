@@ -440,6 +440,16 @@ after the Harmony features (palettes to master controllers).
     project is gone say "Project missing". To check loading:
     `HOME=<scratch> INKFRAME_SCREENSHOT_PREFS=1` with a prefs.json there.
 
+70. Autosave and crash recovery: `autosave.rs` (`Autosave`, `Recovery`,
+    `Recovery/<pid>-<nanos>.inkf` + `.json` note in the settings folder).
+    Every 30 s while unsaved and changed since the last copy; written on
+    a thread; heartbeat every 30 s; copies quiet for 120 s are offered at
+    start-up (`recovery_window`, Recover / Discard / Discard All).
+    Cleared on save (`save_to`) and on a normal quit. Off in screenshot
+    runs; `INKFRAME_SCREENSHOT_RECOVERY=1` shows the window from a
+    simulated crash in a temp folder. A real crash (killing the process
+    mid-edit) hasn't been tried by hand.
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either

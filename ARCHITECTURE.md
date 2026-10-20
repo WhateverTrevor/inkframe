@@ -247,6 +247,7 @@ writes. No audio.
 
 | File | What's in it |
 |---|---|
+| `autosave.rs` | Crash recovery: `Autosave::tick` copies the project every 30 s while it has unsaved changes (cloned, then zipped and written on a thread, to a temporary name renamed into place) into the settings folder's `Recovery/`, with a JSON note (original path, name, saved time, heartbeat). Saving or a normal quit `clear`s it. `left_behind` finds other sessions' copies whose heartbeat has been quiet for 2 minutes, so a second Inkframe that's still running isn't mistaken for a crash; `Recovery::open` reopens one as its project with changes unsaved (`Editor::recovered`). The window offering them is `App::recovery_window` |
 | `app.rs` | Window layout, menus, the `Command` enum, file open/save |
 | `editor.rs` | `Editor`: document, selection, current frame, tool, and the operations panels call |
 | `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles |

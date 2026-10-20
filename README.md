@@ -70,6 +70,11 @@ planned (the code is already cross-platform and CI builds it on Windows).
   waveforms in the timeline, slide them to the right frame, and hear them
   in sync while playing, or a frame at a time while scrubbing (for lip
   sync). Exports include the mixed sound.
+- **Autosave and crash recovery.** While a project has unsaved changes,
+  a copy is kept every 30 seconds (in the background, so drawing never
+  stutters). If Inkframe doesn't close properly, the next start offers the
+  work back, as the project it was, ready to save. Saving or quitting
+  normally clears the copy.
 - **Export** with or without transparency:
 
   | Format | Alpha | Use it for |

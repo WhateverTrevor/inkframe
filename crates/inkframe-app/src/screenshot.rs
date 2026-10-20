@@ -33,6 +33,8 @@
 //!   tree drift back past the hills, stacked by depth.
 //! * `INKFRAME_SCREENSHOT_PREFS=1` loads the saved settings (which screenshots otherwise
 //!   leave alone; point `HOME` somewhere else first) and opens Batch Export to show them.
+//! * `INKFRAME_SCREENSHOT_RECOVERY=1` shows the Recover Unsaved Work window, for a copy
+//!   of the opened project left in a scratch folder.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -147,6 +149,11 @@ impl AutoScreenshot {
     /// Whether to add the particle presets.
     pub fn particles() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_PARTICLES").is_some()
+    }
+
+    /// Whether to show the recovery window.
+    pub fn recovery() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_RECOVERY").is_some()
     }
 
     /// Whether to load the saved settings.
