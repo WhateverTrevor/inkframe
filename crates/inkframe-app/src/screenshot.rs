@@ -24,6 +24,8 @@
 //! * `INKFRAME_SCREENSHOT_BATCH=1` opens Batch Export with the open project and the
 //!   ones beside it, and starts exporting them to a temporary folder.
 //! * `INKFRAME_SCREENSHOT_GUIDES=safe,field` shows the safe areas, the field guide, or both.
+//! * `INKFRAME_SCREENSHOT_VECTORISE=ink` opens Vectorise on the selected layer (with
+//!   `_PAINT`, the strokes it paints), in line-art mode, or `=colours`; `,apply` vectorises.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -122,6 +124,12 @@ impl AutoScreenshot {
     /// Which framing guides to show, as a list such as `safe,field`.
     pub fn guides() -> Option<String> {
         std::env::var("INKFRAME_SCREENSHOT_GUIDES").ok()
+    }
+
+    /// How to open the Vectorise window, if at all: `ink` or `colours`,
+    /// and `apply` to vectorise straight away.
+    pub fn vectorise() -> Option<String> {
+        std::env::var("INKFRAME_SCREENSHOT_VECTORISE").ok()
     }
 
     /// Whether to open Batch Export and start a batch.

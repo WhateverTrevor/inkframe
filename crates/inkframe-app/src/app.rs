@@ -20,6 +20,7 @@ use crate::panels;
 use crate::screenshot::AutoScreenshot;
 use crate::stage::StageView;
 use crate::timeline::TimelineView;
+use crate::vectorise_dialog::VectoriseDialog;
 use crate::xsheet::ExposureSheet;
 use crate::{inspector, shortcuts, toolbar};
 
@@ -37,6 +38,8 @@ enum Command {
     Export,
     /// Opens the Batch Export window.
     BatchExport,
+    /// Opens the Vectorise window for the selected layer.
+    Vectorise,
     Undo,
     Redo,
     SelectAll,
@@ -142,6 +145,7 @@ pub struct InkframeApp {
     hovered_area: Option<AreaId>,
     export: ExportDialog,
     batch: BatchDialog,
+    vectorise: VectoriseDialog,
     lip_sync: LipSyncDialog,
     xsheet: ExposureSheet,
     adjust: AdjustDialog,
@@ -185,6 +189,7 @@ impl InkframeApp {
             hovered_area: None,
             export: ExportDialog::default(),
             batch: BatchDialog::default(),
+            vectorise: VectoriseDialog::default(),
             lip_sync: LipSyncDialog::default(),
             xsheet: ExposureSheet::default(),
             adjust: AdjustDialog::default(),
@@ -485,6 +490,16 @@ impl InkframeApp {
             if let Some(degrees) = AutoScreenshot::view_rotation() {
                 app.views.stage().rotate_view(degrees);
             }
+            if let Some(how) = AutoScreenshot::vectorise() {
+                if how.contains("colours") {
+                    app.vectorise
+                        .set_mode(inkframe_core::TraceMode::Colours { colours: 8, skip_white: true });
+                }
+                app.vectorise.open(&app.editor);
+                if how.contains("apply") {
+                    app.vectorise.apply(&mut app.editor);
+                }
+            }
             if AutoScreenshot::lip_sync() {
                 app.lip_sync.open(&app.editor);
             }
@@ -519,6 +534,7 @@ impl InkframeApp {
             }
             Command::Export => self.export.open(&self.editor.doc),
             Command::BatchExport => self.batch.open(),
+            Command::Vectorise => self.vectorise.open(&self.editor),
             Command::ExportPsd => self.export_psd(),
             Command::ToggleMaximize => {
                 if let Some(area) = self.hovered_area {
@@ -882,6 +898,8 @@ impl InkframeApp {
                     .is_some_and(|id| self.editor.layers().first().is_some_and(|bottom| bottom.id != id));
                 item(ui, "Mask", None, Command::MaskLayerBelow, below);
                 ui.separator();
+                let traceable = VectoriseDialog::can_vectorise(&self.editor);
+                item(ui, "Vectorise…", None, Command::Vectorise, traceable);
                 item(ui, "New Paint Layer", None, Command::NewPaintLayer, true);
                 item(ui, "New Folder", None, Command::NewFolder, true);
                 ui.separator();
@@ -1398,6 +1416,7 @@ impl eframe::App for InkframeApp {
         self.lip_sync.show(&ctx, &mut self.editor, &mut self.audio);
         self.xsheet.show(&ctx, &mut self.editor, &mut self.audio);
         self.adjust.show(&ctx, &mut self.editor);
+        self.vectorise.show(&ctx, &mut self.editor);
 
         let dt = ctx.input(|i| i.stable_dt) as f64;
         let project_dir = self.editor.project_dir();

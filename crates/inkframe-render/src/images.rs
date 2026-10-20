@@ -91,6 +91,11 @@ impl ImageLibrary {
     pub(crate) fn get(&self, id: ImageId) -> Option<&Mipmaps> {
         self.entries.get(&id)?.pixels.as_ref().ok()
     }
+
+    /// An image's pixels at full size, premultiplied, for tracing.
+    pub fn full_size(&self, id: ImageId) -> Option<&Pixmap> {
+        self.get(id).map(|m| &m.levels[0])
+    }
 }
 
 /// An image's size in pixels, read from the file's header without decoding

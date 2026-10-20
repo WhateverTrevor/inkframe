@@ -386,6 +386,20 @@ after the Harmony features (palettes to master controllers).
     aspect. Not saved with the document or between runs.
     `INKFRAME_SCREENSHOT_GUIDES=safe,field`.
 
+65. Vectorise: `inkframe-core/src/vectorise.rs` (`trace`, `TraceOptions`,
+    `TraceMode::{Ink, Colours}`, `Document::vectorise_layer`, which clones
+    the layer via `duplicate_layer`, replaces Paint/Image elements with
+    traced paths, names it "… (vector)" and hides the source). Shapes
+    have no holes, so holes are spliced in with zero-width slits; this
+    relies on `FillRule::Winding` and holes tracing the opposite way.
+    Pixels under half opaque are left out (a very soft brush stroke traces
+    thinner than it looks). App: `vectorise_dialog.rs` (preview traced and
+    rendered on a thread), Modify › Vectorise…, `ImageLibrary::full_size`.
+    A full-HD frame traces in ~20 ms (ink) to ~70 ms (colours).
+    `INKFRAME_SCREENSHOT_VECTORISE=ink|colours[,apply]` (with `_PAINT`).
+    No centreline tracing (lines become filled outlines, not pencil
+    lines).
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either
