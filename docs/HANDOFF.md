@@ -450,6 +450,16 @@ after the Harmony features (palettes to master controllers).
     simulated crash in a temp folder. A real crash (killing the process
     mid-edit) hasn't been tried by hand.
 
+71. Releases: pushing a tag `v<version>` runs CI as usual and then the
+    `release` job, which checks the tag matches `Cargo.toml`'s version,
+    takes that version's section of `CHANGELOG.md` as the notes, and
+    creates a **draft** GitHub release with the `.dmg` and `-setup.exe`
+    from the test jobs. To release: bump `version` in `Cargo.toml`, add a
+    `## [x.y.z]` section to CHANGELOG.md, merge, `git tag vx.y.z && git
+    push origin vx.y.z`, then review and publish the draft on GitHub.
+    Builds are ad-hoc signed (macOS) and unsigned (Windows); signing and
+    notarizing need Apple and Microsoft developer accounts.
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either
