@@ -39,7 +39,7 @@ The data model and the math behind animation.
 | File | What's in it |
 |---|---|
 | `document.rs` | `Document` (stage settings plus layers), `Layer`, `Element`, loading and saving |
-| `camera.rs` | The camera: a layer with `camera` set, kept on top of the main timeline (`keep_camera_on_top`), whose pose is the view (`camera_matrix`). Top-level main-timeline layers are placed through it in `parent_matrix`, so everything that draws or edits sees the camera's view. A multiplane: each layer's Depth property (`Track::depth`, animatable) against the camera's own Depth (its dolly) gives perspective `F / (F + d - z)` (`FOCAL_LENGTH`), and `camera_fade` fades layers the camera reaches |
+| `camera.rs` | The camera: a layer with `camera` set, kept on top of the main timeline (`keep_camera_on_top`), whose pose is the view (`camera_matrix`). Top-level main-timeline layers are placed through it in `parent_matrix`, so everything that draws or edits sees the camera's view. A multiplane: each layer's Depth property (`Track::depth`, animatable) against the camera's own Depth (its dolly) gives perspective `F / (F + d - z)` (`FOCAL_LENGTH`), and `camera_fade` fades layers the camera reaches. `stacking_order` is the order layers are drawn and clicked in: the timeline's, or with `stack_by_depth` far to near (a stable sort on the depth of each layer's top parent) |
 | `channel.rs` | `Channel<T>`, one property's sorted keys, and `sample()`, which tweens between them; `AnyChannel` for type-independent editing; `Bend` and `MotionCurve`, which curve position tweens and travel them at an even speed |
 | `track.rs` | `Track`: a layer's four channels, auto-keying (`set_pose`), and loading older file formats |
 | `transform.rs` | `Transform`, the animatable properties: position, rotation, scale, skew, opacity; `from_affine` turns any matrix back into a pose |
@@ -128,7 +128,7 @@ drawn, exported or clickable: use `Layer::is_shown_at(frame)` rather than
 checking `visible` alone. Keys outside the span are allowed; they still
 shape the tween leading into the span.
 
-**File format versions.** `FORMAT_VERSION` in `document.rs` is 29. Version 1
+**File format versions.** `FORMAT_VERSION` in `document.rs` is 30. Version 1
 stored whole-transform keyframes; `TrackFormat` in `track.rs` converts those
 on load, and `tests/format_migration.rs` checks an original version-1 file
 still plays back identically. Version 3 added layer spans, version 4
@@ -146,7 +146,8 @@ move into the Effects property on load), version 24 colour art in
 drawings, version 25 the free-form deformer, version 26 master
 controllers, version 27 pressure-sensitive pencil lines, and version 28
 particle layers (`Layer::particles`), and version 29 animatable depth (the
-track's `depth`; older fixed depths move into it on load);
+track's `depth`; older fixed depths move into it on load), and version 30 stacking by depth
+(`Document::stack_by_depth`);
 earlier files load with whole-length layers, an empty library, no audio
 and no images.
 

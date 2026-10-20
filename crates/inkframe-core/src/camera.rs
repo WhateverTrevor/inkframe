@@ -21,6 +21,12 @@
 //! camera pans, and as it dollies in, near layers grow faster than far
 //! ones, which zooming can't do. Layers the camera reaches fade away
 //! rather than filling the view. Negative depths come forward.
+//!
+//! With [`Document::stack_by_depth`] on, depth also decides what's in
+//! front: the main timeline's layers are drawn far to near on each frame,
+//! so a layer that drifts back passes behind the others. Layers at the
+//! same depth keep their timeline order, and a rig's parts go with the
+//! layer at its top, so a character stays in one piece.
 
 use crate::document::{Document, Layer, LayerId};
 use crate::geometry::{Affine, Point};
@@ -105,6 +111,19 @@ impl Document {
         }
         let distance = FOCAL_LENGTH + layer.track.depth_at(frame) - camera.track.depth_at(frame);
         ((distance - NEAREST) / FADE).clamp(0.0, 1.0)
+    }
+
+    /// The layers of `timeline` in the order they're drawn on `frame`,
+    /// bottom first: the timeline's own order, or with
+    /// [`Document::stack_by_depth`] on (main timeline only), far to near.
+    pub fn stacking_order(&self, timeline: crate::TimelineId, frame: u32) -> Vec<&Layer> {
+        let mut layers: Vec<&Layer> = self.layers_of(timeline).iter().collect();
+        if self.stack_by_depth && timeline == crate::TimelineId::Main {
+            // A stable sort, so equal depths keep the timeline's order.
+            let depth = |l: &Layer| self.depth_at(l, frame as f32);
+            layers.sort_by(|a, b| depth(b).total_cmp(&depth(a)));
+        }
+        layers
     }
 
     /// The depth of `layer` on `frame`: for its whole chain of parents,
@@ -248,6 +267,28 @@ mod tests {
         json["layers"][0]["depth"] = 250.0.into();
         let loaded = Document::from_json(&json.to_string()).unwrap();
         assert_eq!(loaded.layer(dot).unwrap().track.depth_at(30.0), 250.0);
+    }
+
+    #[test]
+    fn stacking_by_depth_draws_far_layers_first() {
+        let mut doc = Document::default();
+        let near = dot_at(&mut doc, 0.0, 0.0);
+        let far = dot_at(&mut doc, 0.0, 0.0);
+        let arm = dot_at(&mut doc, 0.0, 0.0);
+        doc.layer_mut(arm).unwrap().parent = Some(far);
+        doc.layer_mut(far).unwrap().track.set_depth(0, 500.0);
+        doc.layer_mut(far).unwrap().track.set_depth(10, -500.0);
+        let order = |doc: &Document, frame| {
+            doc.stacking_order(crate::TimelineId::Main, frame).iter().map(|l| l.id).collect::<Vec<_>>()
+        };
+        // Off, the timeline's order stands.
+        assert_eq!(order(&doc, 0), [near, far, arm]);
+        doc.stack_by_depth = true;
+        // The far layer and its arm go behind, then come forward.
+        assert_eq!(order(&doc, 0), [far, arm, near]);
+        assert_eq!(order(&doc, 10), [near, far, arm]);
+        // And clicking picks what's in front.
+        assert_eq!(doc.hit_test_in(crate::TimelineId::Main, Point::ZERO, 0, 2.0), Some(near));
     }
 
     #[test]

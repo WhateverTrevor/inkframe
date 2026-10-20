@@ -196,6 +196,12 @@ impl DepthView {
             );
         }
 
+        // Stacking, top left.
+        let stack = Rect::from_min_size(rect.left_top() + vec2(6.0, 6.0), vec2(130.0, 20.0));
+        painter.rect_filled(stack.expand(3.0), 4.0, theme::PANEL);
+        ui.put(stack, egui::Checkbox::new(&mut editor.doc.stack_by_depth, "Stack by depth"))
+            .on_hover_text(crate::inspector::STACK_BY_DEPTH);
+
         // Fit, top right.
         let fit = Rect::from_min_size(rect.right_top() + vec2(-44.0, 6.0), vec2(38.0, 20.0));
         let fit_response = ui.put(fit, egui::Button::new("Fit").small());

@@ -538,6 +538,15 @@ impl InkframeApp {
                 if let Some(c) = doc.layer_mut(camera) {
                     c.track.set_depth(47, 700.0);
                 }
+                // `=stack`: the tree drifts back past the hills, and
+                // stacking by depth puts it behind them.
+                if std::env::var("INKFRAME_SCREENSHOT_MULTIPLANE").is_ok_and(|v| v == "stack") {
+                    doc.stack_by_depth = true;
+                    let tree = doc.layers.iter().find(|l| l.name == "Tree").map(|l| l.id);
+                    if let Some(tree) = tree.and_then(|id| doc.layer_mut(id)) {
+                        tree.track.set_depth(47, 1000.0);
+                    }
+                }
                 if std::env::var_os("INKFRAME_SCREENSHOT_FRAME").is_none() {
                     app.editor.frame = 36;
                 }
