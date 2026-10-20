@@ -13,6 +13,12 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Shapes
+
+- Modify › Combine Shapes: Union, Intersect, Punch and Crop on shapes
+  picked inside a layer, keeping curves and sharp corners. Break Apart
+  (⌘B) turns text into a shape per letter.
+
 ### Export
 
 - Animated GIF, SVG (a file per frame) and Lottie, which plays as vectors

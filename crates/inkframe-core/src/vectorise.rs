@@ -440,7 +440,14 @@ fn shape_with_holes(rings: Vec<Vec<Corner>>, smoothing: f32) -> Option<Path> {
 
 /// A smooth closed path round a pixel loop.
 fn fit_loop(ring: &[Corner], smoothing: f32) -> Option<Path> {
-    let points = staircase_free(ring);
+    fit_points(staircase_free(ring), smoothing)
+}
+
+/// A smooth closed path through a dense loop of points: simplified to
+/// within `smoothing`, then curved between the points that are left,
+/// except at sharp corners, which stay sharp. Combining shapes (see
+/// `boolean.rs`) uses it too, to turn its outlines back into curves.
+pub(crate) fn fit_points(points: Vec<Point>, smoothing: f32) -> Option<Path> {
     if points.len() < 3 {
         return None;
     }
@@ -542,7 +549,7 @@ fn anchor_points(path: &Path) -> Vec<Point> {
 
 /// `outline` with `hole` spliced in through a slit between their nearest
 /// anchors: out along the slit, round the hole, and back along the slit.
-fn join_hole(outline: Path, hole: Path) -> Path {
+pub(crate) fn join_hole(outline: Path, hole: Path) -> Path {
     let outer = anchor_points(&outline);
     let inner = anchor_points(&hole);
     let mut best = (0, 0, f32::MAX);

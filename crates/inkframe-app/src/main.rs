@@ -40,6 +40,7 @@ mod prefs;
 mod rhubarb;
 mod screenshot;
 mod scripts;
+mod shape_ops;
 mod shortcuts;
 mod stage;
 mod subselect;

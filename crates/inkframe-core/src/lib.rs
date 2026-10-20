@@ -13,6 +13,7 @@ mod align;
 mod anchor;
 mod audio;
 mod blend;
+mod boolean;
 mod brush;
 mod camera;
 mod channel;
@@ -64,6 +65,7 @@ pub use anchor::{
 };
 pub use audio::{AudioId, AudioTrack};
 pub use blend::BlendMode;
+pub use boolean::{Area, CombineError, ShapeOp, area_of, break_apart, combine};
 pub use brush::{BrushMode, BrushSettings, BrushStroke, DabPath};
 pub use camera::FOCAL_LENGTH;
 pub use channel::{Animatable, AnyChannel, Bend, Channel, Key, MotionCurve, Tween};
