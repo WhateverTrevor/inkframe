@@ -267,6 +267,7 @@ writes. No audio.
 | `app.rs` | Window layout, menus, the `Command` enum, file open/save |
 | `editor.rs` | `Editor`: document, selection, current frame, tool, and the operations panels call |
 | `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles; `stage/inside.rs` handles the pointer while inside a layer (picking, moving and scaling shapes) |
+| `multi_edit.rs` | Carrying a change made in the properties panel to every selected layer: position by the same amount, other values set the same, only what changed |
 | `inside.rs` | Working inside one layer: which shapes are picked (by their place in the showing drawing), hit-testing them, moving and scaling them by their points (`Element::transformed`), deleting them, and making a symbol of them |
 | `handles.rs` | The math for scale and rotate handles (anchor pinning, multi-turn rotation) |
 | `depth_view.rs` | The Depth View: the main timeline's top-level layers from above, as lines at their depths, with the camera's field of view. Dragging a line sets its depth, dragging the camera dollies and pans it (both through `Editor::set_depth` / `set_pose`, so they key the frame); scroll zooms, empty space pans, Fit fits. What's dragged is decided at the press point |

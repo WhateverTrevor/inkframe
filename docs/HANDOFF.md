@@ -572,6 +572,13 @@ after the Harmony features (palettes to master controllers).
     inkframe.exe needs no Visual C++ redistributable; CI's "Check the
     Windows app needs no Visual C++ runtime" step fails if `dumpbin
     /dependents` shows vcruntime/msvcp/api-ms-win-crt.
+85. Several layers in Properties (`multi_edit.rs`): the panel edits the
+    last-picked layer, then `carry_settings` (checkboxes, blend, span),
+    `carry_pose_change` (position as a delta in each layer's own parent
+    space, other components set only if changed), `carry_depth` and
+    `carry_key` carry it to `also_editing` (the other selected layers,
+    not folders). `pose_differs` marks rows with •. Easing, effects, rig,
+    instance and shape settings still edit the last-picked layer only.
 
 ## Not yet verified by hand
 
