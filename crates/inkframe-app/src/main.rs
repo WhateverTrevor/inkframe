@@ -24,6 +24,7 @@ mod export_dialog;
 mod guides;
 mod handles;
 mod icons;
+mod inside;
 mod inspector;
 mod layer_thumbnails;
 mod layout;

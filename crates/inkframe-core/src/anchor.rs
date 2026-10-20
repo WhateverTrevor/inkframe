@@ -281,6 +281,51 @@ fn segment_between(from: &Anchor, to: &Anchor) -> Segment {
     }
 }
 
+/// Moving, turning or scaling one shape on its own, rather than the layer
+/// it's on. A layer's shapes have no positions of their own (each sits in
+/// the layer's coordinates), so a shape is moved by moving its points:
+/// rectangles and ovals become paths first.
+impl crate::Element {
+    /// Whether the shape can be moved by its points. Pictures, paintings
+    /// and text are placed by their layer, so they move with it.
+    pub fn is_reshapable(&self) -> bool {
+        !matches!(self.shape, Shape::Image { .. } | Shape::Paint { .. } | Shape::Text(_))
+    }
+
+    /// The shape with every point mapped by `m`, or `None` for one that
+    /// isn't [reshapable](Self::is_reshapable). A pencil line keeps its
+    /// widths, scaled by how much `m` scales.
+    pub fn transformed(&self, m: crate::Affine) -> Option<crate::Element> {
+        if !self.is_reshapable() {
+            return None;
+        }
+        let map = |anchors: Vec<Anchor>| -> Vec<Anchor> {
+            anchors
+                .into_iter()
+                .map(|a| Anchor {
+                    point: m.apply(a.point),
+                    handle_in: m.apply(a.handle_in),
+                    handle_out: m.apply(a.handle_out),
+                })
+                .collect()
+        };
+        let shape = if let Shape::Line { path, widths } = &self.shape {
+            let anchors = anchors_from_path(path);
+            let path = path_from_anchors(&map(anchors), path.closed)?;
+            let scale = m.average_scale();
+            Shape::Line { path, widths: widths.iter().map(|w| w * scale).collect() }
+        } else {
+            let (anchors, closed) = self.shape.to_anchors();
+            Shape::Path(path_from_anchors(&map(anchors), closed)?)
+        };
+        let mut style = self.style;
+        if let Some(stroke) = &mut style.stroke {
+            stroke.width *= m.average_scale();
+        }
+        Some(crate::Element { shape, style })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,5 +469,29 @@ mod tests {
     #[test]
     fn one_anchor_is_not_a_path() {
         assert!(path_from_anchors(&[Anchor::corner(p(1.0, 1.0))], true).is_none());
+    }
+
+    #[test]
+    fn a_shape_moves_and_scales_by_its_points() {
+        use crate::{Affine, Color, Element, Style};
+        let square = Element {
+            shape: Shape::Rect { width: 20.0, height: 10.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::BLACK), stroke: None },
+        };
+        let moved = square.transformed(Affine::translate(Point::new(100.0, 50.0))).unwrap();
+        assert!(matches!(moved.shape, Shape::Path(_)), "a rectangle becomes a path");
+        let bounds = moved.shape.bounds();
+        assert!(bounds.center().distance(Point::new(100.0, 50.0)) < 1e-3);
+        assert!((bounds.width() - 20.0).abs() < 1e-3);
+
+        let doubled = square.transformed(Affine::scale(2.0, 2.0)).unwrap();
+        assert!((doubled.shape.bounds().width() - 40.0).abs() < 1e-3);
+
+        let picture = Element {
+            shape: Shape::Image { image: crate::ImageId(1), width: 10.0, height: 10.0 },
+            style: square.style,
+        };
+        assert!(!picture.is_reshapable(), "a picture moves with its layer");
+        assert!(picture.transformed(Affine::translate(Point::new(1.0, 0.0))).is_none());
     }
 }

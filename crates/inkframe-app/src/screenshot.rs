@@ -13,6 +13,7 @@
 //! * `INKFRAME_SCREENSHOT_ONION=1` turns on onion skinning.
 //! * `INKFRAME_SCREENSHOT_NEW_LAYER=1` adds an empty layer above the selection (after
 //!   `_SELECT`) and draws a hat into it, as + and two shapes would.
+//! * `INKFRAME_SCREENSHOT_INSIDE=1` steps inside the selected layer and picks its top shape.
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
 //! * `INKFRAME_SCREENSHOT_EXPAND=1` expands every layer's property rows in the timeline.
 //! * `INKFRAME_SCREENSHOT_EDIT=Ball` opens the named symbol on its own (before `_SELECT`).
@@ -124,6 +125,13 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_NEW_LAYER").is_some() {
             new_layer_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_INSIDE").is_some()
+            && let Some(layer) = editor.selection
+            && editor.enter_layer(layer)
+        {
+            let last = editor.doc.layer(layer).map_or(0, |l| l.elements_at(editor.frame).len());
+            editor.pick_shapes(vec![last.saturating_sub(1)]);
         }
         if let Some(name) = var("INKFRAME_SCREENSHOT_TOOL") {
             match Tool::all().find(|t| t.name().eq_ignore_ascii_case(&name)) {
