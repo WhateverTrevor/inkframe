@@ -474,6 +474,14 @@ after the Harmony features (palettes to master controllers).
     as an untitled copy. Add a line to `ABOUT` for a new example (a test
     fails otherwise). `INKFRAME_SCREENSHOT_EXAMPLES=1`.
 
+74. Scripting spike: `crates/inkframe-script` (rquickjs 0.14 / QuickJS;
+    `run(doc, source, limit) -> Result<Outcome, ScriptError>`, working on
+    a clone, interrupt handler for the time limit, 256 MB memory cap).
+    Not yet used by the app. Because QuickJS is C, `cargo clippy
+    --target x86_64-pc-windows-msvc` on a Mac fails for it: use
+    `--exclude inkframe-script` locally and rely on CI for Windows. Plan
+    and results: docs/SCRIPTING_PLAN.md.
+
 ## Not yet verified by hand
 
 - Pen pressure has never been tried with a real tablet, on either
