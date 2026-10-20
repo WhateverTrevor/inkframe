@@ -551,6 +551,18 @@ after the Harmony features (palettes to master controllers).
     capitals with a hairline (`inspector::section`, `section_text`).
     Further polish should follow the same approach: look at a
     screenshot, fix one rough edge at a time.
+83. Shape selection inside a layer (the user chose "double-click to go
+    inside" over Animate's click-picks-shape, to keep click-drag-to-key):
+    `Editor::inside` (`inside.rs`: enter_layer, pick_shapes, shape_at,
+    shapes_in, transform_shapes, delete_shapes, shapes_to_symbol,
+    check_inside each frame), `stage/inside.rs` (`ShapeDrag` Move, Scale,
+    Box; the pill note; cursor). Core `Element::transformed` /
+    `is_reshapable` (anchor.rs) moves a shape by its points, turning
+    rectangles and ovals into paths; `add_to_shown_drawing` uses it too.
+    Inside, the light table fades the other layers and the layer's own
+    box and handles hide. Keys: Esc → ExitLayer, Delete → DeleteShapes,
+    F8 → shapes_to_symbol, ⌘A → pick_all_shapes. Not yet: rotating
+    picked shapes, copying them, or picking colour art.
 
 ## Not yet verified by hand
 

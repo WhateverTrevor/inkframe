@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 
 use inkframe_core::FontFileId;
 use inkframe_core::{
-    Affine, Anchor, BrushSettings, BucketSettings, CanvasId, Color, Document, DocumentError, Drawing,
-    Element, GradientShape, History, Layer, LayerId, Point, Property, Selection, Shape, Stroke, Style,
-    SymbolId, Text, TimelineId, ToneRange, Transform, path_from_anchors,
+    Affine, BrushSettings, BucketSettings, CanvasId, Color, Document, DocumentError, Drawing, Element,
+    GradientShape, History, Layer, LayerId, Point, Property, Selection, Shape, Stroke, Style, SymbolId, Text,
+    TimelineId, ToneRange, Transform,
 };
 use inkframe_core::{Asset, Clipboard, CopiedKeyframe, ImageId};
 use inkframe_render::ImageLibrary;
@@ -280,6 +280,9 @@ pub struct Editor {
     /// Fade every layer but the selected one, to draw on it (Harmony's
     /// light table).
     pub light_table: bool,
+    /// The layer double-clicked into, to pick out its shapes (see
+    /// `inside.rs`).
+    pub inside: Option<crate::inside::Inside>,
     /// Safe areas and the field guide over the stage.
     pub guides: Guides,
     /// Pencil lines follow the pen's pressure.
@@ -346,6 +349,7 @@ impl Editor {
             draw_into_layer: true,
             colour_art: false,
             light_table: false,
+            inside: None,
             guides: Guides::default(),
             pencil_pressure: true,
             pencil_taper: true,
@@ -878,36 +882,12 @@ impl Editor {
         let Some(to_local) = to_local.map(|m| m.pre_concat(Affine::translate(position))) else {
             return false;
         };
-        // A pencil line keeps its centreline and widths, scaled into the
-        // layer's coordinates.
-        if let Shape::Line { path, widths } = &element.shape {
-            let (anchors, closed) = Shape::Path(path.clone()).to_anchors();
-            let moved: Vec<Anchor> = anchors
-                .iter()
-                .map(|a| Anchor {
-                    point: to_local.apply(a.point),
-                    handle_in: to_local.apply(a.handle_in),
-                    handle_out: to_local.apply(a.handle_out),
-                })
-                .collect();
-            let Some(path) = path_from_anchors(&moved, closed) else { return false };
-            let scale = to_local.average_scale();
-            let widths = widths.iter().map(|w| w * scale).collect();
-            let shape = Shape::Line { path, widths };
-            return self.push_into_drawing(layer.id, Element { shape, style: element.style });
-        }
-        let (anchors, closed) = element.shape.to_anchors();
-        let moved: Vec<Anchor> = anchors
-            .iter()
-            .map(|a| Anchor {
-                point: to_local.apply(a.point),
-                handle_in: to_local.apply(a.handle_in),
-                handle_out: to_local.apply(a.handle_out),
-            })
-            .collect();
-        let Some(path) = path_from_anchors(&moved, closed) else { return false };
+        // The shape's points (and a pencil line's widths) mapped into the
+        // layer's coordinates; text and pictures can't be, so they get a
+        // layer of their own.
+        let Some(element) = element.transformed(to_local) else { return false };
         let id = layer.id;
-        self.push_into_drawing(id, Element { shape: Shape::Path(path), style: element.style })
+        self.push_into_drawing(id, element)
     }
 
     /// Adds `element` to the drawing `layer` shows now: its line art, or

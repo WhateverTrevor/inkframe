@@ -5,6 +5,8 @@
 //! outlines, shapes being dragged out) is painted on top with egui, because
 //! it's interface rather than artwork.
 
+mod inside;
+
 use egui::{Align2, Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{
     Affine, Anchor, Bend, BrushMode, BrushStroke, Canvas, CanvasId, Color, Combine, Document, Element,
@@ -826,6 +828,8 @@ pub struct StageView {
     rendered: Option<RenderKey>,
     /// The viewport from the last frame, for zoom commands that come from menus.
     last_area: Rect,
+    /// A drag inside a layer (see `inside.rs`).
+    shape_drag: Option<inside::ShapeDrag>,
 }
 
 impl Default for StageView {
@@ -844,6 +848,7 @@ impl Default for StageView {
             texture: None,
             rendered: None,
             last_area: Rect::NOTHING,
+            shape_drag: None,
         }
     }
 }
@@ -985,7 +990,8 @@ impl StageView {
         // Typing into text takes the keyboard, and the mouse when it's on
         // the text; the tools get everything else.
         let pointer_on_text = self.handle_text_editing(ui, &response, editor, view);
-        if !pointer_on_text {
+        let inside_layer = !pointer_on_text && self.handle_inside(ui, &response, editor, view);
+        if !pointer_on_text && !inside_layer {
             self.handle_tools(ui, &response, editor, view);
         }
         if editor.tool == Tool::Pen {
@@ -1001,7 +1007,12 @@ impl StageView {
         }
         // No transform handles on text being typed into: dragging would
         // fight with selecting.
-        let handles = if self.text_editing.is_some() { None } else { Handles::for_selection(editor, view) };
+        // Nor while inside a layer: the picked shapes have handles of their own.
+        let handles = if self.text_editing.is_some() || editor.inside_layer().is_some() {
+            None
+        } else {
+            Handles::for_selection(editor, view)
+        };
         let overlay = painter.with_clip_rect(area);
         if editor.timeline() != TimelineId::Main {
             draw_registration_point(&overlay, view.to_screen(Point::ZERO));
@@ -1036,6 +1047,10 @@ impl StageView {
                 .line_segment([hit.screen - vec2(0.0, 3.0), hit.screen + vec2(0.0, 3.0)], (1.0, SELECTION));
         }
         self.update_cursor(ui, &response, editor, view, handles.as_ref());
+        if editor.inside_layer().is_some() {
+            self.draw_inside(&overlay, editor, view);
+            self.inside_cursor(ui, &response, editor, view);
+        }
         asset_drop(ui, &overlay, &response, editor, stage_view);
     }
 
@@ -1349,6 +1364,18 @@ impl StageView {
             && let Some(element) = text_element(editor, id)
         {
             self.begin_text_editing(editor, view, id, element, Some(pointer));
+            return;
+        }
+        // Double-clicking any other drawn layer steps inside it, to pick
+        // out its shapes (see `inside.rs`).
+        if response.double_clicked()
+            && editor.tool == Tool::Select
+            && editor.inside_layer().is_none()
+            && let Some(pointer) = response.interact_pointer_pos()
+            && let Some(id) = editor.hit_test(view.to_local(pointer), HIT_TOLERANCE / view.zoom)
+            && editor.enter_layer(id)
+        {
+            self.gesture = None;
             return;
         }
 
@@ -2438,7 +2465,9 @@ impl StageView {
         }
         let selected = editor.selected_ids();
         for layer in selected.iter().filter_map(|id| editor.doc.layer(*id)) {
-            if !layer.is_shown_at(editor.frame) || shows_points {
+            // Inside a layer, the picked shapes are outlined instead (see
+            // `inside.rs`); the layer's own box and pivot would confuse them.
+            if !layer.is_shown_at(editor.frame) || shows_points || editor.inside_layer() == Some(layer.id) {
                 continue;
             }
             if let Some(bounds) = editor.doc.layer_bounds(layer, editor.frame) {
@@ -2668,7 +2697,8 @@ impl StageView {
         let surroundings = editor.surroundings();
         // A selected mask is drawn faintly so it can be seen while moving it.
         let shown_mask = editor.selected_layer().filter(|l| l.mask).map(|l| l.id);
-        let light_table = editor.selection.filter(|_| editor.light_table);
+        // Inside a layer, the others fade, as with the light table.
+        let light_table = editor.inside_layer().or(editor.selection.filter(|_| editor.light_table));
         let key = RenderKey {
             doc: doc.clone(),
             timeline,
@@ -4881,6 +4911,66 @@ mod tests {
         let editor = &h.state().1;
         assert_eq!(editor.timeline(), TimelineId::Symbol(symbol));
         assert_ne!(editor.selection, Some(id), "selection moves into the symbol");
+    }
+
+    /// A layer at (400, 400) holding two 80×80 squares, 100 to its left and
+    /// 100 to its right.
+    fn editor_with_two_squares() -> (Editor, LayerId) {
+        let mut editor = Editor::new(Document::default());
+        let square = |x: f32| {
+            Element {
+                shape: Shape::Rect { width: 80.0, height: 80.0, corner_radius: 0.0 },
+                style: Style { fill: Some(Color::BLACK), stroke: None },
+            }
+            .transformed(Affine::translate(Point::new(x, 0.0)))
+            .unwrap()
+        };
+        let id = editor.doc.add_layer(
+            "Shapes",
+            vec![square(-100.0), square(100.0)],
+            0,
+            Transform::at(Point::new(400.0, 400.0)),
+        );
+        (editor, id)
+    }
+
+    #[test]
+    fn double_clicking_a_layer_steps_inside_to_move_one_shape() {
+        let (editor, id) = editor_with_two_squares();
+        let mut h = harness(editor);
+        let on_square = screen(&h, 500.0, 400.0);
+        double_click(&mut h, on_square);
+        assert_eq!(h.state().1.inside_layer(), Some(id));
+
+        // Drag the right-hand square down: only it moves, and the layer
+        // itself isn't moved or keyed.
+        let (from, to) = (screen(&h, 500.0, 400.0), screen(&h, 500.0, 460.0));
+        drag(&mut h, from, &[to]);
+        let editor = &h.state().1;
+        assert_eq!(editor.picked_shapes(), &[1]);
+        let layer = editor.doc.layer(id).unwrap();
+        let shapes = layer.elements_at(0);
+        assert!(
+            shapes[1].bounds().center().distance(Point::new(100.0, 60.0)) < 1.5,
+            "{:?}",
+            shapes[1].bounds()
+        );
+        assert!(shapes[0].bounds().center().distance(Point::new(-100.0, 0.0)) < 1e-3);
+        assert_eq!(layer.track.position.keys().len(), 1);
+    }
+
+    #[test]
+    fn inside_a_layer_a_box_picks_shapes_and_double_clicking_empty_stage_steps_out() {
+        let (mut editor, id) = editor_with_two_squares();
+        editor.enter_layer(id);
+        let mut h = harness(editor);
+        let (from, to) = (screen(&h, 250.0, 300.0), screen(&h, 560.0, 500.0));
+        drag(&mut h, from, &[to]);
+        assert_eq!(h.state().1.picked_shapes(), &[0, 1]);
+
+        let empty = screen(&h, 900.0, 800.0);
+        double_click(&mut h, empty);
+        assert_eq!(h.state().1.inside_layer(), None);
     }
 
     #[test]

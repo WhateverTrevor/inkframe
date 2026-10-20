@@ -131,6 +131,9 @@ enum Command {
     RemovePathPoint,
     /// Deletes the anchor point picked with the Subselection tool.
     DeleteAnchor,
+    /// Steps out of the layer being worked inside (see `inside.rs`).
+    ExitLayer,
+    DeleteShapes,
 }
 
 pub(crate) const FILE_EXTENSION: &str = "inkf";
@@ -733,6 +736,8 @@ impl InkframeApp {
                 editor.select_all_pixels()
             }
             Command::Deselect if editor.tool.on_pixels() => editor.deselect_pixels(),
+            // Inside a layer, Select All picks every shape in it.
+            Command::SelectAll if editor.inside_layer().is_some() => editor.pick_all_shapes(),
             Command::SelectAll => editor.select_all(),
             Command::Deselect => editor.select(None),
             Command::InvertSelection => editor.invert_pixel_selection(),
@@ -767,6 +772,12 @@ impl InkframeApp {
                 editor.clear_selected_pixels();
             }
             Command::DeleteLayer => editor.delete_selected_layer(),
+            // Inside a layer with shapes picked, F8 makes a symbol of just them.
+            Command::ConvertToSymbol if !editor.picked_shapes().is_empty() => {
+                if let Err(problem) = editor.shapes_to_symbol() {
+                    show_error("Couldn't make a symbol", &problem);
+                }
+            }
             Command::ConvertToSymbol => {
                 if let Err(problem) = editor.convert_selected_to_symbol() {
                     show_error("Couldn't make a symbol", &problem);
@@ -828,6 +839,10 @@ impl InkframeApp {
             Command::FinishPath => self.views.stage().finish_path(editor, false),
             Command::RemovePathPoint => self.views.stage().remove_last_path_point(),
             Command::DeleteAnchor => self.views.stage().delete_selected_anchor(editor),
+            Command::ExitLayer => editor.exit_layer(),
+            Command::DeleteShapes => {
+                editor.delete_shapes();
+            }
         }
     }
 
@@ -884,6 +899,8 @@ impl InkframeApp {
         let drawing_path = self.views.stage().is_drawing_path();
         let anchor_selected = self.views.stage().has_anchor_selection();
         let in_symbol = self.editor.timeline() != TimelineId::Main;
+        let inside_layer = self.editor.inside_layer().is_some();
+        let shapes_picked = !self.editor.picked_shapes().is_empty();
         ctx.input_mut(|input| {
             for (shortcut, command) in file_shortcuts {
                 if input.consume_shortcut(&shortcut) {
@@ -932,6 +949,16 @@ impl InkframeApp {
                 ]
             } else if anchor_selected {
                 &[(Key::Backspace, Command::DeleteAnchor), (Key::Delete, Command::DeleteAnchor)]
+            } else if shapes_picked {
+                // Inside a layer, Delete takes out the picked shapes, not
+                // the layer, and Escape steps back out.
+                &[
+                    (Key::Backspace, Command::DeleteShapes),
+                    (Key::Delete, Command::DeleteShapes),
+                    (Key::Escape, Command::ExitLayer),
+                ]
+            } else if inside_layer {
+                &[(Key::Escape, Command::ExitLayer)]
             } else if in_symbol {
                 // Escape steps back out of a symbol, as in Animate.
                 &[(Key::Escape, Command::ExitSymbol)]

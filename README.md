@@ -173,6 +173,7 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Action | How |
 |---|---|
 | Select / move | Selection tool (`V`), click or drag a shape. Hold Shift to lock to one axis |
+| Pick shapes inside a layer | Double-click a layer on the stage to step inside it, as with a symbol: the other layers fade, and a click picks just the shape under it (Shift-click adds, a box over empty stage picks what it touches, `⌘A` picks them all). Drag picked shapes to move them, drag a corner handle to scale them (Shift keeps proportions), press Delete to remove them, or F8 to make a symbol of just them, which goes on a layer of its own just above, animated as the layer was. The layer itself isn't moved or keyed. Escape, or double-clicking empty stage, steps back out. Pictures and text move with their layer, so they can't be picked |
 | Select several | Shift-click shapes, or drag a box over empty stage; Shift- or ⌘-click layer names in the timeline; `⌘A` selects all, `⌘⇧A` none. Dragging any of them moves them all, the handles around them scale and rotate them as a group, and delete, duplicate, copy/cut and F6 keyframes apply to every selected layer |
 | Scale | Drag a square handle. Shift keeps proportions, Option/Alt scales from the pivot |
 | Rotate | Drag the round knob, or just outside a corner. Shift snaps to 15° |
