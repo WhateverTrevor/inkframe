@@ -506,8 +506,23 @@ after the Harmony features (palettes to master controllers).
     emitters round-trip through serde with camelCase keys and type names.
     `snowy-night.js` example (adds to an existing camera move rather than
     replacing it).
+78. Pen-friendly timeline, brush preview and grouping: in the timeline,
+    `Drag::Layer` with `LayerDrag::{Pending, Scrolling, Reordering}`: a
+    name dragged at once scrolls the list (pens have no wheel), held for
+    `HOLD_TO_REORDER` (0.35 s) it lifts to restack. `brush_preview` in
+    inspector.rs paints a tapering sample stroke with the real
+    `BrushStroke` (texture cached in `ui.data` by settings), and the stage
+    cursor shows an inner hardness ring. `Document::convert_layers_to_symbol`
+    (`ConvertError`) groups several layers, rigs and links kept, into one
+    instance at their bounding-box centre; F8 uses it when several are
+    selected. Non-adjacent layers collapse together in the stack.
+    Screenshot hook `INKFRAME_SCREENSHOT_GROUP=1|open`.
 
 ## Not yet verified by hand
+
+- The hold-to-reorder delay (0.35 s) and drag-to-scroll were tuned in
+  tests, not with a real pen; adjust `HOLD_TO_REORDER` and
+  `SCROLL_THRESHOLD` in timeline.rs if they feel wrong.
 
 - Pen pressure has never been tried with a real tablet, on either
   platform. Tests cover the Windows path (touch events with force) with
@@ -564,7 +579,7 @@ Smaller ideas noted along the way:
   `INKFRAME_SCREENSHOT=out.png` plus optional `_FRAME`, `_SELECT`, `_ONION`,
   `_TOOL`, `_EXPAND`, `_EDIT` (symbol on its own), `_OPEN` (instance in place),
   `_TYPE` (start typing into a text layer), `_GRAPH` (timeline in graph
-  mode); `_SELECT` takes a comma-separated list. Launching it from a background
+  mode), `_GROUP` (all layers into a symbol; `=open` to step inside); `_SELECT` takes a comma-separated list. Launching it from a background
   shell sometimes never draws a frame; retry, it's not the app.
   It waits for audio to finish decoding before capturing.
 - egui's default font lacks some glyphs (▸, ◆, ∅): check screenshots for

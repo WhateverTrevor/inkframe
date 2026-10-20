@@ -1366,9 +1366,34 @@ impl Editor {
 
     /// Turns the selected layer into a symbol in the library, leaving an
     /// instance of it in the layer's place. Like F8 in Animate.
-    pub fn convert_selected_to_symbol(&mut self) -> Option<SymbolId> {
-        let id = self.selection?;
-        self.doc.convert_layer_to_symbol(id, self.frame)
+    /// Makes the selected layers a symbol (F8), as Animate does: one layer
+    /// becomes an instance of a symbol holding it; several (a folder
+    /// counting as its layers) move into one symbol together, and an
+    /// instance takes their place. The instance is selected.
+    pub fn convert_selected_to_symbol(&mut self) -> Result<SymbolId, String> {
+        let ids: Vec<LayerId> = self
+            .selected_with_folders()
+            .into_iter()
+            .filter(|id| self.doc.layer(*id).is_some_and(|l| !l.folder && !l.camera))
+            .collect();
+        match ids.as_slice() {
+            [] => Err("Select the layers to make into a symbol.".to_owned()),
+            [one] => {
+                let id = *one;
+                let symbol = self
+                    .doc
+                    .convert_layer_to_symbol(id, self.frame)
+                    .ok_or("That layer can't become a symbol.")?;
+                self.select(Some(id));
+                Ok(symbol)
+            }
+            several => {
+                let (symbol, instance) =
+                    self.doc.convert_layers_to_symbol(several, self.frame).map_err(|e| e.to_string())?;
+                self.select(Some(instance));
+                Ok(symbol)
+            }
+        }
     }
 
     /// Adds a new layer with an instance of `symbol` in the middle of the

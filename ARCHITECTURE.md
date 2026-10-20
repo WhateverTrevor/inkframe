@@ -47,7 +47,7 @@ The data model and the math behind animation.
 | `shape.rs` | Rectangles, ellipses, Bézier paths, images, styles, and hit-testing |
 | `freehand.rs` | Turns jittery pointer samples into a smooth path |
 | `anchor.rs` | Anchor points with in/out handles; conversion between anchors, paths and shapes; nearest-point search and curve-preserving point insertion |
-| `symbol.rs` | `Symbol` (library entry), `Instance` (a symbol placed on a layer) and its timing, Convert to Symbol, and symbol-aware bounds and hit-testing |
+| `symbol.rs` | `Symbol` (library entry), `Instance` (a symbol placed on a layer) and its timing, Convert to Symbol (one layer, or several with their links via `convert_layers_to_symbol`), and symbol-aware bounds and hit-testing |
 | `template.rs` | Templates: copied layers (with their symbols, pictures, fonts and canvases) saved as a file of their own with the frame they started on; `insert_template` moves their animation to the playhead (`Layer::shift_time`) and pastes them |
 | `text.rs` | `Text`: content, `Font`, size, alignment; its measured extent, which the editor keeps up to date |
 | `guide.rs` | Motion guides: `Document::pose`, a layer's transform following its guide (use it rather than `Layer::transform_at` wherever layers are drawn or edited) |
@@ -271,8 +271,8 @@ writes. No audio.
 | `node_view.rs` | The Node View: the timeline being edited drawn as a graph built from the layers each frame (layer nodes with Parent and Mask inputs and Transform and Image outputs, effect and filter nodes in each layer's image chain, a Composite in stacking order, the Display). `connect` and `disconnect` turn wiring into the same edits the timeline and Properties make (`set_parent`, `masked_by`, `place_layer`, effects); only node positions are the view's own |
 | `pen.rs` | State of the pen path being drawn, which lasts across many clicks |
 | `subselect.rs` | The math for moving, deleting and converting anchors with the Subselection tool |
-| `timeline.rs` | Transport bar and the hand-painted layer × frame grid |
-| `inspector.rs` | The properties panel, with Tool, Layer and Document tabs that follow the selection and tool |
+| `timeline.rs` | Transport bar and the hand-painted layer × frame grid; dragging a layer name scrolls the list, holding it first restacks (pen-friendly) |
+| `inspector.rs` | The properties panel, with Tool, Layer and Document tabs that follow the selection and tool, and a live brush preview stroke |
 | `panels.rs` | The Swatches, Align and History panels |
 | `value_graph.rs` | The timeline's Graph mode: a property's values over time, with draggable keys and easing handles |
 | `easing_editor.rs` | The easing curve in the properties panel, with draggable Bézier handles |

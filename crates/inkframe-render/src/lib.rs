@@ -1194,6 +1194,57 @@ mod tests {
     }
 
     #[test]
+    fn converting_several_layers_to_a_symbol_renders_identically() {
+        // A rig (an arm with a hand), a separate square starting later, and
+        // a layer between them that stays out of the symbol.
+        let mut doc = red_square_doc();
+        let square = doc.layers[0].id;
+        doc.layer_mut(square).unwrap().start = 3;
+        let block = |w: f32, h: f32, c: Color| Element {
+            shape: Shape::Rect { width: w, height: h, corner_radius: 0.0 },
+            style: Style { fill: Some(c), stroke: None },
+        };
+        // Out of the others' way: they're drawn together now, so anything
+        // they crossed over or under would swap places with it.
+        let between = doc.add_layer(
+            "Between",
+            vec![block(6.0, 90.0, Color::rgb(0, 160, 0))],
+            0,
+            Pose::at(Point::new(4.0, 50.0)),
+        );
+        let arm = doc.add_layer(
+            "Arm",
+            vec![block(30.0, 8.0, Color::rgb(0, 0, 255))],
+            0,
+            Pose::at(Point::new(40.0, 30.0)),
+        );
+        let hand = doc.add_layer(
+            "Hand",
+            vec![block(8.0, 8.0, Color::rgb(255, 200, 0))],
+            0,
+            Pose::at(Point::new(15.0, 0.0)),
+        );
+        doc.layer_mut(hand).unwrap().parent = Some(arm);
+        doc.layer_mut(arm).unwrap().track.rotation.set(10, 90.0);
+        doc.layer_mut(arm).unwrap().track.opacity.set(10, 0.5);
+        let render = |doc: &Document| -> Vec<Vec<u8>> {
+            (0..=12).map(|f| render_frame(doc, f, &RenderOptions::default()).unwrap().take()).collect()
+        };
+        let before = render(&doc);
+
+        // The hand comes along with the arm without being chosen.
+        let (symbol, instance) = doc.convert_layers_to_symbol(&[square, arm], 5).unwrap();
+        assert_eq!(doc.symbol(symbol).unwrap().layers.len(), 3);
+        assert_eq!(doc.layers.len(), 2, "the instance and the layer left out");
+        assert_eq!(doc.layers[1].id, instance, "the instance is where the topmost was");
+        assert_eq!(doc.layers[0].id, between);
+        for (frame, (expected, actual)) in before.iter().zip(render(&doc)).enumerate() {
+            let worst = expected.iter().zip(&actual).map(|(a, b)| a.abs_diff(*b)).max().unwrap();
+            assert!(worst <= 2, "frame {frame} differs by up to {worst}");
+        }
+    }
+
+    #[test]
     fn thumbnails_fit_the_symbol() {
         let mut doc = red_square_doc();
         let id = doc.layers[0].id;

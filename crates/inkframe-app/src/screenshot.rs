@@ -40,6 +40,8 @@
 //!   Scripts menu does.
 //! * `INKFRAME_SCREENSHOT_CONSOLE=path.js` shows the Script Console in place of
 //!   Properties, with that script typed in and run.
+//! * `INKFRAME_SCREENSHOT_GROUP=1` puts every layer into one symbol (a 24-frame loop), as
+//!   selecting them all and pressing F8 would; `=open` then opens it in place.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -159,6 +161,11 @@ impl AutoScreenshot {
     /// Whether to open the examples gallery.
     pub fn examples() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_EXAMPLES").is_some()
+    }
+
+    /// Whether to group every layer into a symbol, and whether to open it.
+    pub fn group() -> Option<bool> {
+        std::env::var("INKFRAME_SCREENSHOT_GROUP").ok().map(|v| v == "open")
     }
 
     /// Whether to build the multiplane scene.

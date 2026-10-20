@@ -46,6 +46,15 @@ pub struct Instance {
     pub first_frame: u32,
 }
 
+/// Why layers couldn't become a symbol.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ConvertError {
+    #[error("choose the layers to make into a symbol")]
+    NothingChosen,
+    #[error("{0} is attached to a layer that isn't chosen: choose that layer too, or detach it first")]
+    AttachedOutside(String),
+}
+
 /// How an instance moves through its symbol's frames as the main timeline plays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -163,6 +172,141 @@ impl Document {
 
         self.symbols.push(Symbol { id: symbol_id, name, duration, layers: vec![inner] });
         Some(symbol_id)
+    }
+
+    /// Turns several layers into one symbol, as Animate's Convert to Symbol
+    /// does with a selection: the layers move inside it, each keeping its
+    /// own animation, and an instance takes their place in the stack, where
+    /// the topmost of them was. Everything looks exactly the same
+    /// afterwards; double-click the instance to work on the layers inside.
+    ///
+    /// Layers attached to the chosen ones (an arm's hand) come along too.
+    /// Rig parents, masks and motion guides among them still connect inside
+    /// the symbol. A chosen layer attached to one that isn't chosen can't
+    /// be separated from it, so that's refused. The camera and folders are
+    /// left out (a folder's layers can be chosen instead).
+    ///
+    /// The layers are drawn together inside the instance, so chosen layers
+    /// that weren't next to each other in the stack no longer have the
+    /// layers between them in between (Animate does the same).
+    ///
+    /// The symbol's registration point is the middle of what the layers
+    /// show on `frame`, and the symbol keeps the timeline's timing (its
+    /// length is the timeline's, and the instance starts where the earliest
+    /// layer did), so nothing moves in space or time.
+    pub fn convert_layers_to_symbol(
+        &mut self,
+        ids: &[LayerId],
+        frame: u32,
+    ) -> Result<(SymbolId, LayerId), ConvertError> {
+        let first = *ids.first().ok_or(ConvertError::NothingChosen)?;
+        let timeline = self.timeline_of(first).ok_or(ConvertError::NothingChosen)?;
+        let layers = self.layers_of(timeline);
+        let chosen = |l: &Layer| ids.contains(&l.id) && !l.camera && !l.folder;
+        // The chosen layers and everything attached to them, in stacking order.
+        let mut taken: Vec<LayerId> = layers.iter().filter(|l| chosen(l)).map(|l| l.id).collect();
+        loop {
+            let more: Vec<LayerId> = layers
+                .iter()
+                .filter(|l| !taken.contains(&l.id) && l.parent.is_some_and(|p| taken.contains(&p)))
+                .map(|l| l.id)
+                .collect();
+            if more.is_empty() {
+                break;
+            }
+            taken.extend(more);
+        }
+        if taken.is_empty() {
+            return Err(ConvertError::NothingChosen);
+        }
+        if let Some(stray) = layers
+            .iter()
+            .filter(|l| taken.contains(&l.id))
+            .find(|l| l.parent.is_some_and(|p| !taken.contains(&p) && self.layer(p).is_some()))
+        {
+            return Err(ConvertError::AttachedOutside(stray.name.clone()));
+        }
+        let taken: Vec<LayerId> = layers.iter().filter(|l| taken.contains(&l.id)).map(|l| l.id).collect();
+
+        // The middle of what they show now, as the registration point.
+        let corners: Vec<Point> = taken
+            .iter()
+            .filter_map(|id| self.layer(*id))
+            .filter_map(|layer| {
+                let bounds = self.layer_bounds(layer, frame)?;
+                let placed = self.placement_without_camera(layer, frame as f32);
+                Some(bounds.corners().map(|c| placed.apply(c)))
+            })
+            .flatten()
+            .collect();
+        let middle = Rect::bounding(corners).map_or_else(|| self.stage_rect().center(), |r| r.center());
+        let start = taken.iter().filter_map(|id| self.layer(*id)).map(|l| l.start).min().unwrap_or(0);
+        let duration = self.duration_of(timeline);
+
+        // New ids inside the symbol, and the links between them kept.
+        let mapping: Vec<(LayerId, LayerId)> =
+            taken.iter().map(|&old| (old, self.allocate_layer_id())).collect();
+        let renamed =
+            |id: Option<LayerId>| id.and_then(|id| mapping.iter().find(|(o, _)| *o == id).map(|(_, n)| *n));
+        let layers = self.layers_of_mut(timeline).ok_or(ConvertError::NothingChosen)?;
+        let top = layers.iter().rposition(|l| taken.contains(&l.id)).unwrap_or(0);
+        let mut inner = Vec::new();
+        let mut kept = Vec::new();
+        for (index, layer) in std::mem::take(layers).into_iter().enumerate() {
+            if !taken.contains(&layer.id) {
+                kept.push((index, layer));
+                continue;
+            }
+            let mut layer = layer;
+            layer.id = renamed(Some(layer.id)).expect("every taken layer has a new id");
+            if layer.parent.is_some() {
+                layer.parent = renamed(layer.parent);
+            } else {
+                // Placed around the registration point; attached layers
+                // follow their parents and stay as they are.
+                layer.track.position.map_values(|p| p - middle);
+            }
+            layer.masked_by = renamed(layer.masked_by);
+            layer.follow = renamed(layer.follow);
+            layer.in_folder = None;
+            inner.push(layer);
+        }
+
+        let symbol_id = SymbolId(self.next_symbol_id);
+        self.next_symbol_id += 1;
+        let name = self.next_symbol_name();
+        let instance_id = self.allocate_layer_id();
+        let mut instance = Layer {
+            id: instance_id,
+            name: name.clone(),
+            drawings: vec![Drawing::new("1", Vec::new())],
+            exposure: Vec::new(),
+            ..inner[0].clone()
+        };
+        // A plain layer apart from being the instance: no rig, mask, guide
+        // or effects of the layers that went inside.
+        instance.instance =
+            Some(Instance { symbol: symbol_id, playback: Playback::Loop, first_frame: start });
+        instance.start = start;
+        instance.end = None;
+        instance.track = crate::track::Track::new(start, Transform::at(middle));
+        (instance.parent, instance.masked_by, instance.follow, instance.in_folder) = (None, None, None, None);
+        (instance.mask, instance.guide, instance.particles, instance.warp, instance.deformer) =
+            (false, false, None, None, None);
+        instance.shape_tweens.clear();
+        instance.pivot = Point::ZERO;
+        instance.blend = crate::BlendMode::Normal;
+
+        // The instance goes where the topmost of them was.
+        let layers = self.layers_of_mut(timeline).ok_or(ConvertError::NothingChosen)?;
+        let at = kept.iter().position(|(index, _)| *index > top).unwrap_or(kept.len());
+        layers.extend(kept.into_iter().map(|(_, layer)| layer));
+        layers.insert(at, instance);
+        self.symbols.push(Symbol { id: symbol_id, name, duration, layers: inner });
+        if timeline == TimelineId::Main {
+            self.keep_camera_on_top();
+        }
+        Ok((symbol_id, instance_id))
     }
 
     /// Whether an instance of `symbol` may be placed in `timeline`: not if
@@ -429,5 +573,30 @@ mod tests {
         let outer = doc.convert_layer_to_symbol(id, 0).unwrap();
         assert!(doc.symbol_contains(outer, inner));
         assert!(!doc.symbol_contains(inner, outer));
+    }
+
+    #[test]
+    fn converting_several_layers_keeps_their_links_and_refuses_stray_parents() {
+        let mut doc = Document::default();
+        let body = doc.add_layer("Body", vec![], 0, Transform::default());
+        let head = doc.add_layer("Head", vec![], 0, Transform::default());
+        let mask = doc.add_layer("Mask", vec![], 0, Transform::default());
+        doc.layer_mut(head).unwrap().parent = Some(body);
+        doc.layer_mut(head).unwrap().masked_by = Some(mask);
+        doc.layer_mut(mask).unwrap().mask = true;
+        let other = doc.add_layer("Other", vec![], 0, Transform::default());
+
+        // A layer attached to one left out can't go alone.
+        assert_eq!(
+            doc.convert_layers_to_symbol(&[head], 0).unwrap_err(),
+            ConvertError::AttachedOutside("Head".into())
+        );
+        let (symbol, _) = doc.convert_layers_to_symbol(&[body, mask], 0).unwrap();
+        let inside = &doc.symbol(symbol).unwrap().layers;
+        let id_of = |name: &str| inside.iter().find(|l| l.name == name).unwrap().id;
+        let head_inside = inside.iter().find(|l| l.name == "Head").unwrap();
+        assert_eq!(head_inside.parent, Some(id_of("Body")), "the rig still connects");
+        assert_eq!(head_inside.masked_by, Some(id_of("Mask")), "so does the mask");
+        assert!(doc.layer(other).is_some(), "the rest stay");
     }
 }
