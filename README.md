@@ -108,6 +108,15 @@ planned (the code is already cross-platform and CI builds it on Windows).
 - **Undo/redo** for every change. Project files (`.inkf`) are zip files
   holding the document as readable JSON and painted pixels as PNG images.
 
+## Download
+
+Installers for Apple Silicon Macs (`.dmg`) and 64-bit Windows
+(`-setup.exe`) are on the
+[releases page](https://github.com/WhateverTrevor/inkframe/releases), with
+what's new in each in [CHANGELOG.md](CHANGELOG.md). They aren't signed with
+a developer certificate yet, so macOS and Windows warn the first time; the
+release notes say how to open Inkframe anyway.
+
 ## Getting started
 
 You need [Rust](https://rustup.rs) (1.85 or newer) and, for video export,
