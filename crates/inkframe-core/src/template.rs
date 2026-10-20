@@ -86,7 +86,7 @@ mod tests {
         let mut doc = Document::default();
         let dot = Element {
             shape: Shape::Ellipse { radius_x: 10.0, radius_y: 10.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         let id = doc.add_layer("Ball", vec![dot], 0, Transform::at(Point::new(0.0, 0.0)));
         doc.layer_mut(id).unwrap().track.set_pose(10, Transform::at(Point::new(100.0, 0.0)));

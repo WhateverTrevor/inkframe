@@ -57,12 +57,17 @@ fn scene(layer_count: usize, opacity: f32) -> Document {
             shape: Shape::Ellipse { radius_x: cell * 0.3, radius_y: cell * 0.3 },
             style: Style {
                 fill: Some(Color::rgb((i * 37 % 255) as u8, 120, 200)),
-                stroke: Some(Stroke { color: Color::BLACK, width: 2.0 }),
+                stroke: Some(Stroke::new(Color::BLACK, 2.0)),
+                gradient: None,
             },
         };
         let squiggle = Element {
             shape: Shape::Path(wavy_line(cell)),
-            style: Style { fill: None, stroke: Some(Stroke { color: Color::rgb(30, 30, 30), width: 3.0 }) },
+            style: Style {
+                fill: None,
+                stroke: Some(Stroke::new(Color::rgb(30, 30, 30), 3.0)),
+                gradient: None,
+            },
         };
         let mut pose = Transform::at(at);
         pose.opacity = opacity;

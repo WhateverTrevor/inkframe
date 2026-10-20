@@ -596,6 +596,18 @@ after the Harmony features (palettes to master controllers).
     range. `new_drawing_on(id, frame, copy)` split out of `new_drawing`.
     Hooks `INKFRAME_SCREENSHOT_FRAMES=4-12`, `_MULTIPLE=1`. Not yet:
     dragging picked frames to move them, scale/rotate across frames.
+88. Gradient fills and line styles (format v32): core `Style.gradient:
+    Option<ShapeGradient>` (Style is no longer Copy; `.clone()` where
+    needed), `Stroke { cap, join, dash }` with `Stroke::new`; `fill` stays
+    the gradient's first colour for the bucket, palettes and hit tests.
+    Shape tweens blend gradients stop by stop (`morph::blend_gradient`);
+    `Element::transformed` scales dashes. Render: `gradient_paint`
+    (tiny-skia Linear/RadialGradient), caps, joins, `StrokeDash`. App:
+    one `style_editor` for tool and shapes (`gradient_stops`, `choice`);
+    `stage/gradient_handles.rs` drags a picked shape's gradient ends
+    (inside a layer only, so they don't clash with scale handles). Hook
+    `INKFRAME_SCREENSHOT_STYLES=1`. Not yet: gradients in the script API,
+    or a gradient on the paint bucket's fills.
 
 ## Not yet verified by hand
 

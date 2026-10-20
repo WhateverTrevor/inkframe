@@ -21,7 +21,7 @@ fn sample_doc() -> Document {
     doc.duration = 3;
     let square = Element {
         shape: Shape::Rect { width: 16.0, height: 16.0, corner_radius: 4.0 },
-        style: Style { fill: Some(Color::rgba(255, 0, 0, 128)), stroke: None },
+        style: Style { fill: Some(Color::rgba(255, 0, 0, 128)), stroke: None, gradient: None },
     };
     let id = doc.add_layer("Square", vec![square], 0, Transform::at(Point::new(10.0, 18.0)));
     doc.layer_mut(id).unwrap().track.set_pose(2, Transform::at(Point::new(54.0, 18.0)));
@@ -245,7 +245,7 @@ fn missing_images_fail_the_export_clearly() {
     let image = doc.add_image(&dir.join("backdrop.png"), Some(&dir), (64, 36));
     let backdrop = Element {
         shape: Shape::Image { image, width: 64.0, height: 36.0 },
-        style: Style { fill: None, stroke: None },
+        style: Style { fill: None, stroke: None, gradient: None },
     };
     doc.add_layer("Backdrop", vec![backdrop], 0, Transform::at(Point::new(32.0, 18.0)));
     let mut settings = settings(ExportFormat::PngSequence, dir.join("shot.png"), true);
@@ -266,7 +266,7 @@ fn missing_fonts_fail_the_export_clearly() {
     doc.add_font_file(&dir.join("Brand.otf"), Some(&dir), vec!["Brand".into()]);
     let mut text = inkframe_core::Text::new("Logo", 20.0);
     text.font.family = "Brand".into();
-    let style = Style { fill: Some(Color::BLACK), stroke: None };
+    let style = Style { fill: Some(Color::BLACK), stroke: None, gradient: None };
     doc.add_layer(
         "Logo",
         vec![Element { shape: Shape::Text(text), style }],

@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let floor = Element {
         shape: Shape::Rect { width: 1920.0, height: 200.0, corner_radius: 0.0 },
-        style: Style { fill: Some(Color::rgb(0x3b, 0x3a, 0x48)), stroke: None },
+        style: Style { fill: Some(Color::rgb(0x3b, 0x3a, 0x48)), stroke: None, gradient: None },
     };
     doc.add_layer(
         "Floor",
@@ -33,7 +33,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         shape: Shape::Ellipse { radius_x: BALL_RADIUS, radius_y: BALL_RADIUS },
         style: Style {
             fill: Some(Color::rgb(0xe8, 0x5d, 0x3a)),
-            stroke: Some(Stroke { color: Color::rgb(0x2a, 0x1a, 0x14), width: 4.0 }),
+            stroke: Some(Stroke::new(Color::rgb(0x2a, 0x1a, 0x14), 4.0)),
+            gradient: None,
         },
     };
     let id = doc.add_layer("Ball", vec![ball], 0, Transform::at(Point::new(CENTER_X, TOP_Y)));

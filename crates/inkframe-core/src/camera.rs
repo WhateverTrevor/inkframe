@@ -172,7 +172,7 @@ mod tests {
     fn dot_at(doc: &mut Document, x: f32, y: f32) -> LayerId {
         let dot = Element {
             shape: Shape::Rect { width: 2.0, height: 2.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         doc.add_layer("Dot", vec![dot], 0, Transform::at(Point::new(x, y)))
     }

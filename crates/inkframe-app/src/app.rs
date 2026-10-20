@@ -302,7 +302,8 @@ impl InkframeApp {
                     shape: Shape::Ellipse { radius_x: 70.0, radius_y: 70.0 },
                     style: Style {
                         fill: Some(Color::rgb(0xe8, 0x4a, 0x5f)),
-                        stroke: Some(Stroke { color: Color::rgb(30, 30, 40), width: 6.0 }),
+                        stroke: Some(Stroke::new(Color::rgb(30, 30, 40), 6.0)),
+                        gradient: None,
                     },
                 };
                 let doc = &mut app.editor.doc;
@@ -345,7 +346,7 @@ impl InkframeApp {
                         };
                         Element {
                             shape: Shape::Line { path, widths },
-                            style: Style { fill: Some(Color::rgb(30, 30, 40)), stroke: None },
+                            style: Style { fill: Some(Color::rgb(30, 30, 40)), stroke: None, gradient: None },
                         }
                     })
                     .collect();
@@ -384,8 +385,11 @@ impl InkframeApp {
             }
             if AutoScreenshot::ink_and_paint() {
                 use inkframe_core::{Color, Element, Path, Point, Segment, Shape, Stroke, Style, Transform};
-                let ink =
-                    Style { fill: None, stroke: Some(Stroke { color: Color::rgb(30, 30, 40), width: 6.0 }) };
+                let ink = Style {
+                    fill: None,
+                    stroke: Some(Stroke::new(Color::rgb(30, 30, 40), 6.0)),
+                    gradient: None,
+                };
                 // An outline as straight pieces round an ellipse, leaving
                 // out the last few: a gap the bucket has to close.
                 let ring = |rx: f32, ry: f32, cx: f32, cy: f32, gap: usize| {
@@ -401,7 +405,7 @@ impl InkframeApp {
                             segments: points[1..].iter().map(|&to| Segment::Line { to }).collect(),
                             closed: false,
                         }),
-                        style: ink,
+                        style: ink.clone(),
                     }
                 };
                 let lines = vec![
@@ -498,7 +502,7 @@ impl InkframeApp {
             }
             if AutoScreenshot::shape_tween() {
                 use inkframe_core::{Color, Drawing, Element, Point, Shape, Style, Transform};
-                let fill = |r, g, b| Style { fill: Some(Color::rgb(r, g, b)), stroke: None };
+                let fill = |r, g, b| Style { fill: Some(Color::rgb(r, g, b)), stroke: None, gradient: None };
                 let square = Element {
                     shape: Shape::Rect { width: 300.0, height: 300.0, corner_radius: 0.0 },
                     style: fill(0xe8, 0x4a, 0x5f),
@@ -610,11 +614,11 @@ impl InkframeApp {
                 doc.background = Color::rgb(150, 200, 235);
                 let block = |w: f32, h: f32, color: Color, round: f32| Element {
                     shape: Shape::Rect { width: w, height: h, corner_radius: round },
-                    style: Style { fill: Some(color), stroke: None },
+                    style: Style { fill: Some(color), stroke: None, gradient: None },
                 };
                 let blob = |r: f32, color: Color| Element {
                     shape: Shape::Ellipse { radius_x: r, radius_y: r * 0.8 },
-                    style: Style { fill: Some(color), stroke: None },
+                    style: Style { fill: Some(color), stroke: None, gradient: None },
                 };
                 // Far to near, each at its depth.
                 let scene: Vec<(&str, Vec<Element>, Point, f32)> = vec![

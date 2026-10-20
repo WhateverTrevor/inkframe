@@ -602,7 +602,8 @@ impl Document {
                     shape: Shape::Path(map_path(&t.path, to_layer)),
                     style: Style {
                         fill: Some(t.color),
-                        stroke: seam.then_some(Stroke { color: t.color, width: scale.x.max(scale.y) }),
+                        stroke: seam.then_some(Stroke::new(t.color, scale.x.max(scale.y))),
+                        gradient: None,
                     },
                 }));
             }
@@ -671,7 +672,7 @@ mod tests {
     }
 
     fn style() -> Style {
-        Style { fill: Some(Color::BLACK), stroke: None }
+        Style { fill: Some(Color::BLACK), stroke: None, gradient: None }
     }
 
     #[test]
@@ -767,7 +768,7 @@ mod tests {
         // A 10×10 picture shown 100 units wide: each pixel is 10 units.
         let picture = Element {
             shape: Shape::Image { image: ImageId(7), width: 100.0, height: 100.0 },
-            style: Style { fill: None, stroke: None },
+            style: Style { fill: None, stroke: None, gradient: None },
         };
         let layer = doc.add_layer("Scan", vec![picture], 0, crate::Transform::default());
         let pixels = drawn(10, 10, |x, y| x < 5 && y < 5);

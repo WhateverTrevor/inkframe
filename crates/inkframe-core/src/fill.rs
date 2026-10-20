@@ -114,7 +114,8 @@ pub(crate) fn similar_area(
 }
 
 /// The shape of a gradient.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum GradientShape {
     /// Bands across the line from start to end.
     #[default]

@@ -35,7 +35,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 31;
+pub const FORMAT_VERSION: u32 = 32;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -719,7 +719,8 @@ mod tests {
             shape: Shape::Rect { width: 100.0, height: 100.0, corner_radius: 0.0 },
             style: Style {
                 fill: Some(Color::rgb(255, 0, 0)),
-                stroke: Some(Stroke { color: Color::BLACK, width: 2.0 }),
+                stroke: Some(Stroke::new(Color::BLACK, 2.0)),
+                gradient: None,
             },
         }
     }

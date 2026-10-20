@@ -176,7 +176,7 @@ impl Deformer {
                     })
                     .collect();
                 match path_from_anchors(&bent, closed) {
-                    Some(path) => Element { shape: Shape::Path(path), style: element.style },
+                    Some(path) => Element { shape: Shape::Path(path), style: element.style.clone() },
                     None => element.clone(),
                 }
             })
@@ -375,7 +375,7 @@ mod tests {
     fn bar() -> (Vec<Element>, Deformer) {
         let element = Element {
             shape: Shape::Rect { width: 200.0, height: 40.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         let bounds = Rect::from_center_size(Point::ZERO, 200.0, 40.0);
         (vec![element], Deformer::along(bounds, 2, 0))

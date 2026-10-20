@@ -13,6 +13,14 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Styles
+
+- Gradient fills on vector shapes, linear or radial, with as many colours
+  as you like; drag their ends on the stage after stepping inside the
+  shape's layer.
+- Line ends (round, flat, square), corners (round, sharp, bevelled), and
+  dashed or dotted lines.
+
 ### Timeline
 
 - Animate's frame commands: pick frames with Shift-click or Shift-drag,

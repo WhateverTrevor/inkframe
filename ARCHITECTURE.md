@@ -47,6 +47,7 @@ The data model and the math behind animation.
 | `shape.rs` | Rectangles, ellipses, Bézier paths, images, styles, and hit-testing |
 | `freehand.rs` | Turns jittery pointer samples into a smooth path |
 | `anchor.rs` | Anchor points with in/out handles; conversion between anchors, paths and shapes; nearest-point search and curve-preserving point insertion |
+| `shape.rs` (styles) | `Style` has the flat `fill`, the `stroke` (with `LineCap`, `LineJoin` and an optional `Dash`) and an optional `ShapeGradient` (linear or radial, any number of `GradientStop`s, its ends as fractions of the shape's box so it follows the shape). Build strokes with `Stroke::new` |
 | `frames.rs` | Editing a layer's time: `insert_frames`, `remove_frames` and `reverse_frames`, all through one `retime` that moves every key, deformer key, drawing swap and shape tween (and `AnyChannel::retime` / `reverse_span`, `Easing::reversed`) |
 | `library.rs` | `Asset` (a symbol, image or sound) and the Library's one-level folders: each asset names its folder, `Document::library_folders` keeps empty ones; renaming, moving and deleting assets |
 | `symbol.rs` | `Symbol` (library entry), `Instance` (a symbol placed on a layer) and its timing, Convert to Symbol (one layer, or several with their links via `convert_layers_to_symbol`), and symbol-aware bounds and hit-testing |

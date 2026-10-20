@@ -119,7 +119,7 @@ impl Warp {
                     })
                     .collect();
                 match path_from_anchors(&bent, closed) {
-                    Some(path) => Element { shape: Shape::Path(path), style: element.style },
+                    Some(path) => Element { shape: Shape::Path(path), style: element.style.clone() },
                     None => element.clone(),
                 }
             })
@@ -163,7 +163,7 @@ mod tests {
     fn square() -> Element {
         Element {
             shape: Shape::Rect { width: 100.0, height: 100.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         }
     }
 

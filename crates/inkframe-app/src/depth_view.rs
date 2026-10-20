@@ -364,7 +364,7 @@ mod tests {
         let mut editor = Editor::new(inkframe_core::Document::default());
         let square = Element {
             shape: Shape::Rect { width: 400.0, height: 100.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         let layer = editor.doc.add_layer("Hill", vec![square], 0, Transform::at(Point::new(960.0, 500.0)));
         editor.doc.layer_mut(layer).unwrap().track.set_depth(0, 200.0);
@@ -419,7 +419,7 @@ mod tests {
         let mut editor = Editor::new(inkframe_core::Document::default());
         let square = Element {
             shape: Shape::Rect { width: 100.0, height: 100.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::BLACK), stroke: None },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         let near =
             editor.doc.add_layer("Near", vec![square.clone()], 0, Transform::at(Point::new(500.0, 500.0)));

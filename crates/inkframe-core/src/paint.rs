@@ -405,7 +405,7 @@ impl Document {
         let canvas = self.add_canvas(width, height);
         let paint = Element {
             shape: Shape::Paint { canvas, width, height },
-            style: crate::Style { fill: None, stroke: None },
+            style: crate::Style { fill: None, stroke: None, gradient: None },
         };
         let center = Point::new(width as f32 / 2.0, height as f32 / 2.0);
         let id = self.add_layer_to(timeline, name, vec![paint], frame, crate::Transform::at(center))?;

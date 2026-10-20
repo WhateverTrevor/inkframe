@@ -90,7 +90,7 @@ mod tests {
 
         let mut text = Text::new("Hello", 40.0);
         text.font.family = "Brand Sans".into();
-        let style = Style { fill: Some(Color::BLACK), stroke: None };
+        let style = Style { fill: Some(Color::BLACK), stroke: None, gradient: None };
         doc.add_layer("Title", vec![Element { shape: Shape::Text(text), style }], 0, Transform::default());
         assert!(doc.fonts[0].in_use(&doc));
     }

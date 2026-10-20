@@ -236,7 +236,7 @@ fn render_preview(bitmap: &Bitmap, options: &TraceOptions) -> Option<Preview> {
         .iter()
         .map(|t| Element {
             shape: Shape::Path(t.path.clone()),
-            style: Style { fill: Some(t.color), stroke: None },
+            style: Style { fill: Some(t.color), stroke: None, gradient: None },
         })
         .collect();
     doc.add_layer("Traced", elements, 0, Transform::default());

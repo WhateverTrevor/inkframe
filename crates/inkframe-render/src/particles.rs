@@ -185,7 +185,7 @@ mod tests {
         let mut doc = column(Sprite::Drawing);
         let square = Element {
             shape: Shape::Rect { width: 10.0, height: 10.0, corner_radius: 0.0 },
-            style: Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None },
+            style: Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None, gradient: None },
         };
         let id = doc.layers.last().unwrap().id;
         doc.layer_mut(id).unwrap().drawings[0].elements = vec![square];

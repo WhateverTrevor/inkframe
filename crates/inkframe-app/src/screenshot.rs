@@ -16,6 +16,8 @@
 //! * `INKFRAME_SCREENSHOT_INSIDE=1` steps inside the selected layer and picks its top shape.
 //! * `INKFRAME_SCREENSHOT_FRAMES=4-12` picks frames in the timeline; `_MULTIPLE=1` turns on
 //!   Edit Multiple Frames.
+//! * `INKFRAME_SCREENSHOT_STYLES=1` adds shapes with gradient fills and dashed and dotted
+//!   lines, and steps inside the sun to show its gradient's handles.
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
 //! * `INKFRAME_SCREENSHOT_EXPAND=1` expands every layer's property rows in the timeline.
 //! * `INKFRAME_SCREENSHOT_EDIT=Ball` opens the named symbol on its own (before `_SELECT`).
@@ -134,6 +136,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_MULTIPLE").is_some() {
             editor.edit_multiple = true;
+        }
+        if var("INKFRAME_SCREENSHOT_STYLES").is_some() {
+            styles_demo(editor);
         }
         if var("INKFRAME_SCREENSHOT_NEW_LAYER").is_some() {
             new_layer_demo(editor);
@@ -513,8 +518,11 @@ fn selection_demo(editor: &mut Editor) {
 fn new_layer_demo(editor: &mut Editor) {
     use inkframe_core::{Color, Element, Point, Shape, Style};
     editor.add_empty_layer();
-    let style = Style { fill: Some(Color::rgb(60, 50, 70)), stroke: None };
-    let rect = |width, height| Element { shape: Shape::Rect { width, height, corner_radius: 6.0 }, style };
+    let style = Style { fill: Some(Color::rgb(60, 50, 70)), stroke: None, gradient: None };
+    let rect = |width, height| Element {
+        shape: Shape::Rect { width, height, corner_radius: 6.0 },
+        style: style.clone(),
+    };
     editor.add_drawn_shape("Rectangle", rect(220.0, 24.0), Point::new(785.0, 150.0));
     editor.add_drawn_shape("Rectangle", rect(130.0, 110.0), Point::new(785.0, 90.0));
 }
@@ -564,5 +572,61 @@ pub fn library_demo(editor: &mut Editor) {
     wav.resize(wav.len() + samples as usize, 0);
     if std::fs::write(&sound, wav).is_ok() {
         editor.import_audio(&sound);
+    }
+}
+
+/// Gradient fills and line styles: a sky fading top to bottom, a sun with
+/// a radial glow (picked inside its layer, so its gradient's handles show),
+/// and a dashed and a dotted outline.
+fn styles_demo(editor: &mut Editor) {
+    use inkframe_core::{
+        Color, Dash, Element, GradientStop, LineCap, Point, Shape, ShapeGradient, Stroke, Style, Transform,
+    };
+    let mut sky = ShapeGradient::linear(Color::rgb(40, 70, 160), Color::rgb(250, 170, 110));
+    (sky.from, sky.to) = (Point::new(0.5, 0.0), Point::new(0.5, 1.0));
+    sky.stops.insert(1, GradientStop { at: 0.6, color: Color::rgb(230, 120, 140) });
+    let sun = ShapeGradient::radial(Color::rgb(255, 245, 190), Color::rgb(250, 140, 60));
+    let filled = |gradient: ShapeGradient| Style {
+        fill: Some(gradient.stops[0].color),
+        stroke: None,
+        gradient: Some(gradient),
+    };
+    let outline = |dash: Dash, cap: LineCap| Style {
+        fill: None,
+        stroke: Some(Stroke { dash: Some(dash), cap, ..Stroke::new(Color::rgb(40, 40, 60), 8.0) }),
+        gradient: None,
+    };
+    let shapes = [
+        (
+            "Sky",
+            Shape::Rect { width: 1920.0, height: 1080.0, corner_radius: 0.0 },
+            filled(sky),
+            Point::new(960.0, 540.0),
+        ),
+        ("Sun", Shape::Ellipse { radius_x: 220.0, radius_y: 220.0 }, filled(sun), Point::new(1300.0, 560.0)),
+        (
+            "Dashed",
+            Shape::Rect { width: 420.0, height: 260.0, corner_radius: 30.0 },
+            outline(Dash { length: 30.0, gap: 18.0 }, LineCap::Butt),
+            Point::new(450.0, 380.0),
+        ),
+        (
+            "Dotted",
+            Shape::Ellipse { radius_x: 160.0, radius_y: 160.0 },
+            outline(Dash::dotted(8.0), LineCap::Round),
+            Point::new(450.0, 790.0),
+        ),
+    ];
+    let mut sun_layer = None;
+    for (name, shape, style, at) in shapes {
+        let id = editor.doc.add_layer(name, vec![Element { shape, style }], 0, Transform::at(at));
+        if name == "Sun" {
+            sun_layer = Some(id);
+        }
+    }
+    if let Some(sun) = sun_layer
+        && editor.enter_layer(sun)
+    {
+        editor.pick_shapes(vec![crate::inside::ShapeRef::line(0)]);
     }
 }

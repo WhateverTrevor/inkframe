@@ -201,7 +201,8 @@ mod tests {
             ],
             closed: false,
         };
-        let stroke = Style { fill: None, stroke: Some(crate::Stroke { color: Color::BLACK, width: 2.0 }) };
+        let stroke =
+            Style { fill: None, stroke: Some(crate::Stroke::new(Color::BLACK, 2.0)), gradient: None };
         let guide = doc.add_layer(
             "Guide",
             vec![Element { shape: Shape::Path(corner), style: stroke }],
