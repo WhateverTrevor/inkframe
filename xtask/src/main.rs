@@ -6,6 +6,7 @@
 //! The alias that makes `cargo xtask` work lives in `.cargo/config.toml`.
 
 mod icon;
+mod samples;
 // Bundling uses tools that only exist on macOS (iconutil, codesign, hdiutil).
 #[cfg(target_os = "macos")]
 mod macos;
@@ -24,6 +25,7 @@ Usage: cargo xtask <task>
 
 Tasks:
   icon                       Redraw the app icon PNGs in assets/icon/
+  samples                    Rebuild the sample projects in examples/
   bundle-macos [options]     Build target/release/Inkframe.app
       --ffmpeg <path>        Bundle this ffmpeg (must be a self-contained build)
       --rhubarb <folder>     Bundle Rhubarb Lip Sync from this unpacked release
@@ -37,6 +39,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("icon") => write_icon_pngs(),
+        Some("samples") => samples::write_all(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples")),
         #[cfg(target_os = "macos")]
         Some("bundle-macos") => macos::Options::parse(&args[1..]).and_then(|options| macos::bundle(&options)),
         #[cfg(not(target_os = "macos"))]

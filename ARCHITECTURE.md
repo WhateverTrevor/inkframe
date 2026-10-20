@@ -293,6 +293,10 @@ callbacks or retained widget trees. Panels read and change `Editor` directly.
 `xtask/` is a small binary for release chores, run as `cargo xtask <task>`
 (the alias is in `.cargo/config.toml`). It isn't part of the app.
 
+- `samples.rs` builds the sample projects in `examples/` from code with
+  `inkframe-core` (`cargo xtask samples`), so they can be rebuilt in the
+  current file format; `inkframe-render`'s `tests/examples.rs` checks they
+  all open and draw.
 - `icon.rs` draws the app icon with tiny-skia at any size. `cargo xtask icon`
   writes the PNGs and the Windows `.ico` in `assets/icon/`; the app embeds
   the 256-pixel PNG as its window icon.

@@ -108,6 +108,10 @@ planned (the code is already cross-platform and CI builds it on Windows).
 - **Undo/redo** for every change. Project files (`.inkf`) are zip files
   holding the document as readable JSON and painted pixels as PNG images.
 
+New to Inkframe? [Getting started](docs/GETTING_STARTED.md) walks through
+a first animation, and the [examples](examples) show off the bigger
+features.
+
 ## Download
 
 Installers for Apple Silicon Macs (`.dmg`) and 64-bit Windows
