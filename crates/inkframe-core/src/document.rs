@@ -101,6 +101,11 @@ pub struct Document {
     pub(crate) next_font_id: u64,
     #[serde(default = "first_id")]
     pub(crate) next_canvas_id: u64,
+    /// Skeletons shown at rest rather than posed: rig setup, as Moho's
+    /// frame 0 (see `skeleton.rs`). How the document is being looked at,
+    /// not part of it: never saved, and never makes an undo step.
+    #[serde(skip)]
+    pub rest_pose: crate::RestPoseView,
 }
 
 /// A stable identifier for a layer that survives reordering and undo.
@@ -324,6 +329,7 @@ impl Default for Document {
     fn default() -> Self {
         Self {
             version: FORMAT_VERSION,
+            rest_pose: crate::RestPoseView::default(),
             width: 1920,
             height: 1080,
             frame_rate: FrameRate::new(24, 1),

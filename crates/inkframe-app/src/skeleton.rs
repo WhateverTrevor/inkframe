@@ -403,4 +403,29 @@ mod tests {
         assert!(switch.switch && switch.folder);
         assert_eq!(editor.doc.switch_choice(switch, 0), Some(arm));
     }
+
+    #[test]
+    fn shapes_drawn_into_a_bent_layer_show_where_theyre_drawn() {
+        let (mut editor, skeleton, arm) = rigged_arm();
+        // The forearm (from 400, 300 to 500, 300) hangs straight down.
+        editor.skeleton_mut(skeleton).unwrap().bones[1].turn.set(0, 90.0);
+        editor.select(Some(arm));
+        editor.draw_into_layer = true;
+        let dot = Element {
+            shape: Shape::Ellipse { radius_x: 5.0, radius_y: 5.0 },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
+        };
+        // On the hanging forearm, 80 below the elbow.
+        editor.add_drawn_shape("Dot", dot, Point::new(400.0, 380.0));
+        let layer = editor.doc.layer(arm).unwrap();
+        let shown = editor.doc.posed_elements(layer, 0);
+        let centre = editor.doc.layer_matrix(layer, 0).apply(shown.last().unwrap().shape.bounds().center());
+        assert!(centre.distance(Point::new(400.0, 380.0)) < 1.5, "{centre:?}");
+        // And at rest it's on the forearm, 80 along it.
+        let rest = editor
+            .doc
+            .layer_matrix(layer, 0)
+            .apply(layer.elements_at(0).last().unwrap().shape.bounds().center());
+        assert!(rest.distance(Point::new(480.0, 300.0)) < 1.5, "{rest:?}");
+    }
 }

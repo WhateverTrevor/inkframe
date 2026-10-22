@@ -266,7 +266,9 @@ impl ExportDialog {
 
         // The thread gets its own copy of the document, so the user can keep
         // editing while the export runs without affecting what's exported.
-        let doc = doc.clone();
+        let mut doc = doc.clone();
+        // What's exported is always posed, whatever the stage is showing.
+        doc.rest_pose.0 = false;
         let ctx = ctx.clone();
         let cancel_flag = Arc::clone(&cancel);
         std::thread::spawn(move || {

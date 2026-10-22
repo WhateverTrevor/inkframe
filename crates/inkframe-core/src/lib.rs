@@ -111,7 +111,8 @@ pub use ruler_guides::{RulerGuide, snap_box, snap_point, snap_value};
 pub use selection::{Combine, Selection};
 pub use shape::{Dash, GradientStop, LineCap, LineJoin, Path, Segment, Shape, ShapeGradient, Stroke, Style};
 pub use skeleton::{
-    Bone, BoneBinding, BonePoints, Dynamics, LayerBend, Pose, RestPart, ShapeBones, Skeleton, SmartAction,
+    Bone, BoneBinding, BonePoints, Dynamics, LayerBend, MESH_CELL, Pose, RestPart, RestPoseView, ShapeBones,
+    Skeleton, SmartAction, mesh_lines,
 };
 pub use switch::SwitchKey;
 pub use symbol::{ConvertError, Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId, SymbolSwap};

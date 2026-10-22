@@ -121,6 +121,7 @@ enum Command {
     SwapSymbol,
     // Rulers and guides (see `stage/rulers.rs`).
     ToggleRulers,
+    ToggleRigSetup,
     ToggleGuides,
     ToggleLockGuides,
     ToggleSnapToGuides,
@@ -870,6 +871,7 @@ impl InkframeApp {
             }
             Command::SwapSymbol => self.swap.open(editor),
             Command::ToggleRulers => editor.show_rulers = !editor.show_rulers,
+            Command::ToggleRigSetup => editor.rig_setup = !editor.rig_setup,
             Command::ToggleGuides => editor.show_guides = !editor.show_guides,
             Command::ToggleLockGuides => editor.lock_guides = !editor.lock_guides,
             Command::ToggleSnapToGuides => editor.snap_to_guides = !editor.snap_to_guides,
@@ -980,6 +982,7 @@ impl InkframeApp {
             (BREAK_APART, Command::BreakApart),
             // The modified ones first: shortcuts ignore extra Shift and Alt.
             (RULERS, Command::ToggleRulers),
+            (RIG_SETUP, Command::ToggleRigSetup),
             (SNAP_TO_GUIDES, Command::ToggleSnapToGuides),
             (LOCK_GUIDES, Command::ToggleLockGuides),
             (SHOW_GUIDES, Command::ToggleGuides),
@@ -1457,6 +1460,9 @@ impl InkframeApp {
                 };
                 if toggle(ui, self.editor.show_rulers, "Rulers", shortcuts::RULERS) {
                     toggled = Some(Command::ToggleRulers);
+                }
+                if toggle(ui, self.editor.rig_setup, "Rig Setup (Skeletons at Rest)", shortcuts::RIG_SETUP) {
+                    toggled = Some(Command::ToggleRigSetup);
                 }
                 ui.menu_button("Guides", |ui| {
                     let editor = &self.editor;

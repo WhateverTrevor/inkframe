@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use inkframe_core::FontFileId;
 use inkframe_core::{
     Affine, BrushSettings, BucketSettings, CanvasId, Color, Document, DocumentError, Drawing, Element,
-    GradientShape, History, Layer, LayerId, Point, Property, Selection, Shape, Stroke, Style, SymbolId, Text,
-    TimelineId, ToneRange, Transform,
+    GradientShape, History, Layer, LayerId, Point, Property, Rect, Selection, Shape, Stroke, Style, SymbolId,
+    Text, TimelineId, ToneRange, Transform,
 };
 use inkframe_core::{Asset, Clipboard, CopiedKeyframe, ImageId};
 use inkframe_render::ImageLibrary;
@@ -296,6 +296,9 @@ pub struct Editor {
     /// stage last saw it: its layer, its shape in the line art, and its
     /// place in the shape's outline. For pinning it to a bone.
     pub picked_anchor: Option<(LayerId, usize, usize)>,
+    /// Rig setup, as Moho's frame 0: skeletons shown at rest, to draw and
+    /// paint on and rig, rather than posed (see `skeleton.rs`).
+    pub rig_setup: bool,
     /// Frames picked in the timeline (first and last, either way round),
     /// for the frame commands (see `frame_commands.rs`).
     pub frame_range: Option<(u32, u32)>,
@@ -379,6 +382,7 @@ impl Editor {
             lattice: None,
             selected_bone: None,
             picked_anchor: None,
+            rig_setup: false,
             frame_range: None,
             edit_multiple: false,
             show_rulers: false,
@@ -923,7 +927,13 @@ impl Editor {
         // The shape's points (and a pencil line's widths) mapped into the
         // layer's coordinates; text and pictures can't be, so they get a
         // layer of their own.
-        let Some(element) = element.transformed(to_local) else { return false };
+        let Some(mut element) = element.transformed(to_local) else { return false };
+        // On a frame where a skeleton bends the layer, what's drawn goes in
+        // where it bends to what was drawn, so it shows just as drawn.
+        if let Some(bend) = self.doc.layer_bend(layer, frame) {
+            let area = unbend_area(layer, frame, &element);
+            element = element.mapped(|p| bend.unbend(p, area).unwrap_or(p)).unwrap_or(element);
+        }
         let id = layer.id;
         self.push_into_drawing(id, element)
     }
@@ -949,11 +959,18 @@ impl Editor {
     pub fn fill_vector(&mut self, id: LayerId, point: Point) -> inkframe_core::FillResult {
         let frame = self.frame;
         let (color, gap) = (self.paint_color, self.close_gaps);
-        let local = self
-            .doc
-            .layer(id)
-            .and_then(|l| self.doc.layer_matrix(l, frame).inverse())
-            .map(|to_local| to_local.apply(point));
+        let local = self.doc.layer(id).and_then(|l| {
+            let local = self.doc.layer_matrix(l, frame).inverse()?.apply(point);
+            // On a bent frame, the fill goes where it's seen.
+            Some(match self.doc.layer_bend(l, frame) {
+                Some(bend) => {
+                    let area =
+                        l.elements_at(frame).iter().map(Element::bounds).reduce(Rect::union)?.expand(64.0);
+                    bend.unbend(local, area).unwrap_or(local)
+                }
+                None => local,
+            })
+        });
         match (local, self.doc.layer_mut(id)) {
             (Some(local), Some(layer)) => layer.fill_enclosed(frame, local, color, gap),
             _ => inkframe_core::FillResult::NotEnclosed,
@@ -1677,6 +1694,15 @@ impl Editor {
             self.doc.move_among_siblings(id, delta);
         }
     }
+}
+
+/// Where to look, in `layer`'s coordinates, for the point at rest that a
+/// skeleton bends onto each point of `element` (see `LayerBend::unbend`):
+/// the layer's drawing and the new shape, with room around them, as bones
+/// can carry a point a long way.
+fn unbend_area(layer: &Layer, frame: u32, element: &Element) -> Rect {
+    let drawn = layer.elements_at(frame).iter().map(Element::bounds).fold(element.bounds(), Rect::union);
+    drawn.expand(drawn.width().max(drawn.height()).max(200.0))
 }
 
 #[cfg(test)]

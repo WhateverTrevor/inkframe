@@ -55,7 +55,7 @@ fn bone_space(editor: &Editor, id: LayerId) -> Option<Affine> {
 /// Every bone of every skeleton showing in the timeline being edited:
 /// posed as on this frame for the Bone tool, at rest for Add Bone.
 fn drawn_bones(editor: &Editor, view: View) -> Vec<Drawn> {
-    let at_rest = editor.tool == Tool::AddBone;
+    let at_rest = editor.doc.rest_pose.0;
     let mut drawn = Vec::new();
     for layer in editor.layers().iter().filter(|l| l.visible && l.skeleton.is_some()) {
         let (Some(skeleton), Some(space)) = (&layer.skeleton, bone_space(editor, layer.id)) else { continue };
@@ -117,6 +117,9 @@ impl StageView {
         }
         let (alt, shift) = ui.input(|i| (i.modifiers.alt, i.modifiers.shift));
         let adding = editor.tool == Tool::AddBone;
+        // In rig setup the Bone tool moves bones at rest too, as Add Bone
+        // does, rather than posing them.
+        let rigging = adding || editor.doc.rest_pose.0;
         let to_bones = |editor: &Editor, skeleton: LayerId, p: Point| {
             bone_space(editor, skeleton).and_then(|m| m.inverse()).map_or(p, |m| m.apply(p))
         };
@@ -134,7 +137,7 @@ impl StageView {
                 .filter(|_| adding)
                 .and_then(|skeleton| picked_end(editor, view, skeleton).map(|end| (skeleton, end)))
                 .filter(|(_, end)| end.1.distance(press) <= GRAB * 1.5);
-            self.bone_drag = match (adding, hit) {
+            self.bone_drag = match (rigging, hit) {
                 _ if joined.is_some() => {
                     joined.map(|(skeleton, (start, _))| BoneDrag::New { skeleton, start, end: start })
                 }
@@ -156,6 +159,7 @@ impl StageView {
                     let last = to_bones(editor, d.skeleton, p);
                     Some(BoneDrag::Rest { skeleton: d.skeleton, bone: d.bone, part, last })
                 }
+                (true, None) if !adding => None,
                 (true, None) => editor.active_skeleton().map(|skeleton| {
                     let start = to_bones(editor, skeleton, p);
                     BoneDrag::New { skeleton, start, end: start }
@@ -387,6 +391,21 @@ fn draw_pins(painter: &egui::Painter, editor: &Editor, view: View, id: LayerId, 
             }
         }
     }
+}
+
+/// While in rig setup, a note saying so along the top of the stage (Add
+/// Bone has its own), as everything rigged shows at rest.
+pub(super) fn draw_setup_note(painter: &egui::Painter, editor: &Editor) {
+    let rigged = editor.layers().iter().any(|l| l.skeleton.is_some());
+    if !editor.rig_setup || editor.tool == Tool::AddBone || !rigged {
+        return;
+    }
+    let note = "Rig setup · skeletons at rest: draw, paint and rig here · View › Rig Setup to see the poses";
+    let area = painter.clip_rect();
+    let galley = painter.layout_no_wrap(note.to_owned(), FontId::proportional(12.0), Color32::WHITE);
+    let pill = Rect::from_min_size(area.left_top() + vec2(10.0, 10.0), galley.size() + vec2(20.0, 10.0));
+    painter.rect_filled(pill, pill.height() / 2.0, BONE.gamma_multiply(0.9));
+    painter.galley(pill.min + vec2(10.0, 5.0), galley, Color32::WHITE);
 }
 
 /// Picks a bone, selecting its skeleton's folder if another layer was.

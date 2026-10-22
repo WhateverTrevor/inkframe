@@ -13,6 +13,12 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Rig setup, and painting on poses
+
+- View › Rig Setup (⌥⌘B) shows skeletons at rest to draw, paint and rig
+  on. Off, the paint tools, the Paint Bucket and shapes drawn into a
+  bent layer land exactly where they're seen on the pose.
+
 ### Welded points
 
 - Points where shapes meet are shared: dragging one moves every shape's
