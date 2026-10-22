@@ -41,6 +41,8 @@
 //!   vine of leaves, a tapered swoosh, and a card framed with beads.
 //! * `INKFRAME_SCREENSHOT_TEXTURES=1` shows a wavy line inked flat, then with each line
 //!   texture: pencil, charcoal and chalk.
+//! * `INKFRAME_SCREENSHOT_PERSPECTIVE=1` shows a two-point perspective guide with a block
+//!   drawn to it.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -199,6 +201,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_TEXTURES").is_some() {
             textures_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_PERSPECTIVE").is_some() {
+            perspective_demo(editor);
         }
         if Self::pen_handles() {
             pen_handles_demo(editor);
@@ -1330,4 +1335,58 @@ fn textures_demo(editor: &mut Editor) {
         last = Some(id);
     }
     editor.select(last);
+}
+
+/// A two-point perspective guide, and a block drawn to it: its near corner
+/// upright, its two faces running off toward the vanishing points.
+fn perspective_demo(editor: &mut Editor) {
+    use inkframe_core::{
+        Color, Element, Path, Perspective, PerspectiveKind, Point, Segment, Shape, Stroke, Style, Transform,
+    };
+    let (w, h) = (editor.doc.width as f32, editor.doc.height as f32);
+    let guide = Perspective::new(PerspectiveKind::TwoPoint, w, h);
+    let (left, right) = (guide.points[0], guide.points[1]);
+    // The near corner, from the ground up; each face's far corner is part
+    // way toward its vanishing point.
+    let (foot, head) = (Point::new(960.0, 900.0), Point::new(960.0, 520.0));
+    let toward = |p: Point, vp: Point, t: f32| p + (vp - p) * t;
+    let face = |vp: Point, t: f32, colour: Color| {
+        let (far_foot, far_head) = (toward(foot, vp, t), toward(head, vp, t));
+        let points = [foot, far_foot, far_head, head];
+        Element {
+            shape: Shape::Path(Path {
+                start: points[0],
+                segments: points[1..].iter().map(|&to| Segment::Line { to }).collect(),
+                closed: true,
+            }),
+            style: Style {
+                fill: Some(colour),
+                stroke: Some(Stroke::new(Color::rgb(30, 30, 40), 4.0)),
+                gradient: None,
+            },
+        }
+    };
+    let roof = {
+        let (l, r) = (toward(head, left, 0.25), toward(head, right, 0.18));
+        // The back corner: where the lines from each far corner to the other
+        // vanishing point cross, near enough the sum of the two sides.
+        let back = l + (r - head);
+        Element {
+            shape: Shape::Path(Path {
+                start: head,
+                segments: [l, back, r].iter().map(|&to| Segment::Line { to }).collect(),
+                closed: true,
+            }),
+            style: Style {
+                fill: Some(Color::rgb(230, 120, 100)),
+                stroke: Some(Stroke::new(Color::rgb(30, 30, 40), 4.0)),
+                gradient: None,
+            },
+        }
+    };
+    let shapes =
+        vec![face(left, 0.25, Color::rgb(250, 220, 150)), face(right, 0.18, Color::rgb(220, 190, 130)), roof];
+    let id = editor.doc.add_layer("Block", shapes, 0, Transform::default());
+    editor.doc.perspective = Some(guide);
+    editor.select(Some(id));
 }

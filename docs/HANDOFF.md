@@ -817,6 +817,16 @@ after the Harmony features (palettes to master controllers).
     and strokes, not area fills. Inspector "Lines" combo + amount. Hook
     `INKFRAME_SCREENSHOT_TEXTURES=1`. Not yet: textures in SVG/Lottie
     (they export flat).
+107. Perspective guides: core `perspective.rs` (`Perspective{kind,
+    points}` on `Document::perspective`, optional; `new` puts points on
+    the stage; `move_point` keeps the horizon pair level; `directions`
+    (toward each VP, plus across/up by kind); `snap`). App
+    `stage/perspective.rs` (`handle_perspective` beside the rulers, in
+    stage pixels, main timeline only; `draw_perspective` 36 rays per VP +
+    horizon), Pen Shift uses `snap` via `PenPath::last_point`, View ›
+    Perspective Guide (`Command::SetPerspective`). Hook
+    `INKFRAME_SCREENSHOT_PERSPECTIVE=1`. Not yet: snapping the Pencil,
+    Line or shape tools; several guides at once.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)
