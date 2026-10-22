@@ -313,6 +313,9 @@ impl InkframeApp {
             if let Some(name) = AutoScreenshot::type_into() {
                 app.views.stage().type_into(&mut app.editor, &name);
             }
+            if AutoScreenshot::pen_handles() {
+                app.views.stage().pick_anchor(&app.editor, 0, 1);
+            }
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
             }

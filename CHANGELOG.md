@@ -13,6 +13,20 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Pen editing
+
+- Between paths, the Pen picks and drags the selected shape's existing
+  points and their handles, instead of starting a new path on them.
+- Alt-dragging a point (with the Pen or the Subselection tool) pulls new
+  curve handles out of it, turning a corner into a curve, as in Animate.
+
+### Envelope handles
+
+- Envelope now works as Animate's does: a point at each corner and in the
+  middle of each side, each with handles that shape the curve either side
+  of it (Alt-drag one to kink the side). Distort and Envelope bend a whole
+  layer without stepping inside it, so the other layers stay in view.
+
 ### Distort and Envelope
 
 - Modify › Transform › Distort puts a handle at each corner of the picked

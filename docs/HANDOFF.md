@@ -652,21 +652,37 @@ after the Harmony features (palettes to master controllers).
     snap_to_guides`, remembered in prefs. Hook
     `INKFRAME_SCREENSHOT_RULERS=1`. Not yet: snapping the pen, pencil or
     scale handles.
-94. Distort and Envelope: core `envelope.rs` (`Lattice`: a Bézier patch
-    over the shapes' box, 2×2 = bilinear Distort, 4×4 = Envelope, reusing
-    `warp::bernstein`; `bend` cuts each segment with `deform::subdivide`
-    and shares pencil-line widths along the pieces), app `envelope.rs`
-    (`LatticeKind`, `LatticeEdit` in `Editor::lattice`, `start_lattice`
-    steps inside and picks everything if nothing's picked,
-    `move_lattice_point` re-bends the originals via the new
-    `Editor::reshape_shapes`, `check_lattice` ends it on frame/tool/pick
-    changes; undo also ends it), `stage/lattice.rs` (`handle_lattice`
-    after the rulers in the stage's input; a press off the handles
-    finishes and falls through). Modify › Transform › Distort/Envelope;
-    Enter/Escape finish. Hook `INKFRAME_SCREENSHOT_ENVELOPE=1`. Not yet:
-    Envelope's tangent-style handles as in Animate (ours are a plain
-    control net), a lattice over a whole layer without stepping inside.
-
+94. Distort and Envelope: core `envelope.rs` (`Lattice`: the box's four
+    sides as Bézier curves, the inside filled in with a Coons patch;
+    Distort = 4 corners with straight sides (bilinear), Envelope = 8
+    points (corners, side middles) each followed by the two handles of the
+    curve to the next, 24 points clockwise from the top left;
+    `move_point(index, to, smooth)` takes a point's handles with it and
+    keeps a side-middle's handles in line unless Alt; `bend` cuts each
+    segment with `deform::subdivide` and shares pencil-line widths along
+    the pieces), app `envelope.rs` (`LatticeKind`, `LatticeEdit` in
+    `Editor::lattice`: picked shapes inside a layer, or the whole drawing
+    of the layer worked inside or selected, without stepping in;
+    `move_lattice_point` re-bends the originals via
+    `Editor::reshape_layer_shapes`; `check_lattice` ends it on
+    frame/tool/target/shape-count changes; undo also ends it),
+    `stage/lattice.rs` (`handle_lattice` after the rulers in the stage's
+    input; a press off the handles finishes and falls through; the
+    layer's own box and transform handles hide meanwhile). Modify ›
+    Transform › Distort/Envelope; Enter/Escape finish. Hook
+    `INKFRAME_SCREENSHOT_ENVELOPE=1`. Not yet: several layers at once;
+    adding points to an Envelope's sides as Animate allows by
+    subselecting.
+95. Pen point editing: between paths (`StageView::pen` is `None`), the Pen
+    picks the selected shape's points (`handle_pen` returns early on
+    `anchor_hit`; the click block in `handle_tools` also runs for it) and
+    drags points/handles through the Subselection's `EditAnchor` gesture
+    (`begin_anchor_edit`, shared by both tools). `EditAnchor::pull`
+    (Alt-drag on a point) uses `subselect::pull_handles` for symmetric new
+    handles. Starting a new path drops the picked point. Hook
+    `INKFRAME_SCREENSHOT_PEN_HANDLES=1` (`StageView::pick_anchor`). Not
+    yet: Animate's minus cursor (click a point with the Pen to delete it;
+    here Delete does that), Cmd as a temporary Subselection tool.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

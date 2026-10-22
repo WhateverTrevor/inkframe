@@ -1,5 +1,7 @@
 //! The handles of a Distort or Envelope on the stage (see `envelope.rs`):
-//! drag one to bend the shapes under it. Clicking or dragging anywhere
+//! drag one to bend the shapes under it. An Envelope's points have
+//! smaller handles on stalks, as the pen's do; Alt-dragging one of those
+//! moves it on its own, kinking the side. Clicking or dragging anywhere
 //! else leaves the shapes bent and carries on as a click there would.
 
 use egui::{Color32, CursorIcon, FontId, Pos2, Rect, StrokeKind, Vec2, vec2};
@@ -66,7 +68,8 @@ impl StageView {
         if let Some(pointer) = response.interact_pointer_pos()
             && let Some(to_local) = layer_matrix(editor).and_then(|m| m.inverse())
         {
-            editor.move_lattice_point(index, to_local.apply(view.to_local(pointer)));
+            let smooth = !ui.input(|i| i.modifiers.alt);
+            editor.move_lattice_point(index, to_local.apply(view.to_local(pointer)), smooth);
         }
         if response.drag_stopped() {
             self.lattice_drag = None;
@@ -89,36 +92,29 @@ impl StageView {
         let lattice = &edit.lattice;
         let on_screen = |p: Point| view.to_screen(m.apply(p));
 
-        // The box's edges as the lattice bends them.
-        let corners = lattice.bounds.corners();
+        // The box's edges as the handles have bent them.
         let mut outline = Vec::new();
-        for side in 0..4 {
-            let (a, b) = (corners[side], corners[(side + 1) % 4]);
-            outline.extend((0..24).map(|k| on_screen(lattice.map(a.lerp(b, k as f32 / 24.0)))));
+        for [a, b, c, d] in lattice.outline() {
+            outline.extend((0..16).map(|k| {
+                let t = k as f32 / 16.0;
+                let s = 1.0 - t;
+                on_screen(a * (s * s * s) + b * (3.0 * s * s * t) + c * (3.0 * s * t * t) + d * (t * t * t))
+            }));
         }
         painter.add(egui::Shape::closed_line(outline, (1.0, SELECTION)));
 
-        // Envelope's handles between the corners pull like a curve's, so
-        // they're joined up as a net to show which pulls where.
+        // Each Envelope handle on a stalk from its point, under the points.
         let points = handles(editor, view);
-        if lattice.columns > 2 || lattice.rows > 2 {
-            let net = (1.0, SELECTION.gamma_multiply(0.5));
-            for row in 0..lattice.rows {
-                for column in 0..lattice.columns {
-                    let i = row * lattice.columns + column;
-                    if column + 1 < lattice.columns {
-                        painter.line_segment([points[i], points[i + 1]], net);
-                    }
-                    if row + 1 < lattice.rows {
-                        painter.line_segment([points[i], points[i + lattice.columns]], net);
-                    }
-                }
+        for (i, at) in points.iter().enumerate() {
+            if let Some(point) = lattice.handle_of(i) {
+                painter.line_segment([points[point], *at], (1.0, SELECTION.gamma_multiply(0.6)));
             }
         }
         for (i, at) in points.iter().enumerate() {
-            let dragged = self.lattice_drag == Some(i);
-            let fill = if dragged { SELECTION } else { Color32::WHITE };
-            if lattice.is_corner(i) {
+            let fill = if self.lattice_drag == Some(i) { SELECTION } else { Color32::WHITE };
+            if lattice.handle_of(i).is_some() {
+                painter.circle(*at, HANDLE_SIZE / 2.0 - 1.5, fill, (1.0, SELECTION));
+            } else if lattice.is_corner(i) {
                 let square = Rect::from_center_size(*at, Vec2::splat(HANDLE_SIZE));
                 painter.rect_filled(square, 1.0, fill);
                 painter.rect_stroke(square, 1.0, (1.0, SELECTION), StrokeKind::Inside);
@@ -127,7 +123,10 @@ impl StageView {
             }
         }
 
-        let note = format!("{} · drag the handles · Enter or click away to finish", edit.kind.name());
+        let note = format!(
+            "{} · drag the handles (Alt: one side only) · Enter or click away to finish",
+            edit.kind.name()
+        );
         let area = painter.clip_rect();
         let galley = painter.layout_no_wrap(note, FontId::proportional(12.0), Color32::WHITE);
         let pill = Rect::from_min_size(area.left_top() + vec2(10.0, 10.0), galley.size() + vec2(20.0, 10.0));

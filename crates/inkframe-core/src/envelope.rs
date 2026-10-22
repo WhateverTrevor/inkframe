@@ -1,23 +1,24 @@
-//! Distort and Envelope, as in Animate's Free Transform tool: a lattice of
-//! handles over some shapes that bends them for good when it's dragged.
+//! Distort and Envelope, as in Animate's Free Transform tool: handles
+//! around some shapes that bend them for good when they're dragged.
 //!
 //! Distort has a handle at each corner of the shapes' box. Dragging one
 //! pulls that corner and stretches everything else to match, so a square
 //! can lean into a slanted card or narrow into a road running off into the
-//! distance. Envelope has a 4×4 lattice, the corners and the points between
-//! them, for bulging and bending: drag the middle of a side out to make
-//! that side bow.
+//! distance. Envelope has a point at each corner and in the middle of each
+//! side, and each point has handles that shape the curve either side of
+//! it, as the pen tool's do: drag the middle of a side out to make it bow,
+//! or a corner's handle to swing the side leaving it.
 //!
-//! Both are one Bézier patch over the box: a point of a shape goes to a
-//! blend of every handle, weighted by Bernstein polynomials across and down
-//! (as the free-form deformer in `warp.rs` does). With two handles each way
-//! the blend is the plain bilinear one Distort wants; with four it's a
-//! smooth bicubic surface, and the handles between the corners pull it
-//! like a curve's control points. At rest the lattice is evenly spaced, and
-//! an even lattice maps every point to itself.
+//! Either way the box's four sides become curves (straight ones for
+//! Distort), and the inside is filled in between them with a Coons patch:
+//! a point of a shape goes to the blend of the sides above and below it
+//! and the sides left and right of it, less the blend of the corners that
+//! was counted twice. With straight sides that's the plain bilinear map
+//! Distort wants. At rest the sides are the box's own edges, evenly
+//! parametrised, so every point stays where it is.
 //!
-//! Unlike the deformer, nothing is animated or kept: the lattice changes
-//! the shapes' points, and is gone once the edit is over. Shapes are cut
+//! Unlike the deformers, nothing is animated or kept: the handles change
+//! the shapes' points, and are gone once the edit is over. Shapes are cut
 //! into short pieces first, so straight edges can curve.
 
 use crate::anchor::{Anchor, anchors_from_path, path_from_anchors};
@@ -25,63 +26,136 @@ use crate::deform::subdivide;
 use crate::document::Element;
 use crate::geometry::{Point, Rect};
 use crate::shape::Shape;
-use crate::warp::bernstein;
 
-/// Handles of a Distort or an Envelope, over the box they bend.
+/// The handles of a Distort or an Envelope, round the box they bend.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lattice {
-    /// The box the lattice covers at rest.
+    /// The box the handles go round at rest.
     pub bounds: Rect,
-    /// Handles across and down (at least 2 each).
-    pub columns: usize,
-    pub rows: usize,
-    /// Where each handle is now, row by row from the top left.
+    /// Round the box clockwise from its top left. Distort: the four
+    /// corners. Envelope: each of its eight points (corners and the middles
+    /// of the sides), followed by the two handles of the curve on to the
+    /// next one: the point's way out, then the next point's way in.
     pub points: Vec<Point>,
+    /// Envelope, with points between the corners and handles on them.
+    curved: bool,
 }
 
 impl Lattice {
-    /// An even lattice of `columns`×`rows` handles over `bounds`, bending
-    /// nothing yet.
-    pub fn new(bounds: Rect, columns: usize, rows: usize) -> Self {
-        let (columns, rows) = (columns.clamp(2, 8), rows.clamp(2, 8));
-        let mut lattice = Self { bounds, columns, rows, points: Vec::new() };
-        lattice.points = (0..rows)
-            .flat_map(|row| (0..columns).map(move |column| (column, row)))
-            .map(|(column, row)| lattice.rest_point(column, row))
-            .collect();
-        lattice
-    }
-
     /// Distort's four corners.
     pub fn distort(bounds: Rect) -> Self {
-        Self::new(bounds, 2, 2)
+        Self { bounds, points: bounds.corners().to_vec(), curved: false }
     }
 
-    /// Envelope's sixteen handles.
+    /// Envelope's eight points with their handles, the sides straight.
     pub fn envelope(bounds: Rect) -> Self {
-        Self::new(bounds, 4, 4)
+        let [tl, tr, br, bl] = bounds.corners();
+        let ring = [tl, tl.lerp(tr, 0.5), tr, tr.lerp(br, 0.5), br, br.lerp(bl, 0.5), bl, bl.lerp(tl, 0.5)];
+        let points = (0..ring.len())
+            .flat_map(|k| {
+                let (a, b) = (ring[k], ring[(k + 1) % ring.len()]);
+                [a, a.lerp(b, 1.0 / 3.0), a.lerp(b, 2.0 / 3.0)]
+            })
+            .collect();
+        Self { bounds, points, curved: true }
     }
 
-    /// Handle `(column, row)` at rest.
-    pub fn rest_point(&self, column: usize, row: usize) -> Point {
-        let u = column as f32 / (self.columns - 1) as f32;
-        let v = row as f32 / (self.rows - 1) as f32;
-        Point::new(self.bounds.min.x + u * self.bounds.width(), self.bounds.min.y + v * self.bounds.height())
+    /// Whether this is an Envelope rather than a Distort.
+    pub fn is_envelope(&self) -> bool {
+        self.curved
+    }
+
+    /// The same kind of lattice, untouched.
+    fn at_rest(&self) -> Self {
+        if self.curved { Self::envelope(self.bounds) } else { Self::distort(self.bounds) }
     }
 
     /// Whether every handle is where it started.
     pub fn is_at_rest(&self) -> bool {
-        self.points.iter().enumerate().all(|(i, p)| {
-            let rest = self.rest_point(i % self.columns, i / self.columns);
-            p.distance(rest) < 1e-4
-        })
+        self.points.iter().zip(&self.at_rest().points).all(|(p, rest)| p.distance(*rest) < 1e-4)
     }
 
-    /// Whether the handle at `index` is a corner of the lattice, which
-    /// Envelope draws square and the others round.
+    /// For one of Envelope's handles, the point it belongs to (both by
+    /// their place in [`points`](Self::points)); `None` for a point.
+    pub fn handle_of(&self, index: usize) -> Option<usize> {
+        if !self.curved {
+            return None;
+        }
+        match index % 3 {
+            0 => None,
+            1 => Some(index - 1),
+            _ => Some((index + 1) % self.points.len()),
+        }
+    }
+
+    /// Whether `index` is a corner, which is drawn square; the middles of
+    /// the sides are round, and handles smaller.
     pub fn is_corner(&self, index: usize) -> bool {
-        let (column, row) = (index % self.columns, index / self.columns);
-        (column == 0 || column + 1 == self.columns) && (row == 0 || row + 1 == self.rows)
+        !self.curved || index % 6 == 0
+    }
+
+    /// Moves handle or point `index` to `to`. A point takes its handles
+    /// with it. The handles of a point in the middle of a side stay in line,
+    /// so the side goes through it smoothly, unless `smooth` is off (Alt,
+    /// as with the pen): then each moves on its own and the side can kink.
+    pub fn move_point(&mut self, index: usize, to: Point, smooth: bool) {
+        let count = self.points.len();
+        if index >= count {
+            return;
+        }
+        if !self.curved {
+            self.points[index] = to;
+            return;
+        }
+        match self.handle_of(index) {
+            None => {
+                let delta = to - self.points[index];
+                for i in [index, index + 1, (index + count - 1) % count] {
+                    self.points[i] = self.points[i] + delta;
+                }
+            }
+            Some(point) => {
+                self.points[index] = to;
+                let middle = point % 6 == 3;
+                if smooth && middle {
+                    // The other handle turns to point the opposite way,
+                    // keeping its own length.
+                    let other = if index == point + 1 { (point + count - 1) % count } else { point + 1 };
+                    let at = self.points[point];
+                    let length = self.points[other].distance(at);
+                    let away = at - to;
+                    if away.length() > 1e-4 {
+                        self.points[other] = at + away * (length / away.length());
+                    }
+                }
+            }
+        }
+    }
+
+    /// The curve along each side, as Bézier segments clockwise from the
+    /// top left: one a side for Distort, two for Envelope.
+    fn segments(&self) -> Vec<[Point; 4]> {
+        let count = self.points.len();
+        if self.curved {
+            (0..count / 3)
+                .map(|k| {
+                    let i = k * 3;
+                    [self.points[i], self.points[i + 1], self.points[i + 2], self.points[(i + 3) % count]]
+                })
+                .collect()
+        } else {
+            (0..4)
+                .map(|k| {
+                    let (a, b) = (self.points[k], self.points[(k + 1) % 4]);
+                    [a, a.lerp(b, 1.0 / 3.0), a.lerp(b, 2.0 / 3.0), b]
+                })
+                .collect()
+        }
+    }
+
+    /// The box's outline as the handles have bent it, as Bézier segments.
+    pub fn outline(&self) -> Vec<[Point; 4]> {
+        self.segments()
     }
 
     /// Where the point `p` of a shape goes. Points outside the box carry
@@ -89,22 +163,32 @@ impl Lattice {
     pub fn map(&self, p: Point) -> Point {
         let u = (p.x - self.bounds.min.x) / self.bounds.width().max(1e-3);
         let v = (p.y - self.bounds.min.y) / self.bounds.height().max(1e-3);
-        let across = bernstein(self.columns - 1, u);
-        let down = bernstein(self.rows - 1, v);
-        let mut to = Point::ZERO;
-        for (row, wv) in down.iter().enumerate() {
-            for (column, wu) in across.iter().enumerate() {
-                to = to + self.points[row * self.columns + column] * (wu * wv);
-            }
-        }
-        to
+        let segments = self.segments();
+        let per_side = segments.len() / 4;
+        // Side `n` (top, right, bottom, left) at `t` from where it starts.
+        let side = |n: usize, t: f32| {
+            let s = t * per_side as f32;
+            let piece = (s.floor().max(0.0) as usize).min(per_side - 1);
+            let [a, b, c, d] = segments[n * per_side + piece];
+            cubic(a, b, c, d, s - piece as f32)
+        };
+        // The bottom runs right to left and the left bottom to top.
+        let (top, bottom) = (side(0, u), side(2, 1.0 - u));
+        let (left, right) = (side(3, 1.0 - v), side(1, v));
+        let corner = |n: usize| segments[n * per_side][0];
+        let (tl, tr, br, bl) = (corner(0), corner(1), corner(2), corner(3));
+        let rows = top * (1.0 - v) + bottom * v;
+        let columns = left * (1.0 - u) + right * u;
+        let corners =
+            tl * ((1.0 - u) * (1.0 - v)) + tr * (u * (1.0 - v)) + bl * ((1.0 - u) * v) + br * (u * v);
+        rows + columns - corners
     }
 
     /// The shape bent by the lattice, or `None` for one that can't be
     /// (a picture, a painting, text). A pencil line keeps its widths along
     /// it; anything else becomes a path.
     pub fn bend(&self, element: &Element) -> Option<Element> {
-        if !element.is_reshapable() || self.points.len() != self.columns * self.rows {
+        if !element.is_reshapable() || self.points.len() != self.at_rest().points.len() {
             return None;
         }
         // Short enough pieces that a straight edge pulled sideways comes out
@@ -131,6 +215,11 @@ impl Lattice {
         };
         Some(Element { shape, style: element.style.clone() })
     }
+}
+
+fn cubic(a: Point, b: Point, c: Point, d: Point, t: f32) -> Point {
+    let s = 1.0 - t;
+    a * (s * s * s) + b * (3.0 * s * s * t) + c * (3.0 * s * t * t) + d * (t * t * t)
 }
 
 /// Cuts an outline into pieces about `piece` long, one segment at a time so
@@ -227,20 +316,48 @@ mod tests {
     }
 
     #[test]
-    fn envelope_bows_a_side_smoothly() {
+    fn envelope_bows_a_side_through_its_middle_point() {
         let mut lattice = Lattice::envelope(bounds());
-        // Push the two handles in the middle of the top edge up by 30.
-        for i in [1, 2] {
-            lattice.points[i].y -= 30.0;
-        }
+        // The point in the middle of the top, 30 up, its handles with it.
+        lattice.move_point(3, Point::new(0.0, -80.0), true);
         let bent = lattice.bend(&square()).unwrap();
         let points = outline(&bent);
         let top_middle = points.iter().filter(|p| p.x.abs() < 3.0).map(|p| p.y).fold(f32::MAX, f32::min);
-        // A cubic with its middle handles 30 up peaks 3/4 of the way there.
-        assert!((top_middle - (-50.0 - 22.5)).abs() < 0.5, "{top_middle}");
-        // The corners stay put, and the bottom doesn't move.
+        assert!((top_middle + 80.0).abs() < 0.5, "{top_middle}");
+        // Halfway down, the bulge is halfway gone; the corners and the
+        // bottom don't move.
+        assert!((lattice.map(Point::new(0.0, 0.0)).y + 15.0).abs() < 1e-3);
         assert!(points.iter().any(|p| p.distance(Point::new(-50.0, -50.0)) < 1e-2));
         assert!((bent.shape.bounds().max.y - 50.0).abs() < 1e-2);
+    }
+
+    #[test]
+    fn a_middle_points_handles_stay_in_line_unless_told_not_to() {
+        let mut lattice = Lattice::envelope(bounds());
+        // The top middle point's way out (toward the top right corner).
+        assert_eq!(lattice.handle_of(4), Some(3));
+        lattice.move_point(4, Point::new(16.0, -60.0), true);
+        let (at, way_in) = (lattice.points[3], lattice.points[2]);
+        let (out, inn) = (lattice.points[4] - at, way_in - at);
+        assert!((out.x * inn.y - out.y * inn.x).abs() < 1e-2, "opposite ways: {out:?} {inn:?}");
+        assert!((inn.length() - 50.0 / 3.0).abs() < 1e-3, "keeps its own length");
+        // With Alt, the other handle stays where it was.
+        lattice.move_point(4, Point::new(16.0, -40.0), false);
+        assert_eq!(lattice.points[2], way_in);
+    }
+
+    #[test]
+    fn a_corners_handle_swings_the_side_leaving_it() {
+        let mut lattice = Lattice::envelope(bounds());
+        // The top left corner's way out, pulled up: the top bulges near
+        // that corner, and the corner itself stays.
+        lattice.move_point(1, Point::new(-33.0, -80.0), true);
+        assert!(lattice.map(Point::new(-40.0, -50.0)).y < -55.0);
+        assert!(lattice.map(Point::new(-50.0, -50.0)).distance(Point::new(-50.0, -50.0)) < 1e-3);
+        assert!(
+            lattice.map(Point::new(40.0, -50.0)).distance(Point::new(40.0, -50.0)) < 1e-3,
+            "the far half stays"
+        );
     }
 
     #[test]
@@ -255,7 +372,7 @@ mod tests {
             style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
         let mut lattice = Lattice::envelope(Rect::from_center_size(Point::ZERO, 100.0, 10.0));
-        lattice.points[5].y -= 20.0;
+        lattice.move_point(3, Point::new(0.0, -25.0), true);
         let Some(Element { shape: Shape::Line { path, widths }, .. }) = lattice.bend(&line) else {
             panic!("still a pencil line");
         };
