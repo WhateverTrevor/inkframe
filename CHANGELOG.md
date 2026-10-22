@@ -13,6 +13,11 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Perspective guides
+
+- View › Perspective Guide: one-, two- or three-point, with draggable
+  vanishing points. Shift with the Pen snaps lines to it.
+
 ### Line textures
 
 - A vector layer's lines can be inked with a paper grain (Pencil,

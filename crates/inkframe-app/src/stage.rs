@@ -9,6 +9,7 @@ mod bones;
 mod gradient_handles;
 mod inside;
 mod lattice;
+mod perspective;
 mod rulers;
 
 use egui::{Align2, Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
@@ -863,6 +864,9 @@ pub struct StageView {
     lattice_drag: Option<usize>,
     /// A skeleton's bone being drawn, moved or posed (see `bones.rs`).
     bone_drag: Option<bones::BoneDrag>,
+    /// A perspective guide's vanishing point being dragged (see
+    /// `perspective.rs`).
+    perspective_drag: Option<usize>,
     /// ⌘ was held as the current drag began: a welded point comes away
     /// from the shapes it's welded to.
     unweld: bool,
@@ -891,6 +895,7 @@ impl Default for StageView {
             lattice_drag: None,
             bone_drag: None,
             unweld: false,
+            perspective_drag: None,
         }
     }
 }
@@ -1040,7 +1045,9 @@ impl StageView {
         // the text; the tools get everything else.
         let pointer_on_text = self.handle_text_editing(ui, &response, editor, view);
         // Rulers and guides first: they're over everything, at the edges.
-        let on_guide = !pointer_on_text && self.handle_rulers(ui, &response, editor, stage_view);
+        let on_guide = !pointer_on_text
+            && (self.handle_rulers(ui, &response, editor, stage_view)
+                || self.handle_perspective(ui, &response, editor, stage_view));
         let pointer_on_text = pointer_on_text || on_guide;
         // A Distort or Envelope's handles, then a gradient's: they sit on
         // top of the shapes.
@@ -1117,6 +1124,7 @@ impl StageView {
         self.draw_lattice(ui, &overlay, &response, editor, view);
         self.draw_bones(ui, &overlay, &response, editor, view);
         bones::draw_setup_note(&overlay, editor);
+        self.draw_perspective(ui, &overlay, &response, editor, stage_view);
         self.draw_rulers(ui, &overlay, editor, stage_view);
         self.guide_cursor(ui, &response, editor, stage_view);
         asset_drop(ui, &overlay, &response, editor, stage_view);
@@ -2644,7 +2652,17 @@ impl StageView {
             match &mut self.pen {
                 Some(pen) if pen.can_close_at(p, tolerance) => return self.finish_path(editor, true),
                 Some(pen) if pen.is_on_last(p, tolerance) => return self.finish_path(editor, false),
-                Some(pen) => pen.add_anchor(p, shift),
+                // With a perspective guide, Shift snaps to its directions
+                // rather than to 45° steps.
+                Some(pen) => match editor
+                    .doc
+                    .perspective
+                    .as_ref()
+                    .filter(|_| shift && editor.timeline() == TimelineId::Main)
+                {
+                    Some(guide) => pen.add_anchor(guide.snap(pen.last_point(), p), false),
+                    None => pen.add_anchor(p, shift),
+                },
                 None => {
                     self.anchor_selection = None;
                     self.pen = Some(PenPath::new(p));
@@ -5770,5 +5788,26 @@ mod tests {
         let at = screen(&h, 650.0, 500.0);
         click(&mut h, at);
         assert_eq!(painted_at(&h, 650, 500)[3], 255);
+    }
+
+    #[test]
+    fn shift_with_the_pen_snaps_to_the_perspective_guide() {
+        let mut editor = Editor::new(Document::default());
+        editor.doc.perspective =
+            Some(inkframe_core::Perspective::new(inkframe_core::PerspectiveKind::OnePoint, 1920.0, 1080.0));
+        editor.tool = Tool::Pen;
+        let mut h = harness(editor);
+        let vp = h.state().1.doc.perspective.as_ref().unwrap().points[0];
+        let (first, rough) = (screen(&h, 400.0, 900.0), screen(&h, 700.0, 640.0));
+        click(&mut h, first);
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+        click(&mut h, rough);
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+        h.run();
+        let anchors = h.state().0.pen.as_ref().expect("drawing a path").anchors().to_vec();
+        let (start, next) = (anchors[0].point, anchors[1].point);
+        let (a, b) = (next - start, vp - start);
+        let sine = (a.x * b.y - a.y * b.x) / (a.length() * b.length());
+        assert!(sine.abs() < 1e-3, "toward the vanishing point: {next:?}");
     }
 }

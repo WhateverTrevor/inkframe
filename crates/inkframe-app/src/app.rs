@@ -122,6 +122,9 @@ enum Command {
     // Rulers and guides (see `stage/rulers.rs`).
     ToggleRulers,
     ToggleRigSetup,
+    /// Lays a perspective guide of this kind over the stage, or takes it
+    /// away (see `perspective.rs` in the core).
+    SetPerspective(Option<inkframe_core::PerspectiveKind>),
     ToggleGuides,
     ToggleLockGuides,
     ToggleSnapToGuides,
@@ -875,6 +878,17 @@ impl InkframeApp {
             Command::SwapSymbol => self.swap.open(editor),
             Command::ToggleRulers => editor.show_rulers = !editor.show_rulers,
             Command::ToggleRigSetup => editor.rig_setup = !editor.rig_setup,
+            Command::SetPerspective(kind) => {
+                let (w, h) = (editor.doc.width as f32, editor.doc.height as f32);
+                editor.doc.perspective = match (kind, editor.doc.perspective.take()) {
+                    (None, _) => None,
+                    (Some(kind), Some(mut guide)) => {
+                        guide.set_kind(kind, w, h);
+                        Some(guide)
+                    }
+                    (Some(kind), None) => Some(inkframe_core::Perspective::new(kind, w, h)),
+                };
+            }
             Command::ToggleGuides => editor.show_guides = !editor.show_guides,
             Command::ToggleLockGuides => editor.lock_guides = !editor.lock_guides,
             Command::ToggleSnapToGuides => editor.snap_to_guides = !editor.snap_to_guides,
@@ -1467,6 +1481,18 @@ impl InkframeApp {
                 if toggle(ui, self.editor.rig_setup, "Rig Setup (Skeletons at Rest)", shortcuts::RIG_SETUP) {
                     toggled = Some(Command::ToggleRigSetup);
                 }
+                ui.menu_button("Perspective Guide", |ui| {
+                    let current = self.editor.doc.perspective.as_ref().map(|g| g.kind);
+                    let mut options = vec![(None, "None")];
+                    options.extend(inkframe_core::PerspectiveKind::ALL.map(|k| (Some(k), k.label())));
+                    for (kind, label) in options {
+                        if ui.add(egui::Button::new(label).selected(current == kind)).clicked() {
+                            toggled = Some(Command::SetPerspective(kind));
+                            ui.close();
+                        }
+                    }
+                    ui.weak("Drag its vanishing points on the stage.\nShift with the Pen snaps lines to it.");
+                });
                 ui.menu_button("Guides", |ui| {
                     let editor = &self.editor;
                     let toggles = [

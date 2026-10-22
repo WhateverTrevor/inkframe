@@ -28,6 +28,11 @@ impl PenPath {
         self.dragging
     }
 
+    /// Where the newest anchor is.
+    pub fn last_point(&self) -> Point {
+        self.last().point
+    }
+
     fn last(&self) -> &Anchor {
         self.anchors.last().expect("a pen path always has at least one anchor")
     }

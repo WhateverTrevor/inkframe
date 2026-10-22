@@ -86,6 +86,9 @@ pub struct Document {
     /// Guide lines dragged out of the rulers (see `ruler_guides.rs`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ruler_guides: Vec<crate::RulerGuide>,
+    /// A perspective guide over the stage (see `perspective.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub perspective: Option<crate::Perspective>,
     /// Plain colours, as the Swatches panel saved them before there was a
     /// palette; loading makes each a swatch.
     #[serde(default, rename = "swatches", skip_serializing)]
@@ -354,6 +357,7 @@ impl Default for Document {
             stack_by_depth: false,
             library_folders: Vec::new(),
             ruler_guides: Vec::new(),
+            perspective: None,
             old_swatches: Vec::new(),
             next_canvas_id: 1,
         }
