@@ -704,7 +704,45 @@ fn pins_of(drawing: &crate::Drawing) -> Vec<ShapeBones> {
             }
         }
     }
+    weld_pins(&drawing.shown(), &mut pins);
     pins
+}
+
+/// Pins carry across welds (see `weld.rs`): a point welded to a pinned
+/// point is pinned to the same bone, unless it's pinned already, so two
+/// shapes joined there stay joined when the bones pull them apart.
+fn weld_pins(shown: &[Element], pins: &mut [ShapeBones]) {
+    let mut carried: Vec<(usize, usize, usize)> = Vec::new();
+    for (i, pin) in pins.iter().enumerate() {
+        let Some(element) = shown.get(i) else { continue };
+        let anchors = element.shape.to_anchors().0;
+        let bone_of = |a: usize| match pin {
+            ShapeBones::Whole(bone) => Some(*bone),
+            ShapeBones::Points(points) => points.get(a).copied().flatten(),
+            ShapeBones::Layer => None,
+        };
+        for (a, anchor) in anchors.iter().enumerate() {
+            let Some(bone) = bone_of(a) else { continue };
+            for (other, point) in crate::welded_at(shown, anchor.point, Some(i)) {
+                carried.push((other, point, bone));
+            }
+        }
+    }
+    for (other, point, bone) in carried {
+        let count = shown[other].shape.to_anchors().0.len();
+        let pin = &mut pins[other];
+        if matches!(pin, ShapeBones::Whole(_)) {
+            continue;
+        }
+        if *pin == ShapeBones::Layer {
+            *pin = ShapeBones::Points(vec![None; count]);
+        }
+        if let ShapeBones::Points(points) = pin
+            && let Some(slot) = points.get_mut(point)
+        {
+            slot.get_or_insert(bone);
+        }
+    }
 }
 
 impl crate::Document {
@@ -1167,5 +1205,26 @@ mod tests {
         assert!(swing(12) < -5.0, "lags behind as the arm swings: {}", swing(12));
         assert!(swing(200).abs() < 0.5, "settled long after: {}", swing(200));
         assert!(!skeleton.is_at_rest(200), "a skeleton that ever moves may still be swinging");
+    }
+
+    #[test]
+    fn pins_carry_to_welded_points_so_shapes_stay_joined() {
+        let (mut doc, folder, layer) = rigged_bar();
+        doc.layer_mut(folder).unwrap().skeleton.as_mut().unwrap().bones[1].turn.set(0, 90.0);
+        // A second box sharing the bar's right edge (at x 100 in the bar's
+        // coordinates), pinned whole to the upper arm; the bar's right end
+        // is welded to it, so it follows the upper arm too.
+        let style = crate::Style { fill: Some(crate::Color::BLACK), stroke: None, gradient: None };
+        let cap = Element { shape: Shape::Rect { width: 20.0, height: 10.0, corner_radius: 0.0 }, style }
+            .transformed(Affine::translate(Point::new(110.0, 0.0)))
+            .unwrap();
+        let drawing = &mut doc.layer_mut(layer).unwrap().drawings[0];
+        drawing.elements.push(cap);
+        drawing.bone_points.push(BonePoints { colour_art: false, element: 1, anchors: None, bone: 0 });
+        let points = outline_of(&doc, layer, 0);
+        assert!(
+            points.iter().any(|p| p.distance(Point::new(100.0, -5.0)) < 1e-2),
+            "the welded end stays with the cap"
+        );
     }
 }

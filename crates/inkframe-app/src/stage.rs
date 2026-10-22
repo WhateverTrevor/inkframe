@@ -263,6 +263,14 @@ enum Gesture {
         pull: bool,
         start: Vec<Anchor>,
         closed: bool,
+        /// The points of other shapes welded to a point being moved (see
+        /// `weld.rs` in the core), which go with it: each shape's place, the
+        /// point's place in it, and the shape's points and closedness as
+        /// they were when the drag began.
+        welds: Vec<(usize, usize, Vec<Anchor>, bool)>,
+        /// Points of other shapes the dragged point snaps onto, welding to
+        /// them, in local coordinates.
+        snaps: Vec<Point>,
         /// Where the pointer grabbed, in local coordinates.
         grab: Point,
         to_local: Affine,
@@ -855,6 +863,9 @@ pub struct StageView {
     lattice_drag: Option<usize>,
     /// A skeleton's bone being drawn, moved or posed (see `bones.rs`).
     bone_drag: Option<bones::BoneDrag>,
+    /// ⌘ was held as the current drag began: a welded point comes away
+    /// from the shapes it's welded to.
+    unweld: bool,
 }
 
 impl Default for StageView {
@@ -879,6 +890,7 @@ impl Default for StageView {
             guide_drag: None,
             lattice_drag: None,
             bone_drag: None,
+            unweld: false,
         }
     }
 }
@@ -1170,6 +1182,7 @@ impl StageView {
             // points, and those points matter when drawing precisely.
             let press = ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos());
             let space_held = ui.input(|i| i.key_down(egui::Key::Space));
+            self.unweld = ui.input(|i| i.modifiers.command);
             if let Some(press) = press {
                 self.gesture = self.begin_gesture(editor, press, view, space_held, shift, alt);
             }
@@ -1356,11 +1369,52 @@ impl StageView {
                     let id = layer.id;
                     editor.doc.set_pivot(id, snap.unwrap_or(local));
                 }
-                Some(Gesture::EditAnchor { target, part, pull, start, closed, grab, to_local }) => {
+                Some(Gesture::EditAnchor {
+                    target,
+                    part,
+                    pull,
+                    start,
+                    closed,
+                    welds,
+                    snaps,
+                    grab,
+                    to_local,
+                }) => {
                     // Move the part by however far the pointer has moved, so
                     // grabbing slightly off-center doesn't make it jump.
                     let local = to_local.apply(p);
-                    let goal = part.position(&start[target.index]) + (local - *grab);
+                    let mut goal = part.position(&start[target.index]) + (local - *grab);
+                    // A point dragged onto another shape's point lands
+                    // exactly on it, welding them.
+                    if *part == AnchorPart::Point && !*pull {
+                        // The pointer's reach on screen, in the layer's units.
+                        let near = ANCHOR_HIT / view.zoom * to_local.average_scale();
+                        if let Some(snap) = snaps
+                            .iter()
+                            .copied()
+                            .filter(|s| s.distance(goal) <= near)
+                            .min_by(|a, b| a.distance(goal).total_cmp(&b.distance(goal)))
+                        {
+                            goal = snap;
+                        }
+                        // Points welded to it go the same way.
+                        let delta = goal - start[target.index].point;
+                        for (element, index, anchors, closed) in welds.iter() {
+                            let moved = move_part(
+                                anchors,
+                                *index,
+                                AnchorPart::Point,
+                                anchors[*index].point + delta,
+                                false,
+                            );
+                            if let (Some(shape), Some(path)) = (
+                                editor.element_mut(target.layer, *element),
+                                path_from_anchors(&moved, *closed),
+                            ) {
+                                shape.shape = Shape::Path(path);
+                            }
+                        }
+                    }
                     let anchors = if *pull {
                         pull_handles(start, target.index, goal)
                     } else {
@@ -2079,9 +2133,43 @@ impl StageView {
         self.anchor_selection = Some(target);
         let layer = editor.doc.layer(target.layer)?;
         let to_local = editor.doc.layer_matrix(layer, editor.frame).inverse()?;
-        let (start, closed) = layer.elements_at(editor.frame).get(target.element)?.shape.to_anchors();
+        let elements = layer.elements_at(editor.frame);
+        let (start, closed) = elements.get(target.element)?.shape.to_anchors();
         let pull = alt && part == AnchorPart::Point;
-        Some(Gesture::EditAnchor { target, part, pull, start, closed, grab: to_local.apply(p), to_local })
+        // Moving a point takes the points welded to it along, unless ⌘ was
+        // held to part it from them; it can snap onto any other point.
+        let welded = inkframe_core::welded_to(elements, target.element, target.index);
+        let welds = if part == AnchorPart::Point && !pull && !self.unweld {
+            welded
+                .iter()
+                .filter_map(|&(element, index)| {
+                    let (anchors, closed) = elements.get(element)?.shape.to_anchors();
+                    Some((element, index, anchors, closed))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let snaps = elements
+            .iter()
+            .enumerate()
+            .filter(|(i, e)| {
+                *i != target.element && e.is_reshapable() && !matches!(e.shape, Shape::Line { .. })
+            })
+            .flat_map(|(_, e)| e.shape.to_anchors().0.into_iter().map(|a| a.point))
+            .filter(|p| p.distance(start[target.index].point) > inkframe_core::WELD_DISTANCE)
+            .collect();
+        Some(Gesture::EditAnchor {
+            target,
+            part,
+            pull,
+            start,
+            closed,
+            welds,
+            snaps,
+            grab: to_local.apply(p),
+            to_local,
+        })
     }
 
     /// Where a Pen click at `pointer` would add a point to the selected
@@ -2188,7 +2276,9 @@ impl StageView {
         let to_stage = editor.doc.layer_matrix(layer, editor.frame);
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
 
-        for (element, e) in layer.elements_at(editor.frame).iter().enumerate() {
+        let elements = layer.elements_at(editor.frame);
+        let welded = inkframe_core::welded_points(elements);
+        for (element, e) in elements.iter().enumerate() {
             let (anchors, closed) = e.shape.to_anchors();
             if let Some(path) = path_from_anchors(&anchors, closed) {
                 painter.line(path.flatten().into_iter().map(screen).collect(), (1.0, SELECTION));
@@ -2208,6 +2298,11 @@ impl StageView {
                 let square = Rect::from_center_size(point, Vec2::splat(7.0));
                 painter.rect_filled(square, 0.0, if selected { SELECTION } else { Color32::WHITE });
                 painter.rect_stroke(square, 0.0, (1.0, SELECTION), StrokeKind::Middle);
+                // A welded point: a dot inside, as it's one point of several
+                // shapes.
+                if welded.get(element).and_then(|w| w.get(index)).copied().unwrap_or(false) {
+                    painter.circle_filled(point, 1.8, if selected { Color32::WHITE } else { SELECTION });
+                }
             }
         }
     }
@@ -5552,5 +5647,76 @@ mod tests {
         let (start, end) = h.state().1.skeleton(skeleton).unwrap().posed_ends(0, 0).unwrap();
         assert!(start.distance(Point::new(300.0, 400.0)) < 2.0, "{start:?}");
         assert!(end.distance(Point::new(440.0, 400.0)) < 3.0, "stretched, not turned: {end:?}");
+    }
+
+    /// The selected box, and a second box in the same drawing sharing its
+    /// right edge (x 100 in the layer, 500 on the stage), with the
+    /// Subselection tool.
+    fn welded_boxes_harness() -> (Harness<'static, State>, LayerId) {
+        let (mut editor, id) = editor_with_selected_box();
+        let mut other = editor.doc.layer(id).unwrap().elements_at(0)[0].clone();
+        other = other.transformed(Affine::translate(Point::new(200.0, 0.0))).unwrap();
+        editor.doc.layer_mut(id).unwrap().elements_at_mut(0).push(other);
+        editor.tool = Tool::Subselect;
+        (harness(editor), id)
+    }
+
+    fn corners(h: &Harness<'_, State>, id: LayerId, element: usize) -> Vec<Point> {
+        let shape = &h.state().1.doc.layer(id).unwrap().drawings[0].elements[element].shape;
+        shape.to_anchors().0.into_iter().map(|a| a.point).collect()
+    }
+
+    #[test]
+    fn dragging_a_welded_point_moves_both_shapes() {
+        let (mut h, id) = welded_boxes_harness();
+        let shared = screen(&h, 500.0, 300.0);
+        let target = screen(&h, 530.0, 250.0);
+        drag(&mut h, shared, &[shared + vec2(5.0, -5.0), target]);
+        let moved = Point::new(130.0, -150.0);
+        assert!(corners(&h, id, 0).iter().any(|p| p.distance(moved) < 3.0), "{:?}", corners(&h, id, 0));
+        assert!(corners(&h, id, 1).iter().any(|p| p.distance(moved) < 3.0), "{:?}", corners(&h, id, 1));
+        // Still exactly together.
+        let a = corners(&h, id, 0).into_iter().find(|p| p.distance(moved) < 3.0).unwrap();
+        assert!(corners(&h, id, 1).iter().any(|p| p.distance(a) < 1e-3));
+    }
+
+    #[test]
+    fn command_dragging_a_welded_point_parts_it() {
+        let (mut h, id) = welded_boxes_harness();
+        let shared = screen(&h, 500.0, 300.0);
+        let target = screen(&h, 530.0, 250.0);
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
+        drag(&mut h, shared, &[shared + vec2(5.0, -5.0), target]);
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+        h.run();
+        let moved = Point::new(130.0, -150.0);
+        let both = [corners(&h, id, 0), corners(&h, id, 1)];
+        let movers = both.iter().filter(|c| c.iter().any(|p| p.distance(moved) < 3.0)).count();
+        assert_eq!(movers, 1, "only one shape's point moved");
+    }
+
+    #[test]
+    fn dropping_a_point_near_another_welds_them() {
+        let (mut editor, id) = editor_with_selected_box();
+        // A small box off to the right, its top left corner at (150, -100).
+        let mut other = editor.doc.layer(id).unwrap().elements_at(0)[0].clone();
+        other = other.transformed(Affine::scale(0.2, 0.2)).unwrap();
+        other = other.transformed(Affine::translate(Point::new(170.0, -80.0))).unwrap();
+        editor.doc.layer_mut(id).unwrap().elements_at_mut(0).push(other);
+        editor.tool = Tool::Subselect;
+        let mut h = harness(editor);
+        // The big box's top right corner, dropped a little short of it.
+        let corner = screen(&h, 500.0, 300.0);
+        let near = screen(&h, 549.0, 301.0);
+        drag(&mut h, corner, &[corner + vec2(5.0, 0.0), near]);
+        assert!(
+            corners(&h, id, 0).iter().any(|p| p.distance(Point::new(150.0, -100.0)) < 1e-3),
+            "{:?}",
+            corners(&h, id, 0)
+        );
+        assert_eq!(
+            inkframe_core::welded_to(h.state().1.doc.layer(id).unwrap().elements_at(0), 1, 0).len(),
+            1
+        );
     }
 }

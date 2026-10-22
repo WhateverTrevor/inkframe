@@ -28,6 +28,9 @@
 //! * `INKFRAME_SCREENSHOT_DYNAMICS=1` shows that character a few frames into a quick turn:
 //!   a ponytail with dynamics trailing behind, the body squashed keeping its area, and the
 //!   upper arm's limits.
+//! * `INKFRAME_SCREENSHOT_WELDS=1` shows welded points: a house of three shapes sharing
+//!   corners, picked with the Subselection tool, and a sleeve pinned to the upper arm that
+//!   stays joined to the forearm at the elbow as the arm bends.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -171,6 +174,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_DYNAMICS").is_some() {
             dynamics_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_WELDS").is_some() {
+            welds_demo(editor);
         }
         if Self::pen_handles() {
             pen_handles_demo(editor);
@@ -999,4 +1005,63 @@ fn dynamics_demo(editor: &mut Editor) {
     }
     editor.frame = 6;
     editor.selected_bone = Some(2);
+}
+
+/// Welded points: a house drawn as a wall, a roof and a door sharing
+/// corners, picked with the Subselection tool so the welds show; and an
+/// arm whose sleeve, pinned to the upper arm, shares its elbow edge with
+/// the forearm, which bends with the forearm bone without coming apart.
+fn welds_demo(editor: &mut Editor) {
+    use inkframe_core::{
+        Affine, BonePoints, Color, Element, Path, Point, Segment, Shape, Skeleton, Stroke, Style, TimelineId,
+        Transform,
+    };
+    let ink = Stroke::new(Color::rgb(30, 30, 40), 4.0);
+    let fill = |c: Color| Style { fill: Some(c), stroke: Some(ink), gradient: None };
+    let rect = |w: f32, h: f32, x: f32, y: f32, c: Color| {
+        Element { shape: Shape::Rect { width: w, height: h, corner_radius: 0.0 }, style: fill(c) }
+            .transformed(Affine::translate(Point::new(x, y)))
+            .unwrap()
+    };
+    let roof = Element {
+        shape: Shape::Path(Path {
+            start: Point::new(-150.0, -100.0),
+            segments: vec![
+                Segment::Line { to: Point::new(0.0, -220.0) },
+                Segment::Line { to: Point::new(150.0, -100.0) },
+            ],
+            closed: true,
+        }),
+        style: fill(Color::rgb(230, 90, 100)),
+    };
+    // The roof's ends are the wall's top corners, and the door's bottom
+    // left corner is the wall's.
+    let wall = rect(300.0, 200.0, 0.0, 0.0, Color::rgb(250, 220, 150));
+    let door = rect(70.0, 120.0, -115.0, 40.0, Color::rgb(140, 100, 70));
+    let doc = &mut editor.doc;
+    let house = doc.add_layer("House", vec![wall, roof, door], 0, Transform::at(Point::new(520.0, 600.0)));
+
+    // The arm: a sleeve to the elbow and a forearm from it, sharing the edge.
+    let sleeve = rect(180.0, 70.0, -90.0, 0.0, Color::rgb(90, 150, 230));
+    let forearm = rect(180.0, 70.0, 90.0, 0.0, Color::rgb(250, 210, 160));
+    let arm = doc.add_layer("Arm", vec![sleeve, forearm], 0, Transform::at(Point::new(1300.0, 540.0)));
+    if let Some(layer) = doc.layer_mut(arm) {
+        layer.drawings[0].bone_points.push(BonePoints {
+            colour_art: false,
+            element: 0,
+            anchors: None,
+            bone: 0,
+        });
+    }
+    let Some(folder) = doc.add_folder(TimelineId::Main, &[arm]) else { return };
+    let mut skeleton = Skeleton::default();
+    let upper = skeleton.add_bone(None, Point::new(1120.0, 540.0), Point::new(1300.0, 540.0), 0);
+    let fore = skeleton.add_bone(Some(upper), Point::new(1300.0, 540.0), Point::new(1480.0, 540.0), 0);
+    skeleton.bones[fore].turn.set(0, 70.0);
+    if let Some(layer) = doc.layer_mut(folder) {
+        layer.name = "Rig".into();
+        layer.skeleton = Some(skeleton);
+    }
+    editor.select(Some(house));
+    editor.use_tool(Tool::Subselect);
 }

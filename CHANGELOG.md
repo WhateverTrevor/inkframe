@@ -13,6 +13,13 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Welded points
+
+- Points where shapes meet are shared: dragging one moves every shape's
+  copy, a point dropped onto another welds to it, and ⌘-drag parts it.
+  Pins to bones carry across welds, so joined shapes stay joined as a
+  skeleton bends them. No file format change.
+
 ### Bone limits, stretch and dynamics
 
 - Skeleton bones can have turn limits (respected by IK and shown as a
