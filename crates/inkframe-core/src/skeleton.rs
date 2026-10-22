@@ -84,6 +84,12 @@ pub struct Bone {
     /// as hair, a tail or an antenna does. `None` follows exactly.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamics: Option<Dynamics>,
+    /// A bone this one reaches for, as Moho's target bones: its end is
+    /// kept on the target's start, the bones above it (up to two) bending
+    /// to get it there. A foot stays planted on a target bone while the
+    /// body moves; move the target to step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<usize>,
 }
 
 /// How a bone with dynamics swings after the bones it hangs from (see
@@ -207,6 +213,7 @@ impl Bone {
             stretch: None,
             squash: false,
             dynamics: None,
+            target: None,
         }
     }
 
@@ -263,22 +270,21 @@ impl Skeleton {
     /// Where every bone is on `frame`. Bones with dynamics are simulated
     /// up to it, swinging after the bones they hang from.
     pub fn pose(&self, frame: u32) -> Pose {
-        let at = |bone: &Bone, f: u32| {
-            (bone.turn_at(f as f32), bone.moved_at(f as f32), bone.stretch_at(f as f32))
-        };
         if self.bones.iter().all(|b| b.dynamics.is_none()) {
-            return self.pose_with(|_, bone| at(bone, frame));
+            let placing = self.placing(frame);
+            return self.pose_with(|i, _| placing[i]);
         }
         // Each swinging bone's tip, where it's got to and how fast it's going.
         let mut tips: Vec<Option<(Point, Point)>> = vec![None; self.bones.len()];
         let mut pose = Pose { moves: Vec::new(), rigid: Vec::new() };
         for f in frame.saturating_sub(SETTLE)..=frame {
+            let placing = self.placing(f);
             pose = Pose {
                 moves: Vec::with_capacity(self.bones.len()),
                 rigid: Vec::with_capacity(self.bones.len()),
             };
             for (index, bone) in self.bones.iter().enumerate() {
-                let (turn, moved, stretch) = at(bone, f);
+                let (turn, moved, stretch) = placing[index];
                 let (skin, rigid) = self.place(index, &pose, turn, moved, stretch);
                 let Some(dynamics) = bone.dynamics else {
                     pose.moves.push(skin);
@@ -310,6 +316,63 @@ impl Skeleton {
             }
         }
         pose
+    }
+
+    /// Every bone's turn, move and stretch on `frame`, as keyed, then with
+    /// the bones that reach for a target turned to reach it.
+    fn placing(&self, frame: u32) -> Vec<Placing> {
+        let at = frame as f32;
+        let mut placing: Vec<Placing> =
+            self.bones.iter().map(|b| (b.turn_at(at), b.moved_at(at), b.stretch_at(at))).collect();
+        for (index, bone) in self.bones.iter().enumerate() {
+            let Some(target) = bone.target else { continue };
+            let chain = self.target_chain(index, target);
+            if chain.is_empty() {
+                continue;
+            }
+            // Cyclic coordinate descent, as `reach` does, toward where the
+            // target starts with everything else as it's posed, until it's
+            // there (or as near as the bones reach).
+            for _ in 0..24 {
+                let pose = self.pose_with(|i, _| placing[i]);
+                let goal = pose.moves[target].apply(self.bones[target].start);
+                if pose.moves[index].apply(self.bones[index].end).distance(goal) < 0.05 {
+                    break;
+                }
+                for &joint in &chain {
+                    let pose = self.pose_with(|i, _| placing[i]);
+                    let pivot = pose.moves[joint].apply(self.bones[joint].start);
+                    let tip = pose.moves[index].apply(self.bones[index].end);
+                    let (now, want) = (tip - pivot, goal - pivot);
+                    if now.length() < 1e-4 || want.length() < 1e-4 {
+                        continue;
+                    }
+                    let mut turn = placing[joint].0 + angle_between(now, want);
+                    if let Some(limits) = self.bones[joint].limits {
+                        turn = limits.clamp(turn);
+                    }
+                    placing[joint].0 = turn;
+                }
+            }
+        }
+        placing
+    }
+
+    /// The bones turned to bring bone `index`'s end to `target`: it and up
+    /// to two above it, short of the root (which holds the character where
+    /// it is). Empty if the target can't be reached that way: itself, or
+    /// carried by the bones that would turn, which would chase it round.
+    pub fn target_chain(&self, index: usize, target: usize) -> Vec<usize> {
+        if target == index || target >= self.bones.len() {
+            return Vec::new();
+        }
+        let mut chain = self.chain(index);
+        if chain.len() > 1 {
+            chain.pop();
+        }
+        chain.truncate(3);
+        let carried = self.chain(target).iter().any(|b| chain.contains(b));
+        if carried { Vec::new() } else { chain }
     }
 
     /// Where every bone is with the turn, move and stretch `posed` gives
@@ -551,6 +614,7 @@ impl Skeleton {
             .filter(|(_, g)| !**g)
             .map(|(mut bone, _)| {
                 bone.parent = bone.parent.and_then(|p| map.get(p).copied().flatten());
+                bone.target = bone.target.and_then(|t| map.get(t).copied().flatten());
                 bone
             })
             .collect();
@@ -1357,5 +1421,35 @@ mod tests {
         doc.rest_pose.0 = true;
         assert!(doc.layer_bend(doc.layer(layer).unwrap(), 0).is_none());
         assert!(doc == before, "only a view: the document's the same");
+    }
+
+    #[test]
+    fn a_leg_reaches_for_its_target_and_stays_planted_as_the_body_moves() {
+        // A hip (the root), a thigh and a shin hanging straight down, and a
+        // foot target on the ground ahead.
+        let mut skeleton = Skeleton::default();
+        let hip = skeleton.add_bone(None, Point::new(0.0, 0.0), Point::new(0.0, 10.0), 0);
+        let thigh = skeleton.add_bone(Some(hip), Point::new(0.0, 10.0), Point::new(0.0, 110.0), 0);
+        let shin = skeleton.add_bone(Some(thigh), Point::new(0.0, 110.0), Point::new(0.0, 210.0), 0);
+        let foot = skeleton.add_bone(None, Point::new(60.0, 180.0), Point::new(90.0, 180.0), 0);
+        skeleton.bones[shin].target = Some(foot);
+        assert_eq!(skeleton.target_chain(shin, foot), [shin, thigh]);
+        let (_, heel) = skeleton.posed_ends(shin, 0).unwrap();
+        assert!(heel.distance(Point::new(60.0, 180.0)) < 0.5, "{heel:?}");
+        // The body moves along and down; the foot stays where it is.
+        skeleton.move_bone(hip, Point::new(30.0, 20.0), 5);
+        let (_, heel) = skeleton.posed_ends(shin, 5).unwrap();
+        assert!(heel.distance(Point::new(60.0, 180.0)) < 0.5, "{heel:?}");
+    }
+
+    #[test]
+    fn a_bone_cant_reach_for_what_it_carries() {
+        let mut skeleton = arm();
+        assert!(skeleton.target_chain(0, 1).is_empty(), "the forearm hangs from the upper arm");
+        assert!(skeleton.target_chain(1, 1).is_empty());
+        skeleton.bones[0].target = Some(1);
+        // Ignored: the arm poses as keyed.
+        let (_, end) = skeleton.posed_ends(1, 0).unwrap();
+        assert!(close(end, Point::new(200.0, 0.0)));
     }
 }

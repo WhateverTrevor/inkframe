@@ -13,6 +13,12 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Target bones
+
+- A bone can reach for a target bone, the bones above it bending to get
+  its end there, so feet stay planted while the body moves. File format
+  stays 37 (an optional field).
+
 ### Folder keys
 
 - A skeleton's poses and a switch's choices can be dragged along their

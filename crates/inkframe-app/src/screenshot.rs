@@ -35,6 +35,8 @@
 //!   `_SMART` and the like).
 //! * `INKFRAME_SCREENSHOT_SETUP=1` turns on rig setup, showing skeletons at rest (with
 //!   `_SKELETON` and the like).
+//! * `INKFRAME_SCREENSHOT_TARGETS=1` shows two legs whose shins reach for target bones on
+//!   the ground, crouching as the hips drop with the feet staying planted.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -184,6 +186,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_SETUP").is_some() {
             editor.rig_setup = true;
+        }
+        if var("INKFRAME_SCREENSHOT_TARGETS").is_some() {
+            targets_demo(editor);
         }
         if Self::pen_handles() {
             pen_handles_demo(editor);
@@ -1076,4 +1081,61 @@ fn welds_demo(editor: &mut Editor) {
     }
     editor.select(Some(house));
     editor.use_tool(Tool::Subselect);
+}
+
+/// Legs planted on target bones: hips (the root) with a thigh and shin on
+/// each side, each shin reaching for a foot bone on the ground. The hips
+/// drop on frame 10 and the knees bend to keep the feet where they are.
+fn targets_demo(editor: &mut Editor) {
+    use inkframe_core::{
+        Affine, Color, Element, Point, Shape, Skeleton, Stroke, Style, TimelineId, Transform,
+    };
+    let ink = Stroke::new(Color::rgb(30, 30, 40), 5.0);
+    let style = |c: Color| Style { fill: Some(c), stroke: Some(ink), gradient: None };
+    let limb = |x: f32, top: f32, bottom: f32, width: f32, c: Color| {
+        Element {
+            shape: Shape::Rect { width, height: bottom - top, corner_radius: width / 2.0 },
+            style: style(c),
+        }
+        .transformed(Affine::translate(Point::new(x, (top + bottom) / 2.0)))
+        .unwrap()
+    };
+    let trousers = Color::rgb(90, 150, 230);
+    let legs = vec![
+        limb(-50.0, 0.0, 360.0, 60.0, trousers),
+        limb(50.0, 0.0, 360.0, 60.0, trousers),
+        Element {
+            shape: Shape::Ellipse { radius_x: 110.0, radius_y: 70.0 },
+            style: style(Color::rgb(230, 90, 100)),
+        },
+    ];
+    let doc = &mut editor.doc;
+    let layer = doc.add_layer("Legs", legs, 0, Transform::at(Point::new(960.0, 420.0)));
+    let Some(folder) = doc.add_folder(TimelineId::Main, &[layer]) else { return };
+    let mut skeleton = Skeleton::default();
+    let hips = skeleton.add_bone(None, Point::new(960.0, 380.0), Point::new(960.0, 430.0), 0);
+    skeleton.bones[hips].name = "Hips".into();
+    for (side, x) in [("Left", 910.0), ("Right", 1010.0)] {
+        let thigh = skeleton.add_bone(Some(hips), Point::new(x, 430.0), Point::new(x, 600.0), 0);
+        let shin = skeleton.add_bone(Some(thigh), Point::new(x, 600.0), Point::new(x, 770.0), 0);
+        // The feet on the ground under the hips, pointing ahead.
+        let foot = skeleton.add_bone(None, Point::new(x, 770.0), Point::new(x + 60.0, 770.0), 0);
+        skeleton.bones[thigh].name = format!("{side} thigh");
+        skeleton.bones[shin].name = format!("{side} shin");
+        skeleton.bones[foot].name = format!("{side} foot");
+        skeleton.bones[shin].target = Some(foot);
+        // Knees bend one way: forward, the shin swinging back under them.
+        skeleton.bones[shin].limits = Some(inkframe_core::RotationLimits { min: 0.0, max: 150.0 });
+        skeleton.bones[thigh].strength = 60.0;
+        skeleton.bones[shin].strength = 60.0;
+    }
+    skeleton.move_bone(hips, Point::new(1000.0, 460.0), 10);
+    if let Some(layer) = doc.layer_mut(folder) {
+        layer.name = "Character".into();
+        layer.skeleton = Some(skeleton);
+    }
+    editor.frame = 10;
+    editor.select(Some(folder));
+    editor.selected_bone = Some(2);
+    editor.use_tool(Tool::Bone);
 }

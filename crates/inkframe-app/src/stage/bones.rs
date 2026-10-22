@@ -279,6 +279,16 @@ impl StageView {
         if !adding && let (Some(id), Some(bone)) = (active, editor.selected_bone) {
             draw_limits(painter, editor, view, id, bone);
         }
+        // A bone reaching for a target: a dotted line from its end to the
+        // target's start.
+        for d in &drawn {
+            let target = editor.skeleton(d.skeleton).and_then(|s| s.bones.get(d.bone)).and_then(|b| b.target);
+            if let Some(t) = drawn.iter().find(|t| t.skeleton == d.skeleton && Some(t.bone) == target) {
+                let dots =
+                    egui::Shape::dashed_line(&[d.screen.1, t.screen.0], Stroke::new(1.5, BONE), 4.0, 4.0);
+                painter.extend(dots);
+            }
+        }
         for d in &drawn {
             let picked = Some(d.skeleton) == active && editor.selected_bone == Some(d.bone);
             let colour = if picked { SELECTION } else { BONE };

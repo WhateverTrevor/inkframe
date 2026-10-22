@@ -788,6 +788,16 @@ after the Harmony features (palettes to master controllers).
     the timeline's press no longer grabs a folder's span edge (its bar
     spans its contents), so the folder row's keys (skeleton + switch, via
     `key_frames`) drag as any layer's do.
+104. Target bones: `Bone::target: Option<usize>` (optional field, no
+    format bump: older builds ignore it). `Skeleton::placing(frame)` gives
+    every bone's (turn, move, stretch), then for targeted bones runs CCD
+    (up to 24 rounds, stops within 0.05) over `target_chain` toward the
+    target's posed start, respecting limits; `pose` (and the dynamics
+    simulation, per frame) uses it. `remove_bone` renumbers targets.
+    Inspector Target combo (bones it carries greyed out); the Bone tool
+    draws a dotted line to the target. Hook `INKFRAME_SCREENSHOT_TARGETS=1`.
+    Roadmap item 5's other half, an action timeline for smart bones, is
+    not done: corrections are still whole drawings to morph toward.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)
