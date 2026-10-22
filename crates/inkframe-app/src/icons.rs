@@ -59,6 +59,8 @@ pub enum Icon {
     Templates,
     /// A dotted arc ending in a ball: motion presets.
     Motion,
+    /// Two bones meeting at a joint, for the Bones panel.
+    Bones,
     /// A prompt, for the Script Console.
     Console,
     Plus,
@@ -415,6 +417,16 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
                 painter.circle_filled(at(x, y), side * 0.05, color);
             }
             painter.circle_filled(at(0.75, 0.3), side * 0.16, color);
+        }
+        Icon::Bones => {
+            // Two bones, as the stage draws them, bent at the elbow.
+            let (shoulder, elbow, hand) = (at(0.1, 0.25), at(0.5, 0.75), at(0.92, 0.3));
+            for (a, b) in [(shoulder, elbow), (elbow, hand)] {
+                let side = (b - a).rot90().normalized() * side * 0.09;
+                let widest = a + (b - a) * 0.25;
+                painter.add(egui::Shape::closed_line(vec![a, widest + side, b, widest - side], stroke));
+            }
+            painter.circle_filled(elbow, side * 0.06, color);
         }
         Icon::Templates => {
             painter.rect_stroke(

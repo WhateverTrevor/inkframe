@@ -775,6 +775,11 @@ after the Harmony features (palettes to master controllers).
     View › Rig Setup (⌥⌘B, `RIG_SETUP`), `draw_setup_note`. Hook
     `INKFRAME_SCREENSHOT_SETUP=1`. Not yet: Subselection edits on a posed
     frame still edit rest positions (they show the rest outline).
+101. Bones panel: `bones_panel.rs` (`Kind::Bones`, `Icon::Bones`, in the
+    Animation group; layout test now counts 20 kinds). `tree` lists bones
+    depth-first from the roots; rows pick bones (selecting the skeleton);
+    "Rigs" lists `skeleton_members` with a Follows combo and pin counts.
+    Hook `INKFRAME_SCREENSHOT_BONES=1`.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

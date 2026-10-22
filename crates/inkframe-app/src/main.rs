@@ -13,6 +13,7 @@ mod app;
 mod audio_engine;
 mod autosave;
 mod batch_dialog;
+mod bones_panel;
 mod cli;
 mod cli_script;
 mod convert;

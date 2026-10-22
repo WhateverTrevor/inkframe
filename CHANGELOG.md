@@ -13,6 +13,12 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Bones panel
+
+- A Bones area lists each skeleton's bones as a tree (smart, swinging,
+  limited and stretching bones marked; click one to pick it) and the
+  layers it rigs, with what each follows.
+
 ### Rig setup, and painting on poses
 
 - View › Rig Setup (⌥⌘B) shows skeletons at rest to draw, paint and rig
