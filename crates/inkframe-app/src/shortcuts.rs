@@ -60,6 +60,8 @@ pub const RULERS: KeyboardShortcut = KeyboardShortcut::new(CMD_ALT.plus(Modifier
 pub const SHOW_GUIDES: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::Semicolon);
 pub const LOCK_GUIDES: KeyboardShortcut = KeyboardShortcut::new(CMD_ALT, Key::Semicolon);
 pub const SNAP_TO_GUIDES: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::Semicolon);
+/// Find a Command (see `command_finder.rs`), as code editors' palettes.
+pub const FIND_COMMAND: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::K);
 /// Showing skeletons at rest, to draw, paint and rig (see `skeleton.rs`).
 pub const RIG_SETUP: KeyboardShortcut = KeyboardShortcut::new(CMD_ALT, Key::B);
 /// Animate's Break Apart.

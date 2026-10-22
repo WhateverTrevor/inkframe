@@ -32,7 +32,11 @@ use inkframe_core::Preset;
 /// Everything the user can trigger from a menu or a keyboard shortcut.
 /// Routing both through one enum keeps menus and shortcuts in sync.
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum Command {
+pub(crate) enum Command {
+    /// Opens Find a Command (see `command_finder.rs`).
+    OpenFinder,
+    /// Picks a tool (the command finder lists them).
+    UseTool(Tool),
     New,
     Open,
     ImportImage,
@@ -239,6 +243,8 @@ pub struct InkframeApp {
     /// text, and the Edit menu has no other way to read it.
     clipboard: Option<Clipboard>,
     ctx: egui::Context,
+    /// Find a Command (see `command_finder.rs`).
+    finder: crate::command_finder::CommandFinder,
 }
 
 impl InkframeApp {
@@ -285,6 +291,7 @@ impl InkframeApp {
             screenshot: AutoScreenshot::from_env(),
             clipboard: None,
             ctx: cc.egui_ctx.clone(),
+            finder: Default::default(),
         };
         // Screenshots always use the usual layout, so they look the same
         // on every machine.
@@ -638,6 +645,9 @@ impl InkframeApp {
                     Err(problem) => eprintln!("Couldn't group for the screenshot: {problem}"),
                 }
             }
+            if let Some(query) = AutoScreenshot::finder() {
+                app.finder.open_with(&query);
+            }
             if AutoScreenshot::bones_panel() {
                 app.layout.replace_kind(Kind::Properties, Kind::Bones);
             }
@@ -766,6 +776,8 @@ impl InkframeApp {
     fn execute(&mut self, command: Command) {
         let editor = &mut self.editor;
         match command {
+            Command::OpenFinder => self.finder.open(),
+            Command::UseTool(tool) => editor.use_tool(tool),
             Command::New => {
                 if self.confirm_discard_changes() {
                     self.replace_editor(Editor::new(Document::default()));
@@ -983,6 +995,10 @@ impl InkframeApp {
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         use shortcuts::*;
+        // Find a Command has the keyboard while it's open.
+        if self.finder.is_open() {
+            return;
+        }
 
         // `consume_shortcut` ignores extra Shift, so ⌘⇧S would also match ⌘S.
         // Check the shifted variants first so they win.
@@ -995,6 +1011,7 @@ impl InkframeApp {
             (NEW, Command::New),
             (EXPORT, Command::Export),
             (IMPORT, Command::ImportImage),
+            (FIND_COMMAND, Command::OpenFinder),
         ];
         let editing_shortcuts = [
             (REDO, Command::Redo),
@@ -1571,6 +1588,8 @@ impl InkframeApp {
             });
             ui.menu_button("Scripts", |ui| self.scripts.menu(ui, &self.editor));
             ui.menu_button("Help", |ui| {
+                item(ui, "Find a Command…", Some(shortcuts::FIND_COMMAND), Command::OpenFinder, true);
+                ui.separator();
                 if ui.button("Getting Started Guide").clicked() {
                     open_in_browser(GUIDE_URL);
                     ui.close();
@@ -1601,6 +1620,16 @@ impl InkframeApp {
                 );
                 ui.add_space(8.0);
                 ui.weak(format!("{:.0}%", self.views.stage().zoom_percent(&self.editor.doc)));
+                // Find a Command, where it's easy to see.
+                ui.add_space(8.0);
+                let keys = ctx.format_shortcut(&shortcuts::FIND_COMMAND);
+                if ui
+                    .add(crate::icons::LabelledButton::new(crate::icons::Icon::Search, &format!("Find a command  {keys}")))
+                    .on_hover_text("Search every command and tool by name")
+                    .clicked()
+                {
+                    chosen = Some(Command::OpenFinder);
+                }
             });
         });
 
@@ -1917,11 +1946,16 @@ impl InkframeApp {
     fn show_area(&mut self, ui: &mut egui::Ui, area: AreaId, kind: Kind) {
         match kind {
             Kind::Stage => {
+                // What can be done now, above the stage (see `context_bar.rs`).
+                let asked = crate::context_bar::show(ui, &mut self.editor);
                 if self.editor.timeline() != TimelineId::Main {
                     breadcrumbs(ui, &mut self.editor);
                 }
                 if let Some(stage) = self.views.stages.get_mut(&area) {
                     stage.show(ui, &mut self.editor);
+                }
+                if let Some(command) = asked {
+                    self.execute(command);
                 }
             }
             Kind::Timeline | Kind::GraphEditor => {
@@ -2049,6 +2083,9 @@ impl eframe::App for InkframeApp {
         self.editor.remeasure_text();
 
         egui::Panel::top("menu_bar").show(ui, |ui| self.menu_bar(ui));
+        if let Some(command) = self.finder.show(&ctx, &self.editor) {
+            self.execute(command);
+        }
         // The rest of the window is the layout's areas (see `layout.rs`).
         // It's taken out while it draws, since the areas' editors need the
         // rest of the app.

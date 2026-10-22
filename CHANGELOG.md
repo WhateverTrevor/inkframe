@@ -13,6 +13,14 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Easier to find things
+
+- A context bar above the stage: the current tool, buttons for what can
+  be done now (Distort, Envelope, Symbol, New Skeleton…), and view
+  switches.
+- Find a Command (⌘K): search every command and tool by name.
+- Toolbar tips say what each tool does; new icons throughout.
+
 ### Interactive web pages
 
 - Layers can be buttons (Play, Stop, Go to a frame, Open a link) and

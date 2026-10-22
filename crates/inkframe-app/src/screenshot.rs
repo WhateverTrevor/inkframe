@@ -49,6 +49,7 @@
 //!   spine, keyed at its turn: the body reshaped by hand into a pear as it leans.
 //! * `INKFRAME_SCREENSHOT_BUTTONS=1` shows a ball that stops on its last frame (a frame
 //!   action), with Replay and Pause buttons for a web page export, Replay picked.
+//! * `INKFRAME_SCREENSHOT_FINDER=envel` opens Find a Command with that typed.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -304,6 +305,11 @@ impl AutoScreenshot {
     }
 
     /// Whether to show Motion Presets.
+    /// What to type into Find a Command, opening it.
+    pub fn finder() -> Option<String> {
+        std::env::var("INKFRAME_SCREENSHOT_FINDER").ok()
+    }
+
     /// Whether to show the Bones panel in place of Properties.
     pub fn bones_panel() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_BONES").is_some()

@@ -79,6 +79,33 @@ pub enum Icon {
     NoColor,
     /// The little downward arrow that marks a menu.
     Chevron,
+    // Actions, for the context bar and the command finder.
+    /// A magnifying glass: finding a command.
+    Search,
+    /// A circle in a square, with a registration cross: a symbol.
+    Symbol,
+    /// A box with one corner pulled out: Distort.
+    Distort,
+    /// A box with its top bowed: Envelope.
+    Envelope,
+    /// Two overlapping circles merged: combining shapes.
+    Combine,
+    /// A square cracked into pieces: Break Apart.
+    BreakApart,
+    /// A stick figure standing straight: rig setup (skeletons at rest).
+    RigSetup,
+    /// Lines meeting at a point on a horizon: the perspective guide.
+    Perspective,
+    /// A ruler's edge with ticks.
+    Ruler,
+    /// An arrow up out of a box: stepping out of a layer or symbol.
+    StepOut,
+    /// Two keys with dots between them: drawing inbetweens.
+    Inbetween,
+    /// A tick: finishing.
+    Check,
+    /// A cross: cancelling.
+    Cross,
 }
 
 /// Draws `icon` filling `rect` (best square) in `color`.
@@ -519,6 +546,98 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
         Icon::Chevron => {
             line(&[(0.22, 0.38), (0.5, 0.66), (0.78, 0.38)]);
         }
+        Icon::Search => {
+            painter.add(Shape::line(arc(0.42, 0.42, 0.28, 0.0, std::f32::consts::TAU), stroke));
+            line(&[(0.62, 0.62), (0.9, 0.9)]);
+        }
+        Icon::Symbol => {
+            painter.rect_stroke(
+                Rect::from_min_max(at(0.1, 0.1), at(0.9, 0.9)),
+                2.0,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
+            painter.add(Shape::line(arc(0.5, 0.5, 0.22, 0.0, std::f32::consts::TAU), stroke));
+            line(&[(0.5, 0.42), (0.5, 0.58)]);
+            line(&[(0.42, 0.5), (0.58, 0.5)]);
+        }
+        Icon::Distort => {
+            // A box, its top right corner pulled out, with a handle there.
+            painter.add(Shape::closed_line(
+                vec![at(0.12, 0.25), at(0.88, 0.08), at(0.75, 0.88), at(0.18, 0.85)],
+                stroke,
+            ));
+            painter.rect_filled(Rect::from_center_size(at(0.88, 0.08), Vec2::splat(side * 0.16)), 1.0, color);
+            painter.rect_filled(Rect::from_center_size(at(0.12, 0.25), Vec2::splat(side * 0.12)), 1.0, color);
+        }
+        Icon::Envelope => {
+            // A box whose top bows up, a handle at the middle of it.
+            let mut top = arc(0.5, 0.75, 0.42, std::f32::consts::PI * 1.18, std::f32::consts::PI * 1.82);
+            top.extend([at(0.84, 0.88), at(0.16, 0.88)]);
+            painter.add(Shape::closed_line(top, stroke));
+            painter.circle_filled(at(0.5, 0.33), side * 0.07, color);
+        }
+        Icon::Combine => {
+            painter.add(Shape::line(arc(0.38, 0.5, 0.26, 0.0, std::f32::consts::TAU), stroke));
+            painter.add(Shape::line(
+                arc(0.62, 0.5, 0.26, 0.0, std::f32::consts::TAU),
+                Stroke::new(stroke.width, color.gamma_multiply(0.55)),
+            ));
+        }
+        Icon::BreakApart => {
+            // A square split into three pieces, pulled a little apart.
+            fill(&[(0.1, 0.1), (0.48, 0.1), (0.38, 0.5), (0.1, 0.45)]);
+            fill(&[(0.56, 0.1), (0.9, 0.1), (0.9, 0.55), (0.46, 0.52)]);
+            fill(&[(0.1, 0.55), (0.42, 0.6), (0.9, 0.64), (0.9, 0.9), (0.1, 0.9)]);
+        }
+        Icon::RigSetup => {
+            // A figure standing at rest, arms out: the setup pose.
+            painter.circle_stroke(at(0.5, 0.17), side * 0.11, stroke);
+            line(&[(0.5, 0.29), (0.5, 0.62)]);
+            line(&[(0.12, 0.4), (0.88, 0.4)]);
+            line(&[(0.5, 0.62), (0.3, 0.92)]);
+            line(&[(0.5, 0.62), (0.7, 0.92)]);
+        }
+        Icon::Perspective => {
+            line(&[(0.05, 0.4), (0.95, 0.4)]);
+            for (x, y) in [(0.0, 0.95), (0.3, 0.95), (0.7, 0.95), (1.0, 0.95), (0.0, 0.7), (1.0, 0.7)] {
+                painter.line_segment(
+                    [at(0.5, 0.4), at(x, y)],
+                    Stroke::new(stroke.width * 0.8, color.gamma_multiply(0.7)),
+                );
+            }
+            painter.circle_filled(at(0.5, 0.4), side * 0.07, color);
+        }
+        Icon::Ruler => {
+            painter.add(Shape::closed_line(
+                vec![at(0.05, 0.3), at(0.95, 0.3), at(0.95, 0.7), at(0.05, 0.7)],
+                stroke,
+            ));
+            for (i, x) in [0.2, 0.35, 0.5, 0.65, 0.8].into_iter().enumerate() {
+                let length = if i % 2 == 0 { 0.2 } else { 0.12 };
+                line(&[(x, 0.3), (x, 0.3 + length)]);
+            }
+        }
+        Icon::StepOut => {
+            line(&[(0.15, 0.45), (0.15, 0.9), (0.85, 0.9), (0.85, 0.45)]);
+            line(&[(0.5, 0.72), (0.5, 0.08)]);
+            line(&[(0.3, 0.28), (0.5, 0.08), (0.7, 0.28)]);
+        }
+        Icon::Inbetween => {
+            // Two keys (diamonds) with dots between: the inbetweens.
+            fill(&[(0.12, 0.35), (0.24, 0.5), (0.12, 0.65), (0.0, 0.5)]);
+            fill(&[(0.88, 0.35), (1.0, 0.5), (0.88, 0.65), (0.76, 0.5)]);
+            for x in [0.38, 0.5, 0.62] {
+                painter.circle_filled(at(x, 0.5), side * 0.05, color);
+            }
+        }
+        Icon::Check => {
+            line(&[(0.15, 0.52), (0.4, 0.78), (0.88, 0.22)]);
+        }
+        Icon::Cross => {
+            line(&[(0.2, 0.2), (0.8, 0.8)]);
+            line(&[(0.8, 0.2), (0.2, 0.8)]);
+        }
     }
 }
 
@@ -574,6 +693,61 @@ impl Widget for IconButton<'_> {
             paint(painter, self.icon, rect.shrink(self.size * 0.2), color);
         }
         response.on_hover_text(self.hover)
+    }
+}
+
+/// A button with an icon and a word or two beside it, for the context bar
+/// above the stage: plainer than an icon alone, for things not used every
+/// minute. Borderless until hovered; `selected` gives it the accent fill.
+pub struct LabelledButton<'a> {
+    icon: Icon,
+    label: &'a str,
+    selected: bool,
+}
+
+impl<'a> LabelledButton<'a> {
+    pub fn new(icon: Icon, label: &'a str) -> Self {
+        Self { icon, label, selected: false }
+    }
+
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+}
+
+impl Widget for LabelledButton<'_> {
+    fn ui(self, ui: &mut Ui) -> Response {
+        let font = egui::FontId::proportional(13.0);
+        let enabled = ui.is_enabled();
+        let text_color = if enabled { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
+        let galley = ui.painter().layout_no_wrap(self.label.to_owned(), font, text_color);
+        let size = vec2(8.0 + 18.0 + 6.0 + galley.size().x + 10.0, 26.0);
+        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, self.label));
+        if ui.is_rect_visible(rect) {
+            let painter = ui.painter();
+            let fill = if self.selected {
+                Some(theme::ACCENT_DIM)
+            } else if response.is_pointer_button_down_on() {
+                Some(ui.visuals().widgets.active.bg_fill)
+            } else if response.hovered() && enabled {
+                Some(ui.visuals().widgets.hovered.bg_fill)
+            } else {
+                None
+            };
+            if let Some(fill) = fill {
+                painter.rect_filled(rect, 5.0, fill);
+            }
+            let icon = Rect::from_min_size(rect.min + vec2(8.0, 4.0), vec2(18.0, 18.0));
+            paint(painter, self.icon, icon, text_color);
+            painter.galley(
+                egui::pos2(icon.right() + 6.0, rect.center().y - galley.size().y / 2.0),
+                galley,
+                text_color,
+            );
+        }
+        response
     }
 }
 
