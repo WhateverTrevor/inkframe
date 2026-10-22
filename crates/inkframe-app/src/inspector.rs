@@ -910,10 +910,45 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
     let mut actions = the_bone.actions.clone();
     let now = the_bone.turn.sample(frame as f32).unwrap_or(0.0);
 
+    // Layers a correction can reshape: any drawn layer it rigs.
+    let correctable: Vec<(LayerId, String)> = members
+        .iter()
+        .filter_map(|&m| editor.doc.layer(m))
+        .filter(|l| !l.folder && l.draws_vectors())
+        .map(|l| (l.id, l.name.clone()))
+        .collect();
+
     ui.add_space(6.0);
     ui.label(section_text("Smart bone")).on_hover_text(
-        "As this bone turns, it can reshape a layer toward another of its drawings, or have a switch show another layer",
+        "As this bone turns, it can reshape a layer (by hand at keyed turns, or toward another drawing), or have a switch show another layer",
     );
+    // A correction being drawn on this bone: say so, and how to finish.
+    if let Some(c) = editor.correcting.as_ref().filter(|c| c.skeleton == id && c.bone == bone) {
+        let what = format!(
+            "Drawing the correction of {} at {:.0}°: reshape it with any tool.",
+            name(c.layer),
+            c.turn
+        );
+        ui.label(egui::RichText::new(what).strong());
+        let (mut finish, mut cancel) = (false, false);
+        ui.horizontal(|ui| {
+            finish = ui.button("Finish").on_hover_text("Key the shapes at this turn").clicked();
+            cancel = ui.button("Cancel").clicked();
+        });
+        if finish {
+            editor.finish_correction();
+        } else if cancel {
+            editor.cancel_correction();
+        }
+        return;
+    }
+    // Starting or adding a correction changes the document, so it waits
+    // until the actions have been written back.
+    enum Request {
+        Edit(usize),
+        Add(LayerId),
+    }
+    let mut request = None;
     let mut remove = None;
     for (i, action) in actions.iter_mut().enumerate() {
         ui.horizontal_wrapped(|ui| match action {
@@ -971,12 +1006,51 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
                 ui.add(DragValue::new(turn).speed(1.0).suffix("°"));
                 remove = remove.or(ui.small_button("×").clicked().then_some(i));
             }
+            SmartAction::Correct { layer, keys, .. } => {
+                ui.label(format!("Correct {}", name(*layer)));
+                if keys.is_empty() {
+                    ui.weak("(no keys yet)");
+                }
+                // Each key: its turn, to take out.
+                let mut drop = None;
+                for (k, key) in keys.iter().enumerate() {
+                    if ui
+                        .small_button(format!("{:.0}° ×", key.turn))
+                        .on_hover_text("Take this key out")
+                        .clicked()
+                    {
+                        drop = Some(k);
+                    }
+                }
+                if let Some(k) = drop {
+                    keys.remove(k);
+                }
+                let edit = ui
+                    .add_enabled(now.abs() >= 1.0, egui::Button::new(format!("Edit at {now:.0}°")).small())
+                    .on_hover_text(
+                        "Reshape the layer as it should be at the bone's turn now, keying it there",
+                    )
+                    .on_disabled_hover_text("Turn the bone first: a correction is keyed at a turn");
+                if edit.clicked() {
+                    request = Some(Request::Edit(i));
+                }
+                remove = remove.or(ui.small_button("Remove").clicked().then_some(i));
+            }
         });
     }
     // A new action is reached at the bone's turn now, if it's turned, so
     // the way to set one up is to pose the bone, then add it.
     let at = if now.abs() > 1.0 { now } else { 90.0 };
     ui.horizontal(|ui| {
+        if let Some((layer, _)) = correctable.iter().find(|(l, _)| Some(*l) == editor.selection).or(correctable.first())
+            && ui
+                .add_enabled(now.abs() >= 1.0, egui::Button::new("+ Correction").small())
+                .on_hover_text("Reshape a layer by hand at this turn of the bone, as Moho's smart bone actions; key more turns as you go")
+                .on_disabled_hover_text("Turn the bone first: a correction is keyed at a turn")
+                .clicked()
+        {
+            request = Some(Request::Add(*layer));
+        }
         if let Some((layer, _, _)) = morphable.first()
             && ui
                 .small_button("+ Reshape")
@@ -1007,6 +1081,14 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
             editor.doc.layer_mut(id).and_then(|l| l.skeleton.as_mut()).and_then(|s| s.bones.get_mut(bone))
     {
         b.actions = actions;
+    }
+    let started = match request {
+        Some(Request::Edit(i)) => editor.start_correction(id, bone, i),
+        Some(Request::Add(layer)) => editor.add_correction(id, bone, layer).map(|_| ()),
+        None => Ok(()),
+    };
+    if let Err(problem) = started {
+        crate::app::show_error("Couldn't draw the correction", &problem);
     }
 }
 

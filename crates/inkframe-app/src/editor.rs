@@ -299,6 +299,8 @@ pub struct Editor {
     /// Rig setup, as Moho's frame 0: skeletons shown at rest, to draw and
     /// paint on and rig, rather than posed (see `skeleton.rs`).
     pub rig_setup: bool,
+    /// A smart bone's correction being drawn (see `skeleton.rs`).
+    pub correcting: Option<crate::skeleton::Correcting>,
     /// Frames picked in the timeline (first and last, either way round),
     /// for the frame commands (see `frame_commands.rs`).
     pub frame_range: Option<(u32, u32)>,
@@ -383,6 +385,7 @@ impl Editor {
             selected_bone: None,
             picked_anchor: None,
             rig_setup: false,
+            correcting: None,
             frame_range: None,
             edit_multiple: false,
             show_rulers: false,
@@ -447,6 +450,8 @@ impl Editor {
     }
 
     pub fn save_to(&mut self, path: &Path) -> Result<(), DocumentError> {
+        // A correction under way is keyed first, so it's saved whole.
+        self.finish_correction();
         self.doc.save(path)?;
         self.saved = self.doc.clone();
         self.path = Some(path.to_owned());
@@ -736,6 +741,9 @@ impl Editor {
     /// Undo can remove layers or shorten the animation; make sure the editor
     /// isn't left pointing at things that no longer exist.
     fn after_document_replaced(&mut self) {
+        // Undo or redo puts back a document from before or after the
+        // correction began, with its drawing and action as they were then.
+        self.correcting = None;
         // The lattice was bending shapes that may no longer be there as
         // they were.
         self.lattice = None;

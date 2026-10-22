@@ -17,7 +17,10 @@
 //! of its drawings (a corrected elbow, a smile), or has a switch folder
 //! show another of its layers (a fist once the wrist's turned far enough).
 
-use inkframe_core::{BoneBinding, BonePoints, LayerId, Point, RestPart, Skeleton};
+use inkframe_core::{
+    BoneBinding, BonePoints, CorrectionKey, Document, Element, LayerId, Point, RestPart, Skeleton,
+    SmartAction, corrected,
+};
 
 use crate::editor::{Editor, Tool};
 
@@ -251,6 +254,143 @@ impl Editor {
     }
 }
 
+/// A smart bone's correction being drawn (see `SmartAction::Correct`): the
+/// layer's drawing holds the shapes as reshaped at `turn`, to edit with any
+/// tool, and the action is out of the bone meanwhile (so it doesn't reshape
+/// them again). Finishing keys the shapes at `turn` and puts both back.
+#[derive(Debug, Clone)]
+pub struct Correcting {
+    pub skeleton: LayerId,
+    pub bone: usize,
+    /// The action, and its place among the bone's.
+    pub action: SmartAction,
+    index: usize,
+    pub layer: LayerId,
+    pub drawing: usize,
+    pub turn: f32,
+    /// The drawing as drawn at rest: its colour art and line art.
+    rest: (Vec<Element>, Vec<Element>),
+}
+
+/// Puts `correcting` back into `doc`: the shapes in the drawing keyed at its
+/// turn (or not, if `keep` is false), the drawing as it was at rest, and the
+/// action back on its bone.
+fn settle(doc: &mut Document, correcting: &Correcting, keep: bool) {
+    let Correcting { skeleton, bone, action, index, layer, drawing, turn, rest } = correcting;
+    let mut action = action.clone();
+    if let Some(found) = doc.layer_mut(*layer).and_then(|l| l.drawings.get_mut(*drawing)) {
+        let colour_art = std::mem::replace(&mut found.colour_art, rest.0.clone());
+        let line_art = std::mem::replace(&mut found.elements, rest.1.clone());
+        if keep && let SmartAction::Correct { keys, .. } = &mut action {
+            // Keyed again at much the same turn, the new shapes replace the old.
+            keys.retain(|k| (k.turn - turn).abs() >= 0.5);
+            keys.push(CorrectionKey { turn: *turn, colour_art, line_art });
+            keys.sort_by(|a, b| a.turn.total_cmp(&b.turn));
+        }
+    }
+    if let Some(actions) = doc
+        .layer_mut(*skeleton)
+        .and_then(|l| l.skeleton.as_mut())
+        .and_then(|s| s.bones.get_mut(*bone))
+        .map(|b| &mut b.actions)
+    {
+        actions.insert((*index).min(actions.len()), action);
+    }
+}
+
+impl Editor {
+    /// Starts drawing correction `action` of bone `bone` (in skeleton
+    /// `id`) at the bone's turn now: the layer's drawing is reshaped as the
+    /// correction has it there, ready to edit.
+    pub fn start_correction(&mut self, id: LayerId, bone: usize, action: usize) -> Result<(), String> {
+        self.finish_correction();
+        let frame = self.frame;
+        let skeleton = self.skeleton(id).ok_or("The skeleton has gone.")?;
+        let b = skeleton.bones.get(bone).ok_or("The bone has gone.")?;
+        let turn = b.turn.sample(frame as f32).unwrap_or(0.0);
+        if turn.abs() < 1.0 {
+            return Err("Turn the bone first: a correction is keyed at the turn it's drawn at.".into());
+        }
+        let Some(SmartAction::Correct { layer, drawing, keys }) = b.actions.get(action).cloned() else {
+            return Err("That isn't a correction.".into());
+        };
+        let found = self.doc.layer(layer).ok_or("The layer it corrects has gone.")?;
+        if found.drawing_index_at(frame) != drawing {
+            return Err("The drawing it corrects isn't showing on this frame.".into());
+        }
+        let rest_drawing = found.drawings.get(drawing).ok_or("The drawing it corrects has gone.")?;
+        let rest = (rest_drawing.colour_art.clone(), rest_drawing.elements.clone());
+        let (colour, line) = corrected((&rest.0, &rest.1), &keys, turn);
+        let taken = self.skeleton_mut(id).map(|s| s.bones[bone].actions.remove(action));
+        let Some(taken) = taken else { return Err("The skeleton has gone.".into()) };
+        if let Some(d) = self.doc.layer_mut(layer).and_then(|l| l.drawings.get_mut(drawing)) {
+            d.colour_art = colour;
+            d.elements = line;
+        }
+        self.correcting =
+            Some(Correcting { skeleton: id, bone, action: taken, index: action, layer, drawing, turn, rest });
+        Ok(())
+    }
+
+    /// Keys the correction being drawn at its turn, and puts everything back.
+    pub fn finish_correction(&mut self) {
+        if let Some(correcting) = self.correcting.take() {
+            settle(&mut self.doc, &correcting, true);
+        }
+    }
+
+    /// Stops drawing the correction without keying it.
+    pub fn cancel_correction(&mut self) {
+        if let Some(correcting) = self.correcting.take() {
+            settle(&mut self.doc, &correcting, false);
+        }
+    }
+
+    /// The document as it will be once the correction being drawn is keyed:
+    /// what's saved, autosaved and exported, so a correction under way is
+    /// never written out half done.
+    pub fn settled_doc(&self) -> std::borrow::Cow<'_, Document> {
+        match &self.correcting {
+            Some(correcting) => {
+                let mut doc = self.doc.clone();
+                settle(&mut doc, correcting, true);
+                std::borrow::Cow::Owned(doc)
+            }
+            None => std::borrow::Cow::Borrowed(&self.doc),
+        }
+    }
+
+    /// Finishes the correction being drawn if what it was drawing at has
+    /// moved: another frame, or the layer or skeleton gone. Called once a
+    /// frame.
+    pub fn check_correction(&mut self) {
+        let Some(c) = &self.correcting else { return };
+        let turn_now = self
+            .skeleton(c.skeleton)
+            .and_then(|s| s.bones.get(c.bone))
+            .and_then(|b| b.turn.sample(self.frame as f32));
+        let still = self.doc.layer(c.layer).is_some_and(|l| l.drawing_index_at(self.frame) == c.drawing)
+            && turn_now.is_some_and(|t| (t - c.turn).abs() < 0.5);
+        if !still {
+            self.finish_correction();
+        }
+    }
+
+    /// Adds a correction of `layer`'s drawing showing now to bone `bone`,
+    /// and starts drawing it at the bone's turn. Returns the action's place.
+    pub fn add_correction(&mut self, id: LayerId, bone: usize, layer: LayerId) -> Result<usize, String> {
+        let drawing = self.doc.layer(layer).ok_or("The layer has gone.")?.drawing_index_at(self.frame);
+        let actions = &mut self
+            .skeleton_mut(id)
+            .and_then(|s| s.bones.get_mut(bone))
+            .ok_or("The bone has gone.")?
+            .actions;
+        actions.push(SmartAction::Correct { layer, drawing, keys: Vec::new() });
+        let index = actions.len() - 1;
+        self.start_correction(id, bone, index).map(|_| index)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,5 +567,79 @@ mod tests {
             .layer_matrix(layer, 0)
             .apply(layer.elements_at(0).last().unwrap().shape.bounds().center());
         assert!(rest.distance(Point::new(480.0, 300.0)) < 1.5, "{rest:?}");
+    }
+
+    /// The arm, unbound (so only corrections reshape it), its forearm
+    /// turned 45°.
+    fn arm_to_correct() -> (Editor, LayerId, LayerId) {
+        let (mut editor, skeleton, arm) = rigged_arm();
+        editor.set_bone_binding(arm, BoneBinding::Unbound);
+        editor.skeleton_mut(skeleton).unwrap().bones[1].turn.set(0, 45.0);
+        (editor, skeleton, arm)
+    }
+
+    fn arm_height(editor: &Editor, arm: LayerId) -> f32 {
+        let layer = editor.doc.layer(arm).unwrap();
+        editor.doc.posed_elements(layer, 0)[0].shape.bounds().height()
+    }
+
+    /// Makes the arm's (only) shape `height` tall, as reshaping it by hand
+    /// would.
+    fn reshape(editor: &mut Editor, arm: LayerId, height: f32) {
+        let shape = &mut editor.doc.layer_mut(arm).unwrap().drawings[0].elements[0].shape;
+        *shape = Shape::Rect { width: 200.0, height, corner_radius: 0.0 };
+    }
+
+    #[test]
+    fn a_correction_drawn_at_a_turn_is_keyed_there() {
+        let (mut editor, skeleton, arm) = arm_to_correct();
+        editor.add_correction(skeleton, 1, arm).unwrap();
+        assert!(editor.correcting.is_some());
+        assert!(
+            editor.skeleton(skeleton).unwrap().bones[1].actions.is_empty(),
+            "out of the bone while drawn"
+        );
+        reshape(&mut editor, arm, 60.0);
+        editor.finish_correction();
+
+        let action = &editor.skeleton(skeleton).unwrap().bones[1].actions[0];
+        let SmartAction::Correct { keys, .. } = action else { panic!("a correction") };
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].turn, 45.0);
+        // The drawing's back as drawn; the bone's turn reshapes it.
+        let drawn = editor.doc.layer(arm).unwrap().drawings[0].elements[0].shape.bounds().height();
+        assert!((drawn - 20.0).abs() < 1e-3, "{drawn}");
+        assert!((arm_height(&editor, arm) - 60.0).abs() < 0.5);
+        // Halfway back to rest, halfway between.
+        editor.skeleton_mut(skeleton).unwrap().bones[1].turn.set(0, 22.5);
+        assert!((arm_height(&editor, arm) - 40.0).abs() < 0.5, "{}", arm_height(&editor, arm));
+    }
+
+    #[test]
+    fn cancelling_a_correction_keys_nothing() {
+        let (mut editor, skeleton, arm) = arm_to_correct();
+        editor.add_correction(skeleton, 1, arm).unwrap();
+        reshape(&mut editor, arm, 60.0);
+        editor.cancel_correction();
+        let SmartAction::Correct { keys, .. } = &editor.skeleton(skeleton).unwrap().bones[1].actions[0]
+        else {
+            panic!("still a correction, with no keys")
+        };
+        assert!(keys.is_empty());
+        assert!((arm_height(&editor, arm) - 20.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn whats_saved_never_has_a_correction_half_drawn() {
+        let (mut editor, skeleton, arm) = arm_to_correct();
+        editor.add_correction(skeleton, 1, arm).unwrap();
+        reshape(&mut editor, arm, 60.0);
+        let settled = editor.settled_doc().into_owned();
+        // As drawn in the drawing, the key in the action.
+        let drawn = settled.layer(arm).unwrap().drawings[0].elements[0].shape.bounds().height();
+        assert!((drawn - 20.0).abs() < 1e-3);
+        assert_eq!(settled.layer(skeleton).unwrap().skeleton.as_ref().unwrap().bones[1].actions.len(), 1);
+        // And the correction's still being drawn in the editor.
+        assert!(editor.correcting.is_some());
     }
 }
