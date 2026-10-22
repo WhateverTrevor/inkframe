@@ -624,6 +624,18 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
             1 => "1 bone. Pose it with the Bone tool (K).".to_owned(),
             n => format!("{n} bones. Pose them with the Bone tool (K)."),
         });
+        // The bones the picked one could reach for: any but those it
+        // carries (or itself).
+        let target_choices: Vec<(usize, String, bool)> = match picked {
+            Some(b) => skeleton
+                .bones
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != b)
+                .map(|(i, other)| (i, other.name.clone(), !skeleton.target_chain(b, i).is_empty()))
+                .collect(),
+            None => Vec::new(),
+        };
         if let Some(bone) = picked.and_then(|b| skeleton.bones.get_mut(b)) {
             egui::Grid::new("bone").num_columns(2).spacing([6.0, 4.0]).show(ui, |ui| {
                 ui.label("Bone");
@@ -664,6 +676,27 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                         ui.add(DragValue::new(&mut limits.max).range(-360.0..=360.0).speed(1.0).suffix("°"));
                     }
                 });
+                ui.end_row();
+                ui.label("Target").on_hover_text(
+                    "A bone its end reaches for, the bones above it bending to get it there: plant a foot on one",
+                );
+                let names_and_ok = &target_choices;
+                let current = bone.target;
+                let label = |t: Option<usize>| {
+                    t.and_then(|t| names_and_ok.iter().find(|(i, _, _)| *i == t)).map_or("None".to_owned(), |(_, n, _)| n.clone())
+                };
+                let mut chosen = current;
+                egui::ComboBox::from_id_salt("bone target").selected_text(label(current)).show_ui(ui, |ui| {
+                    ui.selectable_value(&mut chosen, None, "None");
+                    for (i, name, ok) in names_and_ok {
+                        ui.add_enabled_ui(*ok, |ui| {
+                            ui.selectable_value(&mut chosen, Some(*i), name);
+                        });
+                    }
+                });
+                if chosen != current {
+                    bone.target = chosen;
+                }
                 ui.end_row();
                 ui.label("Dynamics").on_hover_text(
                     "It swings after the bones it hangs from, overshoots and settles, as hair or a tail does",
