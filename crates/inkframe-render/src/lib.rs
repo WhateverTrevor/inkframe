@@ -15,6 +15,7 @@ mod images;
 mod particles;
 mod path;
 mod text;
+mod texture;
 
 use inkframe_core::{
     Affine, Color, Document, Element, Layer, LayerBend, LayerId, Point, Shape, SymbolId, TimelineId,
@@ -128,6 +129,7 @@ pub fn render_timeline_into(
         show_guides: options.show_guides,
         show_mask: options.show_mask,
         light_table: options.light_table,
+        texture: None,
     };
     // Usually the timeline's order; by depth when the document says so.
     let layers = doc.stacking_order(timeline, frame);
@@ -255,7 +257,8 @@ pub fn render_symbol_frame(
         .pre_concat(Affine::translate(-extent.center()));
 
     let mut pixmap = Pixmap::new(width, height)?;
-    let style = Style { tint: None, images, show_guides: true, show_mask: None, light_table: None };
+    let style =
+        Style { tint: None, images, show_guides: true, show_mask: None, light_table: None, texture: None };
     let layers: Vec<&Layer> = symbol.layers.iter().collect();
     render_layers(&mut pixmap.as_mut(), doc, &layers, frame, fit, 1.0, style, None, 0);
     Some(pixmap)
@@ -307,7 +310,14 @@ pub fn render_layer_thumbnail(
     .pre_concat(Affine::scale(scale, scale));
 
     let mut pixmap = Pixmap::new(width, height)?;
-    let style = Style { tint: None, images, show_guides: true, show_mask: Some(layer.id), light_table: None };
+    let style = Style {
+        tint: None,
+        images,
+        show_guides: true,
+        show_mask: Some(layer.id),
+        light_table: None,
+        texture: None,
+    };
     render_layers(&mut pixmap.as_mut(), doc, &[&layer], frame, fit, 1.0, style, None, 0);
     Some(pixmap)
 }
@@ -353,7 +363,8 @@ pub fn render_layer_alone(
     (width, height): (u32, u32),
 ) -> Option<Pixmap> {
     let mut pixmap = Pixmap::new(width, height)?;
-    let style = Style { tint: None, images, show_guides: false, show_mask: None, light_table: None };
+    let style =
+        Style { tint: None, images, show_guides: false, show_mask: None, light_table: None, texture: None };
     render_layers(&mut pixmap.as_mut(), doc, &[layer], frame, to_image, 1.0, style, None, 0);
     Some(pixmap)
 }
@@ -367,6 +378,8 @@ struct Style<'a> {
     show_guides: bool,
     show_mask: Option<LayerId>,
     light_table: Option<LayerId>,
+    /// The grain the layer being drawn inks its lines with, if any.
+    texture: Option<inkframe_core::LineTexture>,
 }
 
 /// How strongly the light table draws the layers not being worked on.
@@ -544,7 +557,8 @@ pub fn merge_down(doc: &mut Document, upper: LayerId, frame: u32, images: Option
         return false;
     };
     below.data_mut().copy_from_slice(&canvas.to_pixels());
-    let style = Style { tint: None, images, show_guides: false, show_mask: None, light_table: None };
+    let style =
+        Style { tint: None, images, show_guides: false, show_mask: None, light_table: None, texture: None };
     draw_layer(&mut above.as_mut(), doc, top, frame, matrix, style, 0);
     let paint = PixmapPaint {
         opacity: doc.pose(top, frame).opacity.clamp(0.0, 1.0),
@@ -570,7 +584,8 @@ pub fn merge_down(doc: &mut Document, upper: LayerId, frame: u32, images: Option
 /// (a mask still shapes what it masks).
 pub fn export_psd(doc: &Document, frame: u32, images: Option<&ImageLibrary>) -> inkframe_core::Psd {
     let (width, height) = (doc.width, doc.height);
-    let style = Style { tint: None, images, show_guides: false, show_mask: None, light_table: None };
+    let style =
+        Style { tint: None, images, show_guides: false, show_mask: None, light_table: None, texture: None };
     let mut layers = Vec::new();
     if doc.background.a > 0 {
         let c = doc.background;
@@ -753,6 +768,7 @@ fn draw_layer(
     style: Style<'_>,
     depth: usize,
 ) {
+    let style = Style { texture: layer.line_texture, ..style };
     // A particle layer's drawing is what its particles look like.
     if layer.particles.is_some() {
         particles::draw_particles(pixmap, doc, layer, frame, matrix, style);
@@ -856,10 +872,20 @@ fn draw_element(pixmap: &mut PixmapMut, element: &Element, matrix: Transform, st
         paint
     };
 
+    // A layer's line texture grains its lines: pencil lines (drawn as
+    // their filled outlines) and strokes, not the areas shapes fill.
+    let textured = |color: Color| {
+        let texture = style.texture.filter(|t| t.amount > 0.0)?;
+        texture::tile(tint.map_or(color, |t| t.with_alpha(color.a)), texture)
+    };
     let gradient = element.style.gradient.as_ref().and_then(|g| gradient_paint(g, &element.shape, tint));
+    let line = matches!(element.shape, Shape::Line { .. });
     match (gradient, element.style.fill) {
         (Some(paint), _) => pixmap.fill_path(&path, &paint, FillRule::Winding, matrix, None),
-        (None, Some(fill)) => pixmap.fill_path(&path, &paint_for(fill), FillRule::Winding, matrix, None),
+        (None, Some(fill)) => match textured(fill).filter(|_| line) {
+            Some(tile) => pixmap.fill_path(&path, &texture::paint(&tile), FillRule::Winding, matrix, None),
+            None => pixmap.fill_path(&path, &paint_for(fill), FillRule::Winding, matrix, None),
+        },
         (None, None) => {}
     }
     if let Some(stroke) = element.style.stroke.filter(|s| s.width > 0.0) {
@@ -885,7 +911,10 @@ fn draw_element(pixmap: &mut PixmapMut, element: &Element, matrix: Transform, st
             }),
             ..tiny_skia::Stroke::default()
         };
-        pixmap.stroke_path(&path, &paint_for(stroke.color), &style, matrix, None);
+        match textured(stroke.color) {
+            Some(tile) => pixmap.stroke_path(&path, &texture::paint(&tile), &style, matrix, None),
+            None => pixmap.stroke_path(&path, &paint_for(stroke.color), &style, matrix, None),
+        }
     }
 }
 
@@ -1555,6 +1584,43 @@ mod tests {
     }
 
     #[test]
+    fn a_line_texture_grains_a_layers_lines_but_not_its_fills() {
+        use inkframe_core::{LineTexture, Path, Segment, TextureKind};
+        let mut doc = Document::default();
+        doc.width = 100;
+        doc.height = 100;
+        doc.background = Color::WHITE;
+        let line = Element {
+            shape: Shape::Line {
+                path: Path {
+                    start: Point::new(-40.0, 0.0),
+                    segments: vec![Segment::Line { to: Point::new(40.0, 0.0) }],
+                    closed: false,
+                },
+                widths: vec![20.0, 20.0],
+            },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
+        };
+        let square = Element {
+            shape: Shape::Rect { width: 80.0, height: 20.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
+        };
+        let id = doc.add_layer("Ink", vec![line, square], 0, Pose::at(Point::new(50.0, 50.0)));
+        doc.layer_mut(id).unwrap().drawings[0].elements[1] = doc.layer(id).unwrap().drawings[0].elements[1]
+            .transformed(Affine::translate(Point::new(0.0, 30.0)))
+            .unwrap();
+        let shades = |doc: &Document, y: u32| -> std::collections::BTreeSet<u8> {
+            let pixmap = render_frame(doc, 0, &RenderOptions::default()).unwrap();
+            (20..80).map(|x| pixel(&pixmap, x, y)[0]).collect()
+        };
+        assert_eq!(shades(&doc, 50).len(), 1, "flat ink without a texture");
+        doc.layer_mut(id).unwrap().line_texture =
+            Some(LineTexture { kind: TextureKind::Pencil, amount: 1.0 });
+        assert!(shades(&doc, 50).len() > 5, "the line shows the grain");
+        assert_eq!(shades(&doc, 80).len(), 1, "the filled box doesn't");
+    }
+
+    #[test]
     fn renders_the_drawing_exposed_on_each_frame() {
         let mut doc = red_square_doc();
         let layer = &mut doc.layers[0];
@@ -1742,8 +1808,14 @@ mod tests {
         let mut whole = Pixmap::new(banded.width(), banded.height()).unwrap();
         whole.fill(to_skia_color(doc.background));
         let to_pixels = Affine::scale(1.3, 1.3);
-        let style =
-            super::Style { tint: None, images: None, show_guides: false, show_mask: None, light_table: None };
+        let style = super::Style {
+            tint: None,
+            images: None,
+            show_guides: false,
+            show_mask: None,
+            light_table: None,
+            texture: None,
+        };
         let layers: Vec<&Layer> = doc.layers.iter().collect();
         render_layers(&mut whole.as_mut(), &doc, &layers, 0, to_pixels, 1.0, style, None, 0);
 

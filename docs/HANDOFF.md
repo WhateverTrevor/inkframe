@@ -809,6 +809,14 @@ after the Harmony features (palettes to master controllers).
     "Brush" (Plain/Art/Pattern + symbol). Hook
     `INKFRAME_SCREENSHOT_BRUSHES=1`. Not yet: a dedicated Paint Brush tool
     with a brush library panel; hit testing uses the plain line.
+106. Line textures: `Layer::line_texture: Option<LineTexture{kind,
+    amount}>` (optional, no bump). Renderer `texture.rs`: per-kind grain
+    (OnceLock, 96-unit tile, hashed/value noise), `tile(color, texture)`
+    → `paint(&tile)` (Repeat, identity transform: layer units). Render
+    `Style::texture` set per layer in `draw_layer`; applies to Line fills
+    and strokes, not area fills. Inspector "Lines" combo + amount. Hook
+    `INKFRAME_SCREENSHOT_TEXTURES=1`. Not yet: textures in SVG/Lottie
+    (they export flat).
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

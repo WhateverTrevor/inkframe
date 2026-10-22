@@ -123,6 +123,40 @@ pub fn centreline_anchors(path: &Path) -> Vec<Point> {
     anchors_from_path(path).into_iter().map(|a| a.point).collect()
 }
 
+/// The grain a layer's lines are drawn with, as Harmony's pencil line
+/// textures: rather than flat ink, the lines show the tooth of the paper
+/// through them. It's the layer's, so everything inked on it matches; the
+/// grain is fixed to the layer, so it moves with the drawing rather than
+/// crawling over it.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LineTexture {
+    pub kind: TextureKind,
+    /// How strongly the grain shows, from 0 (flat) to 1.
+    pub amount: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TextureKind {
+    /// A fine, even grain: graphite on smooth paper.
+    Pencil,
+    /// Coarse and streaky, dragged along: charcoal on rough paper.
+    Charcoal,
+    /// Speckled with gaps where the paper shows: chalk.
+    Chalk,
+}
+
+impl TextureKind {
+    pub const ALL: [TextureKind; 3] = [TextureKind::Pencil, TextureKind::Charcoal, TextureKind::Chalk];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            TextureKind::Pencil => "Pencil",
+            TextureKind::Charcoal => "Charcoal",
+            TextureKind::Chalk => "Chalk",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
