@@ -31,6 +31,8 @@
 //! * `INKFRAME_SCREENSHOT_WELDS=1` shows welded points: a house of three shapes sharing
 //!   corners, picked with the Subselection tool, and a sleeve pinned to the upper arm that
 //!   stays joined to the forearm at the elbow as the arm bends.
+//! * `INKFRAME_SCREENSHOT_BONES=1` shows the Bones panel in place of Properties (with
+//!   `_SMART` and the like).
 //! * `INKFRAME_SCREENSHOT_SETUP=1` turns on rig setup, showing skeletons at rest (with
 //!   `_SKELETON` and the like).
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
@@ -263,6 +265,11 @@ impl AutoScreenshot {
     }
 
     /// Whether to show Motion Presets.
+    /// Whether to show the Bones panel in place of Properties.
+    pub fn bones_panel() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_BONES").is_some()
+    }
+
     pub fn presets() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_PRESETS").is_some()
     }

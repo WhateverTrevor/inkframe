@@ -64,6 +64,8 @@ pub enum Kind {
     ScriptConsole,
     /// Saved movements to give layers (see `motion_presets.rs`).
     MotionPresets,
+    /// The skeletons and what they rig (see `bones_panel.rs`).
+    Bones,
 }
 
 impl Kind {
@@ -77,6 +79,7 @@ impl Kind {
                 Kind::GraphEditor,
                 Kind::ExposureSheet,
                 Kind::Controllers,
+                Kind::Bones,
                 Kind::DepthView,
                 Kind::MotionPresets,
             ],
@@ -114,6 +117,7 @@ impl Kind {
             Kind::NodeView => "Node View",
             Kind::Templates => "Templates",
             Kind::MotionPresets => "Motion Presets",
+            Kind::Bones => "Bones",
             Kind::DepthView => "Depth View",
             Kind::ScriptConsole => "Script Console",
         }
@@ -138,6 +142,7 @@ impl Kind {
             Kind::NodeView => Icon::Nodes,
             Kind::Templates => Icon::Templates,
             Kind::MotionPresets => Icon::Motion,
+            Kind::Bones => Icon::Bones,
             Kind::DepthView => Icon::Camera,
             Kind::ScriptConsole => Icon::Console,
         }
@@ -159,6 +164,7 @@ impl Kind {
                 | Kind::Controllers
                 | Kind::Templates
                 | Kind::MotionPresets
+                | Kind::Bones
         )
     }
 
@@ -1246,7 +1252,7 @@ mod tests {
         let listed: Vec<Kind> = Kind::GROUPS.iter().flat_map(|(_, kinds)| kinds.iter().copied()).collect();
         let unique: std::collections::HashSet<Kind> = listed.iter().copied().collect();
         assert_eq!(listed.len(), unique.len());
-        assert_eq!(listed.len(), 19);
+        assert_eq!(listed.len(), 20);
     }
 
     #[test]

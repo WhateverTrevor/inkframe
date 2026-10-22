@@ -300,6 +300,7 @@ writes. No audio.
 | `frame_commands.rs` | Animate's frame commands on the frames picked in the timeline (Insert/Remove Frames, Blank Keyframe, Convert to Keyframes, Reverse Frames) and Edit Multiple Frames' move across them (`MultiFrameMove`) |
 | `envelope.rs` | Modify › Transform › Distort and Envelope: the lattice edit under way (`Editor::lattice`), re-bending the picked shapes (or a whole layer's drawing) from their originals on every drag |
 | `skeleton.rs` | Rigging with skeletons: New Skeleton and New Switch, adding, posing, moving and deleting bones (bindings and pins follow a deleted bone's renumbering), pinning picked shapes or the Subselection's point (`Editor::picked_anchor`) to a bone, and the picked bone (`Editor::selected_bone`) |
+| `bones_panel.rs` | The Bones area (`Kind::Bones`): each skeleton's bone tree (`tree`), what it rigs and how each layer follows, and the rig setup switch |
 | `shape_ops.rs` | Combine Shapes and Break Apart on the picked shapes (text through `inkframe_render::shape_outline`) |
 | `motion_presets.rs` | The Motion Presets area: built-in and saved presets (`.inkpreset` files in the settings folder's Motion Presets), animated previews, Apply and Save Movement |
 | `swap_dialog.rs` | Modify › Swap Symbol: a picture of each symbol, swapping the selected instances for the whole layer or from the current frame (`Document::swap_symbol`), and Duplicate Symbol |

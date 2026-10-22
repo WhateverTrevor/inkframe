@@ -632,6 +632,9 @@ impl InkframeApp {
                     Err(problem) => eprintln!("Couldn't group for the screenshot: {problem}"),
                 }
             }
+            if AutoScreenshot::bones_panel() {
+                app.layout.replace_kind(Kind::Properties, Kind::Bones);
+            }
             if AutoScreenshot::presets() {
                 app.presets.use_folder(std::env::temp_dir().join("inkframe-screenshot-presets"));
                 app.presets.screenshot_setup(&app.editor);
@@ -1919,6 +1922,11 @@ impl InkframeApp {
                 egui::ScrollArea::vertical()
                     .id_salt(("align", area))
                     .show(ui, |ui| panels::align(ui, &mut self.editor, &mut self.panels));
+            }
+            Kind::Bones => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("bones", area))
+                    .show(ui, |ui| crate::bones_panel::show(ui, &mut self.editor));
             }
             Kind::MotionPresets => {
                 egui::ScrollArea::vertical()
