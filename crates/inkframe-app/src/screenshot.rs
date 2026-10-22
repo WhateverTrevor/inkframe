@@ -56,6 +56,8 @@
 //!   previewed. With `_GROUP=1`, the grouped symbol is the one previewed.
 //! * `INKFRAME_SCREENSHOT_SWAP=1` (after `_GROUP`) duplicates the instance's symbol, swaps the
 //!   copy in from frame 13, and opens Swap Symbol.
+//! * `INKFRAME_SCREENSHOT_PRESETS=1` shows Motion Presets in place of Properties, with the
+//!   selected layer's movement saved (in a temporary folder) and Bounce In picked.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -207,6 +209,11 @@ impl AutoScreenshot {
     /// Swap Symbol.
     pub fn swap() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_SWAP").is_some()
+    }
+
+    /// Whether to show Motion Presets.
+    pub fn presets() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_PRESETS").is_some()
     }
 
     /// Whether to fill and show the Library.

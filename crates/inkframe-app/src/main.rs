@@ -32,6 +32,7 @@ mod layout;
 mod library;
 mod lip_sync_dialog;
 mod motion_path;
+mod motion_presets;
 mod multi_edit;
 mod node_view;
 mod panels;

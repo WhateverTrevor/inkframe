@@ -62,6 +62,8 @@ pub enum Kind {
     DepthView,
     /// Typing and running scripts (see `scripts.rs`).
     ScriptConsole,
+    /// Saved movements to give layers (see `motion_presets.rs`).
+    MotionPresets,
 }
 
 impl Kind {
@@ -70,7 +72,14 @@ impl Kind {
         ("General", &[Kind::Stage, Kind::Tools, Kind::ToolSettings, Kind::Properties, Kind::NodeView]),
         (
             "Animation",
-            &[Kind::Timeline, Kind::GraphEditor, Kind::ExposureSheet, Kind::Controllers, Kind::DepthView],
+            &[
+                Kind::Timeline,
+                Kind::GraphEditor,
+                Kind::ExposureSheet,
+                Kind::Controllers,
+                Kind::DepthView,
+                Kind::MotionPresets,
+            ],
         ),
         ("Design", &[Kind::Swatches, Kind::Align]),
         (
@@ -104,6 +113,7 @@ impl Kind {
             Kind::Controllers => "Controllers",
             Kind::NodeView => "Node View",
             Kind::Templates => "Templates",
+            Kind::MotionPresets => "Motion Presets",
             Kind::DepthView => "Depth View",
             Kind::ScriptConsole => "Script Console",
         }
@@ -127,6 +137,7 @@ impl Kind {
             Kind::Controllers => Icon::Dial,
             Kind::NodeView => Icon::Nodes,
             Kind::Templates => Icon::Templates,
+            Kind::MotionPresets => Icon::Motion,
             Kind::DepthView => Icon::Camera,
             Kind::ScriptConsole => Icon::Console,
         }
@@ -147,6 +158,7 @@ impl Kind {
                 | Kind::History
                 | Kind::Controllers
                 | Kind::Templates
+                | Kind::MotionPresets
         )
     }
 
@@ -1234,7 +1246,7 @@ mod tests {
         let listed: Vec<Kind> = Kind::GROUPS.iter().flat_map(|(_, kinds)| kinds.iter().copied()).collect();
         let unique: std::collections::HashSet<Kind> = listed.iter().copied().collect();
         assert_eq!(listed.len(), unique.len());
-        assert_eq!(listed.len(), 18);
+        assert_eq!(listed.len(), 19);
     }
 
     #[test]

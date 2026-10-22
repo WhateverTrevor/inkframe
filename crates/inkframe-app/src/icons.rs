@@ -57,6 +57,8 @@ pub enum Icon {
     Nodes,
     /// A stack of cards: the template library.
     Templates,
+    /// A dotted arc ending in a ball: motion presets.
+    Motion,
     /// A prompt, for the Script Console.
     Console,
     Plus,
@@ -407,6 +409,13 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             line(&[(0.22, 0.35), (0.38, 0.5), (0.22, 0.65)]);
             line(&[(0.46, 0.66), (0.72, 0.66)]);
         }
+        Icon::Motion => {
+            // The path a ball took, in dots, and the ball.
+            for (x, y) in [(0.08, 0.85), (0.2, 0.55), (0.35, 0.33), (0.52, 0.22)] {
+                painter.circle_filled(at(x, y), side * 0.05, color);
+            }
+            painter.circle_filled(at(0.75, 0.3), side * 0.16, color);
+        }
         Icon::Templates => {
             painter.rect_stroke(
                 Rect::from_min_max(at(0.22, 0.05), at(0.95, 0.62)),
@@ -601,6 +610,7 @@ mod tests {
             Dial,
             Nodes,
             Templates,
+            Motion,
             Console,
             Plus,
             AlignLeft,

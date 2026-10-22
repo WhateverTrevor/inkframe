@@ -2218,7 +2218,7 @@ fn section(ui: &mut egui::Ui, title: impl Into<String>) {
 }
 
 /// A section title's text, for titles that share their row with controls.
-fn section_text(title: impl Into<String>) -> egui::RichText {
+pub fn section_text(title: impl Into<String>) -> egui::RichText {
     egui::RichText::new(title.into().to_uppercase())
         .size(11.0)
         .extra_letter_spacing(0.6)
