@@ -13,6 +13,11 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Bent paintings in SVG and Lottie
+
+- Painted layers and pictures bent by a skeleton now export bent to SVG
+  and Lottie too, drawn by the renderer and embedded as images.
+
 ### Bones panel
 
 - A Bones area lists each skeleton's bones as a tree (smart, swinging,

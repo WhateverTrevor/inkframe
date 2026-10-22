@@ -109,9 +109,10 @@ impl Svg<'_> {
             }
 
             // What SVG can't draw as shapes is drawn by the renderer: the
-            // layer whole, its opacity included.
+            // layer whole, its opacity included. That includes pixels bent
+            // by a skeleton.
             let fx = layer.track.effects_at(frame as f32);
-            if layer.particles.is_some() || !fx.is_none() {
+            if layer.particles.is_some() || !fx.is_none() || crate::bends_pixels(doc, layer, frame) {
                 let _ = writeln!(self.body, "<g{attrs}>");
                 if let Some(pixels) = inkframe_render::render_layer_alone(
                     doc,

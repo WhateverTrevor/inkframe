@@ -707,8 +707,7 @@ after the Harmony features (palettes to master controllers).
     `INKFRAME_SCREENSHOT_SKELETON=1`. Phases next (agreed with the user):
     B point binding + smart bones + switch layers, C bone dynamics,
     squash/stretch, constraints (angle limits not yet on skeleton bones),
-    D maybe shared points. Not yet: bent rasters in SVG/Lottie export
-    (they stay unbent there), skeleton keys draggable on the folder row,
+    D maybe shared points. Not yet: skeleton keys draggable on the folder row,
     binding weights painted by hand.
 97. Moho rigging Phase B (format v36): core `switch.rs` (`Layer::switch`,
     `switch_keys`, `folder_children`, `switch_choice` (smart bone >
@@ -780,6 +779,11 @@ after the Harmony features (palettes to master controllers).
     depth-first from the roots; rows pick bones (selecting the skeleton);
     "Rigs" lists `skeleton_members` with a Follows combo and pin counts.
     Hook `INKFRAME_SCREENSHOT_BONES=1`.
+102. Bent pixels in SVG/Lottie: `inkframe_export::bends_pixels` (a
+    layer with Paint/Image shapes and a `layer_bend` on the frame) sends
+    the layer down the existing "rendered" route (renderer draws it
+    whole, embedded as PNG), per frame in SVG, for every frame in Lottie
+    if any frame bends.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)
