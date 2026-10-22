@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use crate::anchor::{Anchor, insert_anchor, nearest_on_anchors, path_from_anchors};
 use crate::color::Color;
 use crate::document::{Element, Layer};
+use crate::drawing::Drawing;
 use crate::easing::Easing;
 use crate::geometry::Point;
 use crate::shape::{Shape, Stroke, Style};
@@ -72,6 +73,36 @@ impl Layer {
     pub fn shape_tween_mut(&mut self, frame: u32) -> Option<&mut ShapeTween> {
         let end = self.shape_tween_at(frame)?.1;
         self.shape_tweens.iter_mut().find(|t| t.end == end)
+    }
+
+    /// Draws the inbetweens for the span `frame` is in, as an assistant
+    /// would: a new drawing on every frame from the one after the span's
+    /// key drawing up to the next swap, each the key drawing morphed that
+    /// far toward the next (with the shape hints, and spaced by the span's
+    /// shape tween easing if it has one). Being drawings, each can then be
+    /// touched up by hand; the shape tween, if any, is done with. Returns
+    /// how many it drew: none if there's no next swap, or no frame between.
+    pub fn make_inbetweens(&mut self, frame: u32) -> usize {
+        let Some(end) = self.exposure.iter().find(|key| key.frame > frame).map(|k| k.frame) else { return 0 };
+        let start =
+            self.exposure.iter().take_while(|key| key.frame <= frame).last().map_or(self.start, |k| k.frame);
+        if end <= start + 1 {
+            return 0;
+        }
+        let easing = self.shape_tweens.iter().find(|t| t.end == end).map_or(Easing::Linear, |t| t.easing);
+        let from = self.drawings[self.drawing_index_at(start)].clone();
+        let to = self.drawings[self.drawing_index_at(end)].clone();
+        let hints = (from.hints.as_slice(), to.hints.as_slice());
+        for f in start + 1..end {
+            let t = easing.apply((f - start) as f32 / (end - start) as f32);
+            let mut drawing =
+                Drawing::new(self.next_drawing_name(), morph(&from.elements, &to.elements, hints, t));
+            drawing.colour_art = morph(&from.colour_art, &to.colour_art, (&[], &[]), t);
+            let index = self.add_drawing(drawing);
+            self.expose(f, index);
+        }
+        self.shape_tweens.retain(|t| t.end != end);
+        (end - start - 1) as usize
     }
 
     /// The morphed shapes on `frame`, if a shape tween is part way through
@@ -455,6 +486,26 @@ mod tests {
 
     fn bounds(elements: &[Element]) -> Rect {
         elements.iter().map(Element::bounds).reduce(Rect::union).unwrap()
+    }
+
+    #[test]
+    fn inbetweens_are_drawn_on_every_frame_between_two_keys() {
+        let mut doc = crate::Document::default();
+        let id = doc.add_layer("Ball", vec![square(20.0)], 0, crate::Transform::default());
+        let mut layer = doc.layer(id).unwrap().clone();
+        let big = layer.add_drawing(Drawing::new("2", vec![square(60.0)]));
+        layer.expose(4, big);
+        layer.set_shape_tween(0, true);
+        assert_eq!(layer.make_inbetweens(0), 3);
+        // A drawing of its own on each frame between, growing evenly.
+        let widths: Vec<f32> = (0..=4).map(|f| bounds(layer.elements_at(f)).width()).collect();
+        for (w, want) in widths.iter().zip([20.0, 30.0, 40.0, 50.0, 60.0]) {
+            assert!((w - want).abs() < 0.5, "{widths:?}");
+        }
+        assert_eq!(layer.drawings.len(), 5);
+        assert!(layer.shape_tweens.is_empty(), "the tween's done with");
+        // And none to draw where the keys are next to each other.
+        assert_eq!(layer.make_inbetweens(3), 0);
     }
 
     #[test]

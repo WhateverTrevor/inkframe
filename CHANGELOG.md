@@ -13,6 +13,12 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Draw inbetweens
+
+- Timeline › Draw Inbetweens fills the frames between two key drawings
+  with drawings morphed between them, spaced by the shape tween's easing,
+  to touch up by hand.
+
 ### Perspective guides
 
 - View › Perspective Guide: one-, two- or three-point, with draggable

@@ -43,6 +43,8 @@
 //!   texture: pencil, charcoal and chalk.
 //! * `INKFRAME_SCREENSHOT_PERSPECTIVE=1` shows a two-point perspective guide with a block
 //!   drawn to it.
+//! * `INKFRAME_SCREENSHOT_INBETWEENS=1` shows inbetweens drawn between a square and a star,
+//!   seen through onion skins.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -204,6 +206,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_PERSPECTIVE").is_some() {
             perspective_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_INBETWEENS").is_some() {
+            inbetweens_demo(editor);
         }
         if Self::pen_handles() {
             pen_handles_demo(editor);
@@ -1389,4 +1394,52 @@ fn perspective_demo(editor: &mut Editor) {
     let id = editor.doc.add_layer("Block", shapes, 0, Transform::default());
     editor.doc.perspective = Some(guide);
     editor.select(Some(id));
+}
+
+/// Two key drawings, a square on frame 1 and a five-pointed star on frame
+/// 9 off to the right, with the inbetweens drawn between them (eased out
+/// and in), shown on frame 5 through onion skins either side.
+fn inbetweens_demo(editor: &mut Editor) {
+    use inkframe_core::{
+        Color, Drawing, Easing, Element, Path, Point, Segment, Shape, Stroke, Style, Transform,
+    };
+    let style = Style {
+        fill: Some(Color::rgb(250, 190, 80)),
+        stroke: Some(Stroke::new(Color::rgb(30, 30, 40), 5.0)),
+        gradient: None,
+    };
+    let square = Element {
+        shape: Shape::Rect { width: 160.0, height: 160.0, corner_radius: 0.0 },
+        style: style.clone(),
+    };
+    let star: Vec<Point> = (0..10)
+        .map(|i| {
+            let angle = std::f32::consts::PI * i as f32 / 5.0 - std::f32::consts::FRAC_PI_2;
+            let r = if i % 2 == 0 { 130.0 } else { 55.0 };
+            Point::new(900.0 + r * angle.cos(), r * angle.sin())
+        })
+        .collect();
+    let star = Element {
+        shape: Shape::Path(Path {
+            start: star[0],
+            segments: star[1..].iter().map(|&to| Segment::Line { to }).collect(),
+            closed: true,
+        }),
+        style,
+    };
+    let id = editor.doc.add_layer("Shape", vec![square], 0, Transform::at(Point::new(500.0, 540.0)));
+    if let Some(layer) = editor.doc.layer_mut(id) {
+        let key = layer.add_drawing(Drawing::new("2", vec![star]));
+        layer.expose(8, key);
+        layer.set_shape_tween(0, true);
+        if let Some(tween) = layer.shape_tween_mut(0) {
+            tween.easing = Easing::EaseInOut;
+        }
+        layer.make_inbetweens(0);
+    }
+    editor.select(Some(id));
+    editor.frame = 4;
+    editor.onion.enabled = true;
+    editor.onion.before = 4;
+    editor.onion.after = 4;
 }
