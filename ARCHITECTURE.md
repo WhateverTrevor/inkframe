@@ -286,7 +286,11 @@ sample to `target/lottie-check/features`).
 The Web Page export (`html.rs`) is every frame as SVG (`svg::frame_svg`),
 each different frame kept once, as JSON in one self-contained page whose
 few lines of script swap them at the frame rate; a click pauses, the
-arrow keys step while paused.
+arrow keys step while paused. `Document::frame_actions` and
+`Layer::button` (`WebAction`s, core `web_actions.rs`) make it interactive:
+the SVG marks button layers' groups (`class="inkframe-button"`,
+`data-button`), and the page runs frame actions as it reaches them and
+button actions on a click (links only `http(s):`/`mailto:`).
 
 Sprite sheets (`sprite_sheet.rs`) render every frame, crop each to its
 drawn pixels, and keep one copy of frames that come out identical (held

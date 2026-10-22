@@ -839,9 +839,9 @@ after the Harmony features (palettes to master controllers).
     into JSON in a `<script type=application/json>` with `</` escaped; a
     small player advances by elapsed time at the doc's fps, click to
     pause, arrows step when paused; the page is the doc's background).
-    Checked in the browser (plays, pauses). Not yet: Animate's
-    interactive buttons and actions (gotoAndPlay, stop), sound, and paint
-    layers re-embed their PNG in every frame that differs.
+    Checked in the browser (plays, pauses). Not yet: sound, and paint
+    layers re-embed their PNG in every frame that differs. (Buttons and
+    actions: #111.)
 110. Smart bone corrections (format v38): `SmartAction::Correct{layer,
     drawing, keys: Vec<CorrectionKey{turn, colour_art, line_art}>}`
     (SmartAction no longer Copy), `corrected(rest, keys, now)` (rest is a
@@ -854,6 +854,21 @@ after the Harmony features (palettes to master controllers).
     (finishes on frame/turn change); undo drops the state. Inspector
     correction row (key chips, Edit at, Remove, + Correction, Finish/Cancel
     banner), stage note, Enter/Esc. Hook `INKFRAME_SCREENSHOT_CORRECTION=1`.
+111. Interactive web pages: core `web_actions.rs` (`WebAction` Play/
+    Stop/GotoAndPlay/GotoAndStop/OpenLink, `FrameAction`,
+    `Document::frame_actions` + `frame_action`/`set_frame_action`,
+    `Layer::button`, all optional). SVG export marks button groups
+    (`button_id` = layer id number); `html.rs` `Interaction` (frame
+    actions re-counted from the export's first frame, buttons by id) in
+    the page JSON; the player runs a frame's action as it enters it
+    (tick-only, so a goto doesn't loop on itself), clicks run button
+    actions, click-to-pause only when nothing's interactive; CSS hover/
+    active brightness. App: inspector `web_action_editor` (Button row on
+    layers), Timeline › Frame Action, "a" markers on the ruler. Checked
+    in the browser via the ignored `write_interactive_sample` test
+    (`target/web-check/buttons.html`): stops at the end, Replay replays,
+    Pause holds. Not yet: frame actions don't move with Insert/Remove
+    Frames; button over/down states as symbol frames; sound.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

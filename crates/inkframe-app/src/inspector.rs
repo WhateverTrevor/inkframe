@@ -622,6 +622,13 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
             }
         });
     }
+    // What the layer does when clicked, in a web page export.
+    ui.horizontal(|ui| {
+        ui.label("Button").on_hover_text(
+            "In a Web Page export, clicking the layer does this, and it lights up under the pointer, as Animate's buttons",
+        );
+        web_action_editor(ui, "layer button", &mut layer.button, last_frame);
+    });
     editor.carry_settings(id, before);
 
     ui.add_space(8.0);
@@ -2768,6 +2775,74 @@ pub fn section_text(title: impl Into<String>) -> egui::RichText {
         .size(11.0)
         .extra_letter_spacing(0.6)
         .color(crate::theme::TEXT_WEAK)
+}
+
+/// Picks a web page action (see `web_actions.rs` in the core), or none:
+/// what a button does, or a frame. Frames are shown 1-based.
+pub fn web_action_editor(
+    ui: &mut egui::Ui,
+    id: &str,
+    action: &mut Option<inkframe_core::WebAction>,
+    last_frame: u32,
+) {
+    use inkframe_core::WebAction;
+    #[derive(Clone, Copy, PartialEq)]
+    enum Kind {
+        None,
+        Play,
+        Stop,
+        GotoAndPlay,
+        GotoAndStop,
+        Link,
+    }
+    let kind = match action {
+        None => Kind::None,
+        Some(WebAction::Play) => Kind::Play,
+        Some(WebAction::Stop) => Kind::Stop,
+        Some(WebAction::GotoAndPlay(_)) => Kind::GotoAndPlay,
+        Some(WebAction::GotoAndStop(_)) => Kind::GotoAndStop,
+        Some(WebAction::OpenLink(_)) => Kind::Link,
+    };
+    let mut chosen = kind;
+    choice(
+        ui,
+        id,
+        &mut chosen,
+        &[
+            (Kind::None, "Nothing"),
+            (Kind::Play, "Play"),
+            (Kind::Stop, "Stop"),
+            (Kind::GotoAndPlay, "Go to & play"),
+            (Kind::GotoAndStop, "Go to & stop"),
+            (Kind::Link, "Open link"),
+        ],
+    );
+    if chosen != kind {
+        let frame = match action {
+            Some(WebAction::GotoAndPlay(f) | WebAction::GotoAndStop(f)) => *f,
+            _ => 0,
+        };
+        *action = match chosen {
+            Kind::None => None,
+            Kind::Play => Some(WebAction::Play),
+            Kind::Stop => Some(WebAction::Stop),
+            Kind::GotoAndPlay => Some(WebAction::GotoAndPlay(frame)),
+            Kind::GotoAndStop => Some(WebAction::GotoAndStop(frame)),
+            Kind::Link => Some(WebAction::OpenLink("https://".into())),
+        };
+    }
+    match action {
+        Some(WebAction::GotoAndPlay(f) | WebAction::GotoAndStop(f)) => {
+            let mut shown = *f + 1;
+            if ui.add(DragValue::new(&mut shown).range(1..=last_frame + 1).prefix("frame ")).changed() {
+                *f = shown - 1;
+            }
+        }
+        Some(WebAction::OpenLink(url)) => {
+            ui.add(egui::TextEdit::singleline(url).desired_width(140.0));
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]

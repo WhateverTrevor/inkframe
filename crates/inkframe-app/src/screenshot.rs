@@ -47,6 +47,8 @@
 //!   seen through onion skins.
 //! * `INKFRAME_SCREENSHOT_CORRECTION=1` adds to `_SKELETON`'s character a correction on the
 //!   spine, keyed at its turn: the body reshaped by hand into a pear as it leans.
+//! * `INKFRAME_SCREENSHOT_BUTTONS=1` shows a ball that stops on its last frame (a frame
+//!   action), with Replay and Pause buttons for a web page export, Replay picked.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -218,6 +220,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_INBETWEENS").is_some() {
             inbetweens_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_BUTTONS").is_some() {
+            buttons_demo(editor);
         }
         if Self::pen_handles() {
             pen_handles_demo(editor);
@@ -1491,4 +1496,46 @@ fn correction_demo(editor: &mut Editor) {
         skeleton.bones[0].actions.push(SmartAction::Correct { layer: body, drawing: 0, keys: vec![key] });
     }
     editor.selected_bone = Some(0);
+}
+
+/// A web page made interactive: a ball rolls across and stops on its last
+/// frame (a frame action, marked "a" on the ruler), and two buttons, Replay
+/// (back to the start, playing) and Pause. Replay is picked, to show its
+/// Button setting.
+fn buttons_demo(editor: &mut Editor) {
+    use inkframe_core::{Color, Element, Point, Shape, Style, Transform, WebAction};
+    let fill = |c: Color| Style { fill: Some(c), stroke: None, gradient: None };
+    let doc = &mut editor.doc;
+    let ball = Element {
+        shape: Shape::Ellipse { radius_x: 60.0, radius_y: 60.0 },
+        style: fill(Color::rgb(230, 90, 100)),
+    };
+    let id = doc.add_layer("Ball", vec![ball], 0, Transform::at(Point::new(200.0, 500.0)));
+    if let Some(layer) = doc.layer_mut(id) {
+        layer.track.set_pose(47, Transform::at(Point::new(1700.0, 500.0)));
+    }
+    let button = |c: Color| Element {
+        shape: Shape::Rect { width: 220.0, height: 80.0, corner_radius: 20.0 },
+        style: fill(c),
+    };
+    let replay = doc.add_layer(
+        "Replay",
+        vec![button(Color::rgb(80, 160, 90))],
+        0,
+        Transform::at(Point::new(760.0, 850.0)),
+    );
+    let pause = doc.add_layer(
+        "Pause",
+        vec![button(Color::rgb(90, 120, 200))],
+        0,
+        Transform::at(Point::new(1160.0, 850.0)),
+    );
+    for (layer, action) in [(replay, WebAction::GotoAndPlay(0)), (pause, WebAction::Stop)] {
+        if let Some(layer) = doc.layer_mut(layer) {
+            layer.button = Some(action);
+        }
+    }
+    doc.set_frame_action(47, Some(WebAction::Stop));
+    editor.select(Some(replay));
+    editor.frame = 20;
 }

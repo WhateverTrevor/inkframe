@@ -1724,6 +1724,25 @@ fn paint_ruler(painter: &egui::Painter, ui: &egui::Ui, editor: &Editor, layout: 
         }
     }
 
+    // Frames with a web page action (see `web_actions.rs`): a small "a",
+    // as Animate marks frames with ActionScript. On the main timeline only.
+    if editor.timeline() == inkframe_core::TimelineId::Main {
+        let accent = Color32::from_rgb(0xff, 0xb8, 0x4d);
+        for action in &editor.doc.frame_actions {
+            let x = layout.frame_center_x(action.frame);
+            if x < ruler.left() || x > ruler.right() {
+                continue;
+            }
+            painter.text(
+                pos2(x, ruler.bottom() - 1.0),
+                Align2::CENTER_BOTTOM,
+                "a",
+                FontId::proportional(10.0),
+                accent,
+            );
+        }
+    }
+
     // The playhead handle shows the current frame number: a pill, wider
     // for longer numbers, with a point leading down into its line.
     let x = layout.frame_center_x(editor.frame);

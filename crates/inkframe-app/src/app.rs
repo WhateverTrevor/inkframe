@@ -1450,6 +1450,24 @@ impl InkframeApp {
                 item(ui, "Remove Shape Tween", None, Command::RemoveShapeTween, tween == Some(true));
                 item(ui, "Draw Inbetweens", None, Command::MakeInbetweens, tween.is_some());
                 ui.separator();
+                // What a Web Page export does on reaching this frame.
+                let main = self.editor.timeline() == TimelineId::Main;
+                ui.add_enabled_ui(main, |ui| {
+                    ui.menu_button("Frame Action", |ui| {
+                        let (frame, last) = (self.editor.frame, self.editor.last_frame());
+                        let mut action = self.editor.doc.frame_action(frame).cloned();
+                        let before = action.clone();
+                        ui.horizontal(|ui| {
+                            ui.label(format!("On frame {}:", frame + 1));
+                            crate::inspector::web_action_editor(ui, "frame action", &mut action, last);
+                        });
+                        if action != before {
+                            self.editor.doc.set_frame_action(frame, action);
+                        }
+                        ui.weak("What a Web Page export does on reaching this frame,\nas Animate's stop() and gotoAndPlay().");
+                    });
+                });
+                ui.separator();
                 let label =
                     if self.editor.doc.camera_layer().is_some() { "Select Camera" } else { "Add Camera" };
                 item(ui, label, None, Command::AddCamera, true);

@@ -107,6 +107,11 @@ impl Svg<'_> {
             if let Some(mode) = css_blend(layer.blend) {
                 let _ = write!(attrs, r#" style="mix-blend-mode:{mode}""#);
             }
+            // A button for the web page export (see `html.rs`) is marked so
+            // the page's script can find it; anywhere else it's ignored.
+            if layer.button.is_some() {
+                let _ = write!(attrs, r#" class="inkframe-button" data-button="{}""#, button_id(layer.id));
+            }
 
             // What SVG can't draw as shapes is drawn by the renderer: the
             // layer whole, its opacity included. That includes pixels bent
@@ -363,6 +368,11 @@ fn css_blend(mode: BlendMode) -> Option<&'static str> {
         BlendMode::Color => "color",
         BlendMode::Luminosity => "luminosity",
     })
+}
+
+/// How the web page export names a button: its layer's id, as a number.
+pub(crate) fn button_id(id: inkframe_core::LayerId) -> i64 {
+    serde_json::to_value(id).ok().and_then(|v| v.as_i64()).unwrap_or(0)
 }
 
 #[cfg(test)]

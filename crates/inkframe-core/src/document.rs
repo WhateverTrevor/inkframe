@@ -86,6 +86,10 @@ pub struct Document {
     /// Guide lines dragged out of the rulers (see `ruler_guides.rs`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ruler_guides: Vec<crate::RulerGuide>,
+    /// What the web page export does on reaching frames of the main
+    /// timeline (see `web_actions.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub frame_actions: Vec<crate::FrameAction>,
     /// A perspective guide over the stage (see `perspective.rs`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub perspective: Option<crate::Perspective>,
@@ -198,6 +202,10 @@ pub struct Layer {
     /// For a layer in a skeleton's folder, how it follows the bones.
     #[serde(default, skip_serializing_if = "crate::BoneBinding::is_region")]
     pub bone_binding: crate::BoneBinding,
+    /// In the web page export, the layer's a button that does this when
+    /// clicked (see `web_actions.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub button: Option<crate::WebAction>,
     /// The grain its lines and strokes are drawn with (see `line.rs`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_texture: Option<crate::LineTexture>,
@@ -358,6 +366,7 @@ impl Default for Document {
             library_folders: Vec::new(),
             ruler_guides: Vec::new(),
             perspective: None,
+            frame_actions: Vec::new(),
             old_swatches: Vec::new(),
             next_canvas_id: 1,
         }
@@ -457,6 +466,7 @@ impl Document {
             switch: false,
             switch_keys: Vec::new(),
             line_texture: None,
+            button: None,
             blend: BlendMode::Normal,
             color: None,
             folder: false,

@@ -88,7 +88,7 @@ planned (the code is already cross-platform and CI builds it on Windows).
   | Animated GIF | ✔ (on/off per pixel) | Sharing anywhere: loops forever, 256 colours |
   | SVG | ✔ | Vectors, one file per frame (or one for one frame), for the web, print and drawing programs |
   | Lottie (JSON) | ✔ | A vector animation that plays on web pages (lottie-web) and in iOS and Android apps |
-  | Web Page (HTML) | ✔ | One self-contained page that plays the animation as vectors in any browser, as Animate's HTML5 Canvas export: it fits the window, loops, pauses on a click and steps with the arrow keys while paused. Nothing else to load |
+  | Web Page (HTML) | ✔ | One self-contained page that plays the animation as vectors in any browser, as Animate's HTML5 Canvas export: it fits the window, loops, pauses on a click and steps with the arrow keys while paused. Nothing else to load. It can be interactive: any layer can be a **Button** (in its properties: Play, Stop, Go to a frame and play or stop, or Open a link), lighting up under the pointer, and Timeline › Frame Action puts Stop or Go to on a frame, as Animate's `stop()` and `gotoAndPlay()` (marked "a" on the ruler) |
 
   SVG and Lottie keep shapes as vectors, with gradients, line styles,
   masks, blend modes and symbols. A layer with filters, colour effects or
