@@ -595,6 +595,33 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
             }
         });
     });
+    // The grain the layer's lines are inked with (see `line.rs` in the core).
+    if layer.draws_vectors() {
+        use inkframe_core::{LineTexture, TextureKind};
+        ui.horizontal(|ui| {
+            ui.label("Lines").on_hover_text(
+                "Ink the layer's pencil lines and strokes with a paper grain, as Harmony's line textures",
+            );
+            let current = layer.line_texture.map(|t| t.kind);
+            let mut chosen = current;
+            egui::ComboBox::from_id_salt("line texture")
+                .selected_text(current.map_or("Flat", TextureKind::label))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut chosen, None, "Flat");
+                    for kind in TextureKind::ALL {
+                        ui.selectable_value(&mut chosen, Some(kind), kind.label());
+                    }
+                });
+            if chosen != current {
+                let amount = layer.line_texture.map_or(0.6, |t| t.amount);
+                layer.line_texture = chosen.map(|kind| LineTexture { kind, amount });
+            }
+            if let Some(texture) = &mut layer.line_texture {
+                ui.add(egui::Slider::new(&mut texture.amount, 0.0..=1.0).show_value(false))
+                    .on_hover_text("How strongly the grain shows");
+            }
+        });
+    }
     editor.carry_settings(id, before);
 
     ui.add_space(8.0);

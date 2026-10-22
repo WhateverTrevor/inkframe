@@ -13,6 +13,11 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Line textures
+
+- A vector layer's lines can be inked with a paper grain (Pencil,
+  Charcoal or Chalk), as Harmony's line textures.
+
 ### Art and pattern brushes
 
 - Strokes can be drawn with a library symbol, stretched along the line

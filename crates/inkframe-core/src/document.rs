@@ -195,6 +195,9 @@ pub struct Layer {
     /// For a layer in a skeleton's folder, how it follows the bones.
     #[serde(default, skip_serializing_if = "crate::BoneBinding::is_region")]
     pub bone_binding: crate::BoneBinding,
+    /// The grain its lines and strokes are drawn with (see `line.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_texture: Option<crate::LineTexture>,
     /// This folder is a switch: it shows one of its layers at a time (see
     /// `switch.rs`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -449,6 +452,7 @@ impl Document {
             bone_binding: crate::BoneBinding::Region,
             switch: false,
             switch_keys: Vec::new(),
+            line_texture: None,
             blend: BlendMode::Normal,
             color: None,
             folder: false,

@@ -39,6 +39,8 @@
 //!   the ground, crouching as the hips drop with the feet staying planted.
 //! * `INKFRAME_SCREENSHOT_BRUSHES=1` shows strokes drawn with art and pattern brushes: a
 //!   vine of leaves, a tapered swoosh, and a card framed with beads.
+//! * `INKFRAME_SCREENSHOT_TEXTURES=1` shows a wavy line inked flat, then with each line
+//!   texture: pencil, charcoal and chalk.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -194,6 +196,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_BRUSHES").is_some() {
             brushes_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_TEXTURES").is_some() {
+            textures_demo(editor);
         }
         if Self::pen_handles() {
             pen_handles_demo(editor);
@@ -1277,4 +1282,52 @@ fn brushes_demo(editor: &mut Editor) {
     let id = doc.add_layer("Card", vec![card], 0, Transform::at(Point::new(1380.0, 540.0)));
     let _ = TimelineId::Main;
     editor.select(Some(id));
+}
+
+/// One thick, wavy pencil line, four times over: flat, then with each of
+/// the line textures, on layers of their own.
+fn textures_demo(editor: &mut Editor) {
+    use inkframe_core::{
+        Color, Element, LineTexture, Path, Point, Segment, Shape, Style, TextureKind, Transform,
+    };
+    let wave = Path {
+        start: Point::new(-380.0, 0.0),
+        segments: vec![
+            Segment::Cubic {
+                ctrl1: Point::new(-250.0, -90.0),
+                ctrl2: Point::new(-130.0, 90.0),
+                to: Point::new(0.0, 0.0),
+            },
+            Segment::Cubic {
+                ctrl1: Point::new(130.0, -90.0),
+                ctrl2: Point::new(250.0, 90.0),
+                to: Point::new(380.0, 0.0),
+            },
+        ],
+        closed: false,
+    };
+    let line = |width: f32| Element {
+        shape: Shape::Line { path: wave.clone(), widths: vec![width * 0.4, width, width * 0.4] },
+        style: Style { fill: Some(Color::rgb(35, 35, 45)), stroke: None, gradient: None },
+    };
+    let rows = [
+        (None, "Flat"),
+        (Some(TextureKind::Pencil), "Pencil"),
+        (Some(TextureKind::Charcoal), "Charcoal"),
+        (Some(TextureKind::Chalk), "Chalk"),
+    ];
+    let mut last = None;
+    for (i, (kind, name)) in rows.into_iter().enumerate() {
+        let id = editor.doc.add_layer(
+            name,
+            vec![line(30.0)],
+            0,
+            Transform::at(Point::new(960.0, 200.0 + 220.0 * i as f32)),
+        );
+        if let Some(layer) = editor.doc.layer_mut(id) {
+            layer.line_texture = kind.map(|kind| LineTexture { kind, amount: 0.8 });
+        }
+        last = Some(id);
+    }
+    editor.select(last);
 }

@@ -98,7 +98,7 @@ pub use history::History;
 pub use ik::RotationLimits;
 pub use image::{ImageAsset, ImageId};
 pub use library::Asset;
-pub use line::{centreline_anchors, line_outline, with_anchors_every};
+pub use line::{LineTexture, TextureKind, centreline_anchors, line_outline, with_anchors_every};
 pub use lip_sync::{
     LipSyncError, MouthCue, MouthMap, MouthShape, cues_from_loudness, parse_papagayo, parse_rhubarb,
 };
