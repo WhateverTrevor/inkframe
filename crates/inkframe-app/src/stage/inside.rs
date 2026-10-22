@@ -191,6 +191,10 @@ impl StageView {
     /// the box being dragged, and a note saying how to step back out.
     pub(super) fn draw_inside(&self, painter: &egui::Painter, editor: &Editor, view: View) {
         let Some(layer) = editor.inside_layer().and_then(|id| editor.doc.layer(id)) else { return };
+        // A Distort or Envelope draws its own handles and note.
+        if editor.lattice.is_some() {
+            return;
+        }
         let to_timeline = editor.doc.layer_matrix(layer, editor.frame);
         let on_screen = |p: Point| view.to_screen(to_timeline.apply(p));
 
@@ -243,7 +247,7 @@ impl StageView {
         editor: &Editor,
         view: View,
     ) {
-        if editor.inside_layer().is_none() || editor.tool != Tool::Select {
+        if editor.inside_layer().is_none() || editor.tool != Tool::Select || editor.lattice.is_some() {
             return;
         }
         let cursor = match &self.shape_drag {

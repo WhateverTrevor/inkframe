@@ -13,6 +13,14 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Distort and Envelope
+
+- Modify › Transform › Distort puts a handle at each corner of the picked
+  shapes (or everything in the selected layer); drag them to lean, taper
+  or put the shapes into perspective. Envelope has sixteen handles for
+  bulging and bending. Curves stay smooth, and pencil lines keep their
+  widths. Enter, Escape or clicking away finishes.
+
 ### Rulers and guides
 
 - View › Rulers, and guides dragged out of them onto the stage, saved with

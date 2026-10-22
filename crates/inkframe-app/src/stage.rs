@@ -7,6 +7,7 @@
 
 mod gradient_handles;
 mod inside;
+mod lattice;
 mod rulers;
 
 use egui::{Align2, Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
@@ -845,6 +846,8 @@ pub struct StageView {
     gradient_drag: Option<gradient_handles::GradientDrag>,
     /// A guide being dragged (see `rulers.rs`).
     guide_drag: Option<rulers::GuideDrag>,
+    /// The Distort or Envelope handle being dragged (see `lattice.rs`).
+    lattice_drag: Option<usize>,
 }
 
 impl Default for StageView {
@@ -867,6 +870,7 @@ impl Default for StageView {
             typing: TypingHistory::default(),
             gradient_drag: None,
             guide_drag: None,
+            lattice_drag: None,
         }
     }
 }
@@ -1015,7 +1019,10 @@ impl StageView {
         // Rulers and guides first: they're over everything, at the edges.
         let on_guide = !pointer_on_text && self.handle_rulers(ui, &response, editor, stage_view);
         let pointer_on_text = pointer_on_text || on_guide;
-        // A gradient's handles next: they sit on top of the shape.
+        // A Distort or Envelope's handles, then a gradient's: they sit on
+        // top of the shapes.
+        let on_lattice = !pointer_on_text && self.handle_lattice(ui, &response, editor, view);
+        let pointer_on_text = pointer_on_text || on_lattice;
         let on_gradient = !pointer_on_text && self.handle_gradient(ui, &response, editor, view);
         let inside_layer =
             !pointer_on_text && !on_gradient && self.handle_inside(ui, &response, editor, view);
@@ -1080,6 +1087,7 @@ impl StageView {
             self.inside_cursor(ui, &response, editor, view);
         }
         self.draw_gradient_handles(ui, &overlay, &response, editor, view);
+        self.draw_lattice(ui, &overlay, &response, editor, view);
         self.draw_rulers(ui, &overlay, editor, stage_view);
         self.guide_cursor(ui, &response, editor, stage_view);
         asset_drop(ui, &overlay, &response, editor, stage_view);

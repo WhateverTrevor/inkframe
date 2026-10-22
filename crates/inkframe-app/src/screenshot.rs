@@ -21,6 +21,8 @@
 //! * `INKFRAME_SCREENSHOT_COMBINE=1` shows shapes combined: two circles in a union, a
 //!   square with a circle punched out, and text broken apart into letters (one picked).
 //! * `INKFRAME_SCREENSHOT_RULERS=1` shows the rulers, with three guides.
+//! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
+//!   and a word bent by an envelope, its handles still out.
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
 //! * `INKFRAME_SCREENSHOT_EXPAND=1` expands every layer's property rows in the timeline.
 //! * `INKFRAME_SCREENSHOT_EDIT=Ball` opens the named symbol on its own (before `_SELECT`).
@@ -149,6 +151,9 @@ impl AutoScreenshot {
             for (vertical, at) in [(true, 960.0), (false, 540.0), (false, 180.0)] {
                 editor.doc.ruler_guides.push(inkframe_core::RulerGuide { vertical, at });
             }
+        }
+        if var("INKFRAME_SCREENSHOT_ENVELOPE").is_some() {
+            envelope_demo(editor);
         }
         if var("INKFRAME_SCREENSHOT_COMBINE").is_some() {
             combine_demo(editor);
@@ -703,5 +708,63 @@ fn combine_demo(editor: &mut Editor) {
     if editor.enter_layer(text) {
         let letters = editor.doc.layer(text).map_or(0, |l| l.elements_at(0).len());
         editor.pick_shapes(vec![crate::inside::ShapeRef::line(letters.saturating_sub(1))]);
+    }
+}
+
+/// A striped card leaning back with Distort, and a word bowed with
+/// Envelope, left with its handles out.
+fn envelope_demo(editor: &mut Editor) {
+    use crate::envelope::LatticeKind;
+    use inkframe_core::{Color, Element, Point, Shape, Style, Transform};
+    let ink = Color::rgb(30, 30, 40);
+    let style = |c: Color| Style {
+        fill: Some(c),
+        stroke: Some(inkframe_core::Stroke::new(ink, 4.0)),
+        gradient: None,
+    };
+    let band = |y: f32, c: Color| {
+        let shape = Shape::Rect { width: 420.0, height: 70.0, corner_radius: 0.0 };
+        Element { shape, style: style(c) }
+            .transformed(inkframe_core::Affine::translate(Point::new(0.0, y)))
+            .unwrap()
+    };
+    let stripes = vec![
+        band(-105.0, Color::rgb(230, 90, 100)),
+        band(-35.0, Color::rgb(250, 200, 90)),
+        band(35.0, Color::rgb(90, 190, 140)),
+        band(105.0, Color::rgb(90, 150, 230)),
+    ];
+    let card = editor.doc.add_layer("Card", stripes, 0, Transform::at(Point::new(480.0, 560.0)));
+    editor.select(Some(card));
+    if editor.start_lattice(LatticeKind::Distort).is_ok() {
+        // The top pulled in and down: lying back, away from us.
+        let top = editor.lattice.as_ref().map(|e| (e.lattice.points[0], e.lattice.points[1]));
+        if let Some((left, right)) = top {
+            editor.move_lattice_point(0, left + Point::new(90.0, 60.0));
+            editor.move_lattice_point(1, right + Point::new(-90.0, 60.0));
+        }
+        editor.finish_lattice();
+    }
+    editor.exit_layer();
+
+    let Some(text) = editor.add_text(Point::new(1300.0, 560.0)) else { return };
+    if let Some(element) = editor.doc.layer_mut(text).and_then(|l| l.elements_at_mut(0).first_mut()) {
+        if let Shape::Text(t) = &mut element.shape {
+            t.content = "WAVE".into();
+            t.size = 200.0;
+        }
+        element.style = style(Color::rgb(160, 120, 230));
+    }
+    editor.select(Some(text));
+    editor.break_apart();
+    if editor.start_lattice(LatticeKind::Envelope).is_ok() {
+        // The top bulges up on the left and dips on the right; the bottom
+        // follows, so the word rides a wave.
+        for (index, dy) in [(1, -90.0), (2, 60.0), (13, -90.0), (14, 60.0)] {
+            let at = editor.lattice.as_ref().map(|e| e.lattice.points[index]);
+            if let Some(at) = at {
+                editor.move_lattice_point(index, at + Point::new(0.0, dy));
+            }
+        }
     }
 }

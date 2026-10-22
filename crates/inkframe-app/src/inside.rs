@@ -240,13 +240,23 @@ impl Editor {
     /// layer's coordinates). Dragging calls this with the shapes as they
     /// were when the drag began, so nothing drifts.
     pub fn transform_shapes(&mut self, originals: &[(ShapeRef, Element)], m: Affine) {
+        self.reshape_shapes(originals, |shape| shape.transformed(m));
+    }
+
+    /// Puts each of `originals` back where it was, changed by `change`
+    /// (left as it is now where that gives nothing).
+    pub fn reshape_shapes(
+        &mut self,
+        originals: &[(ShapeRef, Element)],
+        change: impl Fn(&Element) -> Option<Element>,
+    ) {
         let Some(id) = self.inside_layer() else { return };
         let frame = self.frame;
         let Some(layer) = self.doc.layer_mut(id) else { return };
         for (shape, original) in originals {
             let part = part_mut(layer, frame, shape.colour_art);
-            if let (Some(slot), Some(moved)) = (part.get_mut(shape.index), original.transformed(m)) {
-                *slot = moved;
+            if let (Some(slot), Some(changed)) = (part.get_mut(shape.index), change(original)) {
+                *slot = changed;
             }
         }
         // Rectangles and ovals have become paths, but there are as many

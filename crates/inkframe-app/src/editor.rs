@@ -283,6 +283,9 @@ pub struct Editor {
     /// The layer double-clicked into, to pick out its shapes (see
     /// `inside.rs`).
     pub inside: Option<crate::inside::Inside>,
+    /// A Distort or Envelope under way on the picked shapes (see
+    /// `envelope.rs`).
+    pub lattice: Option<crate::envelope::LatticeEdit>,
     /// Frames picked in the timeline (first and last, either way round),
     /// for the frame commands (see `frame_commands.rs`).
     pub frame_range: Option<(u32, u32)>,
@@ -363,6 +366,7 @@ impl Editor {
             colour_art: false,
             light_table: false,
             inside: None,
+            lattice: None,
             frame_range: None,
             edit_multiple: false,
             show_rulers: false,
@@ -716,6 +720,9 @@ impl Editor {
     /// Undo can remove layers or shorten the animation; make sure the editor
     /// isn't left pointing at things that no longer exist.
     fn after_document_replaced(&mut self) {
+        // The lattice was bending shapes that may no longer be there as
+        // they were.
+        self.lattice = None;
         // Leave any symbol that no longer exists (undoing its creation, say).
         if let Some(gone) = self.open_symbols.iter().position(|o| self.doc.symbol(o.symbol).is_none()) {
             self.exit_to(gone);

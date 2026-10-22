@@ -19,6 +19,7 @@ mod convert;
 mod depth_view;
 mod easing_editor;
 mod editor;
+mod envelope;
 mod examples;
 mod export_dialog;
 mod frame_commands;
