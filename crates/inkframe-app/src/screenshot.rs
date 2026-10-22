@@ -21,6 +21,8 @@
 //! * `INKFRAME_SCREENSHOT_COMBINE=1` shows shapes combined: two circles in a union, a
 //!   square with a circle punched out, and text broken apart into letters (one picked).
 //! * `INKFRAME_SCREENSHOT_RULERS=1` shows the rulers, with three guides.
+//! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
+//!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
 //!   and a word bent by an envelope, its handles still out.
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
@@ -152,6 +154,9 @@ impl AutoScreenshot {
                 editor.doc.ruler_guides.push(inkframe_core::RulerGuide { vertical, at });
             }
         }
+        if Self::pen_handles() {
+            pen_handles_demo(editor);
+        }
         if var("INKFRAME_SCREENSHOT_ENVELOPE").is_some() {
             envelope_demo(editor);
         }
@@ -177,6 +182,11 @@ impl AutoScreenshot {
                 None => eprintln!("Unknown tool {name:?} in INKFRAME_SCREENSHOT_TOOL"),
             }
         }
+    }
+
+    /// Whether to show the Pen picking a point it's pulled handles out of.
+    pub fn pen_handles() -> bool {
+        std::env::var("INKFRAME_SCREENSHOT_PEN_HANDLES").is_ok()
     }
 
     /// The text layer to start typing into, if any.
@@ -740,8 +750,8 @@ fn envelope_demo(editor: &mut Editor) {
         // The top pulled in and down: lying back, away from us.
         let top = editor.lattice.as_ref().map(|e| (e.lattice.points[0], e.lattice.points[1]));
         if let Some((left, right)) = top {
-            editor.move_lattice_point(0, left + Point::new(90.0, 60.0));
-            editor.move_lattice_point(1, right + Point::new(-90.0, 60.0));
+            editor.move_lattice_point(0, left + Point::new(90.0, 60.0), true);
+            editor.move_lattice_point(1, right + Point::new(-90.0, 60.0), true);
         }
         editor.finish_lattice();
     }
@@ -757,14 +767,37 @@ fn envelope_demo(editor: &mut Editor) {
     }
     editor.select(Some(text));
     editor.break_apart();
+    editor.exit_layer();
+    editor.select(Some(text));
     if editor.start_lattice(LatticeKind::Envelope).is_ok() {
-        // The top bulges up on the left and dips on the right; the bottom
-        // follows, so the word rides a wave.
-        for (index, dy) in [(1, -90.0), (2, 60.0), (13, -90.0), (14, 60.0)] {
-            let at = editor.lattice.as_ref().map(|e| e.lattice.points[index]);
+        // The middles of the top and bottom turned, their handles in
+        // line: up on the left and down on the right, so the word rides a
+        // wave.
+        for (handle, lift) in [(2, Point::new(-30.0, -110.0)), (14, Point::new(30.0, 110.0))] {
+            let at = editor.lattice.as_ref().map(|e| e.lattice.points[handle]);
             if let Some(at) = at {
-                editor.move_lattice_point(index, at + Point::new(0.0, dy));
+                editor.move_lattice_point(handle, at + lift, true);
             }
         }
     }
+}
+
+/// A three-cornered shape as the Pen draws it with clicks, its top corner
+/// then Alt-dragged into a curve, and the Pen picked. The stage picks the
+/// point afterwards (see `StageView::pick_anchor`), to show its handles.
+fn pen_handles_demo(editor: &mut Editor) {
+    use inkframe_core::{Anchor, Color, Element, Point, Shape, Stroke, Style, Transform, path_from_anchors};
+    let corners = [Point::new(-180.0, 120.0), Point::new(0.0, -140.0), Point::new(180.0, 120.0)];
+    let anchors: Vec<Anchor> = corners.into_iter().map(Anchor::corner).collect();
+    let anchors = crate::subselect::pull_handles(&anchors, 1, Point::new(140.0, -140.0));
+    let Some(path) = path_from_anchors(&anchors, true) else { return };
+    let style = Style {
+        fill: Some(Color::rgb(120, 200, 140)),
+        stroke: Some(Stroke::new(Color::rgb(30, 30, 40), 5.0)),
+        gradient: None,
+    };
+    let shape = Element { shape: Shape::Path(path), style };
+    let layer = editor.doc.add_layer("Hill", vec![shape], 0, Transform::at(Point::new(960.0, 560.0)));
+    editor.select(Some(layer));
+    editor.tool = Tool::Pen;
 }

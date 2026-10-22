@@ -1,4 +1,5 @@
-//! The math behind the Subselection tool: moving anchors and their handles.
+//! The math behind the Subselection tool (and the Pen, between paths):
+//! moving anchors and their handles.
 //!
 //! Everything here works on a layer's anchors in its *local* coordinates.
 //! The stage converts the pointer into those coordinates first, so edits
@@ -133,6 +134,19 @@ pub fn remove_anchor(anchors: &[Anchor], index: usize, closed: bool) -> Option<V
     Some(anchors)
 }
 
+/// Returns `anchors` with new handles pulled out of anchor `index`: its
+/// way out reaching to `target` and its way in mirroring it, so the curve
+/// passes smoothly through the point. That's Alt-dragging a point in
+/// Animate, with the Subselection tool or the Pen, and it turns a corner
+/// into a curve (or re-draws a curve's handles from scratch).
+pub fn pull_handles(anchors: &[Anchor], index: usize, target: Point) -> Vec<Anchor> {
+    let mut anchors = anchors.to_vec();
+    let a = &mut anchors[index];
+    a.handle_out = target;
+    a.handle_in = a.point - (target - a.point);
+    anchors
+}
+
 /// An anchor is smooth if both handles stick out and point in opposite
 /// directions. A small angular tolerance absorbs float noise from earlier edits.
 fn is_smooth(a: &Anchor) -> bool {
@@ -191,6 +205,18 @@ mod tests {
         let anchor = Anchor::smooth(p(0.0, 0.0), p(10.0, 0.0));
         let moved = move_part(&[anchor], 0, AnchorPart::HandleOut, p(0.0, 10.0), true);
         assert_eq!(moved[0].handle_in, p(-10.0, 0.0));
+    }
+
+    #[test]
+    fn pulling_handles_out_of_a_corner_makes_it_smooth() {
+        let anchors =
+            [Anchor::corner(p(0.0, 0.0)), Anchor::corner(p(100.0, 0.0)), Anchor::corner(p(100.0, 100.0))];
+        let pulled = pull_handles(&anchors, 1, p(130.0, 20.0));
+        let a = pulled[1];
+        assert!(close(a.handle_out, p(130.0, 20.0)));
+        assert!(close(a.handle_in, p(70.0, -20.0)));
+        assert!(is_smooth(&a));
+        assert_eq!(pulled[0], anchors[0]);
     }
 
     #[test]

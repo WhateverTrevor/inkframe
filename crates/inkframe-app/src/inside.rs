@@ -58,6 +58,12 @@ fn parts(layer: &Layer, frame: u32) -> (&[Element], &[Element]) {
     }
 }
 
+/// How many shapes the drawing showing on `frame` has, lines and fills.
+fn lines_and_colour(layer: &Layer, frame: u32) -> usize {
+    let (lines, colour) = parts(layer, frame);
+    lines.len() + colour.len()
+}
+
 fn part_mut(layer: &mut Layer, frame: u32, colour_art: bool) -> &mut Vec<Element> {
     let index = layer.drawing_index_at(frame);
     let drawing = &mut layer.drawings[index];
@@ -230,6 +236,17 @@ impl Editor {
             .reduce(Rect::union)
     }
 
+    /// Every shape of `layer`'s drawing on this frame that can be moved by
+    /// its points, and how many shapes it has in all.
+    pub fn layer_shapes(&self, layer: LayerId) -> (Vec<(ShapeRef, Element)>, usize) {
+        let Some(layer) = self.doc.layer(layer) else { return (Vec::new(), 0) };
+        let (lines, colour) = parts(layer, self.frame);
+        let colour = colour.iter().enumerate().map(|(i, e)| (ShapeRef::colour(i), e));
+        let lines = lines.iter().enumerate().map(|(i, e)| (ShapeRef::line(i), e));
+        let shapes = colour.chain(lines).filter(|(_, e)| e.is_reshapable()).map(|(r, e)| (r, e.clone()));
+        (shapes.collect(), lines_and_colour(layer, self.frame))
+    }
+
     /// The picked shapes, as they are now, to transform from (see
     /// [`Editor::transform_shapes`]).
     pub fn picked_originals(&self) -> Vec<(ShapeRef, Element)> {
@@ -250,7 +267,19 @@ impl Editor {
         originals: &[(ShapeRef, Element)],
         change: impl Fn(&Element) -> Option<Element>,
     ) {
-        let Some(id) = self.inside_layer() else { return };
+        if let Some(id) = self.inside_layer() {
+            self.reshape_layer_shapes(id, originals, change);
+        }
+    }
+
+    /// [`reshape_shapes`](Self::reshape_shapes) on any layer's drawing on
+    /// this frame, whether or not it's been stepped inside.
+    pub fn reshape_layer_shapes(
+        &mut self,
+        id: LayerId,
+        originals: &[(ShapeRef, Element)],
+        change: impl Fn(&Element) -> Option<Element>,
+    ) {
         let frame = self.frame;
         let Some(layer) = self.doc.layer_mut(id) else { return };
         for (shape, original) in originals {

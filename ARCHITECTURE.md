@@ -49,7 +49,7 @@ The data model and the math behind animation.
 | `anchor.rs` | Anchor points with in/out handles; conversion between anchors, paths and shapes; nearest-point search and curve-preserving point insertion |
 | `shape.rs` (styles) | `Style` has the flat `fill`, the `stroke` (with `LineCap`, `LineJoin` and an optional `Dash`) and an optional `ShapeGradient` (linear or radial, any number of `GradientStop`s, its ends as fractions of the shape's box so it follows the shape). Build strokes with `Stroke::new` |
 | `ruler_guides.rs` | `RulerGuide` (kept in `Document::ruler_guides`, stage pixels) and snapping to guides: `snap_point`, `snap_box` |
-| `envelope.rs` | `Lattice`, Distort (2×2) and Envelope (4×4): a Bézier patch over a box of shapes that bends their points for good (`map`, `bend`), cutting segments first so straight edges can curve |
+| `envelope.rs` | `Lattice`, Distort (four corners) and Envelope (eight points with curve handles): the box's sides as Bézier curves with the inside filled in by a Coons patch, bending shapes' points for good (`map`, `bend`), cutting segments first so straight edges can curve |
 | `preset.rs` | `MotionPreset`: a stretch of a layer's keys kept relative to where it started (positions and angles as changes, scale and opacity as multiples), applied from any frame to any layer; the built-in presets |
 | `boolean.rs` | Union, Intersect, Punch, Crop (`ShapeOp`, `combine`) and Break Apart: outlines flattened, edges split where they cross, kept where the result is on one side only (by winding number either side of each edge's middle), joined into loops, and fitted back into curves (`vectorise::fit_points`) |
 | `frames.rs` | Editing a layer's time: `insert_frames`, `remove_frames` and `reverse_frames`, all through one `retime` that moves every key, deformer key, drawing swap and shape tween (and `AnyChannel::retime` / `reverse_span`, `Easing::reversed`) |
@@ -289,7 +289,7 @@ writes. No audio.
 | `editor.rs` | `Editor`: document, selection, current frame, tool, and the operations panels call |
 | `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles; `stage/rulers.rs` draws the rulers and guides and drags guides; `stage/inside.rs` handles the pointer while inside a layer (picking, moving and scaling shapes); `stage/lattice.rs` drags a Distort or Envelope's handles |
 | `frame_commands.rs` | Animate's frame commands on the frames picked in the timeline (Insert/Remove Frames, Blank Keyframe, Convert to Keyframes, Reverse Frames) and Edit Multiple Frames' move across them (`MultiFrameMove`) |
-| `envelope.rs` | Modify › Transform › Distort and Envelope: the lattice edit under way (`Editor::lattice`), re-bending the picked shapes from their originals on every drag |
+| `envelope.rs` | Modify › Transform › Distort and Envelope: the lattice edit under way (`Editor::lattice`), re-bending the picked shapes (or a whole layer's drawing) from their originals on every drag |
 | `shape_ops.rs` | Combine Shapes and Break Apart on the picked shapes (text through `inkframe_render::shape_outline`) |
 | `motion_presets.rs` | The Motion Presets area: built-in and saved presets (`.inkpreset` files in the settings folder's Motion Presets), animated previews, Apply and Save Movement |
 | `swap_dialog.rs` | Modify › Swap Symbol: a picture of each symbol, swapping the selected instances for the whole layer or from the current frame (`Document::swap_symbol`), and Duplicate Symbol |
@@ -299,7 +299,7 @@ writes. No audio.
 | `depth_view.rs` | The Depth View: the main timeline's top-level layers from above, as lines at their depths, with the camera's field of view. Dragging a line sets its depth, dragging the camera dollies and pans it (both through `Editor::set_depth` / `set_pose`, so they key the frame); scroll zooms, empty space pans, Fit fits. What's dragged is decided at the press point |
 | `node_view.rs` | The Node View: the timeline being edited drawn as a graph built from the layers each frame (layer nodes with Parent and Mask inputs and Transform and Image outputs, effect and filter nodes in each layer's image chain, a Composite in stacking order, the Display). `connect` and `disconnect` turn wiring into the same edits the timeline and Properties make (`set_parent`, `masked_by`, `place_layer`, effects); only node positions are the view's own |
 | `pen.rs` | State of the pen path being drawn, which lasts across many clicks |
-| `subselect.rs` | The math for moving, deleting and converting anchors with the Subselection tool |
+| `subselect.rs` | The math for moving, deleting and converting anchors, and pulling new handles out of them (Alt-drag), with the Subselection tool or the Pen between paths |
 | `timeline.rs` | Transport bar and the hand-painted layer × frame grid; dragging a layer name scrolls the list, holding it first restacks (pen-friendly) |
 | `inspector.rs` | The properties panel, with Tool, Layer and Document tabs that follow the selection and tool, and a live brush preview stroke |
 | `panels.rs` | The Swatches, Align and History panels |
