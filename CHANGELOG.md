@@ -13,6 +13,13 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Animation
+
+- Motion Presets: give layers a ready-made movement (fade, pop, slide,
+  bounce, spin, pulse, shake, float) from the playhead, starting from
+  wherever each one is, or save a layer's own animation as a preset for
+  every project.
+
 ### Symbols
 
 - Modify › Swap Symbol: pick another symbol for the selected instances,

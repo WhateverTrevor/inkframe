@@ -48,6 +48,7 @@ The data model and the math behind animation.
 | `freehand.rs` | Turns jittery pointer samples into a smooth path |
 | `anchor.rs` | Anchor points with in/out handles; conversion between anchors, paths and shapes; nearest-point search and curve-preserving point insertion |
 | `shape.rs` (styles) | `Style` has the flat `fill`, the `stroke` (with `LineCap`, `LineJoin` and an optional `Dash`) and an optional `ShapeGradient` (linear or radial, any number of `GradientStop`s, its ends as fractions of the shape's box so it follows the shape). Build strokes with `Stroke::new` |
+| `preset.rs` | `MotionPreset`: a stretch of a layer's keys kept relative to where it started (positions and angles as changes, scale and opacity as multiples), applied from any frame to any layer; the built-in presets |
 | `boolean.rs` | Union, Intersect, Punch, Crop (`ShapeOp`, `combine`) and Break Apart: outlines flattened, edges split where they cross, kept where the result is on one side only (by winding number either side of each edge's middle), joined into loops, and fitted back into curves (`vectorise::fit_points`) |
 | `frames.rs` | Editing a layer's time: `insert_frames`, `remove_frames` and `reverse_frames`, all through one `retime` that moves every key, deformer key, drawing swap and shape tween (and `AnyChannel::retime` / `reverse_span`, `Easing::reversed`) |
 | `library.rs` | `Asset` (a symbol, image or sound) and the Library's one-level folders: each asset names its folder, `Document::library_folders` keeps empty ones; renaming, moving and deleting assets |
@@ -287,6 +288,7 @@ writes. No audio.
 | `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles; `stage/inside.rs` handles the pointer while inside a layer (picking, moving and scaling shapes) |
 | `frame_commands.rs` | Animate's frame commands on the frames picked in the timeline (Insert/Remove Frames, Blank Keyframe, Convert to Keyframes, Reverse Frames) and Edit Multiple Frames' move across them (`MultiFrameMove`) |
 | `shape_ops.rs` | Combine Shapes and Break Apart on the picked shapes (text through `inkframe_render::shape_outline`) |
+| `motion_presets.rs` | The Motion Presets area: built-in and saved presets (`.inkpreset` files in the settings folder's Motion Presets), animated previews, Apply and Save Movement |
 | `swap_dialog.rs` | Modify › Swap Symbol: a picture of each symbol, swapping the selected instances for the whole layer or from the current frame (`Document::swap_symbol`), and Duplicate Symbol |
 | `multi_edit.rs` | Carrying a change made in the properties panel to every selected layer: position by the same amount, other values set the same, only what changed |
 | `inside.rs` | Working inside one layer: which shapes are picked (by their place in the showing drawing), hit-testing them, moving and scaling them by their points (`Element::transformed`), deleting them, and making a symbol of them |

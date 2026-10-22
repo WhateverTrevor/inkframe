@@ -636,6 +636,13 @@ after the Harmony features (palettes to master controllers).
     egui memory, `swap_dialog::request`), swap marks in the timeline row
     (`paint_symbol_swaps`). Hook `INKFRAME_SCREENSHOT_SWAP=1` with
     `_GROUP=1`.
+92. Motion presets: core `preset.rs` (`MotionPreset::from_layer`,
+    `apply`, `built_in`; relative values per property, applying replaces
+    keys in its span via `retime`), app `motion_presets.rs`
+    (`Kind::MotionPresets`, `Icon::Motion`, presets as JSON
+    `.inkpreset` files in settings/Motion Presets). Hook
+    `INKFRAME_SCREENSHOT_PRESETS=1` (temp folder). Not yet: presets in
+    the script API, effects in presets.
 
 ## Not yet verified by hand
 

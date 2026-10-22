@@ -207,6 +207,7 @@ pub struct InkframeApp {
     library: LibraryView,
     panels: panels::PanelState,
     templates: crate::templates::TemplateLibrary,
+    presets: crate::motion_presets::PresetLibrary,
     audio: AudioEngine,
     /// The window title we last set, so we only send changes.
     title: String,
@@ -257,6 +258,7 @@ impl InkframeApp {
             library: LibraryView::default(),
             panels: panels::PanelState::default(),
             templates: crate::templates::TemplateLibrary::default(),
+            presets: crate::motion_presets::PresetLibrary::default(),
             audio: AudioEngine::default(),
             title: String::new(),
             allow_close: false,
@@ -608,6 +610,11 @@ impl InkframeApp {
                     }
                     Err(problem) => eprintln!("Couldn't group for the screenshot: {problem}"),
                 }
+            }
+            if AutoScreenshot::presets() {
+                app.presets.use_folder(std::env::temp_dir().join("inkframe-screenshot-presets"));
+                app.presets.screenshot_setup(&app.editor);
+                app.layout.replace_kind(Kind::Properties, Kind::MotionPresets);
             }
             if AutoScreenshot::swap()
                 && let Some(layer) = app.editor.selection
@@ -1796,6 +1803,11 @@ impl InkframeApp {
                 egui::ScrollArea::vertical()
                     .id_salt(("align", area))
                     .show(ui, |ui| panels::align(ui, &mut self.editor, &mut self.panels));
+            }
+            Kind::MotionPresets => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("presets", area))
+                    .show(ui, |ui| self.presets.show(ui, &mut self.editor));
             }
             Kind::Templates => {
                 egui::ScrollArea::vertical()
