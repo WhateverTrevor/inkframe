@@ -111,6 +111,9 @@ enum Command {
     // Combining shapes (see `shape_ops.rs`).
     CombineShapes(inkframe_core::ShapeOp),
     BreakApart,
+    // Distort and Envelope (see `envelope.rs`).
+    StartLattice(crate::envelope::LatticeKind),
+    FinishLattice,
     SwapSymbol,
     // Rulers and guides (see `stage/rulers.rs`).
     ToggleRulers,
@@ -864,6 +867,12 @@ impl InkframeApp {
             Command::ToggleLockGuides => editor.lock_guides = !editor.lock_guides,
             Command::ToggleSnapToGuides => editor.snap_to_guides = !editor.snap_to_guides,
             Command::ClearGuides => editor.doc.ruler_guides.clear(),
+            Command::StartLattice(kind) => {
+                if let Err(problem) = editor.start_lattice(kind) {
+                    show_error(&format!("Couldn't start {}", kind.name()), &problem);
+                }
+            }
+            Command::FinishLattice => editor.finish_lattice(),
             Command::BreakApart => {
                 if editor.break_apart() == 0 {
                     show_error(
@@ -991,6 +1000,7 @@ impl InkframeApp {
         let in_symbol = self.editor.timeline() != TimelineId::Main;
         let inside_layer = self.editor.inside_layer().is_some();
         let shapes_picked = !self.editor.picked_shapes().is_empty();
+        let bending = self.editor.lattice.is_some();
         ctx.input_mut(|input| {
             for (shortcut, command) in file_shortcuts {
                 if input.consume_shortcut(&shortcut) {
@@ -1037,6 +1047,9 @@ impl InkframeApp {
                     (Key::Backspace, Command::RemovePathPoint),
                     (Key::Delete, Command::RemovePathPoint),
                 ]
+            } else if bending {
+                // Enter or Escape leaves a Distort or Envelope's shapes bent.
+                &[(Key::Enter, Command::FinishLattice), (Key::Escape, Command::FinishLattice)]
             } else if anchor_selected {
                 &[(Key::Backspace, Command::DeleteAnchor), (Key::Delete, Command::DeleteAnchor)]
             } else if shapes_picked {
@@ -1218,6 +1231,14 @@ impl InkframeApp {
                     }
                 });
                 item(ui, "Break Apart", Some(shortcuts::BREAK_APART), Command::BreakApart, has_selection);
+                ui.menu_button("Transform", |ui| {
+                    use crate::envelope::LatticeKind;
+                    let bendable = has_selection && self.editor.lattice.is_none();
+                    for kind in [LatticeKind::Distort, LatticeKind::Envelope] {
+                        item(ui, kind.name(), None, Command::StartLattice(kind), bendable);
+                    }
+                    ui.weak("On the picked shapes, or everything in the selected layer.");
+                });
                 ui.separator();
                 let instance_selected = self.editor.selected_layer().is_some_and(|l| l.instance.is_some());
                 item(ui, "Edit Symbol", None, Command::EditSymbol, instance_selected);

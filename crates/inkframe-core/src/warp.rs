@@ -150,7 +150,7 @@ impl Warp {
 
 /// The Bernstein polynomials of degree `n` at `t`: how strongly each of
 /// `n + 1` control points along a line pulls at `t`. They sum to 1.
-fn bernstein(n: usize, t: f32) -> Vec<f32> {
+pub(crate) fn bernstein(n: usize, t: f32) -> Vec<f32> {
     let choose = |k: usize| (0..k).fold(1.0f32, |c, i| c * (n - i) as f32 / (i + 1) as f32);
     (0..=n).map(|k| choose(k) * t.powi(k as i32) * (1.0 - t).powi((n - k) as i32)).collect()
 }

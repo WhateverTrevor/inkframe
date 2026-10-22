@@ -26,6 +26,7 @@ mod document;
 mod drawing;
 mod easing;
 mod effects;
+mod envelope;
 mod fill;
 mod folder;
 mod font_file;
@@ -81,6 +82,7 @@ pub use easing::Easing;
 pub use effects::{
     ColorEffect, Effects, Filter, FilterKind, apply_color_effect, apply_filters, filter_margin,
 };
+pub use envelope::Lattice;
 pub use fill::{BucketSettings, Gradient, GradientShape, bucket_fill, gradient};
 pub use folder::TAG_COLORS;
 pub use font_file::{FontFile, FontFileId};

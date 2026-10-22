@@ -31,7 +31,8 @@ pub(super) struct GradientDrag {
 
 /// The shape whose gradient gets handles, if any.
 fn target(editor: &Editor) -> Option<(LayerId, ShapeRef)> {
-    if editor.tool != Tool::Select {
+    // Not over a Distort or Envelope's handles.
+    if editor.tool != Tool::Select || editor.lattice.is_some() {
         return None;
     }
     let layer = editor.inside_layer()?;

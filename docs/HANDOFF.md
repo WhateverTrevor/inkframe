@@ -652,6 +652,20 @@ after the Harmony features (palettes to master controllers).
     snap_to_guides`, remembered in prefs. Hook
     `INKFRAME_SCREENSHOT_RULERS=1`. Not yet: snapping the pen, pencil or
     scale handles.
+94. Distort and Envelope: core `envelope.rs` (`Lattice`: a Bézier patch
+    over the shapes' box, 2×2 = bilinear Distort, 4×4 = Envelope, reusing
+    `warp::bernstein`; `bend` cuts each segment with `deform::subdivide`
+    and shares pencil-line widths along the pieces), app `envelope.rs`
+    (`LatticeKind`, `LatticeEdit` in `Editor::lattice`, `start_lattice`
+    steps inside and picks everything if nothing's picked,
+    `move_lattice_point` re-bends the originals via the new
+    `Editor::reshape_shapes`, `check_lattice` ends it on frame/tool/pick
+    changes; undo also ends it), `stage/lattice.rs` (`handle_lattice`
+    after the rulers in the stage's input; a press off the handles
+    finishes and falls through). Modify › Transform › Distort/Envelope;
+    Enter/Escape finish. Hook `INKFRAME_SCREENSHOT_ENVELOPE=1`. Not yet:
+    Envelope's tangent-style handles as in Animate (ours are a plain
+    control net), a lattice over a whole layer without stepping inside.
 
 ## Not yet verified by hand
 
