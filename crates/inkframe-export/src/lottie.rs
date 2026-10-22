@@ -240,9 +240,12 @@ impl Lottie<'_> {
             (doc.pose(layer, f).opacity * doc.camera_fade(layer, f as f32)).clamp(0.0, 1.0) * 100.0
         };
 
-        // Filters, colour effects and particles: drawn by the renderer.
-        let rendered =
-            layer.particles.is_some() || frames.iter().any(|&f| !layer.track.effects_at(f as f32).is_none());
+        // Filters, colour effects, particles and pixels bent by a skeleton:
+        // drawn by the renderer.
+        let rendered = layer.particles.is_some()
+            || frames
+                .iter()
+                .any(|&f| !layer.track.effects_at(f as f32).is_none() || crate::bends_pixels(doc, layer, f));
         if rendered {
             return self.rendered(layer, frames, next);
         }

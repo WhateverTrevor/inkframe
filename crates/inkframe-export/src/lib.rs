@@ -16,6 +16,18 @@ mod png_sequence;
 mod sprite_sheet;
 pub mod svg;
 
+/// Whether a skeleton bends `layer`'s pictures or paintings on `frame`.
+/// SVG and Lottie can't bend pixels, so such a layer is drawn by the
+/// renderer, as it bends them, and embedded as an image.
+fn bends_pixels(doc: &inkframe_core::Document, layer: &inkframe_core::Layer, frame: u32) -> bool {
+    use inkframe_core::Shape;
+    let pixels = layer
+        .shown_elements(frame)
+        .iter()
+        .any(|e| matches!(e.shape, Shape::Paint { .. } | Shape::Image { .. }));
+    pixels && doc.layer_bend(layer, frame).is_some()
+}
+
 use std::ops::{ControlFlow, RangeInclusive};
 use std::path::PathBuf;
 
@@ -322,5 +334,56 @@ impl<'a> FrameRenderer<'a> {
     fn render(&self, frame: u32) -> Result<Pixmap, ExportError> {
         let (w, h) = self.size();
         render_frame(self.doc, frame, &self.options).ok_or(ExportError::FrameTooLarge(w, h))
+    }
+}
+
+#[cfg(test)]
+mod bent_pixels_tests {
+    use inkframe_core::{Document, Point, Skeleton, TILE, TimelineId};
+    use inkframe_render::ImageLibrary;
+
+    /// A painted bar along an arm in a skeleton, the forearm turning from
+    /// straight on frame 0 to hanging down on frame 10.
+    fn rigged_painting() -> Document {
+        let mut doc = Document::default();
+        let paint = doc.add_paint_layer(TimelineId::Main, "Painted", 0).unwrap();
+        let (canvas, _, _) = doc.paint_canvas_at(paint, 0).unwrap();
+        let canvas = doc.canvas_mut(canvas).unwrap();
+        for y in 490..510u32 {
+            for x in 300..700u32 {
+                let tile = canvas.tile_mut((x / TILE, y / TILE));
+                let at = (((y % TILE) * TILE + x % TILE) * 4) as usize;
+                tile[at..at + 4].copy_from_slice(&[255, 0, 0, 255]);
+            }
+        }
+        let folder = doc.add_folder(TimelineId::Main, &[paint]).unwrap();
+        let mut skeleton = Skeleton::default();
+        let upper = skeleton.add_bone(None, Point::new(300.0, 500.0), Point::new(500.0, 500.0), 0);
+        let fore = skeleton.add_bone(Some(upper), Point::new(500.0, 500.0), Point::new(700.0, 500.0), 0);
+        skeleton.bones[fore].turn.set(10, 90.0);
+        doc.layer_mut(folder).unwrap().skeleton = Some(skeleton);
+        doc
+    }
+
+    #[test]
+    fn svg_draws_a_bent_painting_as_the_renderer_bends_it() {
+        let doc = rigged_painting();
+        let straight = crate::svg::frame_svg(&doc, &ImageLibrary::default(), 0, 1.0, true);
+        assert!(straight.contains(r#"<image x="#), "unbent, the painting is embedded as it is");
+        let bent = crate::svg::frame_svg(&doc, &ImageLibrary::default(), 10, 1.0, true);
+        assert!(!bent.contains(r#"<image x="#), "bent, it isn't embedded as painted");
+        assert!(bent.contains(r#"<image width="1920" height="1080""#), "but drawn bent, whole");
+    }
+
+    #[test]
+    fn lottie_draws_a_bent_painting_as_the_renderer_bends_it() {
+        let doc = rigged_painting();
+        let lottie =
+            crate::lottie::animation(&doc, &ImageLibrary::default(), 0, 11, 1.0, true, &mut |_| false);
+        // Drawn by the renderer frame by frame, it's an image a frame (of
+        // the eleven, the first unbent too, as the layer's drawn the same
+        // way throughout), rather than the one painting.
+        let images = lottie["assets"].as_array().unwrap().iter().filter(|a| a["e"] == 1).count();
+        assert!(images > 5, "{images} images");
     }
 }
