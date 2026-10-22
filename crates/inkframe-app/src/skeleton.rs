@@ -101,6 +101,17 @@ impl Editor {
         }
     }
 
+    /// Stretches bone `bone` of skeleton `id` to `factor` times its rest
+    /// length on the current frame, keying it.
+    pub fn stretch_bone(&mut self, id: LayerId, bone: usize, factor: f32) {
+        let frame = self.frame;
+        let Some(bone) = self.skeleton_mut(id).and_then(|s| s.bones.get_mut(bone)) else { return };
+        // The first stretch keys the rest length on the first frame too, so
+        // the frames before it aren't stretched as well.
+        let channel = bone.stretch.get_or_insert_with(|| inkframe_core::Channel::new(0, 1.0));
+        channel.set(frame, factor.clamp(0.05, 20.0));
+    }
+
     /// Moves bone `bone` of skeleton `id` to start at `to` on the current
     /// frame, carrying what hangs from it.
     pub fn move_bone(&mut self, id: LayerId, bone: usize, to: Point) {

@@ -25,6 +25,9 @@
 //!   arm bent at the elbow, a drawn body leaning, and a head bound to its own bone.
 //! * `INKFRAME_SCREENSHOT_SMART=1` adds to that a hand in a switch, which the forearm, a
 //!   smart bone, turns from open to a fist, and a body that stretches as the spine leans.
+//! * `INKFRAME_SCREENSHOT_DYNAMICS=1` shows that character a few frames into a quick turn:
+//!   a ponytail with dynamics trailing behind, the body squashed keeping its area, and the
+//!   upper arm's limits.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -158,11 +161,16 @@ impl AutoScreenshot {
                 editor.doc.ruler_guides.push(inkframe_core::RulerGuide { vertical, at });
             }
         }
-        if var("INKFRAME_SCREENSHOT_SKELETON").is_some() || var("INKFRAME_SCREENSHOT_SMART").is_some() {
+        let rigged =
+            ["INKFRAME_SCREENSHOT_SKELETON", "INKFRAME_SCREENSHOT_SMART", "INKFRAME_SCREENSHOT_DYNAMICS"];
+        if rigged.iter().any(|v| var(v).is_some()) {
             skeleton_demo(editor);
         }
         if var("INKFRAME_SCREENSHOT_SMART").is_some() {
             smart_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_DYNAMICS").is_some() {
+            dynamics_demo(editor);
         }
         if Self::pen_handles() {
             pen_handles_demo(editor);
@@ -945,4 +953,50 @@ fn smart_demo(editor: &mut Editor) {
     }
     editor.select(Some(folder));
     editor.selected_bone = Some(fore);
+}
+
+/// On top of `skeleton_demo`'s character: a ponytail of two bones with
+/// dynamics hanging from the head, and a quick lean of the spine from
+/// frame 0 to 4, shown on frame 6 so the ponytail is still swinging after
+/// it. The spine squashes as it leans, keeping its area, and the upper
+/// arm, picked, shows the limits it may turn in.
+fn dynamics_demo(editor: &mut Editor) {
+    use inkframe_core::{
+        Channel, Color, Dynamics, Element, Point, RotationLimits, Shape, Stroke, Style, Transform,
+    };
+    let Some(folder) = editor.selection else { return };
+    let style = Style {
+        fill: Some(Color::rgb(120, 70, 40)),
+        stroke: Some(Stroke::new(Color::rgb(30, 30, 40), 5.0)),
+        gradient: None,
+    };
+    let tail = Element { shape: Shape::Rect { width: 170.0, height: 30.0, corner_radius: 15.0 }, style };
+    let doc = &mut editor.doc;
+    let ponytail = doc.add_layer("Ponytail", vec![tail], 0, Transform::at(Point::new(880.0, 420.0)));
+    doc.set_folder(ponytail, Some(folder));
+    // Behind the head and body: the bottom of the folder, where the body is.
+    if let Some(body) = doc.layers.iter().position(|l| l.name == "Body") {
+        doc.move_layer_to(ponytail, body);
+    }
+    if let Some(skeleton) = doc.layer_mut(folder).and_then(|l| l.skeleton.as_mut()) {
+        let neck = 1;
+        let top = skeleton.add_bone(Some(neck), Point::new(960.0, 420.0), Point::new(880.0, 420.0), 0);
+        let tip = skeleton.add_bone(Some(top), Point::new(880.0, 420.0), Point::new(800.0, 420.0), 0);
+        for (bone, name) in [(top, "Ponytail"), (tip, "Ponytail tip")] {
+            skeleton.bones[bone].name = name.into();
+            skeleton.bones[bone].dynamics = Some(Dynamics { spring: 0.15, damping: 0.1, limit: 70.0 });
+            skeleton.bones[bone].strength = 30.0;
+        }
+        // The spine leans hard right over four frames, squashing as it goes.
+        let spine = &mut skeleton.bones[0];
+        spine.turn = Channel::new(0, -20.0);
+        spine.turn.set(4, 25.0);
+        let mut stretch = Channel::new(0, 1.0);
+        stretch.set(4, 0.85);
+        spine.stretch = Some(stretch);
+        spine.squash = true;
+        skeleton.bones[2].limits = Some(RotationLimits { min: -100.0, max: 20.0 });
+    }
+    editor.frame = 6;
+    editor.selected_bone = Some(2);
 }

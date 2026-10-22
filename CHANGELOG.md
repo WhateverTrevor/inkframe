@@ -13,6 +13,13 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Bone limits, stretch and dynamics
+
+- Skeleton bones can have turn limits (respected by IK and shown as a
+  wedge), stretch (Shift-drag with the Bone tool) with an option to keep
+  their area as they squash, and dynamics: a spring that makes hair and
+  tails swing after the body and settle. File format 37.
+
 ### Smart bones, pins and switches
 
 - Shapes, or single points, can be pinned to one bone of a skeleton.

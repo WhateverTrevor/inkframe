@@ -5534,4 +5534,23 @@ mod tests {
         assert!(start.distance(Point::new(350.0, 300.0)) < 2.0, "{start:?}");
         assert!(end.distance(Point::new(450.0, 300.0)) < 2.0, "turned none: {end:?}");
     }
+
+    #[test]
+    fn shift_dragging_a_bone_stretches_it() {
+        let (mut h, skeleton, _) = skeleton_harness();
+        let (a, b) = (screen(&h, 300.0, 400.0), screen(&h, 400.0, 400.0));
+        drag(&mut h, a, &[a + vec2(5.0, 0.0), b]);
+        h.state_mut().1.use_tool(Tool::Bone);
+        h.run();
+        // Grab it near its end with Shift and pull it half as long again.
+        let grab = screen(&h, 390.0, 400.0);
+        let target = screen(&h, 440.0, 400.0);
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+        drag(&mut h, grab, &[grab + vec2(5.0, 0.0), target]);
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+        h.run();
+        let (start, end) = h.state().1.skeleton(skeleton).unwrap().posed_ends(0, 0).unwrap();
+        assert!(start.distance(Point::new(300.0, 400.0)) < 2.0, "{start:?}");
+        assert!(end.distance(Point::new(440.0, 400.0)) < 3.0, "stretched, not turned: {end:?}");
+    }
 }
