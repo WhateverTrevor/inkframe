@@ -55,6 +55,11 @@ pub const ZOOM_OUT: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::Minus);
 // Animation shortcuts follow Adobe Animate: Enter plays, F6 inserts a
 // keyframe, Shift+F6 clears it, and comma/period step through frames.
 pub const PLAY: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::Enter);
+// Animate's rulers and guides keys.
+pub const RULERS: KeyboardShortcut = KeyboardShortcut::new(CMD_ALT.plus(Modifiers::SHIFT), Key::R);
+pub const SHOW_GUIDES: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::Semicolon);
+pub const LOCK_GUIDES: KeyboardShortcut = KeyboardShortcut::new(CMD_ALT, Key::Semicolon);
+pub const SNAP_TO_GUIDES: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::Semicolon);
 /// Animate's Break Apart.
 pub const BREAK_APART: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::B);
 pub const INSERT_KEYFRAME: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F6);

@@ -643,6 +643,15 @@ after the Harmony features (palettes to master controllers).
     `.inkpreset` files in settings/Motion Presets). Hook
     `INKFRAME_SCREENSHOT_PRESETS=1` (temp folder). Not yet: presets in
     the script API, effects in presets.
+93. Rulers and guides (format v34): core `ruler_guides.rs`
+    (`Document::ruler_guides`, `snap_point`, `snap_box`), app
+    `stage/rulers.rs` (`handle_rulers` first in the stage's input,
+    `draw_rulers`, `GuideDrag`), snapping in `Gesture::Move` (its new
+    `bounds`) and `Gesture::DrawShape` via `snapping_guides` (main
+    timeline only). Editor `show_rulers/show_guides/lock_guides/
+    snap_to_guides`, remembered in prefs. Hook
+    `INKFRAME_SCREENSHOT_RULERS=1`. Not yet: snapping the pen, pencil or
+    scale handles.
 
 ## Not yet verified by hand
 

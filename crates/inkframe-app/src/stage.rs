@@ -7,6 +7,7 @@
 
 mod gradient_handles;
 mod inside;
+mod rulers;
 
 use egui::{Align2, Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{
@@ -180,6 +181,9 @@ enum Gesture {
         layers: Vec<(LayerId, Point, Affine)>,
         grab: Point,
         multi: Option<crate::frame_commands::MultiFrameMove>,
+        /// The box round what's moving when the drag began, for snapping
+        /// to guides.
+        bounds: Option<StageRect>,
     },
     /// Dragging a selection box over empty stage. `adding` keeps what was
     /// already selected (Shift held).
@@ -839,6 +843,8 @@ pub struct StageView {
     typing: TypingHistory,
     /// A gradient's end being dragged (see `gradient_handles.rs`).
     gradient_drag: Option<gradient_handles::GradientDrag>,
+    /// A guide being dragged (see `rulers.rs`).
+    guide_drag: Option<rulers::GuideDrag>,
 }
 
 impl Default for StageView {
@@ -860,6 +866,7 @@ impl Default for StageView {
             shape_drag: None,
             typing: TypingHistory::default(),
             gradient_drag: None,
+            guide_drag: None,
         }
     }
 }
@@ -1005,7 +1012,10 @@ impl StageView {
         // Typing into text takes the keyboard, and the mouse when it's on
         // the text; the tools get everything else.
         let pointer_on_text = self.handle_text_editing(ui, &response, editor, view);
-        // A gradient's handles come first: they sit on top of the shape.
+        // Rulers and guides first: they're over everything, at the edges.
+        let on_guide = !pointer_on_text && self.handle_rulers(ui, &response, editor, stage_view);
+        let pointer_on_text = pointer_on_text || on_guide;
+        // A gradient's handles next: they sit on top of the shape.
         let on_gradient = !pointer_on_text && self.handle_gradient(ui, &response, editor, view);
         let inside_layer =
             !pointer_on_text && !on_gradient && self.handle_inside(ui, &response, editor, view);
@@ -1070,6 +1080,8 @@ impl StageView {
             self.inside_cursor(ui, &response, editor, view);
         }
         self.draw_gradient_handles(ui, &overlay, &response, editor, view);
+        self.draw_rulers(ui, &overlay, editor, stage_view);
+        self.guide_cursor(ui, &response, editor, stage_view);
         asset_drop(ui, &overlay, &response, editor, stage_view);
     }
 
@@ -1145,11 +1157,19 @@ impl StageView {
         if let Some(pointer) = response.interact_pointer_pos() {
             let p = view.to_local(pointer);
             match &mut self.gesture {
-                Some(Gesture::Move { layers, grab, multi }) => {
+                Some(Gesture::Move { layers, grab, multi, bounds }) => {
                     let mut delta = p - *grab;
                     if shift {
                         // Constrain to the dominant axis, like every design tool.
                         if delta.x.abs() > delta.y.abs() { delta.y = 0.0 } else { delta.x = 0.0 }
+                    }
+                    // An edge or the middle of what's moving lands on a
+                    // guide it comes near.
+                    if let Some(bounds) = bounds
+                        && let Some(guides) = snapping_guides(editor)
+                    {
+                        let moved = StageRect::from_points(bounds.min + delta, bounds.max + delta);
+                        delta = delta + inkframe_core::snap_box(guides, moved, SNAP_REACH / view.zoom);
                     }
                     // Edit Multiple Frames: across the picked frames, not
                     // just this one (see `frame_commands.rs`).
@@ -1329,6 +1349,7 @@ impl StageView {
                     }
                 }
                 Some(Gesture::DrawShape { start, current, .. }) => {
+                    let p = snap_to_guides(editor, view, p);
                     *current = if shift { constrain_square(*start, p) } else { p };
                 }
                 Some(Gesture::Pencil { points, pressures }) => {
@@ -1904,13 +1925,21 @@ impl StageView {
                         (l.id, editor.doc.pose(l, frame).position, into_space)
                     })
                     .collect::<Vec<_>>();
-                let multi = editor.edit_multiple.then(|| {
-                    let ids: Vec<LayerId> = layers.iter().map(|&(id, _, _)| id).collect();
-                    editor.begin_multi_frame_move(&ids)
-                });
-                Some(Gesture::Move { layers, grab: p, multi })
+                let ids: Vec<LayerId> = layers.iter().map(|&(id, _, _)| id).collect();
+                let multi = editor.edit_multiple.then(|| editor.begin_multi_frame_move(&ids));
+                let bounds = ids
+                    .iter()
+                    .filter_map(|&id| editor.doc.layer(id))
+                    .filter_map(|l| {
+                        let to_stage = editor.doc.layer_matrix(l, frame);
+                        let local = editor.doc.layer_bounds(l, frame)?;
+                        StageRect::bounding(local.corners().map(|c| to_stage.apply(c)))
+                    })
+                    .reduce(StageRect::union);
+                Some(Gesture::Move { layers, grab: p, multi, bounds })
             }
             tool @ (Tool::Rectangle | Tool::Ellipse) => {
+                let p = snap_to_guides(editor, view, p);
                 Some(Gesture::DrawShape { tool, start: p, current: p })
             }
             Tool::Pencil => Some(Gesture::Pencil { points: vec![p], pressures: vec![pen_pressure()] }),
@@ -1955,6 +1984,7 @@ impl StageView {
                         layers: vec![(layer.id, start, Affine::IDENTITY)],
                         grab: p,
                         multi: None,
+                        bounds: None,
                     });
                 }
                 let local = editor.doc.layer_matrix(layer, editor.frame).inverse()?.apply(p);
@@ -3616,6 +3646,26 @@ fn draw_empty_stage_hint(painter: &egui::Painter, corners: &[Pos2; 4], backgroun
     );
 }
 
+/// How near a guide something must come to snap to it, in screen points.
+const SNAP_REACH: f32 = 6.0;
+
+/// The guides to snap to, if snapping's on and they're showing. Only on the
+/// main timeline: guides are in stage pixels, and a symbol's coordinates
+/// are its own.
+fn snapping_guides(editor: &Editor) -> Option<&[inkframe_core::RulerGuide]> {
+    (editor.snap_to_guides && editor.show_guides && editor.timeline() == TimelineId::Main)
+        .then_some(editor.doc.ruler_guides.as_slice())
+        .filter(|g| !g.is_empty())
+}
+
+/// A point moved onto any guide it's near (see [`snapping_guides`]).
+fn snap_to_guides(editor: &Editor, view: View, p: Point) -> Point {
+    match snapping_guides(editor) {
+        Some(guides) => inkframe_core::snap_point(guides, p, SNAP_REACH / view.zoom),
+        None => p,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5110,6 +5160,40 @@ mod tests {
         assert!(gradient.to.distance(Point::new(1.0, 1.0)) < 0.03, "{:?}", gradient.to);
         assert!(gradient.from.distance(Point::new(0.0, 0.5)) < 1e-6, "the start stays");
         assert!(square.bounds().center().distance(Point::new(100.0, 0.0)) < 1e-3, "the shape didn't move");
+    }
+
+    #[test]
+    fn a_guide_is_dragged_out_of_the_ruler_and_back_into_it() {
+        let mut editor = Editor::new(Document::default());
+        editor.show_rulers = true;
+        let mut h = harness(editor);
+        let area = h.state().0.last_area;
+        // From the top ruler down to stage y 300.
+        let on_ruler = pos2(screen(&h, 500.0, 0.0).x, area.top() + 8.0);
+        let at = screen(&h, 500.0, 300.0);
+        drag(&mut h, on_ruler, &[at]);
+        let guides = h.state().1.doc.ruler_guides.clone();
+        assert_eq!(guides.len(), 1);
+        assert!(!guides[0].vertical);
+        assert!((guides[0].at - 300.0).abs() <= 1.0, "{}", guides[0].at);
+
+        // Dragged back up onto the ruler, it goes.
+        let on_guide = screen(&h, 800.0, guides[0].at);
+        drag(&mut h, on_guide, &[on_ruler]);
+        assert!(h.state().1.doc.ruler_guides.is_empty());
+    }
+
+    #[test]
+    fn moving_a_layer_near_a_guide_snaps_it_on() {
+        // The box is 200 wide around x 400, so its left edge is at 300.
+        let (mut editor, id) = editor_with_selected_box();
+        editor.doc.ruler_guides.push(inkframe_core::RulerGuide { vertical: true, at: 250.0 });
+        let mut h = harness(editor);
+        // 48 left (left edge to 252), close enough to snap the last 2.
+        let (from, to) = (screen(&h, 400.0, 400.0), screen(&h, 352.0, 400.0));
+        drag(&mut h, from, &[to]);
+        let position = h.state().1.doc.layer(id).unwrap().transform_at(0).position;
+        assert!((position.x - 350.0).abs() < 0.01, "{position:?}");
     }
 
     #[test]

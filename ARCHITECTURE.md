@@ -48,6 +48,7 @@ The data model and the math behind animation.
 | `freehand.rs` | Turns jittery pointer samples into a smooth path |
 | `anchor.rs` | Anchor points with in/out handles; conversion between anchors, paths and shapes; nearest-point search and curve-preserving point insertion |
 | `shape.rs` (styles) | `Style` has the flat `fill`, the `stroke` (with `LineCap`, `LineJoin` and an optional `Dash`) and an optional `ShapeGradient` (linear or radial, any number of `GradientStop`s, its ends as fractions of the shape's box so it follows the shape). Build strokes with `Stroke::new` |
+| `ruler_guides.rs` | `RulerGuide` (kept in `Document::ruler_guides`, stage pixels) and snapping to guides: `snap_point`, `snap_box` |
 | `preset.rs` | `MotionPreset`: a stretch of a layer's keys kept relative to where it started (positions and angles as changes, scale and opacity as multiples), applied from any frame to any layer; the built-in presets |
 | `boolean.rs` | Union, Intersect, Punch, Crop (`ShapeOp`, `combine`) and Break Apart: outlines flattened, edges split where they cross, kept where the result is on one side only (by winding number either side of each edge's middle), joined into loops, and fitted back into curves (`vectorise::fit_points`) |
 | `frames.rs` | Editing a layer's time: `insert_frames`, `remove_frames` and `reverse_frames`, all through one `retime` that moves every key, deformer key, drawing swap and shape tween (and `AnyChannel::retime` / `reverse_span`, `Easing::reversed`) |
@@ -285,7 +286,7 @@ writes. No audio.
 | `autosave.rs` | Crash recovery: `Autosave::tick` copies the project every 30 s while it has unsaved changes (cloned, then zipped and written on a thread, to a temporary name renamed into place) into the settings folder's `Recovery/`, with a JSON note (original path, name, saved time, heartbeat). Saving or a normal quit `clear`s it. `left_behind` finds other sessions' copies whose heartbeat has been quiet for 2 minutes, so a second Inkframe that's still running isn't mistaken for a crash; `Recovery::open` reopens one as its project with changes unsaved (`Editor::recovered`). The window offering them is `App::recovery_window` |
 | `app.rs` | Window layout, menus, the `Command` enum, file open/save |
 | `editor.rs` | `Editor`: document, selection, current frame, tool, and the operations panels call |
-| `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles; `stage/inside.rs` handles the pointer while inside a layer (picking, moving and scaling shapes) |
+| `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles; `stage/rulers.rs` draws the rulers and guides and drags guides; `stage/inside.rs` handles the pointer while inside a layer (picking, moving and scaling shapes) |
 | `frame_commands.rs` | Animate's frame commands on the frames picked in the timeline (Insert/Remove Frames, Blank Keyframe, Convert to Keyframes, Reverse Frames) and Edit Multiple Frames' move across them (`MultiFrameMove`) |
 | `shape_ops.rs` | Combine Shapes and Break Apart on the picked shapes (text through `inkframe_render::shape_outline`) |
 | `motion_presets.rs` | The Motion Presets area: built-in and saved presets (`.inkpreset` files in the settings folder's Motion Presets), animated previews, Apply and Save Movement |

@@ -28,6 +28,12 @@ pub struct Prefs {
     /// Whether "Draw into the selected layer" was turned off. Saved this
     /// way round so a missing value (an older file) means the default, on.
     pub shape_per_layer: bool,
+    /// View › Rulers, and Guides' settings, saved so a missing value means
+    /// the default (no rulers; guides shown, unlocked, snapped to).
+    pub show_rulers: bool,
+    pub hide_guides: bool,
+    pub lock_guides: bool,
+    pub no_guide_snapping: bool,
 }
 
 /// A Batch Export job as saved: the format by its short name, the same
@@ -58,6 +64,10 @@ impl Prefs {
             batch,
             batch_folder,
             shape_per_layer: false,
+            show_rulers: false,
+            hide_guides: false,
+            lock_guides: false,
+            no_guide_snapping: false,
         }
     }
 

@@ -35,7 +35,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 33;
+pub const FORMAT_VERSION: u32 = 34;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -83,6 +83,9 @@ pub struct Document {
     /// `library.rs`). Symbols, images and sounds say which they're in.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub library_folders: Vec<String>,
+    /// Guide lines dragged out of the rulers (see `ruler_guides.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ruler_guides: Vec<crate::RulerGuide>,
     /// Plain colours, as the Swatches panel saved them before there was a
     /// palette; loading makes each a swatch.
     #[serde(default, rename = "swatches", skip_serializing)]
@@ -327,6 +330,7 @@ impl Default for Document {
             controllers: Vec::new(),
             stack_by_depth: false,
             library_folders: Vec::new(),
+            ruler_guides: Vec::new(),
             old_swatches: Vec::new(),
             next_canvas_id: 1,
         }

@@ -289,6 +289,12 @@ pub struct Editor {
     /// Edit Multiple Frames: dragging on the stage moves layers across the
     /// picked frames (or all of them) at once.
     pub edit_multiple: bool,
+    /// View › Rulers, and the guides dragged out of them (see
+    /// `stage/rulers.rs`): showing, locked in place, snapped to.
+    pub show_rulers: bool,
+    pub show_guides: bool,
+    pub lock_guides: bool,
+    pub snap_to_guides: bool,
     /// Safe areas and the field guide over the stage.
     pub guides: Guides,
     /// Pencil lines follow the pen's pressure.
@@ -359,6 +365,10 @@ impl Editor {
             inside: None,
             frame_range: None,
             edit_multiple: false,
+            show_rulers: false,
+            show_guides: true,
+            lock_guides: false,
+            snap_to_guides: true,
             guides: Guides::default(),
             pencil_pressure: true,
             pencil_taper: true,
