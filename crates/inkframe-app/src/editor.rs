@@ -1278,6 +1278,13 @@ impl Editor {
     /// Makes the selected layer morph (or stop morphing) through the
     /// current frame's span into the next swap, as Animate's Create Shape
     /// Tween.
+    /// Draws the inbetweens for the span the current frame is in on the
+    /// selected layer (see `Layer::make_inbetweens`). Returns how many.
+    pub fn make_inbetweens(&mut self) -> usize {
+        let frame = self.frame;
+        self.selected_layer_mut().filter(|l| !l.locked).map_or(0, |layer| layer.make_inbetweens(frame))
+    }
+
     pub fn set_shape_tween(&mut self, on: bool) {
         let frame = self.frame;
         if let Some(layer) = self.selected_layer_mut() {

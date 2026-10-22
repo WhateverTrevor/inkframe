@@ -131,6 +131,7 @@ enum Command {
     ClearGuides,
     NewFolder,
     CreateShapeTween,
+    MakeInbetweens,
     AddCamera,
     RemoveShapeTween,
     AddShapeHint,
@@ -938,6 +939,14 @@ impl InkframeApp {
             }
             Command::NewFolder => editor.new_folder(),
             Command::CreateShapeTween => editor.set_shape_tween(true),
+            Command::MakeInbetweens => {
+                if editor.make_inbetweens() == 0 {
+                    show_error(
+                        "No inbetweens to draw",
+                        "Inbetweens are drawn between two key drawings: put the playhead between a drawing and the next one it swaps to, with frames to fill between them.",
+                    );
+                }
+            }
             Command::AddCamera => editor.add_camera(),
             Command::RemoveShapeTween => editor.set_shape_tween(false),
             Command::AddShapeHint => editor.add_shape_hint(),
@@ -1431,6 +1440,7 @@ impl InkframeApp {
                 let tween = self.editor.shape_tween_here();
                 item(ui, "Create Shape Tween", None, Command::CreateShapeTween, tween == Some(false));
                 item(ui, "Remove Shape Tween", None, Command::RemoveShapeTween, tween == Some(true));
+                item(ui, "Draw Inbetweens", None, Command::MakeInbetweens, tween.is_some());
                 ui.separator();
                 let label =
                     if self.editor.doc.camera_layer().is_some() { "Select Camera" } else { "Add Camera" };

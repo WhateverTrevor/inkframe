@@ -827,6 +827,14 @@ after the Harmony features (palettes to master controllers).
     Perspective Guide (`Command::SetPerspective`). Hook
     `INKFRAME_SCREENSHOT_PERSPECTIVE=1`. Not yet: snapping the Pencil,
     Line or shape tools; several guides at once.
+108. Assisted inbetweening: `Layer::make_inbetweens(frame)` in
+    `morph.rs` (span from the key at/before `frame` to the next swap; a
+    new numbered drawing per frame between, line art and colour art
+    morphed separately with the hints, spaced by the span's shape tween
+    easing, which is then removed). `Editor::make_inbetweens`, Timeline ›
+    Draw Inbetweens (`Command::MakeInbetweens`). Hook
+    `INKFRAME_SCREENSHOT_INBETWEENS=1`. Not yet: a choice of spacing
+    (charts) when there's no shape tween; inbetweening a frame range at once.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)
