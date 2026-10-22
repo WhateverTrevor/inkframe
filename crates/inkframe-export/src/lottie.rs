@@ -291,9 +291,12 @@ impl Lottie<'_> {
                 t += 1;
                 continue;
             }
-            let elements = layer.shown_elements(frames[t]).into_owned();
+            let elements = self.doc.posed_elements(layer, frames[t]).into_owned();
             let mut end = t + 1;
-            while end < frames.len() && shown(end) && *layer.shown_elements(frames[end]) == elements[..] {
+            while end < frames.len()
+                && shown(end)
+                && *self.doc.posed_elements(layer, frames[end]) == elements[..]
+            {
                 end += 1;
             }
             out.extend(self.drawing(layer, &elements, t, end, &opacity, frames.len(), next));
@@ -454,8 +457,12 @@ impl Lottie<'_> {
     fn matte(&self, mask: &Layer, content: &Value, frames: &[u32], next: &mut ContentIndex) -> Value {
         let ip = content["ip"].as_u64().unwrap_or(0) as usize;
         let op = content["op"].as_u64().unwrap_or(frames.len() as u64) as usize;
-        let mut shapes: Vec<Value> =
-            mask.shown_elements(frames[ip.min(frames.len() - 1)]).iter().filter_map(shape_group).collect();
+        let mut shapes: Vec<Value> = self
+            .doc
+            .posed_elements(mask, frames[ip.min(frames.len() - 1)])
+            .iter()
+            .filter_map(shape_group)
+            .collect();
         shapes.reverse();
         json!({
             "ty": 4, "ind": next.take(), "nm": format!("{} (mask)", mask.name), "parent": null_index(mask.id),

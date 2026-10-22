@@ -683,6 +683,33 @@ after the Harmony features (palettes to master controllers).
     `INKFRAME_SCREENSHOT_PEN_HANDLES=1` (`StageView::pick_anchor`). Not
     yet: Animate's minus cursor (click a point with the Pen to delete it;
     here Delete does that), Cmd as a temporary Subselection tool.
+96. Skeletons, Moho rigging Phase A (format v35): core `skeleton.rs`
+    (`Skeleton`/`Bone` with rest `start`/`end`, `strength`, animated
+    `turn` (relative to parent) and `moved`; `pose` → per-bone
+    rest-to-posed `Affine`s; `weights` = normalised 1/(d/strength)^4 to
+    each rest segment; `carry`; `reach` = CCD IK; `move_bone`;
+    `shift_rest`; `remove_bone` returns the index map), on
+    `Layer::skeleton` (a folder) with `Layer::bone_binding` (Region default
+    / Bone(i) / Unbound) on members; `Document::skeleton_layer_of`,
+    `bone_space` (= folder's `parent_matrix`: parents + camera, not the
+    folder's own transform), `layer_bend` → `LayerBend` (`bend`, `rigid`,
+    `elements`), `posed_elements` (used by bounds/hit tests, SVG, Lottie,
+    renderer). Renderer: `draw_canvas_bent`/`draw_image_bent` via
+    `draw_bent` (16-unit triangle mesh, `triangle_map`, AA off so seams
+    don't show); one-bone layers draw through one matrix. Skeleton keys
+    join `Layer::key_frames`/insert/remove/move/shift/retime/reverse and
+    show on the folder's timeline row. App: `skeleton.rs` (New Skeleton,
+    `add_bone` hangs from `selected_bone`, `pose_bone`, `move_bone`,
+    `delete_bone`), `Tool::AddBone` (with Bone, Shift+K), `stage/bones.rs`
+    (`BoneDrag`, after the lattice in the stage's input; Add Bone shows
+    bones at rest, Bone posed), inspector: folder "Add Skeleton", bone
+    name/strength/turn/delete, member "Follows". Hook
+    `INKFRAME_SCREENSHOT_SKELETON=1`. Phases next (agreed with the user):
+    B point binding + smart bones + switch layers, C bone dynamics,
+    squash/stretch, constraints (angle limits not yet on skeleton bones),
+    D maybe shared points. Not yet: bent rasters in SVG/Lottie export
+    (they stay unbent there), skeleton keys draggable on the folder row,
+    binding weights painted by hand.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

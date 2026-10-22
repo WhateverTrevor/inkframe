@@ -16,7 +16,9 @@ mod particles;
 mod path;
 mod text;
 
-use inkframe_core::{Affine, Color, Document, Element, Layer, LayerId, Point, Shape, SymbolId, TimelineId};
+use inkframe_core::{
+    Affine, Color, Document, Element, Layer, LayerBend, LayerId, Point, Shape, SymbolId, TimelineId,
+};
 use tiny_skia::{
     BlendMode, FillRule, FilterQuality, IntRect, LineCap, LineJoin, Mask, MaskType, Paint, PathBuilder,
     Pattern, Pixmap, PixmapMut, PixmapPaint, SpreadMode, Transform,
@@ -763,15 +765,41 @@ fn draw_layer(
         Point::ZERO,
         Point::new(pixmap.width() as f32, pixmap.height() as f32),
     );
+    // Bent by a skeleton (see `skeleton.rs`), a picture or painting can
+    // reach well past where it's drawn, so it's always drawn.
+    let bend = doc.layer_bend(layer, frame);
     let visible = |element: &Element| {
+        let pixels = matches!(element.shape, Shape::Paint { .. } | Shape::Image { .. });
         let corners = element.bounds().corners().map(|c| matrix.apply(c));
-        inkframe_core::Rect::bounding(corners).is_some_and(|b| overlaps(b, image))
+        (pixels && bend.is_some())
+            || inkframe_core::Rect::bounding(corners).is_some_and(|b| overlaps(b, image))
     };
-    for element in layer.shown_elements(frame).iter().filter(|e| visible(e)) {
+    let shown = layer.shown_elements(frame);
+    let elements = match &bend {
+        Some(bend) => std::borrow::Cow::Owned(bend.elements(&shown)),
+        None => shown,
+    };
+    // A layer bound to one bone moves as a whole, so its pixels can be drawn
+    // through one matrix; one bound by region needs them bent piece by piece.
+    let rigid = bend.as_ref().and_then(|b| b.rigid());
+    let pixel_matrix = to_skia_transform(rigid.map_or(matrix, |m| matrix.pre_concat(m)));
+    let mesh = bend.as_ref().filter(|_| rigid.is_none());
+    for element in elements.iter().filter(|e| visible(e)) {
         match element.shape {
             Shape::Paint { canvas, width, height } => {
-                if let Some(canvas) = doc.canvas(canvas) {
-                    draw_canvas(pixmap, canvas, width, height, skia_matrix, style.tint);
+                let Some(canvas) = doc.canvas(canvas) else { continue };
+                match mesh {
+                    Some(bend) => {
+                        draw_canvas_bent(pixmap, canvas, width, height, skia_matrix, style.tint, bend)
+                    }
+                    None => draw_canvas(pixmap, canvas, width, height, pixel_matrix, style.tint),
+                }
+            }
+            Shape::Image { image, width, height } if bend.is_some() => {
+                let pixels = style.images.and_then(|library| library.get(image));
+                match mesh {
+                    Some(bend) => draw_image_bent(pixmap, pixels, width, height, skia_matrix, bend),
+                    None => draw_image(pixmap, pixels, width, height, pixel_matrix),
                 }
             }
             _ => draw_element(pixmap, element, skia_matrix, style),
@@ -917,17 +945,52 @@ fn draw_canvas(
     matrix: Transform,
     tint: Option<Color>,
 ) {
+    let Some((region, rect, origin)) = canvas_region(canvas, width, height, tint) else { return };
+    let area = (matrix.sx * matrix.sy - matrix.kx * matrix.ky).abs();
+    let quality = if area > 1.0 + 1e-3 { FilterQuality::Nearest } else { FilterQuality::Bilinear };
+    let shader = Pattern::new(
+        region.as_ref(),
+        SpreadMode::Pad,
+        quality,
+        1.0,
+        Transform::from_translate(origin.0, origin.1),
+    );
+    let paint = Paint { shader, anti_alias: false, ..Paint::default() };
+    pixmap.fill_rect(rect, &paint, matrix, None);
+}
+
+/// A paint layer's canvas bent by a skeleton.
+fn draw_canvas_bent(
+    pixmap: &mut PixmapMut,
+    canvas: &inkframe_core::Canvas,
+    width: u32,
+    height: u32,
+    matrix: Transform,
+    tint: Option<Color>,
+    bend: &LayerBend<'_>,
+) {
+    let Some((region, rect, origin)) = canvas_region(canvas, width, height, tint) else { return };
+    let to_layer = Transform::from_translate(origin.0, origin.1);
+    draw_bent(pixmap, region.as_ref(), to_layer, rect, FilterQuality::Bilinear, matrix, bend);
+}
+
+/// The painted part of a canvas as one image, where that image's top left
+/// sits in the layer's coordinates, and the rectangle to draw it in.
+fn canvas_region(
+    canvas: &inkframe_core::Canvas,
+    width: u32,
+    height: u32,
+    tint: Option<Color>,
+) -> Option<(Pixmap, tiny_skia::Rect, (f32, f32))> {
     use inkframe_core::TILE;
     let tiles: Vec<_> = canvas.tiles().collect();
-    let (Some(min_x), Some(min_y)) =
-        (tiles.iter().map(|((x, _), _)| *x).min(), tiles.iter().map(|((_, y), _)| *y).min())
-    else {
-        return; // Nothing painted.
-    };
+    // With nothing painted, nothing.
+    let min_x = tiles.iter().map(|((x, _), _)| *x).min()?;
+    let min_y = tiles.iter().map(|((_, y), _)| *y).min()?;
     let max_x = tiles.iter().map(|((x, _), _)| *x).max().unwrap_or(min_x);
     let max_y = tiles.iter().map(|((_, y), _)| *y).max().unwrap_or(min_y);
     let (columns, rows) = (max_x - min_x + 1, max_y - min_y + 1);
-    let Some(mut region) = Pixmap::new(columns * TILE, rows * TILE) else { return };
+    let mut region = Pixmap::new(columns * TILE, rows * TILE)?;
     let stride = (columns * TILE * 4) as usize;
     for ((x, y), pixels) in tiles {
         let left = ((x - min_x) * TILE * 4) as usize;
@@ -954,18 +1017,106 @@ fn draw_canvas(
     // reach past it.
     let right = (width as f32 / 2.0).min(origin.0 + region.width() as f32);
     let bottom = (height as f32 / 2.0).min(origin.1 + region.height() as f32);
-    let Some(rect) = tiny_skia::Rect::from_ltrb(origin.0, origin.1, right, bottom) else { return };
-    let area = (matrix.sx * matrix.sy - matrix.kx * matrix.ky).abs();
-    let quality = if area > 1.0 + 1e-3 { FilterQuality::Nearest } else { FilterQuality::Bilinear };
-    let shader = Pattern::new(
-        region.as_ref(),
-        SpreadMode::Pad,
-        quality,
-        1.0,
-        Transform::from_translate(origin.0, origin.1),
-    );
-    let paint = Paint { shader, anti_alias: false, ..Paint::default() };
-    pixmap.fill_rect(rect, &paint, matrix, None);
+    let rect = tiny_skia::Rect::from_ltrb(origin.0, origin.1, right, bottom)?;
+    Some((region, rect, origin))
+}
+
+/// A picture bent by a skeleton. Drawn from the full-size copy: bending
+/// changes how much each part is scaled, so no one smaller copy suits all.
+fn draw_image_bent(
+    pixmap: &mut PixmapMut,
+    pixels: Option<&Mipmaps>,
+    width: f32,
+    height: f32,
+    matrix: Transform,
+    bend: &LayerBend<'_>,
+) {
+    let Some(mips) = pixels else { return draw_image(pixmap, None, width, height, matrix) };
+    let Some(rect) = tiny_skia::Rect::from_xywh(-width / 2.0, -height / 2.0, width, height) else { return };
+    let (level, factor) = mips.level_for(1.0);
+    let stretch = (width / mips.width() as f32 * factor, height / mips.height() as f32 * factor);
+    let to_layer = Transform::from_translate(-width / 2.0, -height / 2.0).pre_scale(stretch.0, stretch.1);
+    draw_bent(pixmap, level.as_ref(), to_layer, rect, FilterQuality::Bilinear, matrix, bend);
+}
+
+/// How big a piece of the mesh a bent picture is drawn through is, in the
+/// layer's units: small enough that each piece moving as one flat triangle
+/// doesn't show, and few enough to draw quickly.
+const MESH_CELL: f32 = 16.0;
+
+/// Draws `source` (placed in the layer by `to_layer`, covering `rect`) bent
+/// as `bend` says: the rectangle is cut into a grid of triangles, each
+/// corner bent, and each triangle filled with the picture stretched to fit.
+/// Edges are left hard so neighbouring triangles meet without a seam; the
+/// picture's own soft edges are within the triangles.
+fn draw_bent(
+    pixmap: &mut PixmapMut,
+    source: tiny_skia::PixmapRef,
+    to_layer: Transform,
+    rect: tiny_skia::Rect,
+    quality: FilterQuality,
+    matrix: Transform,
+    bend: &LayerBend<'_>,
+) {
+    let columns = ((rect.width() / MESH_CELL).ceil() as usize).clamp(1, 96);
+    let rows = ((rect.height() / MESH_CELL).ceil() as usize).clamp(1, 96);
+    let rest = |c: usize, r: usize| {
+        Point::new(
+            rect.left() + rect.width() * c as f32 / columns as f32,
+            rect.top() + rect.height() * r as f32 / rows as f32,
+        )
+    };
+    let bent: Vec<Point> = (0..=rows)
+        .flat_map(|r| (0..=columns).map(move |c| (c, r)))
+        .map(|(c, r)| bend.bend(rest(c, r)))
+        .collect();
+    let at = |c: usize, r: usize| bent[r * (columns + 1) + c];
+    for r in 0..rows {
+        for c in 0..columns {
+            let corners = [(c, r), (c + 1, r), (c + 1, r + 1), (c, r + 1)];
+            for [a, b, d] in [[0, 1, 2], [0, 2, 3]] {
+                let from = [
+                    rest(corners[a].0, corners[a].1),
+                    rest(corners[b].0, corners[b].1),
+                    rest(corners[d].0, corners[d].1),
+                ];
+                let to = [
+                    at(corners[a].0, corners[a].1),
+                    at(corners[b].0, corners[b].1),
+                    at(corners[d].0, corners[d].1),
+                ];
+                let Some(stretch) = triangle_map(from, to) else { continue };
+                let mut path = PathBuilder::new();
+                path.move_to(to[0].x, to[0].y);
+                path.line_to(to[1].x, to[1].y);
+                path.line_to(to[2].x, to[2].y);
+                path.close();
+                let Some(path) = path.finish() else { continue };
+                let shader =
+                    Pattern::new(source, SpreadMode::Pad, quality, 1.0, stretch.pre_concat(to_layer));
+                let paint = Paint { shader, anti_alias: false, ..Paint::default() };
+                pixmap.fill_path(&path, &paint, FillRule::Winding, matrix, None);
+            }
+        }
+    }
+}
+
+/// The affine map taking triangle `from` onto triangle `to`, or `None` for
+/// one squashed flat.
+fn triangle_map(from: [Point; 3], to: [Point; 3]) -> Option<Transform> {
+    let (u, v) = (from[1] - from[0], from[2] - from[0]);
+    let det = u.x * v.y - u.y * v.x;
+    if det.abs() < 1e-6 {
+        return None;
+    }
+    let (p, q) = (to[1] - to[0], to[2] - to[0]);
+    // Columns of the map from `from`'s edges to `to`'s: M = [p q]·[u v]⁻¹.
+    let (ia, ib, ic, id) = (v.y / det, -v.x / det, -u.y / det, u.x / det);
+    let (sx, kx) = (p.x * ia + q.x * ic, p.x * ib + q.x * id);
+    let (ky, sy) = (p.y * ia + q.y * ic, p.y * ib + q.y * id);
+    let tx = to[0].x - (sx * from[0].x + kx * from[0].y);
+    let ty = to[0].y - (ky * from[0].x + sy * from[0].y);
+    Some(Transform::from_row(sx, ky, kx, sy, tx, ty))
 }
 
 fn draw_image(pixmap: &mut PixmapMut, pixels: Option<&Mipmaps>, width: f32, height: f32, matrix: Transform) {
@@ -1329,6 +1480,81 @@ mod tests {
         assert_eq!(pixel(&pixmap, 30, 30), [255, 0, 0, 255]);
         assert_eq!(pixel(&pixmap, 50, 55), [255, 0, 0, 255]);
         assert_eq!(pixel(&pixmap, 75, 30), [255, 255, 255, 255]);
+    }
+
+    /// A white 100×100 stage with a folder holding a two-bone arm along
+    /// y 50: an upper arm from x 50 to 70 and a forearm to 90, the forearm
+    /// turned 90° (hanging down). Returns the document and the folder.
+    fn rigged_doc() -> (Document, LayerId) {
+        let mut doc = Document::default();
+        doc.width = 100;
+        doc.height = 100;
+        doc.background = Color::WHITE;
+        let folder = doc.add_layer("Rig", Vec::new(), 0, Pose::at(Point::ZERO));
+        let mut skeleton = inkframe_core::Skeleton::default();
+        let upper = skeleton.add_bone(None, Point::new(50.0, 50.0), Point::new(70.0, 50.0), 0);
+        let fore = skeleton.add_bone(Some(upper), Point::new(70.0, 50.0), Point::new(90.0, 50.0), 0);
+        skeleton.bones[fore].turn.set(0, 90.0);
+        let layer = doc.layer_mut(folder).unwrap();
+        layer.folder = true;
+        layer.skeleton = Some(skeleton);
+        (doc, folder)
+    }
+
+    #[test]
+    fn a_skeleton_bends_the_shapes_bound_to_it() {
+        let (mut doc, folder) = rigged_doc();
+        let bar = Element {
+            shape: Shape::Rect { width: 40.0, height: 6.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::rgb(255, 0, 0)), stroke: None, gradient: None },
+        };
+        let arm = doc.add_layer("Arm", vec![bar], 0, Pose::at(Point::new(70.0, 50.0)));
+        doc.layer_mut(arm).unwrap().in_folder = Some(folder);
+
+        let pixmap = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        // The upper arm where it was; the forearm hanging from the elbow.
+        assert_eq!(pixel(&pixmap, 55, 50), [255, 0, 0, 255]);
+        assert_eq!(pixel(&pixmap, 70, 65), [255, 0, 0, 255]);
+        assert_eq!(pixel(&pixmap, 85, 50), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn a_skeleton_bends_paintings_through_a_mesh() {
+        let (mut doc, folder) = rigged_doc();
+        let arm = doc.add_paint_layer(TimelineId::Main, "Painted arm", 0).unwrap();
+        doc.layer_mut(arm).unwrap().in_folder = Some(folder);
+        let (canvas, _, _) = doc.paint_canvas_at(arm, 0).unwrap();
+        // A red bar painted from x 50 to 90, rows 47 to 52.
+        let tile = doc.canvas_mut(canvas).unwrap().tile_mut((0, 0));
+        for y in 47..53 {
+            for x in 50..90 {
+                let at = (y * inkframe_core::TILE as usize + x) * 4;
+                tile[at..at + 4].copy_from_slice(&[255, 0, 0, 255]);
+            }
+        }
+
+        let pixmap = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        assert_eq!(pixel(&pixmap, 55, 50), [255, 0, 0, 255]);
+        assert_eq!(pixel(&pixmap, 70, 65), [255, 0, 0, 255]);
+        assert_eq!(pixel(&pixmap, 85, 50), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn a_layer_bound_to_one_bone_moves_as_a_whole() {
+        let (mut doc, folder) = rigged_doc();
+        // A dot at the forearm's tip, bound to the forearm.
+        let dot = Element {
+            shape: Shape::Rect { width: 6.0, height: 6.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::rgb(0, 0, 255)), stroke: None, gradient: None },
+        };
+        let hand = doc.add_layer("Hand", vec![dot], 0, Pose::at(Point::new(90.0, 50.0)));
+        let layer = doc.layer_mut(hand).unwrap();
+        layer.in_folder = Some(folder);
+        layer.bone_binding = inkframe_core::BoneBinding::Bone(1);
+
+        let pixmap = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        assert_eq!(pixel(&pixmap, 70, 70), [0, 0, 255, 255]);
+        assert_eq!(pixel(&pixmap, 90, 50), [255, 255, 255, 255]);
     }
 
     #[test]

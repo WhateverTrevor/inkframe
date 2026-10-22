@@ -258,12 +258,14 @@ impl Layer {
     pub fn insert_key(&mut self, frame: u32) -> bool {
         let mut added = self.track.insert_key(frame);
         added |= self.deformer.as_mut().is_some_and(|d| d.insert_key(frame));
+        added |= self.skeleton.as_mut().is_some_and(|s| s.insert_key(frame));
         added | self.warp.as_mut().is_some_and(|w| w.insert_key(frame))
     }
 
     pub fn remove_key(&mut self, frame: u32) -> bool {
         let mut removed = self.track.remove_key(frame);
         removed |= self.deformer.as_mut().is_some_and(|d| d.remove_key(frame));
+        removed |= self.skeleton.as_mut().is_some_and(|s| s.remove_key(frame));
         removed | self.warp.as_mut().is_some_and(|w| w.remove_key(frame))
     }
 
@@ -272,7 +274,13 @@ impl Layer {
     pub fn move_key(&mut self, from: u32, to: u32) -> bool {
         let had_deformer_key = self.deformer.as_ref().is_some_and(|d| d.key_frames().contains(&from));
         let had_warp_key = self.warp.as_ref().is_some_and(|w| w.key_frames().contains(&from));
+        let had_bone_key = self.skeleton.as_ref().is_some_and(|s| s.key_frames().contains(&from));
         let moved = self.track.move_key(from, to);
+        if let Some(skeleton) = &mut self.skeleton
+            && had_bone_key
+        {
+            skeleton.move_key(from, to);
+        }
         if let Some(deformer) = &mut self.deformer
             && had_deformer_key
         {
@@ -283,7 +291,7 @@ impl Layer {
         {
             warp.move_key(from, to);
         }
-        moved || had_deformer_key || had_warp_key
+        moved || had_deformer_key || had_warp_key || had_bone_key
     }
 
     /// Moves everything about the layer in time by `by` frames: where it
@@ -309,6 +317,9 @@ impl Layer {
         if let Some(warp) = &mut self.warp {
             warp.offsets.iter_mut().for_each(|c| c.shift(by));
         }
+        if let Some(skeleton) = &mut self.skeleton {
+            skeleton.channels_mut().for_each(|c| c.shift(by));
+        }
     }
 
     /// Every frame with a key: the transform's, the deformer's and the
@@ -317,6 +328,7 @@ impl Layer {
         let mut frames = self.track.key_frames();
         frames.extend(self.deformer.iter().flat_map(|d| d.key_frames()));
         frames.extend(self.warp.iter().flat_map(|w| w.key_frames()));
+        frames.extend(self.skeleton.iter().flat_map(|s| s.key_frames()));
         frames.sort_unstable();
         frames.dedup();
         frames

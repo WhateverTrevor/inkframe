@@ -107,7 +107,7 @@ pub fn tool_key(tool: Tool) -> Key {
         Tool::Text => Key::T,
         // Photoshop's keys for its painting tools; Bone, which had B
         // before painting arrived, takes K.
-        Tool::Bone => Key::K,
+        Tool::Bone | Tool::AddBone => Key::K,
         // Animate's.
         Tool::Camera => Key::C,
         Tool::Brush => Key::B,

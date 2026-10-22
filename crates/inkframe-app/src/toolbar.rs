@@ -251,6 +251,15 @@ fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) {
             }
             painter.circle_filled(hand, 2.5, stroke.color);
         }
+        Tool::AddBone => {
+            // A bone with a plus beside it.
+            let (start, end) = (at(0.1, 0.9), at(0.65, 0.35));
+            let side = (end - start).rot90().normalized() * r.width() * 0.08;
+            let quarter = start + (end - start) * 0.25;
+            painter.add(egui::Shape::closed_line(vec![start, quarter + side, end, quarter - side], stroke));
+            painter.line_segment([at(0.8, 0.0), at(0.8, 0.3)], stroke);
+            painter.line_segment([at(0.65, 0.15), at(0.95, 0.15)], stroke);
+        }
         Tool::Brush => {
             // A round brush, handle up and to the right, its bristles
             // coming to a point at the bottom left.

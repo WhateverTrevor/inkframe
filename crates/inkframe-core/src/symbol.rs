@@ -405,7 +405,7 @@ impl Document {
         if layer.particles.is_some() {
             return self.particle_bounds(layer, frame as f32);
         }
-        let shapes = self.element_bounds(&layer.shown_elements(frame));
+        let shapes = self.element_bounds(&self.posed_elements(layer, frame));
         let nested = self.instance_view(layer, frame, depth).and_then(|(symbol, local_frame)| {
             symbol
                 .layers
@@ -454,7 +454,7 @@ impl Document {
         let scale = matrix.average_scale().max(1e-6);
         let local_tolerance = tolerance / scale;
 
-        layer.shown_elements(frame).iter().any(|e| self.element_hit(e, local, local_tolerance))
+        self.posed_elements(layer, frame).iter().any(|e| self.element_hit(e, local, local_tolerance))
             || self.instance_view(layer, frame, depth).is_some_and(|(symbol, local_frame)| {
                 symbol.layers.iter().filter(|inner| inner.is_shown_at(local_frame)).any(|inner| {
                     self.layer_hit_at_depth(inner, local, local_frame, local_tolerance, depth + 1)

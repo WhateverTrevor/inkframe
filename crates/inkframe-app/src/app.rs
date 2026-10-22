@@ -113,6 +113,9 @@ enum Command {
     BreakApart,
     // Distort and Envelope (see `envelope.rs`).
     StartLattice(crate::envelope::LatticeKind),
+    // Skeletons (see `skeleton.rs`).
+    NewSkeleton,
+    DeleteBone,
     FinishLattice,
     SwapSymbol,
     // Rulers and guides (see `stage/rulers.rs`).
@@ -876,6 +879,10 @@ impl InkframeApp {
                 }
             }
             Command::FinishLattice => editor.finish_lattice(),
+            Command::NewSkeleton => editor.new_skeleton(),
+            Command::DeleteBone => {
+                editor.delete_bone();
+            }
             Command::BreakApart => {
                 if editor.break_apart() == 0 {
                     show_error(
@@ -1004,6 +1011,7 @@ impl InkframeApp {
         let inside_layer = self.editor.inside_layer().is_some();
         let shapes_picked = !self.editor.picked_shapes().is_empty();
         let bending = self.editor.lattice.is_some();
+        let bone_picked = self.editor.tool == Tool::AddBone && self.editor.selected_bone.is_some();
         ctx.input_mut(|input| {
             for (shortcut, command) in file_shortcuts {
                 if input.consume_shortcut(&shortcut) {
@@ -1053,6 +1061,8 @@ impl InkframeApp {
             } else if bending {
                 // Enter or Escape leaves a Distort or Envelope's shapes bent.
                 &[(Key::Enter, Command::FinishLattice), (Key::Escape, Command::FinishLattice)]
+            } else if bone_picked {
+                &[(Key::Backspace, Command::DeleteBone), (Key::Delete, Command::DeleteBone)]
             } else if anchor_selected {
                 &[(Key::Backspace, Command::DeleteAnchor), (Key::Delete, Command::DeleteAnchor)]
             } else if shapes_picked {
@@ -1266,6 +1276,7 @@ impl InkframeApp {
                     }
                 });
                 item(ui, "New Folder", None, Command::NewFolder, true);
+                item(ui, "New Skeleton", None, Command::NewSkeleton, true);
                 ui.separator();
                 let hints = self.editor.shape_tween_drawings().is_some();
                 item(ui, "Add Shape Hint", Some(shortcuts::ADD_SHAPE_HINT), Command::AddShapeHint, hints);

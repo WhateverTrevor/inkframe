@@ -33,6 +33,8 @@ pub enum Tool {
     /// Poses a rig by dragging: the joints above the dragged layer turn so
     /// it follows the pointer (inverse kinematics).
     Bone,
+    /// Draws a skeleton's bones and moves them at rest (see `skeleton.rs`).
+    AddBone,
     /// Pans, zooms and turns the camera (see `camera.rs` in the core).
     Camera,
     /// Paints pixels on a paint layer (see `paint.rs` and `brush.rs`).
@@ -63,7 +65,7 @@ impl Tool {
     pub const GROUPS: [&'static [Tool]; 19] = [
         &[Tool::Select],
         &[Tool::Subselect, Tool::Width],
-        &[Tool::Bone],
+        &[Tool::Bone, Tool::AddBone],
         &[Tool::Camera],
         &[Tool::Pen],
         &[Tool::Rectangle],
@@ -103,6 +105,7 @@ impl Tool {
             Tool::Pencil => "Pencil",
             Tool::Text => "Text",
             Tool::Bone => "Bone",
+            Tool::AddBone => "Add Bone",
             Tool::Camera => "Camera",
             Tool::Brush => "Brush",
             Tool::Eraser => "Eraser",
@@ -286,6 +289,9 @@ pub struct Editor {
     /// A Distort or Envelope under way on the picked shapes (see
     /// `envelope.rs`).
     pub lattice: Option<crate::envelope::LatticeEdit>,
+    /// The bone picked in the skeleton being worked on (see `skeleton.rs`):
+    /// the one new bones hang from.
+    pub selected_bone: Option<usize>,
     /// Frames picked in the timeline (first and last, either way round),
     /// for the frame commands (see `frame_commands.rs`).
     pub frame_range: Option<(u32, u32)>,
@@ -367,6 +373,7 @@ impl Editor {
             light_table: false,
             inside: None,
             lattice: None,
+            selected_bone: None,
             frame_range: None,
             edit_multiple: false,
             show_rulers: false,
