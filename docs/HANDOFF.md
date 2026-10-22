@@ -798,6 +798,17 @@ after the Harmony features (palettes to master controllers).
     draws a dotted line to the target. Hook `INKFRAME_SCREENSHOT_TARGETS=1`.
     Roadmap item 5's other half, an action timeline for smart bones, is
     not done: corrections are still whole drawings to morph toward.
+105. Art/pattern brushes: core `art_brush.rs` (`Stroke::brush:
+    Option<StrokeBrush{kind, symbol}>`, optional so no format bump;
+    `Document::drawn_as` → fill-only copy + picture laid along the outline
+    or a pencil line's centreline at its mean width; picture = symbol's
+    frame-0 shapes in symbol space, brushes stripped so none recurse;
+    Pattern tiles = round(length / natural tile)). Renderer, SVG and
+    Lottie draw through `drawn_as`. `Layer::symbols_used` includes brush
+    symbols so they can't be deleted while used. Inspector stroke row
+    "Brush" (Plain/Art/Pattern + symbol). Hook
+    `INKFRAME_SCREENSHOT_BRUSHES=1`. Not yet: a dedicated Paint Brush tool
+    with a brush library panel; hit testing uses the plain line.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

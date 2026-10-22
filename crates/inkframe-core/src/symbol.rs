@@ -55,9 +55,20 @@ impl Layer {
         Some(swapped.map_or(instance.symbol, |s| s.symbol))
     }
 
-    /// Every symbol an instance shows at some point.
+    /// Every symbol the layer uses: the ones an instance shows at some
+    /// point, and the ones its strokes are brushed with (see
+    /// `art_brush.rs`).
     pub fn symbols_used(&self) -> impl Iterator<Item = SymbolId> + '_ {
-        self.instance.map(|i| i.symbol).into_iter().chain(self.symbol_swaps.iter().map(|s| s.symbol))
+        let brushes = self
+            .drawings
+            .iter()
+            .flat_map(|d| d.elements.iter().chain(&d.colour_art))
+            .filter_map(|e| e.style.stroke.and_then(|s| s.brush).map(|b| b.symbol));
+        self.instance
+            .map(|i| i.symbol)
+            .into_iter()
+            .chain(self.symbol_swaps.iter().map(|s| s.symbol))
+            .chain(brushes)
     }
 }
 

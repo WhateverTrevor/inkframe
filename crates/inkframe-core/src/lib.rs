@@ -11,6 +11,7 @@
 mod adjust;
 mod align;
 mod anchor;
+mod art_brush;
 mod audio;
 mod blend;
 mod boolean;
@@ -69,6 +70,7 @@ pub use align::{Align, Axis};
 pub use anchor::{
     Anchor, KAPPA, PathHit, anchors_from_path, insert_anchor, nearest_on_anchors, path_from_anchors,
 };
+pub use art_brush::{BrushKind, StrokeBrush};
 pub use audio::{AudioId, AudioTrack};
 pub use blend::BlendMode;
 pub use boolean::{Area, CombineError, ShapeOp, area_of, break_apart, combine};

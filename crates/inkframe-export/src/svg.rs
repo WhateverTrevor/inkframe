@@ -140,7 +140,9 @@ impl Svg<'_> {
             let _ = writeln!(self.body, "<g{attrs}>");
             let _ = writeln!(self.body, r#"<g transform="{}">"#, transform(matrix));
             for element in doc.posed_elements(layer, frame).iter() {
-                self.element(element, false);
+                for part in doc.drawn_as(element).iter() {
+                    self.element(part, false);
+                }
             }
             let _ = writeln!(self.body, "</g>");
             if let Some((symbol, symbol_frame)) = doc.instance_view(layer, frame, depth) {

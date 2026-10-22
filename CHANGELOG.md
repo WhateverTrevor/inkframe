@@ -13,6 +13,12 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Art and pattern brushes
+
+- Strokes can be drawn with a library symbol, stretched along the line
+  (Art) or repeated along it (Pattern), as in Animate's Paint Brush. Older
+  builds open such files and draw the strokes plain.
+
 ### Target bones
 
 - A bone can reach for a target bone, the bones above it bending to get
