@@ -11,6 +11,7 @@
 
 pub mod batch;
 pub mod ffmpeg;
+mod html;
 mod lottie;
 mod png_sequence;
 mod sprite_sheet;
@@ -66,15 +67,19 @@ pub enum ExportFormat {
     /// A Lottie animation (JSON), which plays as vectors on the web and in
     /// apps through Airbnb's Lottie players (see `lottie.rs`).
     Lottie,
+    /// A self-contained web page that plays the animation as vectors, as
+    /// Animate's HTML5 Canvas export (see `html.rs`).
+    Html,
 }
 
 impl ExportFormat {
-    pub const ALL: [ExportFormat; 10] = [
+    pub const ALL: [ExportFormat; 11] = [
         ExportFormat::PngSequence,
         ExportFormat::SpriteSheet,
         ExportFormat::Gif,
         ExportFormat::Svg,
         ExportFormat::Lottie,
+        ExportFormat::Html,
         ExportFormat::ProRes4444,
         ExportFormat::ProRes4444Xq,
         ExportFormat::ProRes422Hq,
@@ -94,6 +99,7 @@ impl ExportFormat {
             ExportFormat::Gif => "Animated GIF (.gif)",
             ExportFormat::Svg => "SVG (.svg)",
             ExportFormat::Lottie => "Lottie (.json)",
+            ExportFormat::Html => "Web Page (.html)",
         }
     }
 
@@ -110,6 +116,7 @@ impl ExportFormat {
             ExportFormat::Gif => "gif",
             ExportFormat::Svg => "svg",
             ExportFormat::Lottie => "lottie",
+            ExportFormat::Html => "html",
         }
     }
 
@@ -124,6 +131,7 @@ impl ExportFormat {
             ExportFormat::Gif => "gif",
             ExportFormat::Svg => "svg",
             ExportFormat::Lottie => "json",
+            ExportFormat::Html => "html",
             _ => "mov",
         }
     }
@@ -139,20 +147,25 @@ impl ExportFormat {
                 | ExportFormat::Gif
                 | ExportFormat::Svg
                 | ExportFormat::Lottie
+                | ExportFormat::Html
         )
     }
 
     pub fn needs_ffmpeg(self) -> bool {
         !matches!(
             self,
-            ExportFormat::PngSequence | ExportFormat::SpriteSheet | ExportFormat::Svg | ExportFormat::Lottie
+            ExportFormat::PngSequence
+                | ExportFormat::SpriteSheet
+                | ExportFormat::Svg
+                | ExportFormat::Lottie
+                | ExportFormat::Html
         )
     }
 
     /// Whether the export keeps the drawing as vectors rather than pixels,
     /// so the scale setting doesn't matter for quality.
     pub fn is_vector(self) -> bool {
-        matches!(self, ExportFormat::Svg | ExportFormat::Lottie)
+        matches!(self, ExportFormat::Svg | ExportFormat::Lottie | ExportFormat::Html)
     }
 
     /// Whether this format can be produced on the current platform.
@@ -259,7 +272,11 @@ pub fn export(
     // GIFs, SVGs and Lottie files have no sound either.
     let silent = matches!(
         settings.format,
-        ExportFormat::SpriteSheet | ExportFormat::Gif | ExportFormat::Svg | ExportFormat::Lottie
+        ExportFormat::SpriteSheet
+            | ExportFormat::Gif
+            | ExportFormat::Svg
+            | ExportFormat::Lottie
+            | ExportFormat::Html
     );
     let audio = if silent { None } else { soundtrack(doc, settings)? };
     // As with audio, a missing picture fails the export up front instead of
@@ -283,6 +300,7 @@ pub fn export(
         }
         ExportFormat::Svg => svg::write(doc, &images, settings, on_progress),
         ExportFormat::Lottie => lottie::write(doc, &images, settings, on_progress),
+        ExportFormat::Html => html::write(doc, &images, settings, on_progress),
         _ => ffmpeg::encode(&renderer, settings, audio.as_ref(), on_progress),
     }
 }
