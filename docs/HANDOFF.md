@@ -748,6 +748,20 @@ after the Harmony features (palettes to master controllers).
     area, Limits, Dynamics + sliders). Hook `INKFRAME_SCREENSHOT_DYNAMICS=1`.
     Not yet: target bones, pose caching (dynamics re-simulate per call;
     fine at present sizes), Phase D (shared points), only if wanted.
+99. Moho rigging Phase D, welded points (no format change): core
+    `weld.rs` (welds by coincidence within `WELD_DISTANCE`; pencil lines
+    and non-reshapable shapes excluded), `skeleton.rs` `weld_pins` (pins
+    extend to welded points of other shapes unless pinned already). App
+    stage: `Gesture::EditAnchor` gains `welds` (moved by the same delta
+    when a point is dragged, not when handles are or with Alt-pull) and
+    `snaps` (other shapes' points; a dragged point within ANCHOR_HIT on
+    screen lands exactly on one, welding); `StageView::unweld` (⌘ held at
+    drag start) skips the welds; welded points get a dot in
+    `draw_anchor_overlay`. Hook `INKFRAME_SCREENSHOT_WELDS=1`. Not yet:
+    moving whole picked shapes (inside a layer) doesn't drag welded
+    neighbours' points; colour-art fills from the paint bucket aren't
+    welded to the lines they fill; the Pen can't start a new path from an
+    existing point (clicking one picks it).
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

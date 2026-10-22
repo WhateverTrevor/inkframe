@@ -62,6 +62,7 @@ mod transform;
 mod vector_fill;
 mod vectorise;
 mod warp;
+mod weld;
 
 pub use adjust::{Adjustment, adjust};
 pub use align::{Align, Axis};
@@ -121,3 +122,4 @@ pub use transform::Transform;
 pub use vector_fill::{FillResult, enclosed_area};
 pub use vectorise::{Bitmap, TraceMode, TraceOptions, Traced, trace};
 pub use warp::Warp;
+pub use weld::{WELD_DISTANCE, welded_at, welded_points, welded_to};
