@@ -35,7 +35,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 34;
+pub const FORMAT_VERSION: u32 = 35;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -183,6 +183,13 @@ pub struct Layer {
     /// bones have bent it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warp: Option<Warp>,
+    /// For a folder, a skeleton the layers in it bind to (see
+    /// `skeleton.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skeleton: Option<crate::Skeleton>,
+    /// For a layer in a skeleton's folder, how it follows the bones.
+    #[serde(default, skip_serializing_if = "crate::BoneBinding::is_region")]
+    pub bone_binding: crate::BoneBinding,
     /// How the layer mixes with what's beneath it (see `blend.rs`).
     #[serde(default, skip_serializing_if = "BlendMode::is_normal")]
     pub blend: BlendMode,
@@ -425,6 +432,8 @@ impl Document {
             rotation_limits: None,
             deformer: None,
             warp: None,
+            skeleton: None,
+            bone_binding: crate::BoneBinding::Region,
             blend: BlendMode::Normal,
             color: None,
             folder: false,

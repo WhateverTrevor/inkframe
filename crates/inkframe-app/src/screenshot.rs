@@ -21,6 +21,8 @@
 //! * `INKFRAME_SCREENSHOT_COMBINE=1` shows shapes combined: two circles in a union, a
 //!   square with a circle punched out, and text broken apart into letters (one picked).
 //! * `INKFRAME_SCREENSHOT_RULERS=1` shows the rulers, with three guides.
+//! * `INKFRAME_SCREENSHOT_SKELETON=1` shows a character rigged with a skeleton: a painted
+//!   arm bent at the elbow, a drawn body leaning, and a head bound to its own bone.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -153,6 +155,9 @@ impl AutoScreenshot {
             for (vertical, at) in [(true, 960.0), (false, 540.0), (false, 180.0)] {
                 editor.doc.ruler_guides.push(inkframe_core::RulerGuide { vertical, at });
             }
+        }
+        if var("INKFRAME_SCREENSHOT_SKELETON").is_some() {
+            skeleton_demo(editor);
         }
         if Self::pen_handles() {
             pen_handles_demo(editor);
@@ -800,4 +805,77 @@ fn pen_handles_demo(editor: &mut Editor) {
     let layer = editor.doc.add_layer("Hill", vec![shape], 0, Transform::at(Point::new(960.0, 560.0)));
     editor.select(Some(layer));
     editor.tool = Tool::Pen;
+}
+
+/// A character rigged with a skeleton and posed: a spine, a head, and an
+/// arm whose upper half and forearm are painted on a paint layer. The body
+/// is drawn, and bends with the spine; the head is bound to its bone.
+fn skeleton_demo(editor: &mut Editor) {
+    use inkframe_core::{
+        BoneBinding, Color, Element, Point, Shape, Skeleton, Stroke, Style, TILE, TimelineId, Transform,
+    };
+    let ink = Stroke::new(Color::rgb(30, 30, 40), 5.0);
+    let shape = |shape: Shape, fill: Color| Element {
+        shape,
+        style: Style { fill: Some(fill), stroke: Some(ink), gradient: None },
+    };
+    let doc = &mut editor.doc;
+    let body = doc.add_layer(
+        "Body",
+        vec![shape(Shape::Ellipse { radius_x: 90.0, radius_y: 170.0 }, Color::rgb(90, 150, 230))],
+        0,
+        Transform::at(Point::new(960.0, 690.0)),
+    );
+    let head = doc.add_layer(
+        "Head",
+        vec![shape(Shape::Ellipse { radius_x: 70.0, radius_y: 70.0 }, Color::rgb(250, 210, 160))],
+        0,
+        Transform::at(Point::new(960.0, 440.0)),
+    );
+    // The arm, painted: a soft-edged band from the shoulder out, narrowing
+    // to the wrist, on a canvas lined up with the stage.
+    let Some(arm) = doc.add_paint_layer(TimelineId::Main, "Arm (painted)", 0) else { return };
+    let Some((canvas, _, _)) = doc.paint_canvas_at(arm, 0) else { return };
+    let Some(canvas) = doc.canvas_mut(canvas) else { return };
+    for x in 960..1320u32 {
+        let along = (x - 960) as f32 / 360.0;
+        let half = 34.0 - 14.0 * along;
+        for y in 480..600u32 {
+            let edge = half - (y as f32 - 540.0).abs();
+            if edge <= 0.0 {
+                continue;
+            }
+            let a = (edge / 3.0).min(1.0);
+            // Warm orange, darker toward the edge as a painted stroke would be.
+            let shade = 0.75 + 0.25 * (edge / half);
+            let colour = [240.0 * shade, 140.0 * shade, 60.0 * shade].map(|c| (c * a) as u8);
+            let tile = canvas.tile_mut((x / TILE, y / TILE));
+            let at = (((y % TILE) * TILE + x % TILE) * 4) as usize;
+            tile[at..at + 4].copy_from_slice(&[colour[0], colour[1], colour[2], (255.0 * a) as u8]);
+        }
+    }
+
+    let Some(folder) = doc.add_folder(TimelineId::Main, &[body, head, arm]) else { return };
+    let mut skeleton = Skeleton::default();
+    let spine = skeleton.add_bone(None, Point::new(960.0, 840.0), Point::new(960.0, 520.0), 0);
+    let neck = skeleton.add_bone(Some(spine), Point::new(960.0, 520.0), Point::new(960.0, 380.0), 0);
+    let upper = skeleton.add_bone(Some(spine), Point::new(980.0, 540.0), Point::new(1140.0, 540.0), 0);
+    let fore = skeleton.add_bone(Some(upper), Point::new(1140.0, 540.0), Point::new(1310.0, 540.0), 0);
+    for (bone, name) in [(spine, "Spine"), (neck, "Head"), (upper, "Upper arm"), (fore, "Forearm")] {
+        skeleton.bones[bone].name = name.into();
+    }
+    skeleton.bones[spine].strength = 120.0;
+    for (bone, turn) in [(spine, 10.0), (neck, -14.0), (upper, -35.0), (fore, -70.0)] {
+        skeleton.bones[bone].turn.set(0, turn);
+    }
+    if let Some(layer) = doc.layer_mut(folder) {
+        layer.name = "Character".into();
+        layer.skeleton = Some(skeleton);
+    }
+    if let Some(layer) = doc.layer_mut(head) {
+        layer.bone_binding = BoneBinding::Bone(neck);
+    }
+    editor.select(Some(folder));
+    editor.selected_bone = Some(fore);
+    editor.use_tool(Tool::Bone);
 }

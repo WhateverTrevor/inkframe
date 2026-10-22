@@ -44,6 +44,7 @@ mod screenshot;
 mod scripts;
 mod shape_ops;
 mod shortcuts;
+mod skeleton;
 mod stage;
 mod subselect;
 mod swap_dialog;

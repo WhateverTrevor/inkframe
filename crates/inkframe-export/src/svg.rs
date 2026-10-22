@@ -138,7 +138,7 @@ impl Svg<'_> {
             let matrix = to_out.pre_concat(doc.layer_matrix(layer, frame));
             let _ = writeln!(self.body, "<g{attrs}>");
             let _ = writeln!(self.body, r#"<g transform="{}">"#, transform(matrix));
-            for element in layer.shown_elements(frame).iter() {
+            for element in doc.posed_elements(layer, frame).iter() {
                 self.element(element, false);
             }
             let _ = writeln!(self.body, "</g>");
@@ -156,7 +156,7 @@ impl Svg<'_> {
         let matrix = to_out.pre_concat(self.doc.layer_matrix(mask, frame));
         let (w, h) = self.size;
         let body = std::mem::take(&mut self.body);
-        for element in mask.shown_elements(frame).iter() {
+        for element in self.doc.posed_elements(mask, frame).iter() {
             self.element(element, true);
         }
         let shapes = std::mem::replace(&mut self.body, body);

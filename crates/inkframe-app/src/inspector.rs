@@ -535,6 +535,21 @@ fn folder_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         1 => "Holds 1 layer.".to_owned(),
         n => format!("Holds {n} layers."),
     });
+    // A folder is where a skeleton lives, rigging what's in it.
+    if editor.doc.layer(id).is_some_and(|l| l.skeleton.is_none()) {
+        ui.add_space(8.0);
+        let add = ui.button("Add Skeleton").on_hover_text(
+            "Bones over everything in the folder, which bend with them, painted layers too. Draw them with the Add Bone tool.",
+        );
+        if add.clicked() {
+            if let Some(folder) = editor.doc.layer_mut(id) {
+                folder.skeleton = Some(inkframe_core::Skeleton::default());
+            }
+            editor.selected_bone = None;
+            editor.use_tool(crate::editor::Tool::AddBone);
+        }
+    }
+    skeleton_section(ui, editor, id);
 }
 
 fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
@@ -578,6 +593,7 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     ui.add_space(8.0);
     transform_section(ui, editor, id, frame);
     rig_section(ui, editor, id, frame);
+    skeleton_section(ui, editor, id);
     ui.add_space(8.0);
     easing_section(ui, editor, id, frame);
     ui.add_space(8.0);
@@ -588,6 +604,77 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     warp_section(ui, editor, id);
     drawings_section(ui, editor, id);
     shapes_section(ui, editor, id);
+}
+
+/// A skeleton's picked bone, for its folder; for a layer in that folder,
+/// how it follows the bones (see `skeleton.rs` in the core).
+fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    use inkframe_core::BoneBinding;
+    let frame = editor.frame;
+    let Some(layer) = editor.doc.layer(id) else { return };
+    if layer.skeleton.is_some() {
+        section(ui, "Skeleton");
+        let picked = editor.selected_bone;
+        let mut delete = false;
+        let Some(skeleton) = editor.doc.layer_mut(id).and_then(|l| l.skeleton.as_mut()) else { return };
+        let count = skeleton.bones.len();
+        ui.weak(match count {
+            0 => "No bones yet: draw them with the Add Bone tool (Shift+K).".to_owned(),
+            1 => "1 bone. Pose it with the Bone tool (K).".to_owned(),
+            n => format!("{n} bones. Pose them with the Bone tool (K)."),
+        });
+        if let Some(bone) = picked.and_then(|b| skeleton.bones.get_mut(b)) {
+            egui::Grid::new("bone").num_columns(2).spacing([6.0, 4.0]).show(ui, |ui| {
+                ui.label("Bone");
+                ui.text_edit_singleline(&mut bone.name);
+                ui.end_row();
+                ui.label("Strength").on_hover_text(
+                    "How far it reaches into the drawings around it: points about this far away follow it about as much as the next bone",
+                );
+                ui.add(DragValue::new(&mut bone.strength).range(1.0..=2000.0).speed(1.0).suffix(" px"));
+                ui.end_row();
+                ui.label("Turn");
+                let mut turn = bone.turn.sample(frame as f32).unwrap_or(0.0);
+                if ui.add(DragValue::new(&mut turn).speed(1.0).suffix("°")).changed() {
+                    bone.turn.set(frame, turn);
+                }
+                ui.end_row();
+            });
+            delete = ui.small_button("Delete Bone").clicked();
+        }
+        if delete {
+            editor.delete_bone();
+        }
+        ui.add_space(8.0);
+        return;
+    }
+    let Some(owner) = editor.doc.skeleton_layer_of(layer) else { return };
+    let names: Vec<String> =
+        owner.skeleton.iter().flat_map(|s| s.bones.iter().map(|b| b.name.clone())).collect();
+    let current = layer.bone_binding;
+    let label = |binding: BoneBinding| match binding {
+        BoneBinding::Region => "Nearby bones".to_owned(),
+        BoneBinding::Bone(i) => names.get(i).cloned().unwrap_or_else(|| "Nearby bones".to_owned()),
+        BoneBinding::Unbound => "None".to_owned(),
+    };
+    section(ui, "Bones");
+    let mut chosen = current;
+    ui.horizontal(|ui| {
+        ui.label("Follows").on_hover_text(
+            "Nearby bones bends the drawing round its joints; one bone moves it whole, as a hand or a hat should",
+        );
+        egui::ComboBox::from_id_salt("bone binding").selected_text(label(current)).show_ui(ui, |ui| {
+            ui.selectable_value(&mut chosen, BoneBinding::Region, label(BoneBinding::Region));
+            for i in 0..names.len() {
+                ui.selectable_value(&mut chosen, BoneBinding::Bone(i), label(BoneBinding::Bone(i)));
+            }
+            ui.selectable_value(&mut chosen, BoneBinding::Unbound, label(BoneBinding::Unbound));
+        });
+    });
+    if chosen != current {
+        editor.set_bone_binding(id, chosen);
+    }
+    ui.add_space(8.0);
 }
 
 /// A particle layer's emitter: how many particles, where from, how they

@@ -13,6 +13,15 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Skeletons
+
+- Moho-style rigging: Modify › New Skeleton puts the selected layers in a
+  folder with a skeleton. Draw bones with the new Add Bone tool (Shift+K),
+  pose them with the Bone tool (inverse kinematics, keyed on the folder),
+  and every layer in the folder bends with the bones near it: drawn
+  shapes and painted layers and pictures alike. A layer can follow one
+  bone instead, or none. File format 35.
+
 ### Pen editing
 
 - Between paths, the Pen picks and drags the selected shape's existing

@@ -1492,6 +1492,10 @@ fn paint_summary_row(painter: &egui::Painter, editor: &Editor, layout: &Layout, 
             painter.rect_filled(bar, 2.0, dim(tag.gamma_multiply(0.18)));
             painter.rect_stroke(bar, 2.0, (1.0, dim(tag.gamma_multiply(0.5))), egui::StrokeKind::Inside);
         }
+        // A skeleton's poses are keyed on its folder.
+        if let Some(skeleton) = &layer.skeleton {
+            paint_keys(painter, editor, layout, layer, &skeleton.key_frames(), row, dim, KeyMark::Dot);
+        }
         return;
     }
 

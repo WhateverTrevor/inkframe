@@ -5,6 +5,7 @@
 //! outlines, shapes being dragged out) is painted on top with egui, because
 //! it's interface rather than artwork.
 
+mod bones;
 mod gradient_handles;
 mod inside;
 mod lattice;
@@ -852,6 +853,8 @@ pub struct StageView {
     guide_drag: Option<rulers::GuideDrag>,
     /// The Distort or Envelope handle being dragged (see `lattice.rs`).
     lattice_drag: Option<usize>,
+    /// A skeleton's bone being drawn, moved or posed (see `bones.rs`).
+    bone_drag: Option<bones::BoneDrag>,
 }
 
 impl Default for StageView {
@@ -875,6 +878,7 @@ impl Default for StageView {
             gradient_drag: None,
             guide_drag: None,
             lattice_drag: None,
+            bone_drag: None,
         }
     }
 }
@@ -1026,7 +1030,9 @@ impl StageView {
         // A Distort or Envelope's handles, then a gradient's: they sit on
         // top of the shapes.
         let on_lattice = !pointer_on_text && self.handle_lattice(ui, &response, editor, view);
-        let pointer_on_text = pointer_on_text || on_lattice;
+        // A skeleton's bones, over the drawing they bend.
+        let on_bone = !pointer_on_text && !on_lattice && self.handle_bones(ui, &response, editor, view);
+        let pointer_on_text = pointer_on_text || on_lattice || on_bone;
         let on_gradient = !pointer_on_text && self.handle_gradient(ui, &response, editor, view);
         let inside_layer =
             !pointer_on_text && !on_gradient && self.handle_inside(ui, &response, editor, view);
@@ -1094,6 +1100,7 @@ impl StageView {
         }
         self.draw_gradient_handles(ui, &overlay, &response, editor, view);
         self.draw_lattice(ui, &overlay, &response, editor, view);
+        self.draw_bones(ui, &overlay, &response, editor, view);
         self.draw_rulers(ui, &overlay, editor, stage_view);
         self.guide_cursor(ui, &response, editor, stage_view);
         asset_drop(ui, &overlay, &response, editor, stage_view);
@@ -2027,7 +2034,8 @@ impl StageView {
             // Between paths, the Pen drags existing points as the
             // Subselection tool does.
             Tool::Pen if self.pen.is_none() => self.begin_anchor_edit(editor, view, press, p, alt),
-            Tool::Pen | Tool::Text => None,
+            // Add Bone handles its own presses; see `bones.rs`.
+            Tool::Pen | Tool::Text | Tool::AddBone => None,
             Tool::Brush
             | Tool::Eraser
             | Tool::Eyedropper
@@ -2791,6 +2799,7 @@ impl StageView {
                         }
                     }
                     (None, Tool::Rectangle | Tool::Ellipse | Tool::Pencil) => CursorIcon::Crosshair,
+                    (None, Tool::AddBone) => CursorIcon::Crosshair,
                     (None, Tool::Text) => CursorIcon::Text,
                     // The brush's outline shows its size (`draw_brush_outline`);
                     // the crosshair marks its centre.
@@ -5431,5 +5440,94 @@ mod tests {
         stage.set_zoom_about(&doc, anchor, 2.0);
         let after = stage.view(stage.last_area, &doc).to_local(anchor);
         assert!(before.distance(after) < 1e-3);
+    }
+
+    /// A box layer in a new, empty skeleton, the skeleton selected and the
+    /// Add Bone tool picked.
+    fn skeleton_harness() -> (Harness<'static, State>, LayerId, LayerId) {
+        let (mut editor, layer) = editor_with_selected_box();
+        editor.new_skeleton();
+        let skeleton = editor.active_skeleton().unwrap();
+        (harness(editor), skeleton, layer)
+    }
+
+    fn bones(h: &Harness<'_, State>, skeleton: LayerId) -> Vec<inkframe_core::Bone> {
+        h.state().1.skeleton(skeleton).unwrap().bones.clone()
+    }
+
+    #[test]
+    fn add_bone_drags_draw_a_chain() {
+        let (mut h, skeleton, _) = skeleton_harness();
+        let (a, b, c) = (screen(&h, 300.0, 400.0), screen(&h, 400.0, 400.0), screen(&h, 500.0, 400.0));
+        drag(&mut h, a, &[a + vec2(5.0, 0.0), b]);
+        // Starting on the new bone's end joins the next one there.
+        drag(&mut h, b + vec2(2.0, 1.0), &[b + vec2(10.0, 0.0), c]);
+
+        let bones = bones(&h, skeleton);
+        assert_eq!(bones.len(), 2);
+        assert!(bones[0].start.distance(Point::new(300.0, 400.0)) < 2.0, "{:?}", bones[0].start);
+        assert_eq!(bones[1].parent, Some(0));
+        assert_eq!(bones[1].start, bones[0].end, "joined at the elbow");
+        assert!(bones[1].end.distance(Point::new(500.0, 400.0)) < 2.0);
+    }
+
+    #[test]
+    fn clicking_away_with_add_bone_starts_a_new_root() {
+        let (mut h, skeleton, _) = skeleton_harness();
+        let (a, b) = (screen(&h, 300.0, 400.0), screen(&h, 400.0, 400.0));
+        drag(&mut h, a, &[a + vec2(5.0, 0.0), b]);
+        let away = screen(&h, 700.0, 100.0);
+        click(&mut h, away);
+        let (c, d) = (screen(&h, 300.0, 200.0), screen(&h, 300.0, 100.0));
+        drag(&mut h, c, &[c + vec2(0.0, -5.0), d]);
+        assert_eq!(bones(&h, skeleton)[1].parent, None);
+    }
+
+    #[test]
+    fn the_bone_tool_poses_bones_and_bends_the_box() {
+        let (mut h, skeleton, layer) = skeleton_harness();
+        let (a, b, c) = (screen(&h, 300.0, 400.0), screen(&h, 400.0, 400.0), screen(&h, 500.0, 400.0));
+        drag(&mut h, a, &[a + vec2(5.0, 0.0), b]);
+        drag(&mut h, b, &[b + vec2(10.0, 0.0), c]);
+        {
+            let (_, editor) = h.state_mut();
+            editor.use_tool(Tool::Bone);
+            editor.frame = 5;
+        }
+        h.run();
+        // Grab the forearm near its end and pull it down below the elbow.
+        let grab = screen(&h, 490.0, 400.0);
+        let target = screen(&h, 400.0, 500.0);
+        drag(&mut h, grab, &[grab + vec2(0.0, 10.0), target]);
+
+        let (_, editor) = h.state();
+        let (_, end) = editor.skeleton(skeleton).unwrap().posed_ends(1, 5).unwrap();
+        assert!(end.distance(Point::new(400.0, 500.0)) < 5.0, "{end:?}");
+        assert!(editor.doc.layer(skeleton).unwrap().key_frames().contains(&5));
+        // The box (centred on 400, 400, 200 wide) bent down on its right:
+        // its top right corner, mostly on the forearm, swung down most of
+        // the way (the upper arm, a little further off, holds it back a
+        // little, which is what rounds the bend).
+        let layer = editor.doc.layer(layer).unwrap();
+        let Shape::Path(path) = &editor.doc.posed_elements(layer, 5)[0].shape else {
+            panic!("bent into a path")
+        };
+        let points = path.flatten();
+        assert!(!points.iter().any(|p| p.distance(Point::new(100.0, -100.0)) < 8.0), "the corner moved");
+        assert!(points.iter().any(|p| p.distance(Point::new(100.0, 60.0)) < 8.0), "down the right side");
+    }
+
+    #[test]
+    fn dragging_a_roots_start_moves_the_whole_skeleton() {
+        let (mut h, skeleton, _) = skeleton_harness();
+        let (a, b) = (screen(&h, 300.0, 400.0), screen(&h, 400.0, 400.0));
+        drag(&mut h, a, &[a + vec2(5.0, 0.0), b]);
+        h.state_mut().1.use_tool(Tool::Bone);
+        h.run();
+        let target = screen(&h, 350.0, 300.0);
+        drag(&mut h, a, &[a + vec2(5.0, -5.0), target]);
+        let (start, end) = h.state().1.skeleton(skeleton).unwrap().posed_ends(0, 0).unwrap();
+        assert!(start.distance(Point::new(350.0, 300.0)) < 2.0, "{start:?}");
+        assert!(end.distance(Point::new(450.0, 300.0)) < 2.0, "turned none: {end:?}");
     }
 }

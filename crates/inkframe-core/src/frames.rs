@@ -26,6 +26,9 @@ impl Layer {
         if let Some(warp) = &mut self.warp {
             warp.offsets.iter_mut().for_each(|c| c.retime(map, fallback));
         }
+        if let Some(skeleton) = &mut self.skeleton {
+            skeleton.channels_mut().for_each(|c| c.retime(map, fallback));
+        }
         self.exposure = std::mem::take(&mut self.exposure)
             .into_iter()
             .filter_map(|key| Some(Exposure { frame: map(key.frame)?, ..key }))
@@ -121,6 +124,9 @@ impl Layer {
         }
         if let Some(warp) = &mut self.warp {
             warp.offsets.iter_mut().for_each(|c| reverse_channel(c, first, last));
+        }
+        if let Some(skeleton) = &mut self.skeleton {
+            skeleton.channels_mut().for_each(|c| reverse_channel(c, first, last));
         }
 
         // Drawings: what showed on each frame now shows on its mirror.
