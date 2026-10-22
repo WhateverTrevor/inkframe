@@ -266,6 +266,9 @@ impl Layer {
         let mut removed = self.track.remove_key(frame);
         removed |= self.deformer.as_mut().is_some_and(|d| d.remove_key(frame));
         removed |= self.skeleton.as_mut().is_some_and(|s| s.remove_key(frame));
+        let switched = self.switch_keys.len();
+        self.switch_keys.retain(|k| k.frame != frame);
+        removed |= self.switch_keys.len() != switched;
         removed | self.warp.as_mut().is_some_and(|w| w.remove_key(frame))
     }
 
@@ -275,6 +278,15 @@ impl Layer {
         let had_deformer_key = self.deformer.as_ref().is_some_and(|d| d.key_frames().contains(&from));
         let had_warp_key = self.warp.as_ref().is_some_and(|w| w.key_frames().contains(&from));
         let had_bone_key = self.skeleton.as_ref().is_some_and(|s| s.key_frames().contains(&from));
+        // A switch's key goes too, replacing any already where it lands.
+        let had_switch_key = self.switch_keys.iter().any(|k| k.frame == from);
+        if had_switch_key && from != to {
+            self.switch_keys.retain(|k| k.frame != to);
+            for key in self.switch_keys.iter_mut().filter(|k| k.frame == from) {
+                key.frame = to;
+            }
+            self.switch_keys.sort_by_key(|k| k.frame);
+        }
         let moved = self.track.move_key(from, to);
         if let Some(skeleton) = &mut self.skeleton
             && had_bone_key
@@ -291,7 +303,7 @@ impl Layer {
         {
             warp.move_key(from, to);
         }
-        moved || had_deformer_key || had_warp_key || had_bone_key
+        moved || had_deformer_key || had_warp_key || had_bone_key || had_switch_key
     }
 
     /// Moves everything about the layer in time by `by` frames: where it

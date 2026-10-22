@@ -707,7 +707,7 @@ after the Harmony features (palettes to master controllers).
     `INKFRAME_SCREENSHOT_SKELETON=1`. Phases next (agreed with the user):
     B point binding + smart bones + switch layers, C bone dynamics,
     squash/stretch, constraints (angle limits not yet on skeleton bones),
-    D maybe shared points. Not yet: skeleton keys draggable on the folder row,
+    D maybe shared points. Not yet:
     binding weights painted by hand.
 97. Moho rigging Phase B (format v36): core `switch.rs` (`Layer::switch`,
     `switch_keys`, `folder_children`, `switch_choice` (smart bone >
@@ -784,6 +784,10 @@ after the Harmony features (palettes to master controllers).
     the layer down the existing "rendered" route (renderer draws it
     whole, embedded as PNG), per frame in SVG, for every frame in Lottie
     if any frame bends.
+103. Folder keys: `Layer::move_key`/`remove_key` carry switch keys too;
+    the timeline's press no longer grabs a folder's span edge (its bar
+    spans its contents), so the folder row's keys (skeleton + switch, via
+    `key_frames`) drag as any layer's do.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

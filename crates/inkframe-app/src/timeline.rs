@@ -880,8 +880,11 @@ impl TimelineView {
             select_row(editor, row);
             let doc_last_frame = editor.last_frame();
             let layer = editor.doc.layer(row.layer)?;
+            // A folder's bar spans what's in it, so it has no edges of its
+            // own to drag; its keys (a skeleton's poses, a switch's) can be.
             if row.property.is_none()
                 && !layer.locked
+                && !layer.folder
                 && let Some(edge) = layout.span_edge_at(layer, doc_last_frame, p.x)
             {
                 return Some(Drag::SpanEdge { layer: row.layer, edge });
@@ -2169,6 +2172,32 @@ mod tests {
         let folder = editor.doc.add_folder(TimelineId::Main, &[b]).unwrap();
         h.run();
         (folder, b)
+    }
+
+    #[test]
+    fn a_skeletons_and_a_switchs_keys_drag_along_the_folders_row() {
+        let (mut h, _) = harness();
+        let (folder, b) = with_folder(&mut h);
+        {
+            let doc = &mut h.state_mut().1.doc;
+            let mut skeleton = inkframe_core::Skeleton::default();
+            let bone = skeleton.add_bone(None, Point::ZERO, Point::new(100.0, 0.0), 0);
+            skeleton.bones[bone].turn.set(5, 30.0);
+            let layer = doc.layer_mut(folder).unwrap();
+            layer.skeleton = Some(skeleton);
+            layer.switch = true;
+            doc.set_switch(folder, 7, b);
+        }
+        h.run();
+        // Rows: C, the folder, B, A.
+        let (from, to) = (cell(&h, 1, 5), cell(&h, 1, 9));
+        drag(&mut h, from, to);
+        let (from, to) = (cell(&h, 1, 7), cell(&h, 1, 12));
+        drag(&mut h, from, to);
+
+        let layer = h.state().1.doc.layer(folder).unwrap();
+        assert_eq!(layer.skeleton.as_ref().unwrap().key_frames(), [0, 9]);
+        assert_eq!(layer.switch_keys.iter().map(|k| k.frame).collect::<Vec<_>>(), [12]);
     }
 
     #[test]

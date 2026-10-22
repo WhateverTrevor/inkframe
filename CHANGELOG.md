@@ -13,6 +13,11 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Folder keys
+
+- A skeleton's poses and a switch's choices can be dragged along their
+  folder's row in the timeline, and removed with Shift+F6.
+
 ### Bent paintings in SVG and Lottie
 
 - Painted layers and pictures bent by a skeleton now export bent to SVG
