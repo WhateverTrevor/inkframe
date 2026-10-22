@@ -13,6 +13,12 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Interactive web pages
+
+- Layers can be buttons (Play, Stop, Go to a frame, Open a link) and
+  frames can have actions (Stop, Go to), as in Animate; the Web Page
+  export runs them.
+
 ### Smart bone corrections
 
 - A smart bone can reshape a layer by hand-drawn keys at several turns, as
