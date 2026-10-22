@@ -112,26 +112,68 @@ impl Default for Dynamics {
     }
 }
 
-/// Something a smart bone does as it turns. Each is reached at `turn`
-/// degrees (either way round, by its sign), from nothing at rest.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// Something a smart bone does as it turns. A morph or a switch is reached
+/// at `turn` degrees (either way round, by its sign), from nothing at rest;
+/// a correction has keys at as many turns as it needs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SmartAction {
     /// Reshapes `layer`'s drawing toward its drawing `drawing` (by its
     /// place), all the way by `turn`: a corrected elbow, a smile.
     Morph { layer: LayerId, drawing: usize, turn: f32 },
     /// Has switch folder `folder` show `layer` once turned past `turn`.
     Switch { folder: LayerId, layer: LayerId, turn: f32 },
+    /// Moho's action: `layer`'s drawing `drawing` reshaped by hand at
+    /// several turns of the bone (a key each), and morphed between them,
+    /// and from the drawing as drawn at rest. While the drawing's showing,
+    /// the bone's turn picks how it's reshaped.
+    Correct { layer: LayerId, drawing: usize, keys: Vec<CorrectionKey> },
+}
+
+/// A drawing as it's reshaped at one turn of a smart bone: its colour art
+/// and its line art, shape for shape as at rest.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CorrectionKey {
+    pub turn: f32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub colour_art: Vec<Element>,
+    pub line_art: Vec<Element>,
 }
 
 impl SmartAction {
-    /// How far into the action a bone turned `now` degrees is: 0 at rest,
-    /// 1 at the action's turn and beyond.
+    /// How far into a morph or switch a bone turned `now` degrees is: 0 at
+    /// rest, 1 at the action's turn and beyond. A correction is keyed
+    /// instead (see [`corrected`]).
     pub fn amount(&self, now: f32) -> f32 {
-        let turn = match *self {
-            SmartAction::Morph { turn, .. } | SmartAction::Switch { turn, .. } => turn,
+        let turn = match self {
+            SmartAction::Morph { turn, .. } | SmartAction::Switch { turn, .. } => *turn,
+            SmartAction::Correct { .. } => return 0.0,
         };
         if turn.abs() < 1e-3 { 0.0 } else { (now / turn).clamp(0.0, 1.0) }
     }
+}
+
+/// `rest` (a drawing's colour art and line art as drawn) reshaped by
+/// correction `keys` for a bone turned `now` degrees: between the two keys
+/// either side of `now` (the drawing at rest counting as a key at 0),
+/// morphed that far from one to the other; past the last key, as it is.
+pub fn corrected(
+    rest: (&[Element], &[Element]),
+    keys: &[CorrectionKey],
+    now: f32,
+) -> (Vec<Element>, Vec<Element>) {
+    let mut stops: Vec<(f32, &[Element], &[Element])> = vec![(0.0, rest.0, rest.1)];
+    stops.extend(keys.iter().map(|k| (k.turn, k.colour_art.as_slice(), k.line_art.as_slice())));
+    stops.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let last = stops.len() - 1;
+    let after = stops.partition_point(|s| s.0 <= now);
+    let (from, to) = match after {
+        0 => (stops[0], stops[0]),
+        i if i > last => (stops[last], stops[last]),
+        i => (stops[i - 1], stops[i]),
+    };
+    let t = if (to.0 - from.0).abs() < 1e-4 { 0.0 } else { (now - from.0) / (to.0 - from.0) };
+    let between = |a: &[Element], b: &[Element]| crate::morph::morph(a, b, (&[], &[]), t);
+    (between(from.1, to.1), between(from.2, to.2))
 }
 
 /// Shapes, or points of a shape, bound to one bone, overriding how the
@@ -956,13 +998,35 @@ impl crate::Document {
             for bone in &skeleton.bones {
                 let now = bone.turn.sample(frame as f32).unwrap_or(0.0);
                 for action in &bone.actions {
-                    let SmartAction::Morph { layer: target, drawing, .. } = *action else { continue };
-                    let amount = action.amount(now);
-                    let (Some(from), Some(to)) = (from, layer.drawings.get(drawing)) else { continue };
-                    if target == layer.id && amount > 0.0 {
-                        let morphed =
-                            crate::morph::morph(&shown, &to.shown(), (&from.hints, &to.hints), amount);
-                        shown = std::borrow::Cow::Owned(morphed);
+                    match action {
+                        SmartAction::Morph { layer: target, drawing, .. } => {
+                            let amount = action.amount(now);
+                            let (Some(from), Some(to)) = (from, layer.drawings.get(*drawing)) else {
+                                continue;
+                            };
+                            if *target == layer.id && amount > 0.0 {
+                                let morphed = crate::morph::morph(
+                                    &shown,
+                                    &to.shown(),
+                                    (&from.hints, &to.hints),
+                                    amount,
+                                );
+                                shown = std::borrow::Cow::Owned(morphed);
+                            }
+                        }
+                        // Corrections key the drawing showing, as drawn (not
+                        // part way through a shape tween).
+                        SmartAction::Correct { layer: target, drawing, keys } => {
+                            let shows =
+                                layer.drawing_index_at(frame) == *drawing && layer.morph_at(frame).is_none();
+                            if *target != layer.id || !shows || keys.is_empty() || now.abs() < 1e-4 {
+                                continue;
+                            }
+                            let Some(rest) = layer.drawings.get(*drawing) else { continue };
+                            let (colour, line) = corrected((&rest.colour_art, &rest.elements), keys, now);
+                            shown = std::borrow::Cow::Owned(colour.into_iter().chain(line).collect());
+                        }
+                        SmartAction::Switch { .. } => {}
                     }
                 }
             }
@@ -984,7 +1048,7 @@ impl crate::Document {
         for bone in &skeleton.bones {
             let now = bone.turn.sample(frame as f32).unwrap_or(0.0);
             for action in &bone.actions {
-                let SmartAction::Switch { folder: target, layer, turn } = *action else { continue };
+                let &SmartAction::Switch { folder: target, layer, turn } = action else { continue };
                 if target == folder.id
                     && action.amount(now) >= 1.0
                     && best.is_none_or(|(t, _)| turn.abs() > t)
@@ -1451,5 +1515,33 @@ mod tests {
         // Ignored: the arm poses as keyed.
         let (_, end) = skeleton.posed_ends(1, 0).unwrap();
         assert!(close(end, Point::new(200.0, 0.0)));
+    }
+
+    #[test]
+    fn corrections_are_keyed_by_turn_and_morphed_between() {
+        let (mut doc, folder, layer) = rigged_bar();
+        let wide = |height: f32| Element {
+            shape: Shape::Rect { width: 200.0, height, corner_radius: 0.0 },
+            style: crate::Style { fill: Some(crate::Color::BLACK), stroke: None, gradient: None },
+        };
+        // The bar 10 tall at rest, 30 tall keyed at 40°, 50 tall at 80°.
+        let keys = vec![
+            CorrectionKey { turn: 40.0, colour_art: Vec::new(), line_art: vec![wide(30.0)] },
+            CorrectionKey { turn: 80.0, colour_art: Vec::new(), line_art: vec![wide(50.0)] },
+        ];
+        let skeleton = doc.layer_mut(folder).unwrap().skeleton.as_mut().unwrap();
+        skeleton.bones[1].actions.push(SmartAction::Correct { layer, drawing: 0, keys });
+        doc.layer_mut(layer).unwrap().bone_binding = BoneBinding::Unbound;
+        let height = |doc: &mut crate::Document, turn: f32| {
+            let skeleton = doc.layer_mut(folder).unwrap().skeleton.as_mut().unwrap();
+            skeleton.bones[1].turn.set(0, turn);
+            doc.posed_elements(doc.layer(layer).unwrap(), 0)[0].shape.bounds().height()
+        };
+        for (turn, want) in
+            [(0.0, 10.0), (20.0, 20.0), (40.0, 30.0), (60.0, 40.0), (120.0, 50.0), (-30.0, 10.0)]
+        {
+            let got = height(&mut doc, turn);
+            assert!((got - want).abs() < 0.5, "at {turn}°: {got}");
+        }
     }
 }

@@ -406,6 +406,20 @@ fn draw_pins(painter: &egui::Painter, editor: &Editor, view: View, id: LayerId, 
 /// While in rig setup, a note saying so along the top of the stage (Add
 /// Bone has its own), as everything rigged shows at rest.
 pub(super) fn draw_setup_note(painter: &egui::Painter, editor: &Editor) {
+    // A correction being drawn says so instead.
+    if let Some(c) = &editor.correcting {
+        let layer = editor.doc.layer(c.layer).map_or("the layer", |l| l.name.as_str());
+        let note = format!(
+            "Correcting {layer} at {:.0}° · reshape it with any tool · Enter keys it, Esc cancels",
+            c.turn
+        );
+        let area = painter.clip_rect();
+        let galley = painter.layout_no_wrap(note, FontId::proportional(12.0), Color32::WHITE);
+        let pill = Rect::from_min_size(area.left_top() + vec2(10.0, 10.0), galley.size() + vec2(20.0, 10.0));
+        painter.rect_filled(pill, pill.height() / 2.0, BONE.gamma_multiply(0.9));
+        painter.galley(pill.min + vec2(10.0, 5.0), galley, Color32::WHITE);
+        return;
+    }
     let rigged = editor.layers().iter().any(|l| l.skeleton.is_some());
     if !editor.rig_setup || editor.tool == Tool::AddBone || !rigged {
         return;

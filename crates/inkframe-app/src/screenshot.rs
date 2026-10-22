@@ -45,6 +45,8 @@
 //!   drawn to it.
 //! * `INKFRAME_SCREENSHOT_INBETWEENS=1` shows inbetweens drawn between a square and a star,
 //!   seen through onion skins.
+//! * `INKFRAME_SCREENSHOT_CORRECTION=1` adds to `_SKELETON`'s character a correction on the
+//!   spine, keyed at its turn: the body reshaped by hand into a pear as it leans.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -178,8 +180,12 @@ impl AutoScreenshot {
                 editor.doc.ruler_guides.push(inkframe_core::RulerGuide { vertical, at });
             }
         }
-        let rigged =
-            ["INKFRAME_SCREENSHOT_SKELETON", "INKFRAME_SCREENSHOT_SMART", "INKFRAME_SCREENSHOT_DYNAMICS"];
+        let rigged = [
+            "INKFRAME_SCREENSHOT_SKELETON",
+            "INKFRAME_SCREENSHOT_SMART",
+            "INKFRAME_SCREENSHOT_DYNAMICS",
+            "INKFRAME_SCREENSHOT_CORRECTION",
+        ];
         if rigged.iter().any(|v| var(v).is_some()) {
             skeleton_demo(editor);
         }
@@ -188,6 +194,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_DYNAMICS").is_some() {
             dynamics_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_CORRECTION").is_some() {
+            correction_demo(editor);
         }
         if var("INKFRAME_SCREENSHOT_WELDS").is_some() {
             welds_demo(editor);
@@ -1442,4 +1451,44 @@ fn inbetweens_demo(editor: &mut Editor) {
     editor.onion.enabled = true;
     editor.onion.before = 4;
     editor.onion.after = 4;
+}
+
+/// On top of `skeleton_demo`'s character: a correction on the spine (turned
+/// 10°), keyed there, reshaping the body by hand into a pear that sags
+/// toward the way it leans. The spine is picked, to show the key.
+fn correction_demo(editor: &mut Editor) {
+    use inkframe_core::{CorrectionKey, Element, Path, Point, Segment, Shape, SmartAction};
+    let Some(folder) = editor.selection else { return };
+    let Some(body) = editor.doc.layers.iter().find(|l| l.name == "Body").map(|l| l.id) else { return };
+    let Some(style) = editor.doc.layer(body).map(|l| l.drawings[0].elements[0].style.clone()) else { return };
+    // A pear: narrow at the chest, broad and low at the hips.
+    let pear = Element {
+        shape: Shape::Path(Path {
+            start: Point::new(0.0, -170.0),
+            segments: vec![
+                Segment::Cubic {
+                    ctrl1: Point::new(70.0, -170.0),
+                    ctrl2: Point::new(150.0, 60.0),
+                    to: Point::new(110.0, 140.0),
+                },
+                Segment::Cubic {
+                    ctrl1: Point::new(70.0, 190.0),
+                    ctrl2: Point::new(-90.0, 190.0),
+                    to: Point::new(-110.0, 120.0),
+                },
+                Segment::Cubic {
+                    ctrl1: Point::new(-130.0, 40.0),
+                    ctrl2: Point::new(-70.0, -170.0),
+                    to: Point::new(0.0, -170.0),
+                },
+            ],
+            closed: true,
+        }),
+        style,
+    };
+    let key = CorrectionKey { turn: 10.0, colour_art: Vec::new(), line_art: vec![pear] };
+    if let Some(skeleton) = editor.doc.layer_mut(folder).and_then(|l| l.skeleton.as_mut()) {
+        skeleton.bones[0].actions.push(SmartAction::Correct { layer: body, drawing: 0, keys: vec![key] });
+    }
+    editor.selected_bone = Some(0);
 }

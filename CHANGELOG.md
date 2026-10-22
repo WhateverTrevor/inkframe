@@ -13,6 +13,12 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Smart bone corrections
+
+- A smart bone can reshape a layer by hand-drawn keys at several turns, as
+  Moho's actions: turn the bone, Edit Correction, reshape with any tool,
+  Finish. The drawing morphs between keys. File format 38.
+
 ### Web page export
 
 - Export › Web Page (.html): one self-contained page that plays the

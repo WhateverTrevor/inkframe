@@ -177,7 +177,8 @@ impl Autosave {
             return;
         }
         let (Some(copy), Some(note_path)) = (self.copy_path(), self.note_path()) else { return };
-        let doc = editor.doc.clone();
+        // Never a correction half drawn (see `skeleton.rs`).
+        let doc = editor.settled_doc().into_owned();
         self.copied = Some(doc.clone());
         let note = Note {
             original: editor.path.clone(),

@@ -115,6 +115,8 @@ enum Command {
     StartLattice(crate::envelope::LatticeKind),
     // Skeletons (see `skeleton.rs`).
     NewSkeleton,
+    FinishCorrection,
+    CancelCorrection,
     NewSwitch,
     DeleteBone,
     FinishLattice,
@@ -901,6 +903,8 @@ impl InkframeApp {
             }
             Command::FinishLattice => editor.finish_lattice(),
             Command::NewSkeleton => editor.new_skeleton(),
+            Command::FinishCorrection => editor.finish_correction(),
+            Command::CancelCorrection => editor.cancel_correction(),
             Command::NewSwitch => editor.new_switch(),
             Command::DeleteBone => {
                 editor.delete_bone();
@@ -1042,6 +1046,7 @@ impl InkframeApp {
         let inside_layer = self.editor.inside_layer().is_some();
         let shapes_picked = !self.editor.picked_shapes().is_empty();
         let bending = self.editor.lattice.is_some();
+        let correcting = self.editor.correcting.is_some();
         let bone_picked = self.editor.tool == Tool::AddBone && self.editor.selected_bone.is_some();
         ctx.input_mut(|input| {
             for (shortcut, command) in file_shortcuts {
@@ -1089,6 +1094,9 @@ impl InkframeApp {
                     (Key::Backspace, Command::RemovePathPoint),
                     (Key::Delete, Command::RemovePathPoint),
                 ]
+            } else if correcting && !shapes_picked && !anchor_selected {
+                // Enter keys the correction being drawn; Escape drops it.
+                &[(Key::Enter, Command::FinishCorrection), (Key::Escape, Command::CancelCorrection)]
             } else if bending {
                 // Enter or Escape leaves a Distort or Envelope's shapes bent.
                 &[(Key::Enter, Command::FinishLattice), (Key::Escape, Command::FinishLattice)]
@@ -2063,7 +2071,7 @@ impl eframe::App for InkframeApp {
         }
 
         let name = self.editor.display_name();
-        self.export.show(&ctx, &self.editor.doc, &name, self.editor.project_dir());
+        self.export.show(&ctx, &self.editor.settled_doc(), &name, self.editor.project_dir());
         let unsaved = self.editor.has_unsaved_changes();
         self.batch.show(&ctx, self.editor.path.as_deref().map(|path| (path, unsaved)));
         self.lip_sync.show(&ctx, &mut self.editor, &mut self.audio);
@@ -2222,7 +2230,7 @@ fn drop_hint(ctx: &egui::Context) {
     );
 }
 
-fn show_error(title: &str, detail: &str) {
+pub(crate) fn show_error(title: &str, detail: &str) {
     rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Error)
         .set_title(title)

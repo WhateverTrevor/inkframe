@@ -796,8 +796,7 @@ after the Harmony features (palettes to master controllers).
     simulation, per frame) uses it. `remove_bone` renumbers targets.
     Inspector Target combo (bones it carries greyed out); the Bone tool
     draws a dotted line to the target. Hook `INKFRAME_SCREENSHOT_TARGETS=1`.
-    Roadmap item 5's other half, an action timeline for smart bones, is
-    not done: corrections are still whole drawings to morph toward.
+    (Roadmap item 5's other half, keyed corrections, is #110.)
 105. Art/pattern brushes: core `art_brush.rs` (`Stroke::brush:
     Option<StrokeBrush{kind, symbol}>`, optional so no format bump;
     `Document::drawn_as` → fill-only copy + picture laid along the outline
@@ -843,6 +842,18 @@ after the Harmony features (palettes to master controllers).
     Checked in the browser (plays, pauses). Not yet: Animate's
     interactive buttons and actions (gotoAndPlay, stop), sound, and paint
     layers re-embed their PNG in every frame that differs.
+110. Smart bone corrections (format v38): `SmartAction::Correct{layer,
+    drawing, keys: Vec<CorrectionKey{turn, colour_art, line_art}>}`
+    (SmartAction no longer Copy), `corrected(rest, keys, now)` (rest is a
+    key at 0; clamped past the ends; morph between neighbours), applied in
+    `posed_elements` when that drawing shows and no shape tween runs.
+    App: `Correcting` (action taken out of the bone, key shapes swapped
+    into the drawing, rest stashed), `start_correction`/`add_correction`/
+    `finish_correction`/`cancel_correction`, `settle`, `settled_doc` (used
+    by save_to, autosave, export dialog), `check_correction` once a frame
+    (finishes on frame/turn change); undo drops the state. Inspector
+    correction row (key chips, Edit at, Remove, + Correction, Finish/Cancel
+    banner), stage note, Enter/Esc. Hook `INKFRAME_SCREENSHOT_CORRECTION=1`.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

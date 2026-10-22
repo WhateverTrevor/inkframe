@@ -1007,6 +1007,7 @@ impl StageView {
         // Skeletons show at rest in rig setup, and while bones are being
         // added (which are drawn at rest).
         editor.doc.rest_pose.0 = editor.rig_setup || editor.tool == Tool::AddBone;
+        editor.check_correction();
 
         self.handle_navigation(ui, &response, &editor.doc);
         let stage_view = self.view(area, &editor.doc);
