@@ -112,6 +112,12 @@ enum Command {
     CombineShapes(inkframe_core::ShapeOp),
     BreakApart,
     SwapSymbol,
+    // Rulers and guides (see `stage/rulers.rs`).
+    ToggleRulers,
+    ToggleGuides,
+    ToggleLockGuides,
+    ToggleSnapToGuides,
+    ClearGuides,
     NewFolder,
     CreateShapeTween,
     AddCamera,
@@ -281,6 +287,10 @@ impl InkframeApp {
             let prefs = Prefs::load();
             app.editor.guides = prefs.guides();
             app.editor.draw_into_layer = !prefs.shape_per_layer;
+            app.editor.show_rulers = prefs.show_rulers;
+            app.editor.show_guides = !prefs.hide_guides;
+            app.editor.lock_guides = prefs.lock_guides;
+            app.editor.snap_to_guides = !prefs.no_guide_snapping;
             app.batch.restore(prefs.batch_jobs(), prefs.batch_folder.clone());
         }
         app.saved_prefs = app.current_prefs();
@@ -849,6 +859,11 @@ impl InkframeApp {
                 }
             }
             Command::SwapSymbol => self.swap.open(editor),
+            Command::ToggleRulers => editor.show_rulers = !editor.show_rulers,
+            Command::ToggleGuides => editor.show_guides = !editor.show_guides,
+            Command::ToggleLockGuides => editor.lock_guides = !editor.lock_guides,
+            Command::ToggleSnapToGuides => editor.snap_to_guides = !editor.snap_to_guides,
+            Command::ClearGuides => editor.doc.ruler_guides.clear(),
             Command::BreakApart => {
                 if editor.break_apart() == 0 {
                     show_error(
@@ -942,6 +957,11 @@ impl InkframeApp {
             (LAYER_VIA_COPY, Command::LayerViaCopy),
             (CONVERT_TO_SYMBOL, Command::ConvertToSymbol),
             (BREAK_APART, Command::BreakApart),
+            // The modified ones first: shortcuts ignore extra Shift and Alt.
+            (RULERS, Command::ToggleRulers),
+            (SNAP_TO_GUIDES, Command::ToggleSnapToGuides),
+            (LOCK_GUIDES, Command::ToggleLockGuides),
+            (SHOW_GUIDES, Command::ToggleGuides),
             (ADD_SHAPE_HINT, Command::AddShapeHint),
             (ZOOM_FIT, Command::ZoomFit),
             (ZOOM_100, Command::ZoomActualSize),
@@ -1105,6 +1125,9 @@ impl InkframeApp {
 
     fn menu_bar(&mut self, ui: &mut egui::Ui) {
         let mut chosen = None;
+        // The View menu's toggles, kept apart from `chosen`, which `item`
+        // holds onto for the whole menu bar.
+        let mut toggled = None;
         egui::MenuBar::new().ui(ui, |ui| {
             let ctx = ui.ctx().clone();
             let mut item = |ui: &mut egui::Ui,
@@ -1384,6 +1407,51 @@ impl InkframeApp {
                 ui.checkbox(&mut self.editor.guides.field_guide, "Field Guide")
                     .on_hover_text("A 12-field chart over the camera's frame, for planning moves in fields");
                 ui.separator();
+                // On or off, shown as a highlighted item, with its keys.
+                let toggle = |ui: &mut egui::Ui, on: bool, label: &str, keys: egui::KeyboardShortcut| {
+                    let button =
+                        egui::Button::new(label).selected(on).shortcut_text(ctx.format_shortcut(&keys));
+                    let clicked = ui.add(button).clicked();
+                    if clicked {
+                        ui.close();
+                    }
+                    clicked
+                };
+                if toggle(ui, self.editor.show_rulers, "Rulers", shortcuts::RULERS) {
+                    toggled = Some(Command::ToggleRulers);
+                }
+                ui.menu_button("Guides", |ui| {
+                    let editor = &self.editor;
+                    let toggles = [
+                        (editor.show_guides, "Show Guides", shortcuts::SHOW_GUIDES, Command::ToggleGuides),
+                        (
+                            editor.lock_guides,
+                            "Lock Guides",
+                            shortcuts::LOCK_GUIDES,
+                            Command::ToggleLockGuides,
+                        ),
+                        (
+                            editor.snap_to_guides,
+                            "Snap to Guides",
+                            shortcuts::SNAP_TO_GUIDES,
+                            Command::ToggleSnapToGuides,
+                        ),
+                    ];
+                    for (on, label, keys, command) in toggles {
+                        if toggle(ui, on, label, keys) {
+                            toggled = Some(command);
+                        }
+                    }
+                    if ui
+                        .add_enabled(!editor.doc.ruler_guides.is_empty(), egui::Button::new("Clear Guides"))
+                        .clicked()
+                    {
+                        toggled = Some(Command::ClearGuides);
+                        ui.close();
+                    }
+                    ui.weak("Drag from a ruler onto the stage for a guide;\ndrag it back to take it away.");
+                });
+                ui.separator();
                 ui.menu_button("Workspace", |ui| {
                     for workspace in Workspace::ALL {
                         item(ui, workspace.name(), None, Command::Workspace(workspace), true);
@@ -1427,7 +1495,7 @@ impl InkframeApp {
             });
         });
 
-        if let Some(command) = chosen {
+        if let Some(command) = chosen.or(toggled) {
             self.execute(command);
         }
     }
@@ -1438,6 +1506,10 @@ impl InkframeApp {
     fn current_prefs(&self) -> Prefs {
         Prefs {
             shape_per_layer: !self.editor.draw_into_layer,
+            show_rulers: self.editor.show_rulers,
+            hide_guides: !self.editor.show_guides,
+            lock_guides: self.editor.lock_guides,
+            no_guide_snapping: !self.editor.snap_to_guides,
             ..Prefs::gather(self.editor.guides, self.batch.jobs(), self.batch.chosen_folder())
         }
     }

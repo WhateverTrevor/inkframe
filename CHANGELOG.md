@@ -13,6 +13,12 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Rulers and guides
+
+- View › Rulers, and guides dragged out of them onto the stage, saved with
+  the project. Moving layers and drawing rectangles and ovals snap to
+  them; guides can be hidden, locked or cleared.
+
 ### Animation
 
 - Motion Presets: give layers a ready-made movement (fade, pop, slide,

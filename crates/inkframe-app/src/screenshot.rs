@@ -20,6 +20,7 @@
 //!   lines, and steps inside the sun to show its gradient's handles.
 //! * `INKFRAME_SCREENSHOT_COMBINE=1` shows shapes combined: two circles in a union, a
 //!   square with a circle punched out, and text broken apart into letters (one picked).
+//! * `INKFRAME_SCREENSHOT_RULERS=1` shows the rulers, with three guides.
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
 //! * `INKFRAME_SCREENSHOT_EXPAND=1` expands every layer's property rows in the timeline.
 //! * `INKFRAME_SCREENSHOT_EDIT=Ball` opens the named symbol on its own (before `_SELECT`).
@@ -142,6 +143,12 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_MULTIPLE").is_some() {
             editor.edit_multiple = true;
+        }
+        if var("INKFRAME_SCREENSHOT_RULERS").is_some() {
+            editor.show_rulers = true;
+            for (vertical, at) in [(true, 960.0), (false, 540.0), (false, 180.0)] {
+                editor.doc.ruler_guides.push(inkframe_core::RulerGuide { vertical, at });
+            }
         }
         if var("INKFRAME_SCREENSHOT_COMBINE").is_some() {
             combine_demo(editor);
