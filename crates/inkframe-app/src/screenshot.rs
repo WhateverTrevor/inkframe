@@ -37,6 +37,8 @@
 //!   `_SKELETON` and the like).
 //! * `INKFRAME_SCREENSHOT_TARGETS=1` shows two legs whose shins reach for target bones on
 //!   the ground, crouching as the hips drop with the feet staying planted.
+//! * `INKFRAME_SCREENSHOT_BRUSHES=1` shows strokes drawn with art and pattern brushes: a
+//!   vine of leaves, a tapered swoosh, and a card framed with beads.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -189,6 +191,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_TARGETS").is_some() {
             targets_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_BRUSHES").is_some() {
+            brushes_demo(editor);
         }
         if Self::pen_handles() {
             pen_handles_demo(editor);
@@ -1138,4 +1143,138 @@ fn targets_demo(editor: &mut Editor) {
     editor.select(Some(folder));
     editor.selected_bone = Some(2);
     editor.use_tool(Tool::Bone);
+}
+
+/// Strokes drawn with art and pattern brushes (see `art_brush.rs` in the
+/// core): three symbols to brush with, and a stroke drawn with each.
+fn brushes_demo(editor: &mut Editor) {
+    use inkframe_core::{
+        BrushKind, Color, Element, Path, Point, Segment, Shape, Stroke, StrokeBrush, Style, TimelineId,
+        Transform,
+    };
+    let fill = |c: Color| Style { fill: Some(c), stroke: None, gradient: None };
+    let doc = &mut editor.doc;
+    // A leaf on a short stem, pointing along the stroke.
+    let leaf = Element {
+        shape: Shape::Path(Path {
+            start: Point::new(0.0, 0.0),
+            segments: vec![
+                Segment::Cubic {
+                    ctrl1: Point::new(15.0, -22.0),
+                    ctrl2: Point::new(45.0, -22.0),
+                    to: Point::new(60.0, 0.0),
+                },
+                Segment::Cubic {
+                    ctrl1: Point::new(45.0, 8.0),
+                    ctrl2: Point::new(15.0, 8.0),
+                    to: Point::new(0.0, 0.0),
+                },
+            ],
+            closed: true,
+        }),
+        style: Style {
+            fill: Some(Color::rgb(90, 180, 110)),
+            stroke: Some(Stroke::new(Color::rgb(40, 100, 60), 2.0)),
+            gradient: None,
+        },
+    };
+    let stem = Element {
+        shape: Shape::Rect { width: 60.0, height: 3.0, corner_radius: 1.5 },
+        style: fill(Color::rgb(60, 120, 70)),
+    }
+    .transformed(inkframe_core::Affine::translate(Point::new(30.0, 6.0)))
+    .unwrap();
+    // A swoosh: thin, swelling in the middle, coming to a point.
+    let swoosh = Element {
+        shape: Shape::Path(Path {
+            start: Point::new(0.0, 0.0),
+            segments: vec![
+                Segment::Cubic {
+                    ctrl1: Point::new(60.0, -30.0),
+                    ctrl2: Point::new(140.0, -25.0),
+                    to: Point::new(200.0, 0.0),
+                },
+                Segment::Cubic {
+                    ctrl1: Point::new(140.0, 10.0),
+                    ctrl2: Point::new(60.0, 12.0),
+                    to: Point::new(0.0, 0.0),
+                },
+            ],
+            closed: true,
+        }),
+        style: fill(Color::rgb(60, 70, 160)),
+    };
+    let bead = Element {
+        shape: Shape::Ellipse { radius_x: 10.0, radius_y: 10.0 },
+        style: fill(Color::rgb(230, 170, 60)),
+    };
+    let link = Element {
+        shape: Shape::Rect { width: 14.0, height: 4.0, corner_radius: 2.0 },
+        style: fill(Color::rgb(160, 110, 40)),
+    }
+    .transformed(inkframe_core::Affine::translate(Point::new(16.0, 0.0)))
+    .unwrap();
+    let mut symbol = |name: &str, shapes: Vec<Element>| {
+        let layer = doc.add_layer(name, shapes, 0, Transform::default());
+        let symbol = doc.convert_layer_to_symbol(layer, 0);
+        if let Some(symbol) = symbol.and_then(|id| doc.symbol_mut(id)) {
+            symbol.name = name.into();
+        }
+        // The layer it was made from is just an instance now; it isn't wanted.
+        doc.layers.retain(|l| l.id != layer);
+        symbol
+    };
+    let (Some(leaf), Some(swoosh), Some(bead)) =
+        (symbol("Leaf", vec![stem, leaf]), symbol("Swoosh", vec![swoosh]), symbol("Bead", vec![bead, link]))
+    else {
+        return;
+    };
+    let brushed = |kind: BrushKind, symbol, width: f32, fill_colour: Option<Color>| Style {
+        fill: fill_colour,
+        stroke: Some(Stroke {
+            brush: Some(StrokeBrush { kind, symbol }),
+            ..Stroke::new(Color::BLACK, width)
+        }),
+        gradient: None,
+    };
+    let vine = Element {
+        shape: Shape::Path(Path {
+            start: Point::new(-300.0, 0.0),
+            segments: vec![
+                Segment::Cubic {
+                    ctrl1: Point::new(-150.0, -160.0),
+                    ctrl2: Point::new(-50.0, 160.0),
+                    to: Point::new(100.0, 0.0),
+                },
+                Segment::Cubic {
+                    ctrl1: Point::new(200.0, -110.0),
+                    ctrl2: Point::new(260.0, -40.0),
+                    to: Point::new(300.0, 40.0),
+                },
+            ],
+            closed: false,
+        }),
+        style: brushed(BrushKind::Pattern, leaf, 34.0, None),
+    };
+    let flourish = Element {
+        shape: Shape::Path(Path {
+            start: Point::new(-280.0, 40.0),
+            segments: vec![Segment::Cubic {
+                ctrl1: Point::new(-100.0, -90.0),
+                ctrl2: Point::new(120.0, 120.0),
+                to: Point::new(280.0, -30.0),
+            }],
+            closed: false,
+        }),
+        style: brushed(BrushKind::Art, swoosh, 46.0, None),
+    };
+    let card = Element {
+        shape: Shape::Rect { width: 360.0, height: 220.0, corner_radius: 30.0 },
+        style: brushed(BrushKind::Pattern, bead, 18.0, Some(Color::rgb(250, 240, 220))),
+    };
+    doc.add_layer("Vine", vec![vine], 0, Transform::at(Point::new(520.0, 330.0)));
+    doc.add_layer("Swoosh", vec![flourish], 0, Transform::at(Point::new(520.0, 760.0)));
+    let id = doc.add_layer("Card", vec![card], 0, Transform::at(Point::new(1380.0, 540.0)));
+    let _ = TimelineId::Main;
+    editor.select(Some(id));
 }

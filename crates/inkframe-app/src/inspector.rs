@@ -150,7 +150,13 @@ fn drawing_target(ui: &mut egui::Ui, editor: &mut Editor) {
 
 /// Fill, stroke and stroke width for the shapes the drawing tools make.
 fn shape_style(ui: &mut egui::Ui, editor: &mut Editor) {
-    style_editor(ui, &mut editor.draw_style);
+    let symbols = brush_symbols(editor);
+    style_editor(ui, &mut editor.draw_style, &symbols);
+}
+
+/// The library's symbols, to draw strokes with as brushes.
+fn brush_symbols(editor: &Editor) -> Vec<(inkframe_core::SymbolId, String)> {
+    editor.doc.symbols.iter().map(|s| (s.id, s.name.clone())).collect()
 }
 
 /// The document settings on their own, for a Document area.
@@ -2100,6 +2106,7 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         })
         .flat_map(|(families, problem)| families.iter().map(move |family| (family.clone(), problem.clone())))
         .collect();
+    let symbols = brush_symbols(editor);
     let frame = editor.frame;
     let Some(layer) = editor.doc.layer_mut(id) else { return };
     let elements = layer.elements_at_mut(frame);
@@ -2129,10 +2136,10 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 let problem =
                     font_problems.iter().find(|(f, _)| *f == text.font.family).map(|(_, p)| p.as_str());
                 text_editor(ui, text, problem);
-                style_editor(ui, &mut element.style);
+                style_editor(ui, &mut element.style, &symbols);
             } else {
                 shape_size_editor(ui, &mut element.shape);
-                style_editor(ui, &mut element.style);
+                style_editor(ui, &mut element.style, &symbols);
             }
         });
     }
@@ -2284,7 +2291,7 @@ fn shape_size_editor(ui: &mut egui::Ui, shape: &mut Shape) {
 
 /// Fill and stroke controls. Shared by selected shapes and the default
 /// style for new shapes.
-pub fn style_editor(ui: &mut egui::Ui, style: &mut Style) {
+pub fn style_editor(ui: &mut egui::Ui, style: &mut Style, symbols: &[(inkframe_core::SymbolId, String)]) {
     use inkframe_core::{Dash, GradientShape, LineCap, LineJoin, ShapeGradient};
     egui::Grid::new("style").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
         // Fill: none, a colour, or a gradient (see `ShapeGradient`).
@@ -2404,6 +2411,48 @@ pub fn style_editor(ui: &mut egui::Ui, style: &mut Style) {
                     ui.add(DragValue::new(&mut dash.length).range(0.5..=500.0).speed(0.2).prefix("dash "));
                 }
                 ui.add(DragValue::new(&mut dash.gap).range(0.5..=500.0).speed(0.2).prefix("gap "));
+            }
+        });
+        ui.end_row();
+
+        // Drawn as a symbol's picture laid along it (see `art_brush.rs`).
+        ui.label("Brush").on_hover_text(
+            "Draw the line as a symbol's picture: stretched along it (Art) or repeated (Pattern), as Animate's Paint Brush does",
+        );
+        ui.horizontal(|ui| {
+            use inkframe_core::{BrushKind, StrokeBrush};
+            #[derive(Clone, Copy, PartialEq)]
+            enum Kind {
+                Plain,
+                Art,
+                Pattern,
+            }
+            let kind = match stroke.brush.map(|b| b.kind) {
+                None => Kind::Plain,
+                Some(BrushKind::Art) => Kind::Art,
+                Some(BrushKind::Pattern) => Kind::Pattern,
+            };
+            let mut chosen = kind;
+            ui.add_enabled_ui(!symbols.is_empty(), |ui| {
+                choice(ui, "stroke_brush", &mut chosen, &[(Kind::Plain, "Plain"), (Kind::Art, "Art"), (Kind::Pattern, "Pattern")]);
+            });
+            if chosen != kind {
+                let symbol = stroke.brush.map(|b| b.symbol).or(symbols.first().map(|(id, _)| *id));
+                stroke.brush = match (chosen, symbol) {
+                    (Kind::Art, Some(symbol)) => Some(StrokeBrush { kind: BrushKind::Art, symbol }),
+                    (Kind::Pattern, Some(symbol)) => Some(StrokeBrush { kind: BrushKind::Pattern, symbol }),
+                    _ => None,
+                };
+            }
+            if let Some(brush) = &mut stroke.brush {
+                let name = symbols.iter().find(|(id, _)| *id == brush.symbol).map_or("(gone)", |(_, n)| n.as_str());
+                egui::ComboBox::from_id_salt("stroke_brush_symbol").selected_text(name).width(110.0).show_ui(ui, |ui| {
+                    for (id, name) in symbols {
+                        ui.selectable_value(&mut brush.symbol, *id, name);
+                    }
+                });
+            } else if symbols.is_empty() {
+                ui.weak("Make a symbol to brush with first.");
             }
         });
         ui.end_row();

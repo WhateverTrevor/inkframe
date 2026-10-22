@@ -302,7 +302,10 @@ impl Lottie<'_> {
             {
                 end += 1;
             }
-            out.extend(self.drawing(layer, &elements, t, end, &opacity, frames.len(), next));
+            // Brushed strokes as their brushes' pictures laid along them.
+            let drawn: Vec<Element> =
+                elements.iter().flat_map(|e| self.doc.drawn_as(e).into_owned()).collect();
+            out.extend(self.drawing(layer, &drawn, t, end, &opacity, frames.len(), next));
             t = end;
         }
         out

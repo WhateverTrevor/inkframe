@@ -800,7 +800,12 @@ fn draw_layer(
                     None => draw_image(pixmap, pixels, width, height, pixel_matrix),
                 }
             }
-            _ => draw_element(pixmap, element, skia_matrix, style),
+            // A brushed stroke is drawn as its brush's picture laid along it.
+            _ => {
+                for part in doc.drawn_as(element).iter() {
+                    draw_element(pixmap, part, skia_matrix, style);
+                }
+            }
         }
     }
     // `instance_view` stops at the nesting limit, so a malformed file can't

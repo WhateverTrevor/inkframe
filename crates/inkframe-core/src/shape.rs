@@ -111,12 +111,16 @@ pub struct Stroke {
     /// Broken into dashes (or dots, with round caps and a short length).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dash: Option<Dash>,
+    /// Drawn as a symbol's picture laid along it, rather than a plain
+    /// line (see `art_brush.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brush: Option<crate::StrokeBrush>,
 }
 
 impl Stroke {
     /// A plain line: round ends and corners, not dashed.
     pub fn new(color: Color, width: f32) -> Self {
-        Self { color, width, cap: LineCap::default(), join: LineJoin::default(), dash: None }
+        Self { color, width, cap: LineCap::default(), join: LineJoin::default(), dash: None, brush: None }
     }
 }
 
