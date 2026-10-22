@@ -283,6 +283,11 @@ box) and time-remapped, and masks as track mattes. Checked against
 lottie-web by eye (`cargo test -p inkframe-export -- --ignored` writes a
 sample to `target/lottie-check/features`).
 
+The Web Page export (`html.rs`) is every frame as SVG (`svg::frame_svg`),
+each different frame kept once, as JSON in one self-contained page whose
+few lines of script swap them at the frame rate; a click pauses, the
+arrow keys step while paused.
+
 Sprite sheets (`sprite_sheet.rs`) render every frame, crop each to its
 drawn pixels, and keep one copy of frames that come out identical (held
 drawings). Every cell is the union of those areas, so frames stay aligned;

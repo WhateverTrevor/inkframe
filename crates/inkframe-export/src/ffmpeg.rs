@@ -228,7 +228,11 @@ pub(crate) fn build_args(
             );
             push(&["-filter_complex", &graph, "-loop", "0"]);
         }
-        ExportFormat::PngSequence | ExportFormat::SpriteSheet | ExportFormat::Svg | ExportFormat::Lottie => {
+        ExportFormat::PngSequence
+        | ExportFormat::SpriteSheet
+        | ExportFormat::Svg
+        | ExportFormat::Lottie
+        | ExportFormat::Html => {
             unreachable!("image and vector exports don't go through ffmpeg")
         }
     }

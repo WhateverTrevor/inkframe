@@ -835,6 +835,14 @@ after the Harmony features (palettes to master controllers).
     Draw Inbetweens (`Command::MakeInbetweens`). Hook
     `INKFRAME_SCREENSHOT_INBETWEENS=1`. Not yet: a choice of spacing
     (charts) when there's no shape tween; inbetweening a frame range at once.
+109. Web page export: `ExportFormat::Html` (`html` slug, `.html`, silent,
+    vector, no ffmpeg), `inkframe_export::html` (`page` dedupes frames
+    into JSON in a `<script type=application/json>` with `</` escaped; a
+    small player advances by elapsed time at the doc's fps, click to
+    pause, arrows step when paused; the page is the doc's background).
+    Checked in the browser (plays, pauses). Not yet: Animate's
+    interactive buttons and actions (gotoAndPlay, stop), sound, and paint
+    layers re-embed their PNG in every frame that differs.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

@@ -13,6 +13,11 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Web page export
+
+- Export › Web Page (.html): one self-contained page that plays the
+  animation as vectors, loops, and pauses on a click.
+
 ### Draw inbetweens
 
 - Timeline › Draw Inbetweens fills the frames between two key drawings

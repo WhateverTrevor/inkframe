@@ -322,6 +322,7 @@ fn describe(format: ExportFormat) -> &'static str {
         ExportFormat::Gif => "a looping animation to share anywhere, 256 colours",
         ExportFormat::Svg => "vectors, one file per frame, for the web and drawing programs",
         ExportFormat::Lottie => "a vector animation for web pages and apps",
+        ExportFormat::Html => "a web page that plays the animation, sharp at any size, nothing else needed",
     }
 }
 
