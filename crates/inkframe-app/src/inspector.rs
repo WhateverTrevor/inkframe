@@ -535,6 +535,7 @@ fn folder_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         1 => "Holds 1 layer.".to_owned(),
         n => format!("Holds {n} layers."),
     });
+    switch_controls(ui, editor, id);
     // A folder is where a skeleton lives, rigging what's in it.
     if editor.doc.layer(id).is_some_and(|l| l.skeleton.is_none()) {
         ui.add_space(8.0);
@@ -644,6 +645,8 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         }
         if delete {
             editor.delete_bone();
+        } else if let Some(bone) = picked.filter(|&b| b < count) {
+            smart_bone_section(ui, editor, id, bone);
         }
         ui.add_space(8.0);
         return;
@@ -674,7 +677,227 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     if chosen != current {
         editor.set_bone_binding(id, chosen);
     }
+    pin_controls(ui, editor, id, &names);
     ui.add_space(8.0);
+}
+
+/// Whether a folder is a switch, showing one of its layers at a time, and
+/// which it shows from this frame on.
+fn switch_controls(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    let frame = editor.frame;
+    let Some(folder) = editor.doc.layer(id) else { return };
+    let mut switch = folder.switch;
+    ui.add_space(4.0);
+    let toggled = ui
+        .checkbox(&mut switch, "Switch")
+        .on_hover_text("Show one of the folder's layers at a time: hand poses, mouth shapes")
+        .changed();
+    if toggled && let Some(folder) = editor.doc.layer_mut(id) {
+        folder.switch = switch;
+    }
+    let Some(folder) = editor.doc.layer(id).filter(|l| l.switch) else { return };
+    let children: Vec<(LayerId, String)> =
+        editor.doc.folder_children(folder).iter().map(|c| (c.id, c.name.clone())).collect();
+    let showing = editor.doc.switch_choice(folder, frame);
+    let smart = editor.doc.smart_switch(folder, frame).is_some();
+    let mut chosen = showing;
+    let label = |id: Option<LayerId>| {
+        id.and_then(|id| children.iter().find(|(c, _)| *c == id))
+            .map_or("(empty)".to_owned(), |(_, n)| n.clone())
+    };
+    ui.horizontal(|ui| {
+        ui.label("Showing").on_hover_text("Keyed on this frame; it holds until the next key");
+        egui::ComboBox::from_id_salt("switch showing").selected_text(label(showing)).show_ui(ui, |ui| {
+            for (child, _) in &children {
+                ui.selectable_value(&mut chosen, Some(*child), label(Some(*child)));
+            }
+        });
+    });
+    if smart {
+        ui.weak("A smart bone is choosing for now.");
+    }
+    if chosen != showing
+        && let Some(child) = chosen
+    {
+        editor.doc.set_switch(id, frame, child);
+    }
+}
+
+/// Pinning the shapes picked inside this layer, or the point picked with
+/// the Subselection tool, to a bone of their own.
+fn pin_controls(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, names: &[String]) {
+    if names.is_empty() {
+        return;
+    }
+    let shapes = if editor.inside_layer() == Some(id) { editor.picked_shapes().len() } else { 0 };
+    let point = editor.picked_anchor.filter(|(layer, _, _)| *layer == id);
+    if shapes == 0 && point.is_none() {
+        ui.weak("To pin shapes or points to one bone, pick them: double-click the layer, or use the Subselection tool (A).");
+        return;
+    }
+    let what = match (point, shapes) {
+        (Some(_), _) => "Pin point to".to_owned(),
+        (None, 1) => "Pin shape to".to_owned(),
+        (None, n) => format!("Pin {n} shapes to"),
+    };
+    let pinned = match point {
+        Some((layer, element, anchor)) => editor.pinned_bone(layer, element, anchor),
+        None => editor.shapes_pinned_bone(),
+    };
+    let mut chosen = pinned;
+    let label = |bone: Option<usize>| {
+        bone.and_then(|b| names.get(b).cloned()).unwrap_or_else(|| "(not pinned)".into())
+    };
+    ui.horizontal(|ui| {
+        ui.label(what).on_hover_text("They follow that bone alone, whatever the rest of the drawing does");
+        egui::ComboBox::from_id_salt("pin bone").selected_text(label(chosen)).show_ui(ui, |ui| {
+            ui.selectable_value(&mut chosen, None, label(None));
+            for i in 0..names.len() {
+                ui.selectable_value(&mut chosen, Some(i), label(Some(i)));
+            }
+        });
+    });
+    if chosen != pinned {
+        match point {
+            Some((layer, element, anchor)) => editor.pin_point(layer, element, anchor, chosen),
+            None => {
+                editor.pin_shapes(chosen);
+            }
+        }
+    }
+}
+
+/// A switch folder for the smart bone section: its id and name, and its
+/// layers' ids and names.
+type SwitchChoices = (LayerId, String, Vec<(LayerId, String)>);
+
+/// What a smart bone does as it turns: each action on its own row, with
+/// buttons to add more.
+fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone: usize) {
+    use inkframe_core::SmartAction;
+    let frame = editor.frame;
+    let members = editor.skeleton_members(id);
+    let name = |id: LayerId| editor.doc.layer(id).map_or_else(|| "(gone)".to_owned(), |l| l.name.clone());
+    // Layers that can be reshaped (they have another drawing to morph
+    // toward), and switches (with their layers).
+    let morphable: Vec<(LayerId, String, Vec<String>)> = members
+        .iter()
+        .filter_map(|&m| editor.doc.layer(m))
+        .filter(|l| l.drawings.len() > 1)
+        .map(|l| (l.id, l.name.clone(), l.drawings.iter().map(|d| d.name.clone()).collect()))
+        .collect();
+    let switches: Vec<SwitchChoices> = members
+        .iter()
+        .filter_map(|&m| editor.doc.layer(m))
+        .filter(|l| l.switch)
+        .map(|l| {
+            let children = editor.doc.folder_children(l).iter().map(|c| (c.id, c.name.clone())).collect();
+            (l.id, l.name.clone(), children)
+        })
+        .collect();
+    let Some(skeleton) = editor.skeleton(id) else { return };
+    let Some(the_bone) = skeleton.bones.get(bone) else { return };
+    let mut actions = the_bone.actions.clone();
+    let now = the_bone.turn.sample(frame as f32).unwrap_or(0.0);
+
+    ui.add_space(6.0);
+    ui.label(section_text("Smart bone")).on_hover_text(
+        "As this bone turns, it can reshape a layer toward another of its drawings, or have a switch show another layer",
+    );
+    let mut remove = None;
+    for (i, action) in actions.iter_mut().enumerate() {
+        ui.horizontal_wrapped(|ui| match action {
+            SmartAction::Morph { layer, drawing, turn } => {
+                ui.label("Reshape");
+                egui::ComboBox::from_id_salt(("smart layer", i)).selected_text(name(*layer)).show_ui(
+                    ui,
+                    |ui| {
+                        for (m, n, _) in &morphable {
+                            ui.selectable_value(layer, *m, n);
+                        }
+                    },
+                );
+                let drawings = morphable
+                    .iter()
+                    .find(|(m, _, _)| m == layer)
+                    .map(|(_, _, d)| d.clone())
+                    .unwrap_or_default();
+                let shown = drawings.get(*drawing).cloned().unwrap_or_else(|| "?".into());
+                ui.label("to");
+                egui::ComboBox::from_id_salt(("smart drawing", i)).selected_text(shown).show_ui(ui, |ui| {
+                    for (d, n) in drawings.iter().enumerate() {
+                        ui.selectable_value(drawing, d, n);
+                    }
+                });
+                ui.label("at");
+                ui.add(DragValue::new(turn).speed(1.0).suffix("°"));
+                remove = remove.or(ui.small_button("×").clicked().then_some(i));
+            }
+            SmartAction::Switch { folder, layer, turn } => {
+                ui.label("Switch");
+                egui::ComboBox::from_id_salt(("smart switch", i)).selected_text(name(*folder)).show_ui(
+                    ui,
+                    |ui| {
+                        for (m, n, _) in &switches {
+                            ui.selectable_value(folder, *m, n);
+                        }
+                    },
+                );
+                let children = switches
+                    .iter()
+                    .find(|(m, _, _)| m == folder)
+                    .map(|(_, _, c)| c.clone())
+                    .unwrap_or_default();
+                ui.label("to");
+                egui::ComboBox::from_id_salt(("smart child", i)).selected_text(name(*layer)).show_ui(
+                    ui,
+                    |ui| {
+                        for (c, n) in &children {
+                            ui.selectable_value(layer, *c, n);
+                        }
+                    },
+                );
+                ui.label("past");
+                ui.add(DragValue::new(turn).speed(1.0).suffix("°"));
+                remove = remove.or(ui.small_button("×").clicked().then_some(i));
+            }
+        });
+    }
+    // A new action is reached at the bone's turn now, if it's turned, so
+    // the way to set one up is to pose the bone, then add it.
+    let at = if now.abs() > 1.0 { now } else { 90.0 };
+    ui.horizontal(|ui| {
+        if let Some((layer, _, _)) = morphable.first()
+            && ui
+                .small_button("+ Reshape")
+                .on_hover_text("Morph a layer toward another of its drawings as the bone turns")
+                .clicked()
+        {
+            actions.push(SmartAction::Morph { layer: *layer, drawing: 1, turn: at });
+        }
+        if let Some((folder, _, children)) = switches.first()
+            && let Some((child, _)) = children.last()
+            && ui
+                .small_button("+ Switch")
+                .on_hover_text("Have a switch show another of its layers once the bone's turned far enough")
+                .clicked()
+        {
+            actions.push(SmartAction::Switch { folder: *folder, layer: *child, turn: at });
+        }
+    });
+    if morphable.is_empty() && switches.is_empty() {
+        ui.weak("To make it smart, give a layer in the skeleton a second drawing to reshape toward, or add a switch (Modify › New Switch).");
+    }
+    if let Some(i) = remove {
+        actions.remove(i);
+    }
+    let changed = editor.skeleton(id).and_then(|s| s.bones.get(bone)).is_some_and(|b| b.actions != actions);
+    if changed
+        && let Some(b) =
+            editor.doc.layer_mut(id).and_then(|l| l.skeleton.as_mut()).and_then(|s| s.bones.get_mut(bone))
+    {
+        b.actions = actions;
+    }
 }
 
 /// A particle layer's emitter: how many particles, where from, how they

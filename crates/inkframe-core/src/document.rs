@@ -35,7 +35,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 35;
+pub const FORMAT_VERSION: u32 = 36;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -190,6 +190,13 @@ pub struct Layer {
     /// For a layer in a skeleton's folder, how it follows the bones.
     #[serde(default, skip_serializing_if = "crate::BoneBinding::is_region")]
     pub bone_binding: crate::BoneBinding,
+    /// This folder is a switch: it shows one of its layers at a time (see
+    /// `switch.rs`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub switch: bool,
+    /// Which layer a switch shows, from each key's frame on.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub switch_keys: Vec<crate::SwitchKey>,
     /// How the layer mixes with what's beneath it (see `blend.rs`).
     #[serde(default, skip_serializing_if = "BlendMode::is_normal")]
     pub blend: BlendMode,
@@ -434,6 +441,8 @@ impl Document {
             warp: None,
             skeleton: None,
             bone_binding: crate::BoneBinding::Region,
+            switch: false,
+            switch_keys: Vec::new(),
             blend: BlendMode::Normal,
             color: None,
             folder: false,
@@ -549,7 +558,7 @@ impl Document {
             // Mask layers aren't drawn, so clicking where one is should
             // reach what's visible there instead. (The editor still lets
             // a selected mask be dragged; see `Editor::hit_test`.)
-            .filter(|l| l.is_shown_at(frame) && !l.locked && !l.mask)
+            .filter(|l| self.shows(l, frame) && !l.locked && !l.mask)
             .find(|l| self.layer_hit(l, point, frame, tolerance))
             .map(|l| l.id)
     }

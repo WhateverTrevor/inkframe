@@ -91,7 +91,7 @@ impl Svg<'_> {
         let doc = self.doc;
         for layer in layers.iter().copied() {
             // Guides are for editing, and masks only shape what they mask.
-            if !layer.is_shown_at(frame) || layer.guide || layer.mask {
+            if !doc.shows(layer, frame) || layer.guide || layer.mask {
                 continue;
             }
             let opacity =

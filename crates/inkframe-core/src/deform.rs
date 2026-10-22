@@ -320,6 +320,9 @@ impl Layer {
         if let Some(skeleton) = &mut self.skeleton {
             skeleton.channels_mut().for_each(|c| c.shift(by));
         }
+        for key in &mut self.switch_keys {
+            key.frame = shift(key.frame);
+        }
     }
 
     /// Every frame with a key: the transform's, the deformer's and the
@@ -329,6 +332,7 @@ impl Layer {
         frames.extend(self.deformer.iter().flat_map(|d| d.key_frames()));
         frames.extend(self.warp.iter().flat_map(|w| w.key_frames()));
         frames.extend(self.skeleton.iter().flat_map(|s| s.key_frames()));
+        frames.extend(self.switch_keys.iter().map(|k| k.frame));
         frames.sort_unstable();
         frames.dedup();
         frames

@@ -36,9 +36,31 @@ pub struct Drawing {
     /// `i` on the drawing a shape tween morphs into (see `morph.rs`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hints: Vec<crate::geometry::Point>,
+    /// Shapes, or points of shapes, that follow one bone of the skeleton
+    /// over the layer rather than the bones near them (see `skeleton.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bone_points: Vec<crate::BonePoints>,
 }
 
 impl Drawing {
+    /// Keeps the shapes bound to bones (see `skeleton.rs`) pointing at the
+    /// same shapes after shape `index` of the line art (or colour art) is
+    /// taken out: its bindings go, and those of the shapes after it move up.
+    pub fn shape_removed(&mut self, colour_art: bool, index: usize) {
+        self.bone_points.retain(|b| b.colour_art != colour_art || b.element != index);
+        for bound in self.bone_points.iter_mut().filter(|b| b.colour_art == colour_art && b.element > index) {
+            bound.element -= 1;
+        }
+    }
+
+    /// Likewise after `count` shapes go in at `index`.
+    pub fn shapes_inserted(&mut self, colour_art: bool, index: usize, count: usize) {
+        for bound in self.bone_points.iter_mut().filter(|b| b.colour_art == colour_art && b.element >= index)
+        {
+            bound.element += count;
+        }
+    }
+
     /// Everything the drawing shows, bottom first: the colour art, then the
     /// line art over it.
     pub fn shown(&self) -> std::borrow::Cow<'_, [Element]> {
@@ -50,7 +72,13 @@ impl Drawing {
     }
 
     pub fn new(name: impl Into<String>, elements: Vec<Element>) -> Self {
-        Self { name: name.into(), elements, colour_art: Vec::new(), hints: Vec::new() }
+        Self {
+            name: name.into(),
+            elements,
+            colour_art: Vec::new(),
+            hints: Vec::new(),
+            bone_points: Vec::new(),
+        }
     }
 }
 

@@ -23,6 +23,8 @@
 //! * `INKFRAME_SCREENSHOT_RULERS=1` shows the rulers, with three guides.
 //! * `INKFRAME_SCREENSHOT_SKELETON=1` shows a character rigged with a skeleton: a painted
 //!   arm bent at the elbow, a drawn body leaning, and a head bound to its own bone.
+//! * `INKFRAME_SCREENSHOT_SMART=1` adds to that a hand in a switch, which the forearm, a
+//!   smart bone, turns from open to a fist, and a body that stretches as the spine leans.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -156,8 +158,11 @@ impl AutoScreenshot {
                 editor.doc.ruler_guides.push(inkframe_core::RulerGuide { vertical, at });
             }
         }
-        if var("INKFRAME_SCREENSHOT_SKELETON").is_some() {
+        if var("INKFRAME_SCREENSHOT_SKELETON").is_some() || var("INKFRAME_SCREENSHOT_SMART").is_some() {
             skeleton_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_SMART").is_some() {
+            smart_demo(editor);
         }
         if Self::pen_handles() {
             pen_handles_demo(editor);
@@ -878,4 +883,66 @@ fn skeleton_demo(editor: &mut Editor) {
     editor.select(Some(folder));
     editor.selected_bone = Some(fore);
     editor.use_tool(Tool::Bone);
+}
+
+/// On top of `skeleton_demo`'s character: a hand in a switch (open, and a
+/// fist) bound to the forearm, which as a smart bone shows the fist once
+/// it's turned past 50°; and a body that stretches taller as the spine
+/// leans, toward a second drawing.
+fn smart_demo(editor: &mut Editor) {
+    use inkframe_core::{
+        BoneBinding, Color, Element, Point, Shape, SmartAction, Stroke, Style, TimelineId, Transform,
+    };
+    let Some(folder) = editor.selection else { return };
+    let ink = Stroke::new(Color::rgb(30, 30, 40), 5.0);
+    let skin = Style { fill: Some(Color::rgb(250, 210, 160)), stroke: Some(ink), gradient: None };
+    let at = |shape: Shape, x: f32, y: f32| {
+        Element { shape, style: skin.clone() }
+            .transformed(inkframe_core::Affine::translate(Point::new(x, y)))
+            .unwrap()
+    };
+    let doc = &mut editor.doc;
+    // The open hand: a palm and four fingers, reaching on along the arm.
+    let mut open = vec![at(Shape::Ellipse { radius_x: 30.0, radius_y: 26.0 }, 0.0, 0.0)];
+    for (i, dy) in [-18.0, -6.0, 6.0, 18.0].into_iter().enumerate() {
+        let length = if i == 0 || i == 3 { 30.0 } else { 38.0 };
+        open.push(at(
+            Shape::Rect { width: length, height: 10.0, corner_radius: 5.0 },
+            30.0 + length / 2.0,
+            dy,
+        ));
+    }
+    let fist = vec![at(Shape::Ellipse { radius_x: 32.0, radius_y: 30.0 }, 4.0, 0.0)];
+    let wrist = Transform::at(Point::new(1330.0, 540.0));
+    let fist = doc.add_layer("Fist", fist, 0, wrist);
+    let open = doc.add_layer("Open", open, 0, wrist);
+    let Some(hand) = doc.add_folder(TimelineId::Main, &[fist, open]) else { return };
+    doc.set_folder(hand, Some(folder));
+    if let Some(layer) = doc.layer_mut(hand) {
+        layer.name = "Hand".into();
+        layer.switch = true;
+    }
+    let fore = 3;
+    for id in [open, fist] {
+        if let Some(layer) = doc.layer_mut(id) {
+            layer.bone_binding = BoneBinding::Bone(fore);
+        }
+    }
+    // The body's second drawing, taller and narrower, to stretch toward.
+    let body = doc.layers.iter().find(|l| l.name == "Body").map(|l| l.id);
+    let mut stretch = None;
+    if let Some(layer) = body.and_then(|id| doc.layer_mut(id)) {
+        let mut tall = layer.drawings[0].clone();
+        tall.name = "Stretch".into();
+        tall.elements[0].shape = Shape::Ellipse { radius_x: 75.0, radius_y: 195.0 };
+        stretch = Some(layer.add_drawing(tall));
+    }
+    if let Some(skeleton) = doc.layer_mut(folder).and_then(|l| l.skeleton.as_mut()) {
+        skeleton.bones[fore].actions.push(SmartAction::Switch { folder: hand, layer: fist, turn: -50.0 });
+        if let (Some(layer), Some(drawing)) = (body, stretch) {
+            skeleton.bones[0].actions.push(SmartAction::Morph { layer, drawing, turn: 10.0 });
+        }
+    }
+    editor.select(Some(folder));
+    editor.selected_bone = Some(fore);
 }

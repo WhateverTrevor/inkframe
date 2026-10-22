@@ -306,6 +306,8 @@ impl Editor {
                 let part = part_mut(layer, frame, shape.colour_art);
                 if shape.index < part.len() {
                     part.remove(shape.index);
+                    let drawing = layer.drawing_index_at(frame);
+                    layer.drawings[drawing].shape_removed(shape.colour_art, shape.index);
                 }
             }
         }

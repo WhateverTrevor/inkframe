@@ -13,6 +13,15 @@ notes on GitHub are its section here.
 - ⌘Z while typing on the stage undoes what's been typed, a word at a time,
   and ⌘⇧Z redoes it.
 
+### Smart bones, pins and switches
+
+- Shapes, or single points, can be pinned to one bone of a skeleton.
+- Switch folders show one of their layers at a time, keyed per frame
+  (Modify › New Switch).
+- Smart bones: as a bone turns, it can morph a layer toward another of its
+  drawings, or have a switch show another layer past an angle. File
+  format 36.
+
 ### Skeletons
 
 - Moho-style rigging: Modify › New Skeleton puts the selected layers in a

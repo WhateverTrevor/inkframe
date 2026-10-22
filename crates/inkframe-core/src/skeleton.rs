@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use crate::anchor::{Anchor, anchors_from_path, path_from_anchors};
 use crate::channel::{AnyChannel, Channel};
 use crate::deform::subdivide;
-use crate::document::Element;
+use crate::document::{Element, LayerId};
 use crate::geometry::{Affine, Point};
 use crate::shape::Shape;
 
@@ -65,6 +65,58 @@ pub struct Bone {
     /// How far it's moved from rest, animated. Moving the root moves the
     /// whole character.
     pub moved: Channel<Point>,
+    /// What turning it does besides bending: a smart bone, as Moho's,
+    /// whose turn reshapes drawings or picks what a switch shows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<SmartAction>,
+}
+
+/// Something a smart bone does as it turns. Each is reached at `turn`
+/// degrees (either way round, by its sign), from nothing at rest.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum SmartAction {
+    /// Reshapes `layer`'s drawing toward its drawing `drawing` (by its
+    /// place), all the way by `turn`: a corrected elbow, a smile.
+    Morph { layer: LayerId, drawing: usize, turn: f32 },
+    /// Has switch folder `folder` show `layer` once turned past `turn`.
+    Switch { folder: LayerId, layer: LayerId, turn: f32 },
+}
+
+impl SmartAction {
+    /// How far into the action a bone turned `now` degrees is: 0 at rest,
+    /// 1 at the action's turn and beyond.
+    pub fn amount(&self, now: f32) -> f32 {
+        let turn = match *self {
+            SmartAction::Morph { turn, .. } | SmartAction::Switch { turn, .. } => turn,
+        };
+        if turn.abs() < 1e-3 { 0.0 } else { (now / turn).clamp(0.0, 1.0) }
+    }
+}
+
+/// Shapes, or points of a shape, bound to one bone, overriding how the
+/// rest of the layer's drawing follows the bones. `element` is the shape's
+/// place in the line art, or in the colour art; `anchors` are its points'
+/// places in its outline, or `None` for all of them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BonePoints {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub colour_art: bool,
+    pub element: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchors: Option<Vec<usize>>,
+    pub bone: usize,
+}
+
+/// Which bone one shape's points are bound to, if any.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum ShapeBones {
+    /// The layer's binding.
+    #[default]
+    Layer,
+    /// The whole shape follows one bone.
+    Whole(usize),
+    /// Each point (by its place in the outline) to a bone, or the layer's.
+    Points(Vec<Option<usize>>),
 }
 
 /// How a layer in a skeleton's folder follows the bones.
@@ -104,6 +156,7 @@ impl Bone {
             strength: (start.distance(end) * 0.5).max(10.0),
             turn: Channel::new(frame, 0.0),
             moved: Channel::new(frame, Point::ZERO),
+            actions: Vec::new(),
         }
     }
 
@@ -217,38 +270,61 @@ impl Skeleton {
         to
     }
 
-    /// Bends `elements` (whose points `to_rest` takes into the timeline at
-    /// rest, and `from_rest` back) as they're bound, in `pose`. Pictures,
-    /// paintings and text come back as they were: the renderer bends those
-    /// through a mesh (see [`Skeleton::carry`]).
+    /// Bends `elements` (whose points `to_rest` takes into the bones'
+    /// coordinates at rest, and `from_rest` back) as they're bound, in
+    /// `pose`: by `binding`, except for any shapes or points `pins` binds
+    /// to a bone of their own (one entry per element; missing ones follow
+    /// the layer). Pictures, paintings and text come back as they were:
+    /// the renderer bends those through a mesh (see [`LayerBend`]).
     pub fn bend_elements(
         &self,
         pose: &Pose,
         binding: BoneBinding,
         elements: &[Element],
+        pins: &[ShapeBones],
         to_rest: Affine,
         from_rest: Affine,
     ) -> Vec<Element> {
-        match binding {
-            BoneBinding::Unbound => elements.to_vec(),
-            BoneBinding::Bone(bone) => {
-                let Some(m) = pose.moves.get(bone) else { return elements.to_vec() };
-                let m = from_rest.pre_concat(*m).pre_concat(to_rest);
-                elements.iter().map(|e| e.transformed(m).unwrap_or_else(|| e.clone())).collect()
-            }
-            BoneBinding::Region => {
-                if self.bones.is_empty() {
-                    return elements.to_vec();
-                }
-                let shortest = self.bones.iter().map(Bone::length).fold(f32::MAX, f32::min);
-                // Short enough pieces to bend round a joint: a quarter of the
-                // shortest bone, measured where the drawing is (the layer may
-                // be scaled).
-                let piece = (shortest / 4.0 / to_rest.average_scale().max(1e-3)).max(1.0);
-                let bend = |p: Point| from_rest.apply(self.carry(pose, to_rest.apply(p)));
-                elements.iter().map(|e| bend_element(e, piece, &bend)).collect()
-            }
+        if self.bones.is_empty() {
+            return elements.to_vec();
         }
+        let shortest = self.bones.iter().map(Bone::length).fold(f32::MAX, f32::min);
+        // Short enough pieces to bend round a joint: a quarter of the
+        // shortest bone, measured where the drawing is (the layer may be
+        // scaled).
+        let piece = (shortest / 4.0 / to_rest.average_scale().max(1e-3)).max(1.0);
+        let follow = |bone: usize| pose.moves.get(bone).map(|m| from_rest.pre_concat(*m).pre_concat(to_rest));
+        // Where a point goes: with its own bone, or else as the layer does.
+        let bend = |bone: Option<usize>, p: Point| match bone.or(match binding {
+            BoneBinding::Bone(b) => Some(b),
+            _ => None,
+        }) {
+            Some(b) => follow(b).map_or(p, |m| m.apply(p)),
+            None if binding == BoneBinding::Region => from_rest.apply(self.carry(pose, to_rest.apply(p))),
+            None => p,
+        };
+        elements
+            .iter()
+            .enumerate()
+            .map(|(i, element)| match pins.get(i).unwrap_or(&ShapeBones::Layer) {
+                ShapeBones::Whole(bone) => match follow(*bone) {
+                    Some(m) => element.transformed(m).unwrap_or_else(|| element.clone()),
+                    None => element.clone(),
+                },
+                ShapeBones::Layer => match binding {
+                    BoneBinding::Unbound => element.clone(),
+                    BoneBinding::Bone(_) => {
+                        let m = follow(match binding {
+                            BoneBinding::Bone(b) => b,
+                            _ => 0,
+                        });
+                        m.and_then(|m| element.transformed(m)).unwrap_or_else(|| element.clone())
+                    }
+                    BoneBinding::Region => bend_element(element, piece, &[], &bend),
+                },
+                ShapeBones::Points(bones) => bend_element(element, piece, bones, &bend),
+            })
+            .collect()
     }
 
     /// Turns bone `index` and those it hangs from so its end reaches for
@@ -407,6 +483,9 @@ pub struct LayerBend<'a> {
     pub skeleton: &'a Skeleton,
     pub pose: Pose,
     pub binding: BoneBinding,
+    /// Shapes or points bound to bones of their own, one entry per shape
+    /// as shown (the colour art, then the line art).
+    pub pins: Vec<ShapeBones>,
     /// From the layer's coordinates to the bones', and back.
     pub to_bones: Affine,
     pub from_bones: Affine,
@@ -434,8 +513,49 @@ impl LayerBend<'_> {
 
     /// The layer's shapes, bent.
     pub fn elements(&self, elements: &[Element]) -> Vec<Element> {
-        self.skeleton.bend_elements(&self.pose, self.binding, elements, self.to_bones, self.from_bones)
+        self.skeleton.bend_elements(
+            &self.pose,
+            self.binding,
+            elements,
+            &self.pins,
+            self.to_bones,
+            self.from_bones,
+        )
     }
+}
+
+/// Which bone each shape showing in `drawing` (the colour art, then the
+/// line art) is bound to by its `bone_points`.
+fn pins_of(drawing: &crate::Drawing) -> Vec<ShapeBones> {
+    let colour = drawing.colour_art.len();
+    let mut pins = vec![ShapeBones::Layer; colour + drawing.elements.len()];
+    for bound in &drawing.bone_points {
+        let (index, element) = if bound.colour_art {
+            (bound.element, drawing.colour_art.get(bound.element))
+        } else {
+            (colour + bound.element, drawing.elements.get(bound.element))
+        };
+        let Some(element) = element else { continue };
+        let pin = &mut pins[index];
+        match &bound.anchors {
+            None => *pin = ShapeBones::Whole(bound.bone),
+            Some(anchors) => {
+                let count = element.shape.to_anchors().0.len();
+                if let ShapeBones::Whole(_) = pin {
+                    continue;
+                }
+                if !matches!(pin, ShapeBones::Points(_)) {
+                    *pin = ShapeBones::Points(vec![None; count]);
+                }
+                if let ShapeBones::Points(points) = pin {
+                    for &a in anchors.iter().filter(|&&a| a < count) {
+                        points[a] = Some(bound.bone);
+                    }
+                }
+            }
+        }
+    }
+    pins
 }
 
 impl crate::Document {
@@ -463,11 +583,13 @@ impl crate::Document {
     /// How the skeleton over `layer` bends it on `frame`, if it's bound to
     /// one that's posed away from rest.
     pub fn layer_bend(&self, layer: &crate::Layer, frame: u32) -> Option<LayerBend<'_>> {
-        if layer.bone_binding == BoneBinding::Unbound {
-            return None;
-        }
         let owner = self.skeleton_layer_of(layer)?;
         let skeleton = owner.skeleton.as_ref().filter(|s| !s.bones.is_empty() && !s.is_at_rest(frame))?;
+        let pins = layer.drawings.get(layer.drawing_index_at(frame)).map(pins_of).unwrap_or_default();
+        let pinned = pins.iter().any(|p| *p != ShapeBones::Layer);
+        if layer.bone_binding == BoneBinding::Unbound && !pinned {
+            return None;
+        }
         let from_space = self.bone_space(owner, frame).inverse()?;
         let to_bones = from_space.pre_concat(self.layer_matrix(layer, frame));
         let from_bones = to_bones.inverse()?;
@@ -475,21 +597,59 @@ impl crate::Document {
             skeleton,
             pose: skeleton.pose(frame),
             binding: layer.bone_binding,
+            pins,
             to_bones,
             from_bones,
         })
     }
 
-    /// What `layer` draws on `frame`, bent by its own deformers (see
-    /// [`crate::Layer::shown_elements`]) and then by the skeleton it's
-    /// bound to. Pictures and paintings come back unbent: the renderer
-    /// bends those through a mesh with [`Document::layer_bend`].
+    /// What `layer` draws on `frame`: as its own deformers bend it (see
+    /// [`crate::Layer::shown_elements`]), reshaped by any smart bone that
+    /// morphs it, and then bent by the skeleton it's bound to. Pictures and
+    /// paintings come back unbent: the renderer bends those through a mesh
+    /// with [`Document::layer_bend`].
     pub fn posed_elements<'a>(&self, layer: &'a crate::Layer, frame: u32) -> std::borrow::Cow<'a, [Element]> {
-        let shown = layer.shown_elements(frame);
+        let mut shown = layer.shown_elements(frame);
+        if let Some(skeleton) = self.skeleton_layer_of(layer).and_then(|o| o.skeleton.as_ref()) {
+            let from = layer.drawings.get(layer.drawing_index_at(frame));
+            for bone in &skeleton.bones {
+                let now = bone.turn.sample(frame as f32).unwrap_or(0.0);
+                for action in &bone.actions {
+                    let SmartAction::Morph { layer: target, drawing, .. } = *action else { continue };
+                    let amount = action.amount(now);
+                    let (Some(from), Some(to)) = (from, layer.drawings.get(drawing)) else { continue };
+                    if target == layer.id && amount > 0.0 {
+                        let morphed =
+                            crate::morph::morph(&shown, &to.shown(), (&from.hints, &to.hints), amount);
+                        shown = std::borrow::Cow::Owned(morphed);
+                    }
+                }
+            }
+        }
         match self.layer_bend(layer, frame) {
             Some(bend) => std::borrow::Cow::Owned(bend.elements(&shown)),
             None => shown,
         }
+    }
+
+    /// Which layer a smart bone has switch `folder` show on `frame`, if
+    /// one's turned far enough: the furthest-reaching that is.
+    pub fn smart_switch(&self, folder: &crate::Layer, frame: u32) -> Option<LayerId> {
+        let skeleton = self.skeleton_layer_of(folder).and_then(|o| o.skeleton.as_ref())?;
+        let mut best: Option<(f32, LayerId)> = None;
+        for bone in &skeleton.bones {
+            let now = bone.turn.sample(frame as f32).unwrap_or(0.0);
+            for action in &bone.actions {
+                let SmartAction::Switch { folder: target, layer, turn } = *action else { continue };
+                if target == folder.id
+                    && action.amount(now) >= 1.0
+                    && best.is_none_or(|(t, _)| turn.abs() > t)
+                {
+                    best = Some((turn.abs(), layer));
+                }
+            }
+        }
+        best.map(|(_, layer)| layer)
     }
 }
 
@@ -500,22 +660,33 @@ pub enum RestPart {
     End,
 }
 
-/// One shape bent point by point. A pencil line keeps its widths (cut
-/// along with it); anything else becomes a path.
-fn bend_element(element: &Element, piece: f32, bend: &dyn Fn(Point) -> Point) -> Element {
+/// One shape bent point by point, each point by the bone `bones` binds it
+/// to (by its place in the outline), or as the layer is bound where it
+/// has none. A pencil line keeps its widths; anything else becomes a path,
+/// cut into pieces first so it can bend round joints. A piece between two
+/// points bound to the same bone follows that bone too.
+fn bend_element(
+    element: &Element,
+    piece: f32,
+    bones: &[Option<usize>],
+    bend: &dyn Fn(Option<usize>, Point) -> Point,
+) -> Element {
     if !element.is_reshapable() {
         return element.clone();
     }
-    let bend_anchor = |a: Anchor| Anchor {
-        point: bend(a.point),
-        handle_in: bend(a.handle_in),
-        handle_out: bend(a.handle_out),
+    let bone_of = |i: usize| bones.get(i).copied().flatten();
+    let bend_anchor = |a: Anchor, bone: Option<usize>| Anchor {
+        point: bend(bone, a.point),
+        handle_in: bend(bone, a.handle_in),
+        handle_out: bend(bone, a.handle_out),
     };
     let shape = match &element.shape {
         // A pencil line is bent as it is, without cutting: its widths go
-        // one per anchor, and its anchors are close together already.
+        // one per anchor, and its anchors are close together already. Its
+        // points are its outline's, so it can only be bound whole.
         Shape::Line { path, widths } => {
-            let anchors: Vec<Anchor> = anchors_from_path(path).into_iter().map(bend_anchor).collect();
+            let anchors: Vec<Anchor> =
+                anchors_from_path(path).into_iter().map(|a| bend_anchor(a, None)).collect();
             match path_from_anchors(&anchors, path.closed) {
                 Some(path) => Shape::Line { path, widths: widths.clone() },
                 None => return element.clone(),
@@ -523,9 +694,36 @@ fn bend_element(element: &Element, piece: f32, bend: &dyn Fn(Point) -> Point) ->
         }
         shape => {
             let (anchors, closed) = shape.to_anchors();
-            let anchors: Vec<Anchor> =
-                subdivide(&anchors, closed, piece).into_iter().map(bend_anchor).collect();
-            match path_from_anchors(&anchors, closed) {
+            let count = if closed { anchors.len() } else { anchors.len().saturating_sub(1) };
+            let mut out: Vec<Anchor> = Vec::new();
+            for i in 0..count {
+                let next = (i + 1) % anchors.len();
+                let pieces = subdivide(&[anchors[i], anchors[next]], false, piece);
+                let last = pieces.len() - 1;
+                let shared = bone_of(i).filter(|b| bone_of(next) == Some(*b));
+                for (k, a) in pieces.into_iter().enumerate() {
+                    let bone = match k {
+                        0 => bone_of(i),
+                        k if k == last => bone_of(next),
+                        _ => shared,
+                    };
+                    let a = bend_anchor(a, bone);
+                    match out.last_mut() {
+                        // Where this segment starts is where the last ended.
+                        Some(previous) if k == 0 => previous.handle_out = a.handle_out,
+                        _ => out.push(a),
+                    }
+                }
+            }
+            if count == 0 {
+                out = anchors.iter().enumerate().map(|(i, a)| bend_anchor(*a, bone_of(i))).collect();
+            }
+            if closed && out.len() > 1 {
+                // Round the last segment and back to the first anchor.
+                let seam = out.pop().expect("checked above");
+                out[0].handle_in = seam.handle_in;
+            }
+            match path_from_anchors(&out, closed) {
                 Some(path) => Shape::Path(path),
                 None => return element.clone(),
             }
@@ -630,7 +828,7 @@ mod tests {
         // The layer's own coordinates are 200 to the right of the timeline's.
         let to_rest = Affine::translate(Point::new(200.0, 0.0));
         let from_rest = to_rest.inverse().unwrap();
-        let bent = skeleton.bend_elements(&pose, BoneBinding::Bone(1), &[hand], to_rest, from_rest);
+        let bent = skeleton.bend_elements(&pose, BoneBinding::Bone(1), &[hand], &[], to_rest, from_rest);
         let bounds = bent[0].shape.bounds();
         // The hand at the forearm's tip (200, 0) swings down to (100, 100).
         assert!(close(bounds.center(), Point::new(-100.0, 100.0)), "{bounds:?}");
@@ -654,5 +852,102 @@ mod tests {
         assert!(close(skeleton.bones[0].end, Point::new(100.0, 30.0)));
         assert!(close(skeleton.bones[1].start, Point::new(100.0, 30.0)));
         assert!(close(skeleton.bones[1].end, Point::new(200.0, 30.0)));
+    }
+
+    /// A document with the arm as a skeleton on a folder, and a 200×10
+    /// bar along it (0 to 200, centred on y 0) in the folder, by region.
+    fn rigged_bar() -> (crate::Document, LayerId, LayerId) {
+        use crate::{Color, Document, Style, TimelineId, Transform};
+        let mut doc = Document::default();
+        let bar = Element {
+            shape: Shape::Rect { width: 200.0, height: 10.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
+        };
+        let layer = doc.add_layer("Bar", vec![bar], 0, Transform::at(Point::new(100.0, 0.0)));
+        let folder = doc.add_folder(TimelineId::Main, &[layer]).unwrap();
+        doc.layer_mut(folder).unwrap().skeleton = Some(arm());
+        (doc, folder, layer)
+    }
+
+    fn outline_of(doc: &crate::Document, layer: LayerId, frame: u32) -> Vec<Point> {
+        let layer = doc.layer(layer).unwrap();
+        match &doc.posed_elements(layer, frame)[0].shape {
+            Shape::Path(path) => path.flatten(),
+            other => panic!("bent into a path, not {other:?}"),
+        }
+    }
+
+    #[test]
+    fn points_pinned_to_a_bone_follow_only_it() {
+        let (mut doc, folder, layer) = rigged_bar();
+        doc.layer_mut(folder).unwrap().skeleton.as_mut().unwrap().bones[1].turn.set(0, 90.0);
+        // The bar's right end (its outline's points 1 and 2, at x 100 in
+        // its own coordinates) pinned to the upper arm: it stays put.
+        doc.layer_mut(layer).unwrap().drawings[0].bone_points.push(BonePoints {
+            colour_art: false,
+            element: 0,
+            anchors: Some(vec![1, 2]),
+            bone: 0,
+        });
+        let points = outline_of(&doc, layer, 0);
+        assert!(points.iter().any(|p| p.distance(Point::new(100.0, -5.0)) < 1e-2), "the pinned end stays");
+    }
+
+    #[test]
+    fn a_shape_pinned_whole_moves_rigidly() {
+        let (mut doc, folder, layer) = rigged_bar();
+        doc.layer_mut(folder).unwrap().skeleton.as_mut().unwrap().bones[0].turn.set(0, 90.0);
+        doc.layer_mut(layer).unwrap().drawings[0].bone_points.push(BonePoints {
+            colour_art: false,
+            element: 0,
+            anchors: None,
+            bone: 0,
+        });
+        // Turned about the shoulder at (0, 0): the bar hangs straight down,
+        // unbent (in its own coordinates, 100 to the right of the bones').
+        let layer = doc.layer(layer).unwrap();
+        let bounds = doc.posed_elements(layer, 0)[0].shape.bounds();
+        assert!((bounds.width() - 10.0).abs() < 1e-2 && (bounds.height() - 200.0).abs() < 1e-2, "{bounds:?}");
+    }
+
+    #[test]
+    fn a_smart_bone_morphs_a_drawing_as_it_turns() {
+        let (mut doc, folder, layer) = rigged_bar();
+        // A second drawing: the bar twice as tall.
+        let mut tall = doc.layer(layer).unwrap().drawings[0].clone();
+        tall.elements[0].shape = Shape::Rect { width: 200.0, height: 30.0, corner_radius: 0.0 };
+        let drawing = doc.layer_mut(layer).unwrap().add_drawing(tall);
+        let skeleton = doc.layer_mut(folder).unwrap().skeleton.as_mut().unwrap();
+        // Bind the bar to nothing, so only the morph shows.
+        skeleton.bones[1].actions.push(SmartAction::Morph { layer, drawing, turn: 40.0 });
+        skeleton.bones[1].turn.set(10, 20.0);
+        doc.layer_mut(layer).unwrap().bone_binding = BoneBinding::Unbound;
+        let height = |doc: &crate::Document, frame| {
+            doc.posed_elements(doc.layer(layer).unwrap(), frame)[0].shape.bounds().height()
+        };
+        assert!((height(&doc, 0) - 10.0).abs() < 1e-2);
+        // Turned 20° of the action's 40°: halfway to the tall bar.
+        assert!((height(&doc, 10) - 20.0).abs() < 0.5, "{}", height(&doc, 10));
+    }
+
+    #[test]
+    fn a_smart_bone_switches_once_turned_far_enough() {
+        use crate::{TimelineId, Transform};
+        let (mut doc, folder, _) = rigged_bar();
+        let open = doc.add_layer("Open", Vec::new(), 0, Transform::default());
+        let fist = doc.add_layer("Fist", Vec::new(), 0, Transform::default());
+        let hand = doc.add_folder(TimelineId::Main, &[open, fist]).unwrap();
+        doc.set_folder(hand, Some(folder));
+        doc.layer_mut(hand).unwrap().switch = true;
+        let skeleton = doc.layer_mut(folder).unwrap().skeleton.as_mut().unwrap();
+        skeleton.bones[1].actions.push(SmartAction::Switch { folder: hand, layer: open, turn: -30.0 });
+        skeleton.bones[1].turn.set(0, 0.0);
+        skeleton.bones[1].turn.set(10, -45.0);
+        let showing = |doc: &crate::Document, frame| doc.switch_choice(doc.layer(hand).unwrap(), frame);
+        // At rest the switch's own choice (its top layer, the fist); turned
+        // the action's way far enough, the open hand.
+        assert_eq!(showing(&doc, 0), Some(fist));
+        assert_eq!(showing(&doc, 10), Some(open));
+        assert!(!doc.shows(doc.layer(fist).unwrap(), 10));
     }
 }

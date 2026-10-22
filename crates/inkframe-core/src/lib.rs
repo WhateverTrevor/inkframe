@@ -53,6 +53,7 @@ mod ruler_guides;
 mod selection;
 mod shape;
 mod skeleton;
+mod switch;
 mod symbol;
 mod template;
 mod text;
@@ -108,7 +109,10 @@ pub use retouch::{Retouch, RetouchStroke, ToneRange};
 pub use ruler_guides::{RulerGuide, snap_box, snap_point, snap_value};
 pub use selection::{Combine, Selection};
 pub use shape::{Dash, GradientStop, LineCap, LineJoin, Path, Segment, Shape, ShapeGradient, Stroke, Style};
-pub use skeleton::{Bone, BoneBinding, LayerBend, Pose, RestPart, Skeleton};
+pub use skeleton::{
+    Bone, BoneBinding, BonePoints, LayerBend, Pose, RestPart, ShapeBones, Skeleton, SmartAction,
+};
+pub use switch::SwitchKey;
 pub use symbol::{ConvertError, Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId, SymbolSwap};
 pub use template::{TEMPLATE_EXTENSION, Template};
 pub use text::{DEFAULT_FAMILY, Font, Text, TextAlign};
