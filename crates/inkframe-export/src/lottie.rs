@@ -234,7 +234,7 @@ impl Lottie<'_> {
         next: &mut ContentIndex,
     ) -> Vec<Value> {
         let doc = self.doc;
-        let shown = |t: usize| layer.visible && layer.is_shown_at(frames[t]);
+        let shown = |t: usize| layer.visible && self.doc.shows(layer, frames[t]);
         let opacity = |t: usize| {
             let f = frames[t];
             (doc.pose(layer, f).opacity * doc.camera_fade(layer, f as f32)).clamp(0.0, 1.0) * 100.0
@@ -483,7 +483,7 @@ impl Lottie<'_> {
         let size = inkframe_render::output_size(doc, scale);
         let mut out = Vec::new();
         for (t, &frame) in frames.iter().enumerate() {
-            if !layer.visible || !layer.is_shown_at(frame) {
+            if !layer.visible || !self.doc.shows(layer, frame) {
                 continue;
             }
             let to_image = Affine::scale(scale, scale);

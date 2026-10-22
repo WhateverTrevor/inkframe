@@ -213,7 +213,7 @@ fn symbol_bounds_at(
     symbol
         .layers
         .iter()
-        .filter(|l| l.is_shown_at(frame))
+        .filter(|l| doc.shows(l, frame))
         .filter_map(|l| {
             let local = doc.layer_bounds(l, frame)?;
             let to_symbol = doc.layer_matrix(l, frame);
@@ -396,8 +396,9 @@ fn render_layers(
     // Layers are stored bottom-first, so a plain loop paints back to front.
     // Guides are only drawn while editing, and masks only when one is being
     // shown for positioning; otherwise a mask just shapes what it masks.
+    // A switch folder shows one of its layers (see `switch.rs`).
     let drawn = |l: &&Layer| {
-        l.is_shown_at(frame)
+        doc.shows(l, frame)
             && Some(l.id) != skip
             && (style.show_guides || !l.guide)
             && (!l.mask || style.show_mask == Some(l.id))
@@ -774,11 +775,8 @@ fn draw_layer(
         (pixels && bend.is_some())
             || inkframe_core::Rect::bounding(corners).is_some_and(|b| overlaps(b, image))
     };
-    let shown = layer.shown_elements(frame);
-    let elements = match &bend {
-        Some(bend) => std::borrow::Cow::Owned(bend.elements(&shown)),
-        None => shown,
-    };
+    // Shapes as posed: reshaped by smart bones and bent by the skeleton.
+    let elements = doc.posed_elements(layer, frame);
     // A layer bound to one bone moves as a whole, so its pixels can be drawn
     // through one matrix; one bound by region needs them bent piece by piece.
     let rigid = bend.as_ref().and_then(|b| b.rigid());

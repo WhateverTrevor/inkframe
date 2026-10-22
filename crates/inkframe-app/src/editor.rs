@@ -292,6 +292,10 @@ pub struct Editor {
     /// The bone picked in the skeleton being worked on (see `skeleton.rs`):
     /// the one new bones hang from.
     pub selected_bone: Option<usize>,
+    /// The point picked with the Subselection tool (or the Pen), as the
+    /// stage last saw it: its layer, its shape in the line art, and its
+    /// place in the shape's outline. For pinning it to a bone.
+    pub picked_anchor: Option<(LayerId, usize, usize)>,
     /// Frames picked in the timeline (first and last, either way round),
     /// for the frame commands (see `frame_commands.rs`).
     pub frame_range: Option<(u32, u32)>,
@@ -374,6 +378,7 @@ impl Editor {
             inside: None,
             lattice: None,
             selected_bone: None,
+            picked_anchor: None,
             frame_range: None,
             edit_multiple: false,
             show_rulers: false,

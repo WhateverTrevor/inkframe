@@ -247,6 +247,9 @@ impl StageView {
             }
         }
 
+        if adding && let (Some(id), Some(bone)) = (active, editor.selected_bone) {
+            draw_pins(painter, editor, view, id, bone);
+        }
         for d in &drawn {
             let picked = Some(d.skeleton) == active && editor.selected_bone == Some(d.bone);
             let colour = if picked { SELECTION } else { BONE };
@@ -290,6 +293,44 @@ impl StageView {
             && (adding || self.bone_drag.is_some() || cursor != CursorIcon::Default)
         {
             ui.ctx().set_cursor_icon(cursor);
+        }
+    }
+}
+
+/// Marks what's pinned to bone `bone` of skeleton `id`: shapes pinned
+/// whole get their outline traced, single points a square.
+fn draw_pins(painter: &egui::Painter, editor: &Editor, view: View, id: LayerId, bone: usize) {
+    for member in editor.skeleton_members(id) {
+        let Some(layer) = editor.doc.layer(member) else { continue };
+        let Some(drawing) = layer.drawings.get(layer.drawing_index_at(editor.frame)) else { continue };
+        let to_screen = |p: Point| view.to_screen(editor.doc.layer_matrix(layer, editor.frame).apply(p));
+        for pin in drawing.bone_points.iter().filter(|p| p.bone == bone) {
+            let part = if pin.colour_art { &drawing.colour_art } else { &drawing.elements };
+            let Some(element) = part.get(pin.element) else { continue };
+            let (anchors, closed) = element.shape.to_anchors();
+            match &pin.anchors {
+                None => {
+                    let points: Vec<Pos2> = anchors.iter().map(|a| to_screen(a.point)).collect();
+                    let stroke = Stroke::new(2.0, BONE);
+                    if closed {
+                        painter.add(egui::Shape::closed_line(points, stroke));
+                    } else {
+                        painter.add(egui::Shape::line(points, stroke));
+                    }
+                }
+                Some(indices) => {
+                    for a in indices.iter().filter_map(|&i| anchors.get(i)) {
+                        let square = Rect::from_center_size(to_screen(a.point), egui::Vec2::splat(7.0));
+                        painter.rect_filled(square, 1.0, BONE);
+                        painter.rect_stroke(
+                            square,
+                            1.0,
+                            Stroke::new(1.0, Color32::WHITE),
+                            egui::StrokeKind::Outside,
+                        );
+                    }
+                }
+            }
         }
     }
 }

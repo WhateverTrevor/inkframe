@@ -710,6 +710,29 @@ after the Harmony features (palettes to master controllers).
     D maybe shared points. Not yet: bent rasters in SVG/Lottie export
     (they stay unbent there), skeleton keys draggable on the folder row,
     binding weights painted by hand.
+97. Moho rigging Phase B (format v36): core `switch.rs` (`Layer::switch`,
+    `switch_keys`, `folder_children`, `switch_choice` (smart bone >
+    keys > topmost), `switched_off`, `shows` — used by render_layers,
+    symbol bounds, SVG, Lottie, `hit_test_in`), `skeleton.rs`
+    (`Bone::actions: Vec<SmartAction>`: `Morph {layer, drawing, turn}`
+    applied in `posed_elements` via `morph::morph` before bending,
+    `Switch {folder, layer, turn}` via `Document::smart_switch`;
+    `amount` = turn/now clamped 0..1 by sign), pins
+    (`Drawing::bone_points: Vec<BonePoints>` → `pins_of` → `ShapeBones`
+    per shown shape; `bend_elements` takes `pins`; `bend_element` cuts per
+    segment so pieces between same-bone points follow it; pencil lines
+    pin only whole). `Drawing::shape_removed/shapes_inserted` keep pins on
+    their shapes (called by delete_shapes, break_apart,
+    replace_in_drawing). The renderer now takes shapes from
+    `posed_elements`. App: `skeleton.rs` (`pin_shapes`, `pin_point`,
+    `pinned_bone`, `shapes_pinned_bone`, `skeleton_members`,
+    `new_switch`, delete_bone renumbers pins), `Editor::picked_anchor`
+    (mirrored from the stage's anchor selection), inspector
+    (`pin_controls`, `smart_bone_section`, folder `switch_controls`),
+    pins marked by `draw_pins` with Add Bone, switch/skeleton keys on the
+    folder row. Hook `INKFRAME_SCREENSHOT_SMART=1`. Not yet: reversing
+    frames leaves switch keys; smart actions on layer transforms or bone
+    angles; pins on pencil-line points; an action timeline as Moho's.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

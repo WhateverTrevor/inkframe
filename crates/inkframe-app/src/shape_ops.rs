@@ -72,8 +72,12 @@ impl Editor {
                 _ => continue,
             };
             if let Some(layer) = self.doc.layer_mut(layer) {
-                let elements = &mut layer.drawings[drawing].elements;
-                elements.splice(index..=index, pieces);
+                let count = pieces.len();
+                let drawing = &mut layer.drawings[drawing];
+                drawing.elements.splice(index..=index, pieces);
+                // Bindings to the shape broken apart go; later ones move down.
+                drawing.shape_removed(false, index);
+                drawing.shapes_inserted(false, index, count);
             }
             broken += 1;
         }
@@ -97,6 +101,7 @@ impl Editor {
         let at = at.min(part.len());
         let count = shapes.len();
         part.splice(at..at, shapes);
+        layer.drawings[index].shapes_inserted(colour_art, at, count);
         count
     }
 }

@@ -2125,8 +2125,11 @@ impl StageView {
     /// Drops the anchor selection if it no longer points at something that
     /// exists (after undo, deleting points, or selecting another layer), or
     /// if the Subselection tool isn't active.
-    fn validate_anchor_selection(&mut self, editor: &Editor) {
-        let Some(target) = self.anchor_selection else { return };
+    fn validate_anchor_selection(&mut self, editor: &mut Editor) {
+        let Some(target) = self.anchor_selection else {
+            editor.picked_anchor = None;
+            return;
+        };
         let picking = editor.tool == Tool::Subselect || (editor.tool == Tool::Pen && self.pen.is_none());
         let still_valid = picking
             && editor.selection == Some(target.layer)
@@ -2136,6 +2139,7 @@ impl StageView {
         if !still_valid {
             self.anchor_selection = None;
         }
+        editor.picked_anchor = self.anchor_selection.map(|a| (a.layer, a.element, a.index));
     }
 
     /// The selected layer's anchors and handles as they appear on screen:

@@ -115,6 +115,7 @@ enum Command {
     StartLattice(crate::envelope::LatticeKind),
     // Skeletons (see `skeleton.rs`).
     NewSkeleton,
+    NewSwitch,
     DeleteBone,
     FinishLattice,
     SwapSymbol,
@@ -880,6 +881,7 @@ impl InkframeApp {
             }
             Command::FinishLattice => editor.finish_lattice(),
             Command::NewSkeleton => editor.new_skeleton(),
+            Command::NewSwitch => editor.new_switch(),
             Command::DeleteBone => {
                 editor.delete_bone();
             }
@@ -1277,6 +1279,7 @@ impl InkframeApp {
                 });
                 item(ui, "New Folder", None, Command::NewFolder, true);
                 item(ui, "New Skeleton", None, Command::NewSkeleton, true);
+                item(ui, "New Switch", None, Command::NewSwitch, true);
                 ui.separator();
                 let hints = self.editor.shape_tween_drawings().is_some();
                 item(ui, "Add Shape Hint", Some(shortcuts::ADD_SHAPE_HINT), Command::AddShapeHint, hints);

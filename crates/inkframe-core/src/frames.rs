@@ -41,6 +41,12 @@ impl Layer {
             .collect();
         self.symbol_swaps.sort_by_key(|swap| swap.frame);
         self.symbol_swaps.dedup_by_key(|swap| swap.frame);
+        self.switch_keys = std::mem::take(&mut self.switch_keys)
+            .into_iter()
+            .filter_map(|key| Some(crate::SwitchKey { frame: map(key.frame)?, ..key }))
+            .collect();
+        self.switch_keys.sort_by_key(|key| key.frame);
+        self.switch_keys.dedup_by_key(|key| key.frame);
         self.shape_tweens.retain_mut(|tween| match map(tween.end) {
             Some(end) => {
                 tween.end = end;
