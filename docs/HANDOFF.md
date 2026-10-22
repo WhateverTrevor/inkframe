@@ -869,6 +869,18 @@ after the Harmony features (palettes to master controllers).
     (`target/web-check/buttons.html`): stops at the end, Replay replays,
     Pause holds. Not yet: frame actions don't move with Insert/Remove
     Frames; button over/down states as symbol frames; sound.
+112. Discoverability pass: `context_bar.rs` (above each stage, drawn in
+    `show_area`'s Kind::Stage before the stage; returns `Command`s run by
+    `InkframeApp::execute`; per-tool actions, under-way Finish/Cancel,
+    right-hand view switches), `command_finder.rs` (`CommandFinder` window,
+    ⌘K `FIND_COMMAND`, menu bar search button, Help menu; `entries()`
+    hand-written: keep it in step when adding menu commands; `Command`
+    is now `pub(crate)` with `OpenFinder` and `UseTool`), `Tool::description`
+    (toolbar tips list the slot's other tools), new icons (Search, Symbol,
+    Distort, Envelope, Combine, BreakApart, RigSetup, Perspective, Ruler,
+    StepOut, Inbetween, Check, Cross) and `icons::LabelledButton`. Hook
+    `INKFRAME_SCREENSHOT_FINDER=query`. Ideas not done: icons in menus,
+    collapsible Properties sections with icons, a first-run tour.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

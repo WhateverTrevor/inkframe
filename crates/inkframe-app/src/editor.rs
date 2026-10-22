@@ -126,6 +126,45 @@ impl Tool {
         }
     }
 
+    /// What the tool does, in a line: for its tooltip and the context bar.
+    pub fn description(self) -> &'static str {
+        match self {
+            Tool::Select => {
+                "Click a layer to pick it; drag to move, handles to scale and turn. Double-click to work on its shapes"
+            }
+            Tool::Subselect => {
+                "Drag a shape's points and their handles. Alt-drag a point to pull curve handles out of it"
+            }
+            Tool::Width => "Drag sideways from a pencil line to make it wider or narrower there",
+            Tool::Pen => {
+                "Click for corners, drag for curves; click the first point to close. Edits points between paths"
+            }
+            Tool::Rectangle => "Drag to draw a rectangle; Shift for a square",
+            Tool::Ellipse => "Drag to draw an oval; Shift for a circle",
+            Tool::Pencil => "Draw freehand lines that follow the pen's pressure",
+            Tool::Text => "Click to type on the stage",
+            Tool::Bone => "Drag a bone or a rig's layer to pose it; joints above turn to follow",
+            Tool::AddBone => "Drag to draw a skeleton's bones; each new one hangs from the last",
+            Tool::Camera => "Drag to pan the camera, Shift-drag to turn it, Alt-drag to zoom",
+            Tool::Brush => "Paint on a paint layer; Alt-click picks a colour",
+            Tool::Eraser => "Rub paint away",
+            Tool::Eyedropper => "Click to pick a colour from the stage",
+            Tool::PaintBucket => "Fill an area with colour; on drawn lines, fills what they enclose",
+            Tool::Gradient => "Drag to lay a gradient across the selection or the canvas",
+            Tool::Smudge => "Push paint around, as with a finger",
+            Tool::Blur => "Soften the paint under the brush",
+            Tool::Sharpen => "Crisp up the paint under the brush",
+            Tool::Dodge => "Lighten the paint under the brush",
+            Tool::Burn => "Darken the paint under the brush",
+            Tool::CloneStamp => "Alt-click where to copy from, then paint a copy elsewhere",
+            Tool::RectMarquee => "Drag a rectangle to choose which pixels the paint tools change",
+            Tool::EllipseMarquee => "Drag an oval to choose which pixels the paint tools change",
+            Tool::Lasso => "Draw round the pixels the paint tools may change",
+            Tool::PolygonLasso => "Click corners round the pixels the paint tools may change",
+            Tool::MagicWand => "Click an area of one colour to choose it",
+        }
+    }
+
     /// Whether the tool selects pixels.
     pub fn selects(self) -> bool {
         matches!(

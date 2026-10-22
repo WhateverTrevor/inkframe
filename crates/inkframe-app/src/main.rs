@@ -16,6 +16,8 @@ mod batch_dialog;
 mod bones_panel;
 mod cli;
 mod cli_script;
+mod command_finder;
+mod context_bar;
 mod convert;
 mod depth_view;
 mod easing_editor;

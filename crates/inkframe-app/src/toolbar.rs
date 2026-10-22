@@ -72,11 +72,14 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
 fn group_button(ui: &mut egui::Ui, editor: &mut Editor, group: &'static [Tool]) {
     let shown = if group.contains(&editor.tool) { editor.tool } else { editor.slot_choice(group) };
     let key = shortcuts::tool_key(shown).name();
-    let hint = if group.len() > 1 {
-        format!("{} ({key}; Shift+{key} for the others, or right-click)", shown.name())
+    // Its name and key, what it does, and how to reach the others in the slot.
+    let others = if group.len() > 1 {
+        let names: Vec<&str> = group.iter().filter(|&&t| t != shown).map(|t| t.name()).collect();
+        format!("\n\nAlso here: {} (Shift+{key}, or right-click)", names.join(", "))
     } else {
-        format!("{} ({key})", shown.name())
+        String::new()
     };
+    let hint = format!("{}   {key}\n{}{others}", shown.name(), shown.description());
     let response = tool_button(ui, shown, group.contains(&editor.tool), group.len() > 1).on_hover_text(hint);
     if response.clicked() {
         editor.use_tool(shown);
@@ -163,7 +166,7 @@ fn arrow_outline(at: impl Fn(f32, f32) -> Pos2) -> Vec<Pos2> {
         .collect()
 }
 
-fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) {
+pub(crate) fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) {
     // Map from a 0–1 unit square into the icon's rectangle.
     let at = |x: f32, y: f32| pos2(r.left() + x * r.width(), r.top() + y * r.height());
     match tool {

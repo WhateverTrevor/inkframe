@@ -624,7 +624,7 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     }
     // What the layer does when clicked, in a web page export.
     ui.horizontal(|ui| {
-        ui.label("Button").on_hover_text(
+        ui.label("Web button").on_hover_text(
             "In a Web Page export, clicking the layer does this, and it lights up under the pointer, as Animate's buttons",
         );
         web_action_editor(ui, "layer button", &mut layer.button, last_frame);
