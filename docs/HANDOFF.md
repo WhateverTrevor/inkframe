@@ -733,6 +733,21 @@ after the Harmony features (palettes to master controllers).
     folder row. Hook `INKFRAME_SCREENSHOT_SMART=1`. Not yet: reversing
     frames leaves switch keys; smart actions on layer transforms or bone
     angles; pins on pencil-line points; an action timeline as Moho's.
+98. Moho rigging Phase C (format v37): `Bone::limits`
+    (`RotationLimits`, clamped in `turn_at` and in `reach`), `stretch:
+    Option<Channel<f32>>` + `squash` (across = 1/stretch, area kept),
+    `dynamics: Option<Dynamics {spring, damping, limit}>`. `Skeleton::place`
+    builds each bone: children are carried by the parent's rigid matrix
+    translated to where its skin takes their start (`Pose::rigid`), so
+    they follow a stretched end without stretching. `pose` simulates a
+    tip spring (Verlet-ish, length-constrained, swing clamped) from
+    `frame - SETTLE` (240) if any bone has dynamics; `is_at_rest` is false
+    for such a skeleton unless nothing ever moves. App:
+    `Editor::stretch_bone`, `BoneDrag::Stretch` (Shift with the Bone tool),
+    `draw_limits` wedge for the picked bone, inspector rows (Stretch, Keep
+    area, Limits, Dynamics + sliders). Hook `INKFRAME_SCREENSHOT_DYNAMICS=1`.
+    Not yet: target bones, pose caching (dynamics re-simulate per call;
+    fine at present sizes), Phase D (shared points), only if wanted.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

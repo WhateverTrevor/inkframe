@@ -640,6 +640,50 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                     bone.turn.set(frame, turn);
                 }
                 ui.end_row();
+                ui.label("Stretch").on_hover_text("How long it is against how it was drawn; Shift-drag it with the Bone tool");
+                let mut stretch = bone.stretch.as_ref().and_then(|c| c.sample(frame as f32)).unwrap_or(1.0) * 100.0;
+                if ui.add(DragValue::new(&mut stretch).range(5.0..=2000.0).speed(1.0).suffix("%")).changed() {
+                    let channel = bone.stretch.get_or_insert_with(|| inkframe_core::Channel::new(0, 1.0));
+                    channel.set(frame, stretch / 100.0);
+                }
+                ui.end_row();
+                ui.label("");
+                ui.checkbox(&mut bone.squash, "Keep area").on_hover_text(
+                    "Stretching it longer makes it thinner, and squashing it fatter, as a bouncing ball does",
+                );
+                ui.end_row();
+                ui.label("Limits").on_hover_text("How far it may turn from rest, in degrees");
+                ui.horizontal(|ui| {
+                    let mut limited = bone.limits.is_some();
+                    if ui.checkbox(&mut limited, "").changed() {
+                        bone.limits = limited.then_some(inkframe_core::RotationLimits { min: -90.0, max: 90.0 });
+                    }
+                    if let Some(limits) = &mut bone.limits {
+                        ui.add(DragValue::new(&mut limits.min).range(-360.0..=360.0).speed(1.0).suffix("°"));
+                        ui.label("to");
+                        ui.add(DragValue::new(&mut limits.max).range(-360.0..=360.0).speed(1.0).suffix("°"));
+                    }
+                });
+                ui.end_row();
+                ui.label("Dynamics").on_hover_text(
+                    "It swings after the bones it hangs from, overshoots and settles, as hair or a tail does",
+                );
+                let mut swings = bone.dynamics.is_some();
+                if ui.checkbox(&mut swings, "").changed() {
+                    bone.dynamics = swings.then(inkframe_core::Dynamics::default);
+                }
+                ui.end_row();
+                if let Some(dynamics) = &mut bone.dynamics {
+                    ui.label("  Spring").on_hover_text("How hard it's pulled back to its pose: low is floppy");
+                    ui.add(egui::Slider::new(&mut dynamics.spring, 0.01..=1.0));
+                    ui.end_row();
+                    ui.label("  Damping").on_hover_text("How quickly its swing dies away");
+                    ui.add(egui::Slider::new(&mut dynamics.damping, 0.0..=1.0));
+                    ui.end_row();
+                    ui.label("  Swing").on_hover_text("The furthest it may swing from its pose");
+                    ui.add(egui::Slider::new(&mut dynamics.limit, 0.0..=180.0).suffix("°"));
+                    ui.end_row();
+                }
             });
             delete = ui.small_button("Delete Bone").clicked();
         }

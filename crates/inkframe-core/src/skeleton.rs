@@ -69,6 +69,41 @@ pub struct Bone {
     /// whose turn reshapes drawings or picks what a switch shows.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<SmartAction>,
+    /// How far it may turn, in degrees from rest. `None` is free.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<crate::RotationLimits>,
+    /// How long it is against its rest length (1 is as drawn), animated:
+    /// squash and stretch. `None` never stretches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stretch: Option<Channel<f32>>,
+    /// Stretching makes it thinner as it gets longer, and fatter as it gets
+    /// shorter, so what it bends keeps its size, as a squashed ball does.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub squash: bool,
+    /// The bone swings after the bones it hangs from, overshoots and settles,
+    /// as hair, a tail or an antenna does. `None` follows exactly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamics: Option<Dynamics>,
+}
+
+/// How a bone with dynamics swings after the bones it hangs from (see
+/// [`Skeleton::pose`]).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Dynamics {
+    /// How hard it's pulled back to where it's posed, each frame, from 0
+    /// (not at all: it trails behind forever) to 1 (straight away).
+    pub spring: f32,
+    /// How much of its swing it loses each frame, from 0 (it swings on and
+    /// on) to 1 (it doesn't swing at all).
+    pub damping: f32,
+    /// The furthest it may swing from where it's posed, in degrees.
+    pub limit: f32,
+}
+
+impl Default for Dynamics {
+    fn default() -> Self {
+        Self { spring: 0.2, damping: 0.15, limit: 60.0 }
+    }
 }
 
 /// Something a smart bone does as it turns. Each is reached at `turn`
@@ -142,7 +177,18 @@ impl BoneBinding {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pose {
     pub moves: Vec<Affine>,
+    /// The same without the stretching: how each bone carries the bones
+    /// that hang from it, which follow its end but aren't stretched.
+    rigid: Vec<Affine>,
 }
+
+/// How many frames a bone with dynamics is simulated for before the one
+/// asked for, from rest. Long enough for any swing to have settled, so the
+/// pose doesn't depend on how far into the scene the frame is.
+const SETTLE: u32 = 240;
+
+/// What `pose_with` needs to place one bone: its turn, move and stretch.
+type Placing = (f32, Point, f32);
 
 impl Bone {
     /// A bone from `start` to `end` at rest, hanging from `parent`, reaching
@@ -157,7 +203,26 @@ impl Bone {
             turn: Channel::new(frame, 0.0),
             moved: Channel::new(frame, Point::ZERO),
             actions: Vec::new(),
+            limits: None,
+            stretch: None,
+            squash: false,
+            dynamics: None,
         }
+    }
+
+    /// Its turn on `frame`, kept within its limits.
+    fn moved_at(&self, frame: f32) -> Point {
+        self.moved.sample(frame).unwrap_or(Point::ZERO)
+    }
+
+    fn turn_at(&self, frame: f32) -> f32 {
+        let turn = self.turn.sample(frame).unwrap_or(0.0);
+        self.limits.map_or(turn, |l| l.clamp(turn))
+    }
+
+    /// How stretched it is on `frame`.
+    fn stretch_at(&self, frame: f32) -> f32 {
+        self.stretch.as_ref().and_then(|s| s.sample(frame)).unwrap_or(1.0).max(0.01)
     }
 
     pub fn length(&self) -> f32 {
@@ -195,33 +260,97 @@ impl Skeleton {
         chain
     }
 
-    /// Where every bone is on `frame`.
+    /// Where every bone is on `frame`. Bones with dynamics are simulated
+    /// up to it, swinging after the bones they hang from.
     pub fn pose(&self, frame: u32) -> Pose {
-        self.pose_with(|_, bone| {
-            (
-                bone.turn.sample(frame as f32).unwrap_or(0.0),
-                bone.moved.sample(frame as f32).unwrap_or(Point::ZERO),
-            )
-        })
+        let at = |bone: &Bone, f: u32| {
+            (bone.turn_at(f as f32), bone.moved_at(f as f32), bone.stretch_at(f as f32))
+        };
+        if self.bones.iter().all(|b| b.dynamics.is_none()) {
+            return self.pose_with(|_, bone| at(bone, frame));
+        }
+        // Each swinging bone's tip, where it's got to and how fast it's going.
+        let mut tips: Vec<Option<(Point, Point)>> = vec![None; self.bones.len()];
+        let mut pose = Pose { moves: Vec::new(), rigid: Vec::new() };
+        for f in frame.saturating_sub(SETTLE)..=frame {
+            pose = Pose {
+                moves: Vec::with_capacity(self.bones.len()),
+                rigid: Vec::with_capacity(self.bones.len()),
+            };
+            for (index, bone) in self.bones.iter().enumerate() {
+                let (turn, moved, stretch) = at(bone, f);
+                let (skin, rigid) = self.place(index, &pose, turn, moved, stretch);
+                let Some(dynamics) = bone.dynamics else {
+                    pose.moves.push(skin);
+                    pose.rigid.push(rigid);
+                    continue;
+                };
+                // Where it's posed to be, and where its tip has got to: pulled
+                // toward the posed tip like a weight on a spring, but kept the
+                // bone's length from its start.
+                let (start, target) = (skin.apply(bone.start), skin.apply(bone.end));
+                let (was, speed) = tips[index].unwrap_or((target, Point::ZERO));
+                let speed = speed * (1.0 - dynamics.damping.clamp(0.0, 1.0))
+                    + (target - was) * dynamics.spring.clamp(0.0, 1.0);
+                let mut tip = was + speed;
+                let (reach, along) = (target.distance(start), tip - start);
+                if along.length() > 1e-4 {
+                    tip = start + along * (reach / along.length());
+                }
+                let mut swing = angle_between(target - start, tip - start);
+                let limit = dynamics.limit.abs();
+                if swing.abs() > limit {
+                    swing = swing.clamp(-limit, limit);
+                    tip = start + rotate_by(target - start, swing);
+                }
+                tips[index] = Some((tip, tip - was));
+                let (skin, rigid) = self.place(index, &pose, turn + swing, moved, stretch);
+                pose.moves.push(skin);
+                pose.rigid.push(rigid);
+            }
+        }
+        pose
     }
 
-    /// Where every bone is with the turn and move `posed` gives each (by
-    /// its place).
-    fn pose_with(&self, posed: impl Fn(usize, &Bone) -> (f32, Point)) -> Pose {
-        let mut moves: Vec<Affine> = Vec::with_capacity(self.bones.len());
+    /// Where every bone is with the turn, move and stretch `posed` gives
+    /// each (by its place).
+    fn pose_with(&self, posed: impl Fn(usize, &Bone) -> Placing) -> Pose {
+        let mut pose =
+            Pose { moves: Vec::with_capacity(self.bones.len()), rigid: Vec::with_capacity(self.bones.len()) };
         for (index, bone) in self.bones.iter().enumerate() {
-            let carried = self.parent_of(index).map_or(Affine::IDENTITY, |p| moves[p]);
-            let (turn, moved) = posed(index, bone);
-            // Posed: carried by the bone it hangs from, then moved and
-            // turned about its own start.
-            let frame = carried.pre_concat(
-                Affine::translate(bone.start + moved)
-                    .pre_concat(Affine::rotate(bone.rest_angle() + turn.to_radians())),
-            );
-            let undo_rest = bone.rest_frame().inverse().unwrap_or(Affine::IDENTITY);
-            moves.push(frame.pre_concat(undo_rest));
+            let (turn, moved, stretch) = posed(index, bone);
+            let (skin, rigid) = self.place(index, &pose, turn, moved, stretch);
+            pose.moves.push(skin);
+            pose.rigid.push(rigid);
         }
-        Pose { moves }
+        pose
+    }
+
+    /// Places bone `index`, the bones before it placed in `pose` already:
+    /// carried by the bone it hangs from, then moved, turned about its own
+    /// start and stretched along itself. Returns the matrix that takes a
+    /// point from rest to where it goes, and the same without the stretch.
+    fn place(&self, index: usize, pose: &Pose, turn: f32, moved: Point, stretch: f32) -> (Affine, Affine) {
+        let bone = &self.bones[index];
+        // A bone hangs from where its parent has taken its start, stretched
+        // or not, but turns with the parent unstretched, so stretching an
+        // upper arm doesn't stretch the forearm too.
+        let carried = match self.parent_of(index) {
+            Some(p) => {
+                let follow = pose.moves[p].apply(bone.start) - pose.rigid[p].apply(bone.start);
+                Affine::translate(follow).pre_concat(pose.rigid[p])
+            }
+            None => Affine::IDENTITY,
+        };
+        let frame = carried.pre_concat(
+            Affine::translate(bone.start + moved)
+                .pre_concat(Affine::rotate(bone.rest_angle() + turn.to_radians())),
+        );
+        let undo_rest = bone.rest_frame().inverse().unwrap_or(Affine::IDENTITY);
+        // Keeping its area, as a flat drawing has no volume to keep.
+        let across = if bone.squash { 1.0 / stretch } else { 1.0 };
+        let skin = frame.pre_concat(Affine::scale(stretch, across)).pre_concat(undo_rest);
+        (skin, frame.pre_concat(undo_rest))
     }
 
     /// Where bone `index` starts and ends on `frame`.
@@ -231,12 +360,21 @@ impl Skeleton {
         Some((m.apply(bone.start), m.apply(bone.end)))
     }
 
-    /// Whether no bone is turned or moved on `frame`.
+    /// Whether no bone is turned, moved or stretched on `frame`. A
+    /// skeleton with dynamics may still be swinging from earlier, so it's
+    /// only at rest if it never moves at all.
     pub fn is_at_rest(&self, frame: u32) -> bool {
-        self.bones.iter().all(|b| {
-            b.turn.sample(frame as f32).unwrap_or(0.0).abs() < 1e-4
-                && b.moved.sample(frame as f32).unwrap_or(Point::ZERO).length() < 1e-4
-        })
+        let still = |b: &Bone, f: f32| {
+            b.turn_at(f).abs() < 1e-4 && b.moved_at(f).length() < 1e-4 && (b.stretch_at(f) - 1.0).abs() < 1e-4
+        };
+        if self.bones.iter().any(|b| b.dynamics.is_some()) {
+            let keys = self.key_frames();
+            return self
+                .bones
+                .iter()
+                .all(|b| keys.iter().all(|&k| still(b, k as f32)) && still(b, frame as f32));
+        }
+        self.bones.iter().all(|b| still(b, frame as f32))
     }
 
     /// How much each bone pulls on the point `p` (where it is at rest), as
@@ -337,16 +475,16 @@ impl Skeleton {
             return;
         }
         let chain = if alone { vec![index] } else { self.chain(index) };
-        let mut turns: Vec<f32> =
-            self.bones.iter().map(|b| b.turn.sample(frame as f32).unwrap_or(0.0)).collect();
-        let moved: Vec<Point> =
-            self.bones.iter().map(|b| b.moved.sample(frame as f32).unwrap_or(Point::ZERO)).collect();
+        let at = frame as f32;
+        let mut turns: Vec<f32> = self.bones.iter().map(|b| b.turn_at(at)).collect();
+        let moved: Vec<Point> = self.bones.iter().map(|b| b.moved_at(at)).collect();
+        let stretch: Vec<f32> = self.bones.iter().map(|b| b.stretch_at(at)).collect();
         // Cyclic coordinate descent: from the bone itself up to the root,
         // turn each joint so the end points at the target; a few rounds
         // settle it (see `ik.rs`).
         for _ in 0..12 {
             for &joint in &chain {
-                let pose = self.pose_with(|i, _| (turns[i], moved[i]));
+                let pose = self.pose_with(|i, _| (turns[i], moved[i], stretch[i]));
                 let m = pose.moves[joint];
                 let pivot = m.apply(self.bones[joint].start);
                 let tip = pose.moves[index].apply(self.bones[index].end);
@@ -356,6 +494,11 @@ impl Skeleton {
                 }
                 let change = (want.y.atan2(want.x) - now.y.atan2(now.x)).to_degrees();
                 turns[joint] += (change + 180.0).rem_euclid(360.0) - 180.0;
+                // A joint at its limit stops there, and the ones above it
+                // make up the rest.
+                if let Some(limits) = self.bones[joint].limits {
+                    turns[joint] = limits.clamp(turns[joint]);
+                }
             }
         }
         for &joint in &chain {
@@ -372,7 +515,7 @@ impl Skeleton {
         let moved = bone.moved.sample(frame as f32).unwrap_or(Point::ZERO);
         // The move is made before the bone it hangs from carries it, so
         // undo that carrying to find how far to move at rest.
-        let carried = self.parent_of(index).map_or(Affine::IDENTITY, |p| pose.moves[p]);
+        let carried = self.parent_of(index).map_or(Affine::IDENTITY, |p| pose.rigid[p]);
         let delta = match carried.inverse() {
             Some(back) => back.apply(to) - back.apply(now),
             None => to - now,
@@ -445,16 +588,22 @@ impl Skeleton {
     // ------------------------------------------------------------- keys
 
     pub fn channels_mut(&mut self) -> impl Iterator<Item = &mut dyn AnyChannel> {
-        self.bones
-            .iter_mut()
-            .flat_map(|b| [&mut b.turn as &mut dyn AnyChannel, &mut b.moved as &mut dyn AnyChannel])
+        self.bones.iter_mut().flat_map(|b| {
+            let stretch = b.stretch.as_mut().map(|s| s as &mut dyn AnyChannel);
+            [Some(&mut b.turn as &mut dyn AnyChannel), Some(&mut b.moved as &mut dyn AnyChannel), stretch]
+                .into_iter()
+                .flatten()
+        })
     }
 
     pub fn key_frames(&self) -> Vec<u32> {
         let mut frames: Vec<u32> = self
             .bones
             .iter()
-            .flat_map(|b| b.turn.key_frames().into_iter().chain(b.moved.key_frames()))
+            .flat_map(|b| {
+                let stretch = b.stretch.iter().flat_map(|s| s.key_frames());
+                b.turn.key_frames().into_iter().chain(b.moved.key_frames()).chain(stretch)
+            })
             .collect();
         frames.sort_unstable();
         frames.dedup();
@@ -651,6 +800,17 @@ impl crate::Document {
         }
         best.map(|(_, layer)| layer)
     }
+}
+
+/// The turn from `from` to `to`, in degrees, the short way round.
+fn angle_between(from: Point, to: Point) -> f32 {
+    let change = (to.y.atan2(to.x) - from.y.atan2(from.x)).to_degrees();
+    (change + 180.0).rem_euclid(360.0) - 180.0
+}
+
+/// `p` turned by `degrees` about the origin.
+fn rotate_by(p: Point, degrees: f32) -> Point {
+    Affine::rotate(degrees.to_radians()).apply(p)
 }
 
 /// Which part of a bone's rest pose is being moved.
@@ -949,5 +1109,63 @@ mod tests {
         assert_eq!(showing(&doc, 0), Some(fist));
         assert_eq!(showing(&doc, 10), Some(open));
         assert!(!doc.shows(doc.layer(fist).unwrap(), 10));
+    }
+
+    #[test]
+    fn limits_stop_a_joint_and_the_ones_above_make_up_the_rest() {
+        let mut skeleton = arm();
+        skeleton.bones[1].limits = Some(crate::RotationLimits { min: 0.0, max: 45.0 });
+        // Straight back over the shoulder: the elbow can't fold that far.
+        skeleton.reach(1, Point::new(50.0, 50.0), 0, false);
+        let elbow = skeleton.bones[1].turn.sample(0.0).unwrap();
+        assert!((0.0..=45.0 + 1e-3).contains(&elbow), "{elbow}");
+        // Typed past its limit, it's held at it.
+        skeleton.bones[1].turn.set(5, 120.0);
+        let (start, end) = skeleton.posed_ends(1, 5).unwrap();
+        let angle =
+            (end - start).y.atan2((end - start).x).to_degrees() - skeleton.bones[0].turn.sample(5.0).unwrap();
+        assert!((angle - 45.0).abs() < 1e-2, "{angle}");
+    }
+
+    #[test]
+    fn stretching_a_bone_carries_the_next_without_stretching_it() {
+        let mut skeleton = arm();
+        skeleton.bones[0].stretch = Some(Channel::new(0, 1.5));
+        let (_, end) = skeleton.posed_ends(0, 0).unwrap();
+        assert!(close(end, Point::new(150.0, 0.0)), "{end:?}");
+        let (start, end) = skeleton.posed_ends(1, 0).unwrap();
+        assert!(
+            close(start, Point::new(150.0, 0.0)) && close(end, Point::new(250.0, 0.0)),
+            "{start:?} {end:?}"
+        );
+    }
+
+    #[test]
+    fn squashing_keeps_a_drawing_about_the_same_size() {
+        let mut skeleton = arm();
+        skeleton.bones[0].stretch = Some(Channel::new(0, 0.5));
+        skeleton.bones[0].squash = true;
+        let pose = skeleton.pose(0);
+        // Half as long, so twice as wide: the area it covers stays the same.
+        let side = pose.moves[0].apply(Point::new(50.0, 10.0));
+        assert!(close(side, Point::new(25.0, 20.0)), "{side:?}");
+    }
+
+    #[test]
+    fn a_bone_with_dynamics_swings_after_its_parent_and_settles() {
+        let mut skeleton = arm();
+        skeleton.bones[1].dynamics = Some(Dynamics::default());
+        // The upper arm whips round 90° between frames 10 and 12, then holds.
+        skeleton.bones[0].turn.set(10, 0.0);
+        skeleton.bones[0].turn.set(12, 90.0);
+        let swing = |frame| {
+            let (start, end) = skeleton.posed_ends(1, frame).unwrap();
+            let posed = skeleton.bones[0].turn_at(frame as f32);
+            (end - start).y.atan2((end - start).x).to_degrees() - posed
+        };
+        assert!(swing(5).abs() < 1e-3, "still before the whip");
+        assert!(swing(12) < -5.0, "lags behind as the arm swings: {}", swing(12));
+        assert!(swing(200).abs() < 0.5, "settled long after: {}", swing(200));
+        assert!(!skeleton.is_at_rest(200), "a skeleton that ever moves may still be swinging");
     }
 }
