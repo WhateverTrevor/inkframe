@@ -1037,13 +1037,11 @@ fn draw_image_bent(
     draw_bent(pixmap, level.as_ref(), to_layer, rect, FilterQuality::Bilinear, matrix, bend);
 }
 
-/// How big a piece of the mesh a bent picture is drawn through is, in the
-/// layer's units: small enough that each piece moving as one flat triangle
-/// doesn't show, and few enough to draw quickly.
-const MESH_CELL: f32 = 16.0;
-
 /// Draws `source` (placed in the layer by `to_layer`, covering `rect`) bent
-/// as `bend` says: the rectangle is cut into a grid of triangles, each
+/// as `bend` says: the rectangle is cut into a grid of triangles (on the
+/// lines `mesh_lines` gives, small enough that each piece moving as one
+/// flat triangle doesn't show, and the same pieces painting is mapped back
+/// through, so a brush lands where it's seen), each
 /// corner bent, and each triangle filled with the picture stretched to fit.
 /// Edges are left hard so neighbouring triangles meet without a seam; the
 /// picture's own soft edges are within the triangles.
@@ -1056,14 +1054,10 @@ fn draw_bent(
     matrix: Transform,
     bend: &LayerBend<'_>,
 ) {
-    let columns = ((rect.width() / MESH_CELL).ceil() as usize).clamp(1, 96);
-    let rows = ((rect.height() / MESH_CELL).ceil() as usize).clamp(1, 96);
-    let rest = |c: usize, r: usize| {
-        Point::new(
-            rect.left() + rect.width() * c as f32 / columns as f32,
-            rect.top() + rect.height() * r as f32 / rows as f32,
-        )
-    };
+    let xs = inkframe_core::mesh_lines(rect.left(), rect.right());
+    let ys = inkframe_core::mesh_lines(rect.top(), rect.bottom());
+    let (columns, rows) = (xs.len() - 1, ys.len() - 1);
+    let rest = |c: usize, r: usize| Point::new(xs[c], ys[r]);
     let bent: Vec<Point> = (0..=rows)
         .flat_map(|r| (0..=columns).map(move |c| (c, r)))
         .map(|(c, r)| bend.bend(rest(c, r)))

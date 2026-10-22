@@ -31,6 +31,8 @@
 //! * `INKFRAME_SCREENSHOT_WELDS=1` shows welded points: a house of three shapes sharing
 //!   corners, picked with the Subselection tool, and a sleeve pinned to the upper arm that
 //!   stays joined to the forearm at the elbow as the arm bends.
+//! * `INKFRAME_SCREENSHOT_SETUP=1` turns on rig setup, showing skeletons at rest (with
+//!   `_SKELETON` and the like).
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -177,6 +179,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_WELDS").is_some() {
             welds_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_SETUP").is_some() {
+            editor.rig_setup = true;
         }
         if Self::pen_handles() {
             pen_handles_demo(editor);

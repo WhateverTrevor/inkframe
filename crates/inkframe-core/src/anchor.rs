@@ -292,6 +292,36 @@ impl crate::Element {
         !matches!(self.shape, Shape::Image { .. } | Shape::Paint { .. } | Shape::Text(_))
     }
 
+    /// The shape with every point (and handle) moved by `map`, or `None`
+    /// for one that isn't [reshapable](Self::is_reshapable). Unlike
+    /// [`Element::transformed`], `map` needn't be a matrix (a skeleton's
+    /// bend, say), so widths and strokes are left as they are.
+    pub fn mapped(&self, map: impl Fn(Point) -> Point) -> Option<crate::Element> {
+        if !self.is_reshapable() {
+            return None;
+        }
+        let map_all = |anchors: Vec<Anchor>| -> Vec<Anchor> {
+            anchors
+                .into_iter()
+                .map(|a| Anchor {
+                    point: map(a.point),
+                    handle_in: map(a.handle_in),
+                    handle_out: map(a.handle_out),
+                })
+                .collect()
+        };
+        let shape = if let Shape::Line { path, widths } = &self.shape {
+            Shape::Line {
+                path: path_from_anchors(&map_all(anchors_from_path(path)), path.closed)?,
+                widths: widths.clone(),
+            }
+        } else {
+            let (anchors, closed) = self.shape.to_anchors();
+            Shape::Path(path_from_anchors(&map_all(anchors), closed)?)
+        };
+        Some(crate::Element { shape, style: self.style.clone() })
+    }
+
     /// The shape with every point mapped by `m`, or `None` for one that
     /// isn't [reshapable](Self::is_reshapable). A pencil line keeps its
     /// widths, scaled by how much `m` scales.

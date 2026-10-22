@@ -999,6 +999,9 @@ impl StageView {
         let (response, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         let area = response.rect;
         self.last_area = area;
+        // Skeletons show at rest in rig setup, and while bones are being
+        // added (which are drawn at rest).
+        editor.doc.rest_pose.0 = editor.rig_setup || editor.tool == Tool::AddBone;
 
         self.handle_navigation(ui, &response, &editor.doc);
         let stage_view = self.view(area, &editor.doc);
@@ -1113,6 +1116,7 @@ impl StageView {
         self.draw_gradient_handles(ui, &overlay, &response, editor, view);
         self.draw_lattice(ui, &overlay, &response, editor, view);
         self.draw_bones(ui, &overlay, &response, editor, view);
+        bones::draw_setup_note(&overlay, editor);
         self.draw_rulers(ui, &overlay, editor, stage_view);
         self.guide_cursor(ui, &response, editor, stage_view);
         asset_drop(ui, &overlay, &response, editor, stage_view);
@@ -3293,7 +3297,13 @@ fn canvas_point(
     screen: Pos2,
 ) -> Option<Point> {
     let layer = editor.doc.layer(layer)?;
-    let local = editor.doc.layer_matrix(layer, editor.frame).inverse()?.apply(view.to_local(screen));
+    let mut local = editor.doc.layer_matrix(layer, editor.frame).inverse()?.apply(view.to_local(screen));
+    // On a frame where a skeleton bends the painting, the brush lands on
+    // the painting where it's seen, not where it was painted at rest.
+    if let Some(bend) = editor.doc.layer_bend(layer, editor.frame) {
+        let canvas = inkframe_core::Rect::from_center_size(Point::ZERO, size.0 as f32, size.1 as f32);
+        local = bend.unbend(local, canvas)?;
+    }
     Some(Point::new(local.x + size.0 as f32 / 2.0, local.y + size.1 as f32 / 2.0))
 }
 
@@ -3304,7 +3314,10 @@ fn canvas_to_screen(editor: &Editor, view: View, layer: LayerId, at: Point) -> O
         Shape::Paint { width, height, .. } => Some((width, height)),
         _ => None,
     })?;
-    let local = Point::new(at.x - size.0 as f32 / 2.0, at.y - size.1 as f32 / 2.0);
+    let mut local = Point::new(at.x - size.0 as f32 / 2.0, at.y - size.1 as f32 / 2.0);
+    if let Some(bend) = editor.doc.layer_bend(layer, editor.frame) {
+        local = bend.bend(local);
+    }
     Some(view.to_screen(editor.doc.layer_matrix(layer, editor.frame).apply(local)))
 }
 
@@ -5718,5 +5731,44 @@ mod tests {
             inkframe_core::welded_to(h.state().1.doc.layer(id).unwrap().elements_at(0), 1, 0).len(),
             1
         );
+    }
+
+    /// A paint layer in a skeleton with an upper arm from (300, 500) to
+    /// (500, 500) and a forearm on to (700, 500), turned 90° so it hangs
+    /// straight down from the elbow; the Brush picked.
+    fn posed_paint_harness(rig_setup: bool) -> Harness<'static, State> {
+        let mut doc = Document::default();
+        let paint = doc.add_paint_layer(TimelineId::Main, "Painted", 0).unwrap();
+        let folder = doc.add_folder(TimelineId::Main, &[paint]).unwrap();
+        let mut skeleton = inkframe_core::Skeleton::default();
+        let upper = skeleton.add_bone(None, Point::new(300.0, 500.0), Point::new(500.0, 500.0), 0);
+        let fore = skeleton.add_bone(Some(upper), Point::new(500.0, 500.0), Point::new(700.0, 500.0), 0);
+        skeleton.bones[fore].turn.set(0, 90.0);
+        doc.layer_mut(folder).unwrap().skeleton = Some(skeleton);
+        let mut editor = Editor::new(doc);
+        editor.select(Some(paint));
+        editor.tool = Tool::Brush;
+        editor.rig_setup = rig_setup;
+        harness(editor)
+    }
+
+    #[test]
+    fn painting_on_a_posed_frame_lands_where_its_seen() {
+        let mut h = posed_paint_harness(false);
+        // On the forearm as it hangs, 150 below the elbow: that's 150 along
+        // it at rest, at (650, 500) on the canvas.
+        let seen = screen(&h, 500.0, 650.0);
+        click(&mut h, seen);
+        assert_eq!(painted_at(&h, 650, 500)[3], 255, "painted on the forearm, at rest");
+        assert_eq!(painted_at(&h, 500, 650)[3], 0, "not where the pointer was on the canvas");
+    }
+
+    #[test]
+    fn in_rig_setup_painting_goes_straight_onto_the_rest_pose() {
+        let mut h = posed_paint_harness(true);
+        assert!(h.state().1.doc.rest_pose.0, "the stage shows skeletons at rest");
+        let at = screen(&h, 650.0, 500.0);
+        click(&mut h, at);
+        assert_eq!(painted_at(&h, 650, 500)[3], 255);
     }
 }

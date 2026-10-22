@@ -762,6 +762,19 @@ after the Harmony features (palettes to master controllers).
     neighbours' points; colour-art fills from the paint bucket aren't
     welded to the lines they fill; the Pen can't start a new path from an
     existing point (clicking one picks it).
+100. Rig setup and painting on poses (no format change):
+    `Document::rest_pose: RestPoseView` (serde skip, PartialEq always
+    true) makes `layer_bend`, smart morphs and `smart_switch` stand down;
+    the stage sets it each frame from `Editor::rig_setup || tool ==
+    AddBone`; the export dialog's copy clears it. `LayerBend::unbend(p,
+    area)` inverts through the mesh (`mesh_lines` aligned to `MESH_CELL`
+    multiples, shared with the renderer's `draw_bent`, so it's exact where
+    the two meshes overlap). Used by `canvas_point`/`canvas_to_screen`
+    (all paint tools), `add_to_shown_drawing` (via `Element::mapped` over
+    `unbend_area`), `fill_vector`. Bone tool in setup moves bones at rest.
+    View › Rig Setup (⌥⌘B, `RIG_SETUP`), `draw_setup_note`. Hook
+    `INKFRAME_SCREENSHOT_SETUP=1`. Not yet: Subselection edits on a posed
+    frame still edit rest positions (they show the rest outline).
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

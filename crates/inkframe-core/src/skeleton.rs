@@ -625,6 +625,42 @@ impl Skeleton {
     }
 }
 
+/// Whether skeletons are shown at rest (see [`crate::Document::rest_pose`]).
+/// Two documents are the same whatever this says, so switching it never
+/// counts as a change to undo.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RestPoseView(pub bool);
+
+impl PartialEq for RestPoseView {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+/// How big a piece of the triangle mesh a bent picture or painting is drawn
+/// through is, in the layer's units (see the renderer's `draw_bent`), and
+/// what painting on it is mapped back through (see [`LayerBend::unbend`]).
+pub const MESH_CELL: f32 = 16.0;
+
+/// Where the mesh's lines run across `min` to `max`: on every multiple of
+/// [`MESH_CELL`] between, and at both ends. Lined up on the multiples, the
+/// mesh a picture is drawn through and the one painting is mapped back
+/// through cut the same pieces wherever they overlap, so a brush lands
+/// exactly where it's seen, wherever each mesh happens to end.
+pub fn mesh_lines(min: f32, max: f32) -> Vec<f32> {
+    let mut lines = vec![min];
+    let mut at = (min / MESH_CELL).floor() * MESH_CELL + MESH_CELL;
+    // At most a few thousand pieces each way, for an absurdly large layer.
+    while at < max - 1e-3 && lines.len() < 4096 {
+        if at > min + 1e-3 {
+            lines.push(at);
+        }
+        at += MESH_CELL;
+    }
+    lines.push(max);
+    lines
+}
+
 /// How one layer is bent by the skeleton over it on one frame: the bones'
 /// pose, how the layer is bound, and the way between the layer's own
 /// coordinates and the bones'.
@@ -660,6 +696,40 @@ impl LayerBend<'_> {
         Some(self.from_bones.pre_concat(*m).pre_concat(self.to_bones))
     }
 
+    /// The point at rest that bends to `p` (both in the layer's
+    /// coordinates), so a brush can paint on a bent layer where it's seen.
+    /// Bending can't be undone directly, so this goes back through the same
+    /// mesh the renderer draws with: over `area` (where the layer may be
+    /// painted), the bent triangle `p` falls in, and the matching point of
+    /// that triangle at rest. Where bent pieces overlap (a folded elbow),
+    /// the one drawn last, on top, wins. `None` outside the bent mesh.
+    pub fn unbend(&self, p: Point, area: crate::Rect) -> Option<Point> {
+        if let Some(m) = self.rigid() {
+            return m.inverse().map(|back| back.apply(p));
+        }
+        let (xs, ys) = (mesh_lines(area.min.x, area.max.x), mesh_lines(area.min.y, area.max.y));
+        let (columns, rows) = (xs.len() - 1, ys.len() - 1);
+        let rest = |c: usize, r: usize| Point::new(xs[c], ys[r]);
+        let bent: Vec<Point> = (0..=rows)
+            .flat_map(|r| (0..=columns).map(move |c| (c, r)))
+            .map(|(c, r)| self.bend(rest(c, r)))
+            .collect();
+        let at = |c: usize, r: usize| bent[r * (columns + 1) + c];
+        let mut found = None;
+        for r in 0..rows {
+            for c in 0..columns {
+                let corners = [(c, r), (c + 1, r), (c + 1, r + 1), (c, r + 1)];
+                for [a, b, d] in [[0, 1, 2], [0, 2, 3]] {
+                    let to = [corners[a], corners[b], corners[d]].map(|(c, r)| at(c, r));
+                    let Some((u, v)) = barycentric(p, to) else { continue };
+                    let from = [corners[a], corners[b], corners[d]].map(|(c, r)| rest(c, r));
+                    found = Some(from[0] + (from[1] - from[0]) * u + (from[2] - from[0]) * v);
+                }
+            }
+        }
+        found
+    }
+
     /// The layer's shapes, bent.
     pub fn elements(&self, elements: &[Element]) -> Vec<Element> {
         self.skeleton.bend_elements(
@@ -671,6 +741,20 @@ impl LayerBend<'_> {
             self.from_bones,
         )
     }
+}
+
+/// Where `p` is in triangle `t`, as how far along its first and second
+/// edges, if it's inside.
+fn barycentric(p: Point, t: [Point; 3]) -> Option<(f32, f32)> {
+    let (e1, e2, q) = (t[1] - t[0], t[2] - t[0], p - t[0]);
+    let det = e1.x * e2.y - e1.y * e2.x;
+    if det.abs() < 1e-9 {
+        return None;
+    }
+    let u = (q.x * e2.y - q.y * e2.x) / det;
+    let v = (e1.x * q.y - e1.y * q.x) / det;
+    const SLACK: f32 = 1e-4;
+    (u >= -SLACK && v >= -SLACK && u + v <= 1.0 + SLACK).then_some((u, v))
 }
 
 /// Which bone each shape showing in `drawing` (the colour art, then the
@@ -770,6 +854,9 @@ impl crate::Document {
     /// How the skeleton over `layer` bends it on `frame`, if it's bound to
     /// one that's posed away from rest.
     pub fn layer_bend(&self, layer: &crate::Layer, frame: u32) -> Option<LayerBend<'_>> {
+        if self.rest_pose.0 {
+            return None;
+        }
         let owner = self.skeleton_layer_of(layer)?;
         let skeleton = owner.skeleton.as_ref().filter(|s| !s.bones.is_empty() && !s.is_at_rest(frame))?;
         let pins = layer.drawings.get(layer.drawing_index_at(frame)).map(pins_of).unwrap_or_default();
@@ -797,6 +884,9 @@ impl crate::Document {
     /// with [`Document::layer_bend`].
     pub fn posed_elements<'a>(&self, layer: &'a crate::Layer, frame: u32) -> std::borrow::Cow<'a, [Element]> {
         let mut shown = layer.shown_elements(frame);
+        if self.rest_pose.0 {
+            return shown;
+        }
         if let Some(skeleton) = self.skeleton_layer_of(layer).and_then(|o| o.skeleton.as_ref()) {
             let from = layer.drawings.get(layer.drawing_index_at(frame));
             for bone in &skeleton.bones {
@@ -822,6 +912,9 @@ impl crate::Document {
     /// Which layer a smart bone has switch `folder` show on `frame`, if
     /// one's turned far enough: the furthest-reaching that is.
     pub fn smart_switch(&self, folder: &crate::Layer, frame: u32) -> Option<LayerId> {
+        if self.rest_pose.0 {
+            return None;
+        }
         let skeleton = self.skeleton_layer_of(folder).and_then(|o| o.skeleton.as_ref())?;
         let mut best: Option<(f32, LayerId)> = None;
         for bone in &skeleton.bones {
@@ -1226,5 +1319,43 @@ mod tests {
             points.iter().any(|p| p.distance(Point::new(100.0, -5.0)) < 1e-2),
             "the welded end stays with the cap"
         );
+    }
+
+    #[test]
+    fn unbending_finds_the_point_at_rest_that_bends_to_where_its_seen() {
+        let (mut doc, folder, layer) = rigged_bar();
+        doc.layer_mut(folder).unwrap().skeleton.as_mut().unwrap().bones[1].turn.set(0, 90.0);
+        let layer = doc.layer(layer).unwrap();
+        let bend = doc.layer_bend(layer, 0).unwrap();
+        let area = crate::Rect::from_center_size(Point::ZERO, 400.0, 400.0);
+        // A point near the forearm's tip (x 90 in the bar's coordinates,
+        // which sit 100 to the right of the bones'), and back.
+        // Points where the mesh's lines cross are bent exactly as drawn, so
+        // they come straight back, even round the elbow.
+        for at in
+            [Point::new(80.0, 0.0), Point::new(-64.0, 16.0), Point::new(16.0, -16.0), Point::new(0.0, 0.0)]
+        {
+            let seen = bend.bend(at);
+            let back = bend.unbend(seen, area).expect("inside the mesh");
+            assert!(back.distance(at) < 1e-2, "{at:?} -> {seen:?} -> {back:?}");
+        }
+        assert!(bend.unbend(Point::new(5000.0, 0.0), area).is_none());
+    }
+
+    #[test]
+    fn mesh_lines_sit_on_the_cells_multiples() {
+        assert_eq!(mesh_lines(-20.0, 40.0), [-20.0, -16.0, 0.0, 16.0, 32.0, 40.0]);
+        assert_eq!(mesh_lines(0.0, 32.0), [0.0, 16.0, 32.0]);
+    }
+
+    #[test]
+    fn showing_skeletons_at_rest_turns_bending_off() {
+        let (mut doc, folder, layer) = rigged_bar();
+        doc.layer_mut(folder).unwrap().skeleton.as_mut().unwrap().bones[1].turn.set(0, 90.0);
+        assert!(doc.layer_bend(doc.layer(layer).unwrap(), 0).is_some());
+        let before = doc.clone();
+        doc.rest_pose.0 = true;
+        assert!(doc.layer_bend(doc.layer(layer).unwrap(), 0).is_none());
+        assert!(doc == before, "only a view: the document's the same");
     }
 }
