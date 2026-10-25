@@ -3,214 +3,97 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
-## Unreleased
+## [0.3.0]
 
-### Drawing
-
-- Picked shapes inside a layer turn with a knob above them (Shift snaps to
-  15°), copy, cut and paste (landing where they were, in any layer), and
-  the fills under the lines can be picked too.
-- ⌘Z while typing on the stage undoes what's been typed, a word at a time,
-  and ⌘⇧Z redoes it.
-
-### Easier to find things
-
-- A context bar above the stage: the current tool, buttons for what can
-  be done now (Distort, Envelope, Symbol, New Skeleton…), and view
-  switches.
-- Find a Command (⌘K): search every command and tool by name.
-- Toolbar tips say what each tool does; new icons throughout.
+Moho-style character rigging, Animate's drawing and export tools, an
+easier-to-find interface, and a beginner's guidebook. Projects saved by
+0.3.0 use a newer file format, so 0.2.0 can't open them; 0.3.0 opens
+older projects as they were.
 
 ### Guidebook
 
 - *Inkframe for Artists*, a beginner's guide in the style of a Packt
-  book: ten chapters from the workspace to rigging, smart bones and
-  export, with screenshots of every step and appendices of every tool and
-  command. `cargo xtask guide` builds it as a PDF, taking fresh
-  screenshots, so it keeps up with the app.
+  book, is attached to this release as a PDF: ten chapters from the
+  workspace to rigging, smart bones and export, with screenshots of every
+  step and appendices of every tool and command. `cargo xtask guide`
+  builds it, taking fresh screenshots, so it keeps up with the app.
 - `inkframe --reference` prints every tool and command as Markdown tables.
-- Find a Command named the Drawings commands' menu wrongly; they're in
-  Modify.
 
-### Interactive web pages
+### Finding your way
 
-- Layers can be buttons (Play, Stop, Go to a frame, Open a link) and
-  frames can have actions (Stop, Go to), as in Animate; the Web Page
-  export runs them.
+- A context bar above the stage: the current tool, buttons for what can
+  be done now (Symbol, Distort, Envelope, New Skeleton…), and switches for
+  rulers, perspective, onion skins, the light table and rig setup.
+- Find a Command (⌘K): find any command or tool by name, or by what it's
+  for ("bulge", "rig", "web page"), with its menu and keys.
+- Toolbar tips say what each tool does and what shares its slot; new
+  icons throughout.
 
-### Smart bone corrections
+### Rigging, Moho-style
 
-- A smart bone can reshape a layer by hand-drawn keys at several turns, as
-  Moho's actions: turn the bone, Edit Correction, reshape with any tool,
-  Finish. The drawing morphs between keys. File format 38.
-
-### Web page export
-
-- Export › Web Page (.html): one self-contained page that plays the
-  animation as vectors, loops, and pauses on a click.
-
-### Draw inbetweens
-
-- Timeline › Draw Inbetweens fills the frames between two key drawings
-  with drawings morphed between them, spaced by the shape tween's easing,
-  to touch up by hand.
-
-### Perspective guides
-
-- View › Perspective Guide: one-, two- or three-point, with draggable
-  vanishing points. Shift with the Pen snaps lines to it.
-
-### Line textures
-
-- A vector layer's lines can be inked with a paper grain (Pencil,
-  Charcoal or Chalk), as Harmony's line textures.
-
-### Art and pattern brushes
-
-- Strokes can be drawn with a library symbol, stretched along the line
-  (Art) or repeated along it (Pattern), as in Animate's Paint Brush. Older
-  builds open such files and draw the strokes plain.
-
-### Target bones
-
-- A bone can reach for a target bone, the bones above it bending to get
-  its end there, so feet stay planted while the body moves. File format
-  stays 37 (an optional field).
-
-### Folder keys
-
-- A skeleton's poses and a switch's choices can be dragged along their
-  folder's row in the timeline, and removed with Shift+F6.
-
-### Bent paintings in SVG and Lottie
-
-- Painted layers and pictures bent by a skeleton now export bent to SVG
-  and Lottie too, drawn by the renderer and embedded as images.
-
-### Bones panel
-
-- A Bones area lists each skeleton's bones as a tree (smart, swinging,
-  limited and stretching bones marked; click one to pick it) and the
-  layers it rigs, with what each follows.
-
-### Rig setup, and painting on poses
-
-- View › Rig Setup (⌥⌘B) shows skeletons at rest to draw, paint and rig
-  on. Off, the paint tools, the Paint Bucket and shapes drawn into a
-  bent layer land exactly where they're seen on the pose.
-
-### Welded points
-
-- Points where shapes meet are shared: dragging one moves every shape's
-  copy, a point dropped onto another welds to it, and ⌘-drag parts it.
-  Pins to bones carry across welds, so joined shapes stay joined as a
-  skeleton bends them. No file format change.
-
-### Bone limits, stretch and dynamics
-
-- Skeleton bones can have turn limits (respected by IK and shown as a
-  wedge), stretch (Shift-drag with the Bone tool) with an option to keep
-  their area as they squash, and dynamics: a spring that makes hair and
-  tails swing after the body and settle. File format 37.
-
-### Smart bones, pins and switches
-
-- Shapes, or single points, can be pinned to one bone of a skeleton.
-- Switch folders show one of their layers at a time, keyed per frame
+- **Skeletons:** Modify › New Skeleton puts the selected layers in a
+  folder with a skeleton. Draw bones with the Add Bone tool (Shift+K) and
+  pose them with the Bone tool (inverse kinematics, keyed on the folder).
+  Every layer in the folder bends with the bones near it, painted layers
+  and pictures included; a layer can follow one bone instead, or none.
+- **Pins and welded points:** shapes or single points can be pinned to a
+  bone, so an eye stays on the head as the face bends. Points where shapes
+  meet are shared, so joined shapes stay joined as they're edited or bent.
+- **Switches** show one of a folder's layers at a time, keyed per frame
   (Modify › New Switch).
-- Smart bones: as a bone turns, it can morph a layer toward another of its
-  drawings, or have a switch show another layer past an angle. File
-  format 36.
+- **Smart bones** morph a layer toward another drawing, or have a switch
+  show another layer, as they turn; **corrections** let you reshape a
+  drawing by hand at any turn, morphing smoothly between them.
+- **Limits, stretch and dynamics:** turn limits respected by IK, stretch
+  that can keep a drawing's area as it squashes, and springy dynamics for
+  hair and tails.
+- **Target bones** keep feet planted while the body moves.
+- **Rig setup** (View › Rig Setup, ⌥⌘B) shows skeletons at rest to draw,
+  paint and rig on; off, painting and drawing land where they're seen on
+  the pose.
+- A **Bones** panel lists each skeleton's bones and the layers it rigs. A
+  skeleton's poses and a switch's choices can be dragged along their
+  folder's row in the timeline.
 
-### Skeletons
+### Drawing
 
-- Moho-style rigging: Modify › New Skeleton puts the selected layers in a
-  folder with a skeleton. Draw bones with the new Add Bone tool (Shift+K),
-  pose them with the Bone tool (inverse kinematics, keyed on the folder),
-  and every layer in the folder bends with the bones near it: drawn
-  shapes and painted layers and pictures alike. A layer can follow one
-  bone instead, or none. File format 35.
-
-### Pen editing
-
-- Between paths, the Pen picks and drags the selected shape's existing
-  points and their handles, instead of starting a new path on them.
-- Alt-dragging a point (with the Pen or the Subselection tool) pulls new
-  curve handles out of it, turning a corner into a curve, as in Animate.
-
-### Envelope handles
-
-- Envelope now works as Animate's does: a point at each corner and in the
-  middle of each side, each with handles that shape the curve either side
-  of it (Alt-drag one to kink the side). Distort and Envelope bend a whole
-  layer without stepping inside it, so the other layers stay in view.
-
-### Distort and Envelope
-
-- Modify › Transform › Distort puts a handle at each corner of the picked
-  shapes (or everything in the selected layer); drag them to lean, taper
-  or put the shapes into perspective. Envelope has sixteen handles for
-  bulging and bending. Curves stay smooth, and pencil lines keep their
-  widths. Enter, Escape or clicking away finishes.
-
-### Rulers and guides
-
-- View › Rulers, and guides dragged out of them onto the stage, saved with
-  the project. Moving layers and drawing rectangles and ovals snap to
-  them; guides can be hidden, locked or cleared.
+- The Pen edits existing points between paths, and Alt-dragging a point
+  (with the Pen or Subselection tool) pulls curve handles out of it, as in
+  Animate.
+- Modify › Transform › Distort and Envelope, Animate-style, bend a whole
+  layer or the shapes picked inside it.
+- Modify › Combine Shapes: Union, Intersect, Punch and Crop, keeping
+  curves and corners. Break Apart (⌘B) turns text into a shape per letter.
+- Gradient fills, linear or radial; line ends, corners, and dashed or
+  dotted lines.
+- Art and pattern brushes draw strokes with a library symbol, stretched
+  along the line or repeated along it.
+- Line textures ink a layer's lines with a Pencil, Charcoal or Chalk grain.
+- Rulers and guides, with snapping, and one-, two- and three-point
+  perspective guides that the Pen snaps to.
+- Picked shapes turn with a knob, and copy, cut and paste into any layer;
+  ⌘Z while typing undoes a word at a time.
 
 ### Animation
 
-- Motion Presets: give layers a ready-made movement (fade, pop, slide,
-  bounce, spin, pulse, shake, float) from the playhead, starting from
-  wherever each one is, or save a layer's own animation as a preset for
-  every project.
-
-### Symbols
-
-- Modify › Swap Symbol: pick another symbol for the selected instances,
-  keeping their animation, for the whole layer or from the current frame
-  on (a hand's pose changed mid-shot, the arm still moving). Duplicate
-  Symbol copies one to change separately.
-
-### Shapes
-
-- Modify › Combine Shapes: Union, Intersect, Punch and Crop on shapes
-  picked inside a layer, keeping curves and sharp corners. Break Apart
-  (⌘B) turns text into a shape per letter.
+- Timeline › Draw Inbetweens fills the frames between two key drawings
+  with drawings morphed between them, to touch up by hand.
+- Animate's frame commands (F5, Shift+F5, F7, Convert to Keyframes,
+  Reverse Frames) and Edit Multiple Frames.
+- Motion Presets: ready-made movements (fade, pop, slide, bounce, spin and
+  more), or save a layer's own animation as a preset for every project.
+- Swap Symbol replaces an instance's symbol for the whole layer or from a
+  frame on, keeping its animation.
+- With several layers selected, the properties panel changes all of them.
 
 ### Export
 
-- Animated GIF, SVG (a file per frame) and Lottie, which plays as vectors
-  on web pages and in apps. Both vector formats keep gradients, line
-  styles, masks, blend modes and symbols; filters and particles go in as
-  pictures.
-
-### Styles
-
-- Gradient fills on vector shapes, linear or radial, with as many colours
-  as you like; drag their ends on the stage after stepping inside the
-  shape's layer.
-- Line ends (round, flat, square), corners (round, sharp, bevelled), and
-  dashed or dotted lines.
-
-### Timeline
-
-- Animate's frame commands: pick frames with Shift-click or Shift-drag,
-  then F5 inserts frames, Shift+F5 removes them, F7 adds a blank keyframe,
-  and Timeline › Convert to Keyframes, Convert to Blank Keyframes and
-  Reverse Frames work on the picked frames.
-- Edit Multiple Frames: dragging on the stage moves layers across the
-  picked frames at once, a whole motion or every drawing of a hand-drawn
-  stretch.
-
-### Properties
-
-- With several layers selected, changes in the properties panel apply to
-  all of them: position moves them together, and other values are set the
-  same on each. A • marks a value they differ in. Effects and easing have
-  an **Apply to the other selected layers** button, to give them all the
-  same filters or the same curve.
+- Web Page (.html): one self-contained page that plays the animation as
+  vectors in any browser. Layers can be buttons (Play, Stop, Go to a
+  frame, Open a link) and frames can have actions, as Animate's `stop()`
+  and `gotoAndPlay()`.
+- Animated GIF, SVG and Lottie. The vector formats keep gradients, line
+  styles, masks, blend modes and symbols, and bent paintings export bent.
 
 ## [0.2.0]
 
