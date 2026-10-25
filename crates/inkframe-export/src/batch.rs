@@ -116,7 +116,8 @@ pub fn run(
         if result.is_ok() {
             succeeded += 1;
         }
-        let flow = on_event(BatchEvent::Finished(index, result.map(|()| output).map_err(|e| e.to_string())));
+        let done = result.map(|()| crate::exported_file(job.format, &output)).map_err(|e| e.to_string());
+        let flow = on_event(BatchEvent::Finished(index, done));
         if stopped || flow.is_break() {
             break;
         }

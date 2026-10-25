@@ -159,7 +159,10 @@ impl ExportDialog {
 
         ui.weak(format!("{} · {}", doc.frame_rate, describe(self.format)));
         if self.format == ExportFormat::SpriteSheet {
-            ui.weak("Frames are cropped to what's drawn, with a .json file beside the image.");
+            ui.weak(
+                "Frames are cropped to what's drawn, with a .json file beside the image. \
+                 Too many for one 8192 × 8192 image go on several, numbered from 0.",
+            );
         }
         // The vector formats draw filters and particles as pictures, which
         // in a Lottie file means one per frame.
@@ -298,7 +301,7 @@ impl ExportDialog {
                 JobEvent::Progress(progress) => job.progress = progress,
                 JobEvent::Done(result) => {
                     self.outcome = Some(match result {
-                        Ok(()) => Outcome::Success(job.output.clone()),
+                        Ok(()) => Outcome::Success(inkframe_export::exported_file(self.format, &job.output)),
                         Err(message) => Outcome::Failure(message),
                     });
                     self.job = None;
@@ -318,7 +321,7 @@ fn describe(format: ExportFormat) -> &'static str {
         ExportFormat::ProRes422Hq => "high quality, no alpha, smaller files",
         ExportFormat::H264 => "small files for review and the web, no alpha",
         ExportFormat::HevcWithAlpha => "small files with alpha for Apple devices and Safari",
-        ExportFormat::SpriteSheet => "every frame on one image, for game engines",
+        ExportFormat::SpriteSheet => "every frame packed onto as few images as fit, for game engines",
         ExportFormat::Gif => "a looping animation to share anywhere, 256 colours",
         ExportFormat::Svg => "vectors, one file per frame, for the web and drawing programs",
         ExportFormat::Lottie => "a vector animation for web pages and apps",

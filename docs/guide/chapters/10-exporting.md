@@ -38,12 +38,12 @@ Each format suits a different destination:
 | **HEVC with alpha** (macOS) | Yes | Small files with transparency, for Apple devices and Safari. |
 | **Animated GIF** | On or off per pixel | Sharing anywhere: it loops forever, in 256 colours. |
 | **PNG sequence** | Yes | A lossless image for every frame, for any other tool. |
-| **Sprite sheet** (.png + .json) | Yes | Games: every frame on one image, with data for Phaser, PixiJS, Godot and Unity. |
+| **Sprite sheet** (.png + .json) | Yes | Games: every frame packed onto an image, with data for Phaser, PixiJS, Godot and Unity. |
 | **SVG** | Yes | Vectors, a file per frame, for the web, print and drawing programs. |
 | **Lottie** (.json) | Yes | A vector animation that plays on web pages and in iOS and Android apps. |
 | **Web Page** (.html) | Yes | One page that plays the animation in any browser. More on this shortly. |
 
-A sprite sheet crops each frame to what's drawn, and packs frames that are the same only once, so a game loads as little as possible.
+A sprite sheet crops each frame to what's drawn, and packs frames that are the same only once, so a game loads as little as possible. Game engines can't load images bigger than 8192 × 8192 pixels, so when the frames don't all fit on one, Inkframe shares them out over as few sheets as they need: `walk-0.png` with `walk-0.json`, `walk-1.png` with `walk-1.json`, and so on. Each data file names the others, so engines that read TexturePacker's "multipack" sheets, such as PixiJS, load them together.
 
 ![The Export window set to a sprite sheet, with transparency](export-sprite){crop=0,0,0.4,0.36}
 
@@ -68,9 +68,9 @@ Here's how to make the ball bounce once, stop, and offer a Replay button:
 
 **File › Batch Export…** queues several projects, or one project in several formats, and exports them one after another into one folder, each named after its project. Click **Add Projects…** or **Add This Project**, set each job's format and size, choose where to **Save to**, and start.
 
-A job that fails is marked, and the rest carry on. In {{fig:batch}}, the first job failed because a sprite sheet must fit on one image no bigger than 8192 × 8192 pixels, and 48 full-width frames don't. Exporting at a smaller size, or fewer frames, fixes it. The queue and folder are remembered for next time.
+Each finished job is ticked, with a link that shows its file in Finder or Explorer; in {{fig:batch}}, the bouncing ball's sprite sheets are done, and the next job is under way. A job that fails is marked (hover over it to see why), and the rest carry on. The queue and folder are remembered for next time.
 
-![Batch Export working through six jobs; the first failed, too big for one sprite sheet](batch){crop=0,0,0.6,0.46}
+![Batch Export working through six jobs: the sprite sheets are done, and the PNG sequence is under way](batch){crop=0,0,0.62,0.46}
 
 > Tip: Inkframe can also export from the command line, without opening a window, for render machines and scripts: `inkframe --export walk.inkf --format h264 --to renders`. Run `inkframe --help` for everything it can do.
 

@@ -30,7 +30,7 @@ fn bends_pixels(doc: &inkframe_core::Document, layer: &inkframe_core::Layer, fra
 }
 
 use std::ops::{ControlFlow, RangeInclusive};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use inkframe_audio::{Clip, sample_frame};
 use inkframe_core::Document;
@@ -225,7 +225,7 @@ pub enum ExportError {
     NoFrames,
     #[error("couldn't allocate a {0}×{1} frame")]
     FrameTooLarge(u32, u32),
-    #[error("the frames don't fit on one {0}×{0} sprite sheet; export fewer frames or at a smaller size")]
+    #[error("a single frame is bigger than a {0}×{0} sprite sheet; export at a smaller size")]
     SheetTooLarge(u32),
     #[error("{0} isn't available on this platform")]
     Unavailable(&'static str),
@@ -248,6 +248,20 @@ pub enum ExportError {
     Font(String),
     #[error("export cancelled")]
     Cancelled,
+}
+
+/// The file an export to `output` actually made, to show the person:
+/// `output` itself, except for sprite sheets too big for one image, whose
+/// first sheet is `name-0.png` (see `sprite_sheet.rs`).
+pub fn exported_file(format: ExportFormat, output: &Path) -> PathBuf {
+    if format == ExportFormat::SpriteSheet && !output.exists() {
+        let stem = output.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let first = output.with_file_name(format!("{stem}-0.png"));
+        if first.exists() {
+            return first;
+        }
+    }
+    output.to_owned()
 }
 
 /// Exports `doc` according to `settings`.

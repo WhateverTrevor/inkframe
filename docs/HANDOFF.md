@@ -903,6 +903,14 @@ after the Harmony features (palettes to master controllers).
     (Help › Take the Tour, Find a Command); Help links the guidebook
     (releases/latest). Hook `INKFRAME_SCREENSHOT_TOUR=n`; guidebook
     figure `tour` in chapter 1.
+115. Multi-sheet sprite sheets: `sprite_sheet::pack` shares the distinct
+    cells over as few `Sheet`s (a run of cells and a `Grid`) as fit
+    `MAX_SIDE`, evenly; `write_sheets` (the limit as a parameter, for the
+    unit test) writes `stem-N.png/.json` for a set, one sheet keeping the
+    plain name; each JSON lists its own frames (numbered through the whole
+    animation) and `meta.related_multi_packs`. `Grid::fit` falls back to
+    the widest grid when the square one is too tall. `exported_file` names
+    the first sheet for the Export and Batch windows' links.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)
