@@ -3,7 +3,10 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
-## Unreleased
+## [0.5.0]
+
+Copying frames, scripting characters, and a quicker editor. Projects
+saved by 0.5.0 open in 0.4.0 too.
 
 ### Timeline
 
