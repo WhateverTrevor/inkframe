@@ -43,6 +43,11 @@ The frame commands work as they do in Animate. [[⇧]]-click or [[⇧]]-drag alo
 | **Remove Frames** | [[⇧F5]] | Brings what follows earlier. |
 | **Insert Blank Keyframe** | [[F7]] | Starts an empty drawing on the frame. |
 | **Reverse Frames** | | Plays the picked frames backwards. |
+| **Cut Frames** | [[⌘X]] | Takes the picked frames' keyframes out, to paste elsewhere. |
+| **Copy Frames** | [[⌘C]] | Copies the picked frames' keyframes. |
+| **Paste Frames** | [[⌘V]] | Pastes them at the playhead, on the selected layers. |
+
+Cut, Copy and Paste act on keyframes while frames are picked, as in Animate, and on layers otherwise. Copied frames paste onto the same number of layers, row for row, or a single row onto every selected layer, replacing the keys they land on.
 
 **Timeline › Edit Multiple Frames** (or its button beside the onion skin) lets you move a drawing on many frames at once: dragging a layer then moves it on every picked frame, rather than just the current one.
 

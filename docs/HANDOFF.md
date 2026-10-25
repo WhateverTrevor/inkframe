@@ -961,6 +961,15 @@ after the Harmony features (palettes to master controllers).
     `binding_label` (Properties and Bones panel). Ideas: script API for
     skeletons, lip sync and buttons (the projects' scenes are built in
     Rust hooks because scripts can't yet).
+121. Cut/Copy/Paste Frames: core `Track::copy_span`/`paste_span`/
+    `clear_span` (keys at the span's ends frozen in; paste keys the frame
+    after so what follows is unchanged) and `Clipboard::Frames(CopiedFrames
+    {length, rows})`; app `Editor::copy_frames`/`cut_frames`/`paste_frames`
+    in frame_commands.rs (frame_layers order, one row onto all, grows the
+    timeline, picks the pasted span). ⌘X/⌘C/⌘V act on frames while
+    `frame_range` is set; `Editor::select` of another layer clears it.
+    Old pose copy renamed `Command::CopyPose`/`PastePose` (`COPY_POSE`,
+    Edit › Copy Pose). Drawings/swaps aren't copied, only keyframes.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

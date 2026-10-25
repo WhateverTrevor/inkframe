@@ -79,8 +79,13 @@ pub(crate) enum Command {
     /// Pastes layers exactly where they were copied from.
     PasteInPlace,
     /// Copies the selected layer's pose on the current frame.
-    CopyFrames,
+    CopyPose,
     /// Pastes a copied pose onto the selected layer at the current frame.
+    PastePose,
+    /// Cut, Copy and Paste Frames: the keyframes on the frames picked in
+    /// the timeline, pasted at the playhead (see `frame_commands.rs`).
+    CutFrames,
+    CopyFrames,
     PasteFrames,
     DuplicateLayer,
     DeleteLayer,
@@ -849,21 +854,36 @@ impl InkframeApp {
             }
             Command::Adjust(adjustment) => self.adjust.open(editor, adjustment),
             Command::Cut => {
-                self.copy(false);
+                let copied = self.editor.copy_selection();
+                self.put_on_clipboard(copied);
                 // Inside a layer with shapes picked, they're what was cut.
                 if !self.editor.delete_shapes() {
                     self.editor.delete_selected_layer();
                 }
             }
-            Command::Copy => self.copy(false),
-            Command::CopyFrames => self.copy(true),
+            Command::Copy => {
+                let copied = self.editor.copy_selection();
+                self.put_on_clipboard(copied);
+            }
+            Command::CopyPose => {
+                let copied = self.editor.copy_keyframe();
+                self.put_on_clipboard(copied);
+            }
+            Command::CopyFrames => {
+                let copied = self.editor.copy_frames();
+                self.put_on_clipboard(copied);
+            }
+            Command::CutFrames => {
+                let cut = self.editor.cut_frames();
+                self.put_on_clipboard(cut);
+            }
             Command::Paste => {
                 let center = self.views.stage().visible_center(&self.editor);
                 if let Some(clipboard) = &self.clipboard {
                     self.editor.paste(clipboard, Some(center));
                 }
             }
-            Command::PasteInPlace | Command::PasteFrames => {
+            Command::PasteInPlace | Command::PastePose | Command::PasteFrames => {
                 if let Some(clipboard) = &self.clipboard {
                     self.editor.paste(clipboard, None);
                 }
@@ -1102,18 +1122,28 @@ impl InkframeApp {
                 return;
             }
             // Copy, cut and paste come from the system as clipboard events,
-            // not keys. ⌥ makes them act on keyframes, and ⇧ pastes in place.
+            // not keys. With frames picked in the timeline they act on those
+            // frames' keyframes, as Animate's do; ⌥ copies just the pose on
+            // this frame, and ⇧ pastes in place.
+            let frames_picked = self.editor.frame_range.is_some();
             for event in &input.events {
                 let (alt, shift) = (input.modifiers.alt, input.modifiers.shift);
                 match event {
-                    egui::Event::Copy => commands.push(if alt { Command::CopyFrames } else { Command::Copy }),
-                    egui::Event::Cut => commands.push(Command::Cut),
+                    egui::Event::Copy => commands.push(match (alt, frames_picked) {
+                        (true, _) => Command::CopyPose,
+                        (false, true) => Command::CopyFrames,
+                        (false, false) => Command::Copy,
+                    }),
+                    egui::Event::Cut => {
+                        commands.push(if frames_picked { Command::CutFrames } else { Command::Cut })
+                    }
                     egui::Event::Paste(text) => match Clipboard::from_text(text) {
                         // Inkframe data, perhaps from another window: paste
                         // that, and remember it for the Edit menu.
                         Some(clipboard) => {
                             let command = match (&clipboard, shift) {
-                                (Clipboard::Keyframe(_), _) => Command::PasteFrames,
+                                (Clipboard::Keyframe(_), _) => Command::PastePose,
+                                (Clipboard::Frames(_), _) => Command::PasteFrames,
                                 (Clipboard::Layers(_) | Clipboard::Shapes(_), true) => Command::PasteInPlace,
                                 (Clipboard::Layers(_) | Clipboard::Shapes(_), false) => Command::Paste,
                             };
@@ -1228,11 +1258,9 @@ impl InkframeApp {
         }
     }
 
-    /// Copies the selected layer, or with `keyframe` its pose on this frame,
-    /// to the system clipboard (so it can be pasted into another window)
-    /// and to our own.
-    fn copy(&mut self, keyframe: bool) {
-        let copied = if keyframe { self.editor.copy_keyframe() } else { self.editor.copy_selection() };
+    /// Puts what was copied on the system clipboard (so it can be pasted
+    /// into another window) and on our own.
+    fn put_on_clipboard(&mut self, copied: Option<Clipboard>) {
         if let Some(clipboard) = copied {
             self.ctx.copy_text(clipboard.to_text());
             self.clipboard = Some(clipboard);
@@ -1302,14 +1330,8 @@ impl InkframeApp {
                 item(ui, "Paste in Center", Some(shortcuts::PASTE), Command::Paste, layers);
                 item(ui, "Paste in Place", Some(shortcuts::PASTE_IN_PLACE), Command::PasteInPlace, layers);
                 ui.separator();
-                item(ui, "Copy Frames", Some(shortcuts::COPY_FRAMES), Command::CopyFrames, has_selection);
-                item(
-                    ui,
-                    "Paste Frames",
-                    Some(shortcuts::PASTE_FRAMES),
-                    Command::PasteFrames,
-                    keyframe && has_selection,
-                );
+                item(ui, "Copy Pose", Some(shortcuts::COPY_POSE), Command::CopyPose, has_selection);
+                item(ui, "Paste Pose", Some(shortcuts::PASTE_POSE), Command::PastePose, keyframe && has_selection);
             });
             ui.menu_button("Modify", |ui| {
                 item(
@@ -1472,6 +1494,11 @@ impl InkframeApp {
                     has_selection && picked,
                 );
                 item(ui, "Reverse Frames", None, Command::ReverseFrames, has_selection && picked);
+                ui.separator();
+                let frames_copied = matches!(self.clipboard, Some(Clipboard::Frames(_)));
+                item(ui, "Cut Frames", Some(shortcuts::CUT), Command::CutFrames, has_selection && picked);
+                item(ui, "Copy Frames", Some(shortcuts::COPY), Command::CopyFrames, has_selection && picked);
+                item(ui, "Paste Frames", Some(shortcuts::PASTE), Command::PasteFrames, has_selection && frames_copied);
                 if ui
                     .checkbox(&mut self.editor.edit_multiple, "Edit Multiple Frames")
                     .on_hover_text(

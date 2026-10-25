@@ -40,6 +40,60 @@ impl Editor {
         }
     }
 
+    /// The keyframes on the picked frames of the selected layers, for the
+    /// clipboard (Copy Frames), or `None` with no frames picked.
+    pub fn copy_frames(&self) -> Option<inkframe_core::Clipboard> {
+        let (first, last) = self.picked_span()?;
+        let rows: Vec<inkframe_core::Track> = self
+            .frame_layers()
+            .into_iter()
+            .filter_map(|id| self.doc.layer(id))
+            .map(|layer| layer.track.copy_span(first, last))
+            .collect();
+        (!rows.is_empty()).then(|| {
+            inkframe_core::Clipboard::Frames(inkframe_core::CopiedFrames { length: last - first + 1, rows })
+        })
+    }
+
+    /// Copies the picked frames' keyframes, then takes them out (Cut
+    /// Frames). What follows plays as it did.
+    pub fn cut_frames(&mut self) -> Option<inkframe_core::Clipboard> {
+        let copied = self.copy_frames()?;
+        let (first, last) = self.picked_span()?;
+        for id in self.frame_layers() {
+            if let Some(layer) = self.doc.layer_mut(id) {
+                layer.track.clear_span(first, last);
+            }
+        }
+        Some(copied)
+    }
+
+    /// Pastes copied keyframes at the playhead onto the selected layers,
+    /// row for row (one row goes onto every selected layer), replacing the
+    /// keys they land on. The timeline grows to fit.
+    pub fn paste_frames(&mut self, copied: &inkframe_core::CopiedFrames) {
+        let at = self.frame;
+        let layers = self.frame_layers();
+        if layers.is_empty() || copied.rows.is_empty() {
+            return;
+        }
+        for (i, id) in layers.into_iter().enumerate() {
+            let row = if copied.rows.len() == 1 { copied.rows.first() } else { copied.rows.get(i) };
+            if let (Some(row), Some(layer)) = (row, self.doc.layer_mut(id)) {
+                layer.track.paste_span(row, at, copied.length);
+            }
+        }
+        self.grow_to(at + copied.length - 1);
+        // The pasted frames are picked, as Animate leaves them.
+        self.frame_range = Some((at, at + copied.length - 1));
+    }
+
+    /// The picked frames, first to last.
+    fn picked_span(&self) -> Option<(u32, u32)> {
+        let (a, b) = self.frame_range?;
+        Some((a.min(b), a.max(b)))
+    }
+
     /// The layers the frame commands change: the selected ones (a folder
     /// meaning what's in it), unless locked.
     fn frame_layers(&self) -> Vec<LayerId> {
@@ -327,5 +381,37 @@ mod tests {
             assert!(center.distance(Point::new(30.0, 0.0)) < 1e-3, "frame {frame}: {center:?}");
         }
         assert_eq!(layer.track.position.keys().len(), 1, "the layer itself didn't move");
+    }
+
+    #[test]
+    fn picked_frames_are_cut_copied_and_pasted_onto_other_layers() {
+        use inkframe_core::{Clipboard, Point, Transform};
+        let mut editor = Editor::new(Document::default());
+        let a = editor.doc.add_layer("A", Vec::new(), 0, Transform::default());
+        let b = editor.doc.add_layer("B", Vec::new(), 0, Transform::at(Point::new(5.0, 0.0)));
+        editor.doc.layer_mut(a).unwrap().track.set_pose(10, Transform::at(Point::new(100.0, 0.0)));
+        let x = |editor: &Editor, id, f: u32| editor.doc.layer(id).unwrap().track.sample(f as f32).position.x;
+
+        // A's frames 1 to 11 (0 to 10), picked as Shift-dragging would.
+        editor.select(Some(a));
+        editor.frame_range = Some((10, 0));
+        let Some(Clipboard::Frames(copied)) = editor.copy_frames() else { panic!("frames copied") };
+        assert_eq!((copied.length, copied.rows.len()), (11, 1));
+
+        // Onto B, from frame 21.
+        editor.select(Some(b));
+        assert_eq!(editor.frame_range, None, "picking another layer drops the picked frames");
+        editor.frame = 20;
+        editor.paste_frames(&copied);
+        assert!((x(&editor, b, 20)).abs() < 1e-3 && (x(&editor, b, 30) - 100.0).abs() < 1e-3);
+        assert!((x(&editor, b, 0) - 5.0).abs() < 1e-3, "before the paste, as it was");
+        assert_eq!(editor.frame_range, Some((20, 30)), "the pasted frames are picked");
+        assert!(editor.doc.duration >= 31, "the timeline grew to fit");
+
+        // Cutting them from A leaves it still, at its first key.
+        editor.select(Some(a));
+        editor.frame_range = Some((5, 10));
+        assert!(editor.cut_frames().is_some());
+        assert_eq!(editor.doc.layer(a).unwrap().track.position.key_frames(), [0, 11]);
     }
 }

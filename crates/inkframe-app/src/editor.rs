@@ -1480,6 +1480,11 @@ impl Editor {
 
     /// Selects just `id` (or nothing).
     pub fn select(&mut self, id: Option<LayerId>) {
+        // Frames picked on other layers aren't what's meant any more (so
+        // ⌘C copies the layer picked on the stage, not those frames).
+        if id != self.selection {
+            self.frame_range = None;
+        }
         self.selection = id;
         self.also_selected.clear();
     }
@@ -1731,6 +1736,7 @@ impl Editor {
                 }
             }
             Clipboard::Shapes(shapes) => self.paste_shapes(shapes, centered_on),
+            Clipboard::Frames(frames) => self.paste_frames(frames),
         }
     }
 

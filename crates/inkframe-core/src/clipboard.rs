@@ -44,6 +44,18 @@ pub enum Clipboard {
     Keyframe(CopiedKeyframe),
     /// Shapes picked inside a layer, for pasting into a layer.
     Shapes(CopiedShapes),
+    /// A span of frames' keyframes, from one or more layers, for pasting
+    /// onto the same number of layers (or one onto several).
+    Frames(CopiedFrames),
+}
+
+/// The keyframes on a span of frames, `length` long: for each layer they
+/// came from (in the timeline's order), its animation over the span as a
+/// track starting at frame 0 (see [`Track::copy_span`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CopiedFrames {
+    pub length: u32,
+    pub rows: Vec<Track>,
 }
 
 /// Shapes copied from inside a layer, in the coordinates of the timeline
