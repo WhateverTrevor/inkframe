@@ -85,12 +85,41 @@ fn layer_tab(ui: &mut egui::Ui, editor: &mut Editor) {
         );
         ui.add_space(4.0);
     }
-    match editor.selection {
-        Some(id) => layer_section(ui, editor, id),
-        None => {
-            ui.weak("Select a layer on the stage or in the timeline to see its properties.");
-        }
+    let Some(id) = editor.selection else {
+        ui.weak("Select a layer on the stage or in the timeline to see its properties.");
+        return;
+    };
+    search_box(ui, editor);
+    editor.properties_matches = 0;
+    layer_section(ui, editor, id);
+    if !editor.properties_search.trim().is_empty() && editor.properties_matches == 0 {
+        ui.add_space(8.0);
+        ui.weak(format!("No settings of this layer match “{}”.", editor.properties_search.trim()));
     }
+}
+
+/// The search box at the top of the layer tab: typing in it shows only the
+/// sections with matching settings (see `searched_for`).
+fn search_box(ui: &mut egui::Ui, editor: &mut Editor) {
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+        crate::icons::paint(ui.painter(), Icon::Search, rect, crate::theme::TEXT_WEAK);
+        let searching = !editor.properties_search.is_empty();
+        let width = ui.available_width() - if searching { 26.0 } else { 0.0 };
+        let field = ui.add(
+            egui::TextEdit::singleline(&mut editor.properties_search)
+                .hint_text("Search settings")
+                .desired_width(width),
+        );
+        // Escape clears it, as in most search boxes.
+        if field.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            editor.properties_search.clear();
+        }
+        if searching && ui.small_button("×").on_hover_text("Clear the search").clicked() {
+            editor.properties_search.clear();
+        }
+    });
+    ui.add_space(2.0);
 }
 
 /// The current tool's settings: the brush or selection options, or the
@@ -572,64 +601,68 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         return;
     }
     let Some(before) = editor.doc.layer(id).map(crate::multi_edit::LayerSettings::of) else { return };
+    // The layer's own settings, at the top, are found by search too.
+    let header = searched_for(editor, "layer", "Layer");
     let Some(layer) = editor.doc.layer_mut(id) else { return };
 
-    ui.heading("Layer");
-    ui.text_edit_singleline(&mut layer.name);
-    // Wrapped, so a narrow panel shows all four rather than cutting one off.
-    ui.horizontal_wrapped(|ui| {
-        ui.checkbox(&mut layer.visible, "Visible");
-        ui.checkbox(&mut layer.locked, "Locked");
-        ui.checkbox(&mut layer.guide, "Guide").on_hover_text(
-            "A motion guide: other layers can follow its path. Shown while editing, never exported.",
-        );
-        ui.checkbox(&mut layer.mask, "Mask").on_hover_text(
-            "A mask: layers masked by it only show where it has something drawn. It isn't drawn itself.",
-        );
-    });
-    span_editor(ui, layer, last_frame);
-    ui.horizontal(|ui| {
-        ui.label("Blend").on_hover_text("How the layer mixes with what's beneath it");
-        egui::ComboBox::from_id_salt("blend").selected_text(layer.blend.label()).show_ui(ui, |ui| {
-            for mode in inkframe_core::BlendMode::ALL {
-                ui.selectable_value(&mut layer.blend, mode, mode.label());
-            }
-        });
-    });
-    // The grain the layer's lines are inked with (see `line.rs` in the core).
-    if layer.draws_vectors() {
-        use inkframe_core::{LineTexture, TextureKind};
-        ui.horizontal(|ui| {
-            ui.label("Lines").on_hover_text(
-                "Ink the layer's pencil lines and strokes with a paper grain, as Harmony's line textures",
+    if header {
+        ui.heading("Layer");
+        ui.text_edit_singleline(&mut layer.name);
+        // Wrapped, so a narrow panel shows all four rather than cutting one off.
+        ui.horizontal_wrapped(|ui| {
+            ui.checkbox(&mut layer.visible, "Visible");
+            ui.checkbox(&mut layer.locked, "Locked");
+            ui.checkbox(&mut layer.guide, "Guide").on_hover_text(
+                "A motion guide: other layers can follow its path. Shown while editing, never exported.",
             );
-            let current = layer.line_texture.map(|t| t.kind);
-            let mut chosen = current;
-            egui::ComboBox::from_id_salt("line texture")
-                .selected_text(current.map_or("Flat", TextureKind::label))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut chosen, None, "Flat");
-                    for kind in TextureKind::ALL {
-                        ui.selectable_value(&mut chosen, Some(kind), kind.label());
-                    }
-                });
-            if chosen != current {
-                let amount = layer.line_texture.map_or(0.6, |t| t.amount);
-                layer.line_texture = chosen.map(|kind| LineTexture { kind, amount });
-            }
-            if let Some(texture) = &mut layer.line_texture {
-                ui.add(egui::Slider::new(&mut texture.amount, 0.0..=1.0).show_value(false))
-                    .on_hover_text("How strongly the grain shows");
-            }
+            ui.checkbox(&mut layer.mask, "Mask").on_hover_text(
+                "A mask: layers masked by it only show where it has something drawn. It isn't drawn itself.",
+            );
         });
-    }
-    // What the layer does when clicked, in a web page export.
-    ui.horizontal(|ui| {
+        span_editor(ui, layer, last_frame);
+        ui.horizontal(|ui| {
+            ui.label("Blend").on_hover_text("How the layer mixes with what's beneath it");
+            egui::ComboBox::from_id_salt("blend").selected_text(layer.blend.label()).show_ui(ui, |ui| {
+                for mode in inkframe_core::BlendMode::ALL {
+                    ui.selectable_value(&mut layer.blend, mode, mode.label());
+                }
+            });
+        });
+        // The grain the layer's lines are inked with (see `line.rs` in the core).
+        if layer.draws_vectors() {
+            use inkframe_core::{LineTexture, TextureKind};
+            ui.horizontal(|ui| {
+                ui.label("Lines").on_hover_text(
+                    "Ink the layer's pencil lines and strokes with a paper grain, as Harmony's line textures",
+                );
+                let current = layer.line_texture.map(|t| t.kind);
+                let mut chosen = current;
+                egui::ComboBox::from_id_salt("line texture")
+                    .selected_text(current.map_or("Flat", TextureKind::label))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut chosen, None, "Flat");
+                        for kind in TextureKind::ALL {
+                            ui.selectable_value(&mut chosen, Some(kind), kind.label());
+                        }
+                    });
+                if chosen != current {
+                    let amount = layer.line_texture.map_or(0.6, |t| t.amount);
+                    layer.line_texture = chosen.map(|kind| LineTexture { kind, amount });
+                }
+                if let Some(texture) = &mut layer.line_texture {
+                    ui.add(egui::Slider::new(&mut texture.amount, 0.0..=1.0).show_value(false))
+                        .on_hover_text("How strongly the grain shows");
+                }
+            });
+        }
+        // What the layer does when clicked, in a web page export.
+        ui.horizontal(|ui| {
         ui.label("Web button").on_hover_text(
             "In a Web Page export, clicking the layer does this, and it lights up under the pointer, as Animate's buttons",
         );
         web_action_editor(ui, "layer button", &mut layer.button, last_frame);
     });
+    }
     editor.carry_settings(id, before);
 
     ui.add_space(8.0);
@@ -1381,9 +1414,12 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         ui.weak(if animated { "Animated" } else { "Change them on another frame to animate them" });
     });
 
+    // Searching opens them, so what was searched for is in view.
+    let searching = (!editor.properties_search.trim().is_empty()).then_some(true);
     egui::CollapsingHeader::new("Colour Effect")
         .id_salt("color_effect")
         .default_open(!fx.color.is_none())
+        .open(searching)
         .show(ui, |ui| {
             let effect = &mut fx.color;
             egui::ComboBox::from_id_salt("color_effect_kind").selected_text(effect.label()).show_ui(
@@ -1443,6 +1479,7 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     egui::CollapsingHeader::new(format!("Filters ({})", fx.filters.len()))
         .id_salt("filters")
         .default_open(!fx.filters.is_empty())
+        .open(searching)
         .show(ui, |ui| {
             let mut remove = None;
             let mut raise = None;
@@ -2872,8 +2909,14 @@ pub enum AudioAction {
 /// What's folded is kept by `key` (a title can change, as the transform's
 /// does with the frame), with the person's settings for next time.
 fn section(ui: &mut egui::Ui, editor: &mut Editor, key: &str, title: impl Into<String>, icon: Icon) -> bool {
-    let open = !editor.folded_sections.contains(key);
     let title = title.into();
+    // While searching, a section is shown, open, only if it has what's
+    // looked for.
+    let searching = !editor.properties_search.trim().is_empty();
+    if !searched_for(editor, key, &title) {
+        return false;
+    }
+    let open = searching || !editor.folded_sections.contains(key);
     ui.add_space(8.0);
     let (rect, response) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 18.0), egui::Sense::click());
@@ -2934,6 +2977,67 @@ fn section(ui: &mut egui::Ui, editor: &mut Editor, key: &str, title: impl Into<S
     }
     // Folded or opened this frame, it's drawn as it now is from the next.
     open
+}
+
+/// What each section of the layer tab holds, by its key, for the search
+/// box: the words someone might look for a setting by.
+const SECTION_WORDS: &[(&str, &str)] = &[
+    (
+        "layer",
+        "name visible hidden show hide locked lock guide mask frames start end span blend mode multiply screen overlay lines texture pencil charcoal chalk grain web button click link",
+    ),
+    (
+        "transform",
+        "position move x y rotation rotate turn angle scale size skew slant opacity alpha fade transparency depth z distance orient path straighten motion masked follow guide",
+    ),
+    (
+        "parent and pivot",
+        "parent attach rig child pivot centre center origin bends bend limits joint elbow knee",
+    ),
+    ("easing", "easing ease in out linear hold curve timing tween speed slow overshoot anticipate"),
+    (
+        "skeleton",
+        "bone bones strength turn stretch keep area squash limits target ik dynamics spring damping swing delete",
+    ),
+    ("bones", "follows follow bind binding limb nearby region pin pins pinned"),
+    ("smart bone", "smart action actions timeline reshape switch correction correct morph preview keys"),
+    ("instance", "symbol instance loop play once single frame first length swap duplicate"),
+    (
+        "particles",
+        "particles particle emitter rate gravity wind drag wander turbulence speed spread direction lifetime size colour color spin seed preset sparks snow smoke fire",
+    ),
+    (
+        "effects",
+        "effects effect colour color brightness tint advanced filters filter drop shadow blur glow adjust hue saturation contrast motion shutter",
+    ),
+    ("deformer", "deformer bend bends bones softness soft rubber hose"),
+    ("free-form deformer", "free form freeform deformer grid warp points straighten bulge"),
+    (
+        "drawings",
+        "drawings drawing new duplicate delete swap substitution shape tween hints mouth lip sync flip",
+    ),
+    (
+        "shapes",
+        "shapes shape fill stroke outline gradient linear radial colour color line width dash dashed dotted ends corners cap join brush art pattern text font size align spacing image picture actual size",
+    ),
+];
+
+/// Whether the section `key` (titled `title`) has what the properties
+/// panel's search box asks for: every word typed, somewhere in its title
+/// or the words it holds. With nothing typed, every section does. Counts
+/// the matches, so the panel can say when there are none.
+fn searched_for(editor: &mut Editor, key: &str, title: &str) -> bool {
+    let query = editor.properties_search.trim().to_lowercase();
+    if query.is_empty() {
+        return true;
+    }
+    let words = SECTION_WORDS.iter().find(|(k, _)| *k == key).map_or("", |(_, w)| *w);
+    let haystack = format!("{} {key} {words}", title.to_lowercase());
+    let found = query.split_whitespace().all(|term| haystack.contains(term));
+    if found {
+        editor.properties_matches += 1;
+    }
+    found
 }
 
 /// A section title's text, for titles that share their row with controls.
@@ -3020,6 +3124,39 @@ mod tests {
     use inkframe_core::{Document, Point, Transform};
 
     use super::*;
+
+    #[test]
+    fn searching_shows_just_the_sections_that_have_it() {
+        let mut editor = Editor::new(Document::default());
+        let id = editor.doc.add_layer("Ball", Vec::new(), 0, Transform::default());
+        editor.select(Some(id));
+        // Folded, but a search finds it all the same.
+        editor.folded_sections.insert("effects".into());
+        editor.properties_search = "blur".into();
+        let mut h = Harness::new_ui_state(
+            |ui, editor: &mut Editor| {
+                egui::ScrollArea::vertical().show(ui, |ui| layer_tab(ui, editor));
+            },
+            editor,
+        );
+        h.set_size(vec2(360.0, 3000.0));
+        h.run();
+        assert!(h.query_by_label("Effects").is_some());
+        assert!(h.query_by_label("Colour Effect").is_some(), "open while searching");
+        assert!(h.query_by_label("Position").is_none());
+        assert!(h.query_by_label("Easing").is_none());
+        assert!(h.query_by_label("Blend").is_none(), "the layer's own settings hide too");
+
+        h.state_mut().properties_search = "zzz".into();
+        h.run();
+        assert!(h.query_by_label_contains("No settings of this layer match").is_some());
+
+        // Cleared, everything's back, folded sections folded.
+        h.state_mut().properties_search.clear();
+        h.run();
+        assert!(h.query_by_label("Position").is_some() && h.query_by_label("Blend").is_some());
+        assert!(h.query_by_label("Colour Effect").is_none());
+    }
 
     #[test]
     fn a_section_folds_away_and_opens_again() {

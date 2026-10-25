@@ -341,6 +341,10 @@ pub struct Editor {
     /// The Properties sections folded away, by key (see `inspector.rs`):
     /// the person's, kept for next time with their settings.
     pub folded_sections: std::collections::BTreeSet<String>,
+    /// What's typed in the properties panel's search box, and how many of
+    /// its sections matched on the last update (see `inspector.rs`).
+    pub properties_search: String,
+    pub properties_matches: usize,
     /// A smart bone's correction being drawn (see `skeleton.rs`).
     pub correcting: Option<crate::skeleton::Correcting>,
     /// A smart bone being shown at a turn of its own, its actions scrubbed
@@ -432,6 +436,8 @@ impl Editor {
             picked_anchor: None,
             rig_setup: false,
             folded_sections: Default::default(),
+            properties_search: String::new(),
+            properties_matches: 0,
             correcting: None,
             previewing: None,
             frame_range: None,
