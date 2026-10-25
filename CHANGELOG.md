@@ -13,6 +13,12 @@ notes on GitHub are its section here.
   layer drawn frame by frame, its drawings and swaps come along too. The
   pose commands (⌥⌘C, ⌥⌘V) are now called Copy Pose and Paste Pose.
 
+### Properties search
+
+- A search box at the top of the Layer tab: type a setting ("blur",
+  "pivot", "dash") and only the sections that have it show, opened, until
+  it's cleared.
+
 ### Speed
 
 - Characters on skeletons draw faster: each skeleton's pose is worked out

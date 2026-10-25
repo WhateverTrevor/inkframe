@@ -1001,6 +1001,14 @@ after the Harmony features (palettes to master controllers).
     in place and copied only on redraw. Heavy scene with onion: 43 -> 26 ms.
     Idea left: keep the main frame's coverage too (needs guides/light table
     off to match a ghost).
+125. Properties search: `Editor::properties_search` (+ `properties_matches`
+    counter), `inspector::search_box` at the top of `layer_tab`,
+    `SECTION_WORDS` (each section key's searchable words; "layer" is the
+    header block), `searched_for` used by `section()` (hidden unless
+    matching; forced open while searching) and the layer header; inner
+    Colour Effect/Filters headers open while searching. "No settings
+    match" note. Hook `INKFRAME_SCREENSHOT_SEARCH=text`. Keep SECTION_WORDS
+    in step when adding settings to a section.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)
