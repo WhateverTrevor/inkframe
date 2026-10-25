@@ -992,6 +992,15 @@ after the Harmony features (palettes to master controllers).
     a layer selected 56 -> 10 ms; with onion skins ~43 ms (5 renders: real
     work, left). Ideas: the stage's RenderKey clones the whole document each
     frame to compare; particles are simulated from scratch per frame.
+124. Faster onion skins: stage `GhostCache` (per frame, the alpha coverage
+    of an untinted ghost render, kept while `GhostKey` (timeline, to_stage,
+    size, image/font generations) and the document hold; frames out of
+    reach dropped) painted by `paint_coverage` (tint at coverage × opacity;
+    overlapping shapes in one ghost now fade evenly rather than darker).
+    `RenderKey` no longer holds a document copy: `rendered_doc` is compared
+    in place and copied only on redraw. Heavy scene with onion: 43 -> 26 ms.
+    Idea left: keep the main frame's coverage too (needs guides/light table
+    off to match a ghost).
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

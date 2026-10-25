@@ -19,6 +19,10 @@ notes on GitHub are its section here.
   once a frame rather than for every layer it bends, which made a
   500-layer scene with 24 rigged walkers about 30% quicker to draw, and
   scrubbing it with a layer selected five times quicker.
+- Onion skins draw each ghost frame once and keep it while nothing
+  changes, so stepping through frames with them on is quicker (43 ms to
+  26 ms an update on the same scene), and the stage no longer copies the
+  whole document on every update to see whether it changed.
 
 ### Scripting
 
