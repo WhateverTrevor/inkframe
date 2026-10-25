@@ -317,6 +317,7 @@ writes. No audio.
 | `skeleton.rs` | Rigging with skeletons: New Skeleton and New Switch, adding, posing, moving and deleting bones (bindings and pins follow a deleted bone's renumbering), pinning picked shapes or the Subselection's point (`Editor::picked_anchor`) to a bone, and the picked bone (`Editor::selected_bone`) |
 | `context_bar.rs` | The bar above the stage: the tool (`Tool::description`) and buttons for what can be done now (it returns a `Command` for the app to run; plain settings it flips itself), and view switches on the right |
 | `command_finder.rs` | Find a Command (⌘K): a written-out catalogue of commands and tools (`entries`), each with its menu, icon, keys and other words, searched as you type |
+| `action_timeline.rs` | A smart bone's actions laid out across its turns, as Moho's action timeline: scrubbing asks for a preview (`Bone::preview`, a `TurnPreview` that never saves, compares or survives a copy; `Editor::preview_turn`/`check_preview`), and lanes retime actions and correction keys |
 | `tour.rs` | The first-run tour: cards that light up one part of the window at a time (the app notes where each part was drawn in `Targets` every frame), shown until `Prefs::toured` and from Help › Take the Tour |
 | `bones_panel.rs` | The Bones area (`Kind::Bones`): each skeleton's bone tree (`tree`), what it rigs and how each layer follows, and the rig setup switch |
 | `shape_ops.rs` | Combine Shapes and Break Apart on the picked shapes (text through `inkframe_render::shape_outline`) |

@@ -893,6 +893,12 @@ type SwitchChoices = (LayerId, String, Vec<(LayerId, String)>);
 fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone: usize) {
     use inkframe_core::SmartAction;
     let frame = editor.frame;
+    ui.add_space(6.0);
+    ui.label(section_text("Smart bone")).on_hover_text(
+        "As this bone turns, it can reshape a layer (by hand at keyed turns, or toward another drawing), or have a switch show another layer",
+    );
+    // First, as it may preview the bone at another turn, or retime actions.
+    action_timeline(ui, editor, id, bone);
     let members = editor.skeleton_members(id);
     let name = |id: LayerId| editor.doc.layer(id).map_or_else(|| "(gone)".to_owned(), |l| l.name.clone());
     // Layers that can be reshaped (they have another drawing to morph
@@ -914,8 +920,8 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
         .collect();
     let Some(skeleton) = editor.skeleton(id) else { return };
     let Some(the_bone) = skeleton.bones.get(bone) else { return };
-    let mut actions = the_bone.actions.clone();
-    let now = the_bone.turn.sample(frame as f32).unwrap_or(0.0);
+    // As shown: previewed on the action timeline, or as animated.
+    let now = the_bone.shown_turn(frame as f32);
 
     // Layers a correction can reshape: any drawn layer it rigs.
     let correctable: Vec<(LayerId, String)> = members
@@ -925,10 +931,7 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
         .map(|l| (l.id, l.name.clone()))
         .collect();
 
-    ui.add_space(6.0);
-    ui.label(section_text("Smart bone")).on_hover_text(
-        "As this bone turns, it can reshape a layer (by hand at keyed turns, or toward another drawing), or have a switch show another layer",
-    );
+    let mut actions = the_bone.actions.clone();
     // A correction being drawn on this bone: say so, and how to finish.
     if let Some(c) = editor.correcting.as_ref().filter(|c| c.skeleton == id && c.bone == bone) {
         let what = format!(
@@ -1015,23 +1018,12 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
             }
             SmartAction::Correct { layer, keys, .. } => {
                 ui.label(format!("Correct {}", name(*layer)));
-                if keys.is_empty() {
-                    ui.weak("(no keys yet)");
-                }
-                // Each key: its turn, to take out.
-                let mut drop = None;
-                for (k, key) in keys.iter().enumerate() {
-                    if ui
-                        .small_button(format!("{:.0}° ×", key.turn))
-                        .on_hover_text("Take this key out")
-                        .clicked()
-                    {
-                        drop = Some(k);
-                    }
-                }
-                if let Some(k) = drop {
-                    keys.remove(k);
-                }
+                // The keys themselves are on the action timeline above.
+                ui.weak(match keys.len() {
+                    0 => "(no keys yet)".to_owned(),
+                    1 => "1 key".to_owned(),
+                    n => format!("{n} keys"),
+                });
                 let edit = ui
                     .add_enabled(now.abs() >= 1.0, egui::Button::new(format!("Edit at {now:.0}°")).small())
                     .on_hover_text(
@@ -1096,6 +1088,49 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
     };
     if let Err(problem) = started {
         crate::app::show_error("Couldn't draw the correction", &problem);
+    }
+}
+
+/// The bone's action timeline (see `action_timeline.rs`): its actions laid
+/// out along its turns, to scrub through and retime. What it changes is
+/// written straight back, before the rest of the section reads the actions.
+fn action_timeline(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone: usize) {
+    use crate::action_timeline::{self, Asked};
+    use inkframe_core::SmartAction;
+    let Some(the_bone) = editor.skeleton(id).and_then(|s| s.bones.get(bone)) else { return };
+    let now = the_bone.shown_turn(editor.frame as f32);
+    if the_bone.actions.is_empty() {
+        return;
+    }
+    let mut actions = the_bone.actions.clone();
+    let name = |id: LayerId| editor.doc.layer(id).map_or_else(|| "(gone)".to_owned(), |l| l.name.clone());
+    let names: Vec<String> = actions
+        .iter()
+        .map(|action| match action {
+            SmartAction::Morph { layer, .. } => format!("Reshape {}", name(*layer)),
+            SmartAction::Switch { folder, .. } => format!("Switch {}", name(*folder)),
+            SmartAction::Correct { layer, .. } => format!("Correct {}", name(*layer)),
+        })
+        .collect();
+    let span = action_timeline::span(&actions, the_bone.limits, now);
+    let previewing = editor.previewed_turn(id, bone).is_some();
+    let asked = action_timeline::show(ui, &mut actions, &names, span, now, previewing);
+    if let Some(b) =
+        editor.doc.layer_mut(id).and_then(|l| l.skeleton.as_mut()).and_then(|s| s.bones.get_mut(bone))
+        && b.actions != actions
+    {
+        b.actions = actions;
+    }
+    match asked {
+        Some(Asked::Preview(turn)) => editor.preview_turn(id, bone, turn),
+        Some(Asked::EndPreview) => editor.end_preview(),
+        Some(Asked::Edit { action, turn }) => {
+            editor.preview_turn(id, bone, turn);
+            if let Err(problem) = editor.start_correction(id, bone, action) {
+                crate::app::show_error("Couldn't draw the correction", &problem);
+            }
+        }
+        None => {}
     }
 }
 

@@ -340,6 +340,10 @@ pub struct Editor {
     pub rig_setup: bool,
     /// A smart bone's correction being drawn (see `skeleton.rs`).
     pub correcting: Option<crate::skeleton::Correcting>,
+    /// A smart bone being shown at a turn of its own, its actions scrubbed
+    /// through on their timeline (see `action_timeline.rs`): its skeleton,
+    /// the bone, and the frame it began on.
+    pub previewing: Option<(LayerId, usize, u32)>,
     /// Frames picked in the timeline (first and last, either way round),
     /// for the frame commands (see `frame_commands.rs`).
     pub frame_range: Option<(u32, u32)>,
@@ -425,6 +429,7 @@ impl Editor {
             picked_anchor: None,
             rig_setup: false,
             correcting: None,
+            previewing: None,
             frame_range: None,
             edit_multiple: false,
             show_rulers: false,
@@ -783,6 +788,8 @@ impl Editor {
         // Undo or redo puts back a document from before or after the
         // correction began, with its drawing and action as they were then.
         self.correcting = None;
+        // A document put back is a copy, which never keeps a preview.
+        self.previewing = None;
         // The lattice was bending shapes that may no longer be there as
         // they were.
         self.lattice = None;

@@ -7,6 +7,7 @@ In this chapter, we're going to cover the following main topics:
 - Switches
 - Smart bones: reshape and switch actions
 - Corrections: drawing how a pose should look
+- The action timeline
 - Limits and stretch
 - Dynamics
 
@@ -38,11 +39,23 @@ Sometimes bending isn't enough, and only redrawing will do: a shoulder that pinc
 3. Reshape it as it should look at that turn.
 4. Click **Finish** in the context bar (or press [[Enter]]) to key it there. [[Esc]] cancels.
 
-Between rest and that turn, the drawing morphs smoothly into your correction. Key as many turns as you like, either way round; each shows as a chip in the bone's properties, with **Edit at …°** to change it and × to take it out.
+Between rest and that turn, the drawing morphs smoothly into your correction. Key as many turns as you like, either way round; each shows as a key on the bone's action timeline, described next.
 
 ![A correction on the spine: the body reshaped by hand into a pear as it leans](correction){crop=0.3,0.05,0.7,0.68}
 
 > Important note: Saving or exporting while a correction is under way keys it first, so you won't lose your work.
+
+## The action timeline
+
+Posing the bone on the main timeline just to work on its actions would change your animation. Instead, as in Moho, each smart bone has an *action timeline* of its own: a strip at the top of the **Smart bone** section in Properties, running across the bone's turns, with rest (0°) marked.
+
+- **Drag along the strip** to see the bone at any turn, with everything its actions do. This is only a preview: nothing is keyed, the playhead turns blue, and the context bar says **Previewing** with a **Back to the animation** button (or press [[Esc]]). Moving to another frame or picking another bone also puts the animation back.
+- Each action has a lane. A **reshape** is a band from rest to the turn it's reached at, and a **switch** a mark where it flips; drag their handles to change the turn.
+- A **correction's** keys are diamonds, with rest a hollow one at 0°. Drag a key to move it to another turn, double-click it to redraw its shapes at that turn, or right-click it to remove it.
+
+To key a correction at a new turn, drag the strip to it and click **Edit at …°**. Draw the fix, then drag the strip on: the correction is keyed as you go, much like moving the playhead in Moho.
+
+![The action timeline: the spine previewed at 6°, partway to the correction keyed at 10°, so the body is part-way to a pear](actions){crop=0.3,0.04,0.7,0.70}
 
 ## Limits and stretch
 
@@ -64,6 +77,6 @@ Dynamics are worked out from the animation itself, so there's nothing to key: an
 
 ## Summary
 
-In this chapter, we made switches that show one layer at a time, and smart bones that reshape and switch drawings as they turn. We drew corrections by hand for the poses that needed them, kept bones within limits, stretched them while keeping their area, and let hair swing with dynamics.
+In this chapter, we made switches that show one layer at a time, and smart bones that reshape and switch drawings as they turn. We drew corrections by hand for the poses that needed them, worked on them on each bone's action timeline, kept bones within limits, stretched them while keeping their area, and let hair swing with dynamics.
 
 In the next chapter, we'll step back from characters, to the camera and the scene around them.

@@ -90,6 +90,34 @@ pub struct Bone {
     /// body moves; move the target to step.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<usize>,
+    /// A turn to show it at instead of its animation's, while its smart
+    /// actions are scrubbed through on their own timeline, as in Moho.
+    /// Never saved, and never counted as a change.
+    #[serde(skip)]
+    pub preview: TurnPreview,
+}
+
+/// A turn a bone is shown at for now, in place of its animation's (see
+/// [`Bone::preview`]). Two bones are the same whatever this says, as with
+/// [`RestPoseView`], so scrubbing a smart bone's actions never counts as a
+/// change to undo or save.
+///
+/// A copy of a document doesn't keep it: only the one being worked on shows
+/// a preview, so undo steps, saves and exports (all made from copies)
+/// never do.
+#[derive(Debug, Default)]
+pub struct TurnPreview(pub Option<f32>);
+
+impl Clone for TurnPreview {
+    fn clone(&self) -> Self {
+        Self(None)
+    }
+}
+
+impl PartialEq for TurnPreview {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 /// How a bone with dynamics swings after the bones it hangs from (see
@@ -256,7 +284,13 @@ impl Bone {
             squash: false,
             dynamics: None,
             target: None,
+            preview: TurnPreview::default(),
         }
+    }
+
+    /// Its turn as shown on `frame`: as animated, or as previewed.
+    pub fn shown_turn(&self, frame: f32) -> f32 {
+        self.preview.0.unwrap_or_else(|| self.turn.sample(frame).unwrap_or(0.0))
     }
 
     /// Its turn on `frame`, kept within its limits.
@@ -265,7 +299,7 @@ impl Bone {
     }
 
     fn turn_at(&self, frame: f32) -> f32 {
-        let turn = self.turn.sample(frame).unwrap_or(0.0);
+        let turn = self.shown_turn(frame);
         self.limits.map_or(turn, |l| l.clamp(turn))
     }
 
@@ -996,7 +1030,7 @@ impl crate::Document {
         if let Some(skeleton) = self.skeleton_layer_of(layer).and_then(|o| o.skeleton.as_ref()) {
             let from = layer.drawings.get(layer.drawing_index_at(frame));
             for bone in &skeleton.bones {
-                let now = bone.turn.sample(frame as f32).unwrap_or(0.0);
+                let now = bone.shown_turn(frame as f32);
                 for action in &bone.actions {
                     match action {
                         SmartAction::Morph { layer: target, drawing, .. } => {
@@ -1046,7 +1080,7 @@ impl crate::Document {
         let skeleton = self.skeleton_layer_of(folder).and_then(|o| o.skeleton.as_ref())?;
         let mut best: Option<(f32, LayerId)> = None;
         for bone in &skeleton.bones {
-            let now = bone.turn.sample(frame as f32).unwrap_or(0.0);
+            let now = bone.shown_turn(frame as f32);
             for action in &bone.actions {
                 let &SmartAction::Switch { folder: target, layer, turn } = action else { continue };
                 if target == folder.id
@@ -1347,6 +1381,34 @@ mod tests {
         assert!((height(&doc, 0) - 10.0).abs() < 1e-2);
         // Turned 20° of the action's 40°: halfway to the tall bar.
         assert!((height(&doc, 10) - 20.0).abs() < 0.5, "{}", height(&doc, 10));
+    }
+
+    #[test]
+    fn a_previewed_turn_poses_the_bone_without_changing_the_document() {
+        let (mut doc, folder, layer) = rigged_bar();
+        let mut tall = doc.layer(layer).unwrap().drawings[0].clone();
+        tall.elements[0].shape = Shape::Rect { width: 200.0, height: 30.0, corner_radius: 0.0 };
+        let drawing = doc.layer_mut(layer).unwrap().add_drawing(tall);
+        doc.layer_mut(layer).unwrap().bone_binding = BoneBinding::Unbound;
+        let skeleton = doc.layer_mut(folder).unwrap().skeleton.as_mut().unwrap();
+        skeleton.bones[1].actions.push(SmartAction::Morph { layer, drawing, turn: 40.0 });
+        let before = doc.clone();
+
+        // Shown turned 40°, though its animation never turns: the morph
+        // runs all the way, and the bone is posed there.
+        let bone = &mut doc.layer_mut(folder).unwrap().skeleton.as_mut().unwrap().bones[1];
+        bone.preview.0 = Some(40.0);
+        let height = doc.posed_elements(doc.layer(layer).unwrap(), 0)[0].shape.bounds().height();
+        assert!((height - 30.0).abs() < 0.5, "{height}");
+        let skeleton = doc.layer(folder).unwrap().skeleton.as_ref().unwrap();
+        assert!(!skeleton.is_at_rest(0));
+        assert_eq!(skeleton.bones[1].turn.sample(0.0), Some(0.0));
+        // And nothing to undo or save, and copies (undo steps, exports)
+        // show the animation.
+        assert_eq!(doc, before);
+        let copy = doc.clone();
+        assert_eq!(copy.layer(folder).unwrap().skeleton.as_ref().unwrap().bones[1].preview.0, None);
+        assert!(!serde_json::to_string(&doc).unwrap().contains("preview"));
     }
 
     #[test]

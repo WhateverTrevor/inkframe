@@ -66,6 +66,7 @@ targets          | -                           | TARGETS=1 TOOL=Bone
 # Chapter 8: Smart bones, corrections and dynamics
 smart            | -                           | SMART=1 TOOL=Bone
 correction       | -                           | CORRECTION=1 TOOL=Bone
+actions          | -                           | CORRECTION=1 TOOL=Bone ACTIONS=6
 dynamics         | -                           | DYNAMICS=1 TOOL=Bone
 
 # Chapter 9: The camera, depth and effects

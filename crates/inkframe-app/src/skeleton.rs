@@ -307,7 +307,8 @@ impl Editor {
         let frame = self.frame;
         let skeleton = self.skeleton(id).ok_or("The skeleton has gone.")?;
         let b = skeleton.bones.get(bone).ok_or("The bone has gone.")?;
-        let turn = b.turn.sample(frame as f32).unwrap_or(0.0);
+        // As shown: previewed on the action timeline, or as animated.
+        let turn = b.shown_turn(frame as f32);
         if turn.abs() < 1.0 {
             return Err("Turn the bone first: a correction is keyed at the turn it's drawn at.".into());
         }
@@ -368,11 +369,51 @@ impl Editor {
         let turn_now = self
             .skeleton(c.skeleton)
             .and_then(|s| s.bones.get(c.bone))
-            .and_then(|b| b.turn.sample(self.frame as f32));
+            .map(|b| b.shown_turn(self.frame as f32));
         let still = self.doc.layer(c.layer).is_some_and(|l| l.drawing_index_at(self.frame) == c.drawing)
             && turn_now.is_some_and(|t| (t - c.turn).abs() < 0.5);
         if !still {
             self.finish_correction();
+        }
+    }
+
+    /// Shows bone `bone` of skeleton `id` turned `turn` degrees, whatever its
+    /// animation says, to scrub through its smart actions (see
+    /// `action_timeline.rs`). Nothing is keyed; another frame, another bone
+    /// or [`Editor::end_preview`] puts it back.
+    pub fn preview_turn(&mut self, id: LayerId, bone: usize, turn: f32) {
+        if self.previewing.is_some_and(|(s, b, _)| (s, b) != (id, bone)) {
+            self.end_preview();
+        }
+        let Some(b) = self.skeleton_mut(id).and_then(|s| s.bones.get_mut(bone)) else { return };
+        b.preview.0 = Some(turn);
+        self.previewing = Some((id, bone, self.frame));
+    }
+
+    /// Shows the previewed bone as animated again.
+    pub fn end_preview(&mut self) {
+        let Some((id, bone, _)) = self.previewing.take() else { return };
+        if let Some(b) = self.skeleton_mut(id).and_then(|s| s.bones.get_mut(bone)) {
+            b.preview.0 = None;
+        }
+    }
+
+    /// The turn the bone being previewed is shown at, if it's `bone` of `id`.
+    pub fn previewed_turn(&self, id: LayerId, bone: usize) -> Option<f32> {
+        let (s, b, _) = self.previewing.filter(|&(s, b, _)| (s, b) == (id, bone))?;
+        self.skeleton(s)?.bones.get(b)?.preview.0
+    }
+
+    /// Ends the preview once it's no longer what's being looked at: another
+    /// frame, another bone picked, or the preview lost (a document put back
+    /// by undo is a copy, which never keeps one). Called once a frame,
+    /// before [`Editor::check_correction`], so a correction drawn at the
+    /// previewed turn is keyed as the preview ends.
+    pub fn check_preview(&mut self) {
+        let Some((id, bone, frame)) = self.previewing else { return };
+        let picked = self.active_skeleton() == Some(id) && self.selected_bone == Some(bone);
+        if frame != self.frame || !picked || self.previewed_turn(id, bone).is_none() {
+            self.end_preview();
         }
     }
 
@@ -613,6 +654,37 @@ mod tests {
         // Halfway back to rest, halfway between.
         editor.skeleton_mut(skeleton).unwrap().bones[1].turn.set(0, 22.5);
         assert!((arm_height(&editor, arm) - 40.0).abs() < 0.5, "{}", arm_height(&editor, arm));
+    }
+
+    #[test]
+    fn a_correction_can_be_keyed_at_a_previewed_turn_without_posing_the_bone() {
+        let (mut editor, skeleton, arm) = rigged_arm();
+        editor.set_bone_binding(arm, BoneBinding::Unbound);
+        editor.select(Some(skeleton));
+        editor.selected_bone = Some(1);
+        // Scrubbed to -30° on the action timeline; the animation never turns.
+        editor.preview_turn(skeleton, 1, -30.0);
+        editor.add_correction(skeleton, 1, arm).unwrap();
+        reshape(&mut editor, arm, 50.0);
+        // Scrubbing on keys what was drawn, as moving Moho's playhead does.
+        editor.preview_turn(skeleton, 1, -10.0);
+        editor.check_preview();
+        editor.check_correction();
+        assert!(editor.correcting.is_none());
+
+        let bone = &editor.skeleton(skeleton).unwrap().bones[1];
+        let SmartAction::Correct { keys, .. } = &bone.actions[0] else { panic!("a correction") };
+        assert_eq!((keys.len(), keys[0].turn), (1, -30.0));
+        assert_eq!(bone.turn.sample(0.0), Some(0.0), "nothing keyed on the bone");
+        // A third of the way from rest to the key.
+        assert!((arm_height(&editor, arm) - 30.0).abs() < 0.5, "{}", arm_height(&editor, arm));
+
+        // Another frame shows the animation again: at rest, as drawn.
+        editor.frame = 5;
+        editor.check_preview();
+        assert!(editor.previewing.is_none());
+        assert_eq!(editor.skeleton(skeleton).unwrap().bones[1].preview.0, None);
+        assert!((arm_height(&editor, arm) - 20.0).abs() < 1e-3);
     }
 
     #[test]

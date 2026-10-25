@@ -8,6 +8,7 @@
 // also open a console window. Debug builds keep the console for log output.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod action_timeline;
 mod adjust_dialog;
 mod app;
 mod audio_engine;
