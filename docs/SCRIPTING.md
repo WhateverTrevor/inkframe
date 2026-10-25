@@ -36,7 +36,9 @@ overwriting yours.
 
 A script sees only the `inkframe` object and `console`. It can change the
 open project, open and save Inkframe projects (`.inkf` files), and export.
-It can't read or write other files, use the network or run programs. A
+It can also bring sound files into a project (`importAudio`) and read
+lip sync timing files (`.tsv`, `.txt` or `.dat`). It can't read or write
+other files, use the network or run programs. A
 relative path starts from the project's folder (from the command line,
 for a new project, the current folder). `~/` means your home folder.
 
@@ -77,6 +79,10 @@ for a new project, the current folder). `~/` means your home folder.
 | `symbols` | The symbol library: `[{ name, duration, layers, uses }]` |
 | `addInstance(symbol, options)` | Adds an instance of a symbol (by name); options `at` and `frame` |
 | `addParticleLayer(preset, options)` | Adds particles: `"sparks"`, `"snow"`, `"smoke"` or `"fire"`; options `at` and `frame` |
+| `addSkeleton(layers, name)` | Puts layers in a new folder with an empty skeleton, as Modify › New Skeleton does, and returns the folder |
+| `importAudio(path, frame)` | Brings in a sound file, starting on a frame; returns the sound's name |
+| `frameActions` | The frames with web page actions: `[{ frame, action }]` |
+| `setFrameAction(frame, action)` | What a Web Page export does on reaching a frame (below), or nothing with `null` |
 | `camera` | The camera layer, or `null` |
 | `addCamera()` | The camera, added if there isn't one |
 | `controllers` | The master controllers: `[{ name, value, poses }]` |
@@ -88,7 +94,8 @@ for a new project, the current folder). `~/` means your home folder.
 | `export(options)` | Exports, and returns the file written (below) |
 
 **`addLayer` options**, all optional: a shape (`rect: [width, height]`
-with `radius` for rounded corners, `ellipse: [width, height]`, or
+with `radius` for rounded corners, `ellipse: [width, height]`, `text`
+with a font `size`, or
 `polygon: [[x, y], ...]`), `fill`, `stroke`, `strokeWidth`, `at: [x, y]`
 on the stage (the middle if left out), and the first `frame` it shows on.
 A layer with no shape is empty, ready to animate or parent things to.
@@ -130,6 +137,14 @@ doc.export({ format: "h264", to: `renders/${doc.name}_v001.mp4`, scale: 0.5 });
 | `removeKey(frame, property)` | Removes one property's key, or all of them on that frame without `property` |
 | `shiftKeys(frames)` | Moves its keys later (earlier if negative); the layer stays put |
 | `shiftTime(frames)` | Moves the whole layer in time: its span, drawings and keys |
+| `bones` | A skeleton folder's bones: `[{ name, parent, start, end, strength, target, limits, dynamics, squash }]` |
+| `addBone(name, start, end, { parent })` | Adds a bone at rest, hanging from a bone (by name) or a root of its own |
+| `setBone(name, settings)` | Changes a bone: `name`, `strength`, `target` (a bone's name), `limits: [min, max]`, `squash`, `dynamics: { spring, damping, swing }` (`null` turns one off) |
+| `poseBone(name, frame, pose)` | Keys a bone: `turn` (degrees from rest), `moveTo: [x, y]` (where its start goes, as dragging a root does) and `stretch` |
+| `follows` | How a layer in a skeleton's folder follows the bones: `"nearby"`, `"none"`, `{ bone: name }` or `{ limb: name }`; can be set |
+| `drawings`, `addDrawing(name, { copy })`, `showDrawing(name, frame)` | The layer's drawings by name; adds one (blank, or a copy of another); shows one from a frame on |
+| `lipSync(sound, { timing })` | Lip-syncs a mouth layer to a sound (by name), its drawings matched to the mouth shapes by their names: from the sound's loudness, or a Rhubarb (`.tsv`) or Papagayo (`.dat`) timing file. Returns how many mouth changes it made |
+| `button` | What clicking the layer does in a Web Page export (below), or `null`; can be set |
 | `moveUp(steps)`, `moveDown(steps)` | Restacks it |
 | `remove()` | Deletes it |
 
@@ -171,6 +186,21 @@ ball.setKey(12, { position: [960, 880], scale: [1.2, 0.8] }, { easing: "ease-out
 ball.setKey(24, { position: [960, 200], scale: [1, 1] });
 ```
 
+**Web actions**, for `button` and `setFrameAction`, are `"play"`, `"stop"`,
+`{ gotoAndPlay: frame }`, `{ gotoAndStop: frame }` or `{ openLink: url }`.
+
+```js
+// Rigging a leg, as the walk-cycle example does in full.
+const leg = doc.addLayer("Leg", { rect: [50, 340], at: [960, 600] });
+const rig = doc.addSkeleton([leg], "Walker");
+rig.addBone("Thigh", [960, 430], [960, 600])
+   .addBone("Shin", [960, 600], [960, 770], { parent: "Thigh" })
+   .addBone("Foot", [960, 770], [1010, 770])
+   .setBone("Shin", { target: "Foot", limits: [0, 150] })
+   .poseBone("Foot", 12, { moveTo: [1050, 770] });   // the leg reaches for it
+leg.follows = { limb: "Thigh" };
+```
+
 ## `console`
 
 `console.log(...)` prints its arguments, separated by spaces: to the
@@ -189,5 +219,6 @@ with a comment saying what it does and what to change.
 | `number-layers.js` | Renames layers to a prefix and a number, top to bottom |
 | `confetti.js` | Generates 40 tumbling pieces of confetti from random numbers |
 | `export-review.js` | Exports a half-size H.264 beside the project, named with today's date |
+| `walk-cycle.js` | Draws a character from the side and rigs a 24-frame walk: a skeleton with target feet, limbs and bobbing hips |
 | `snowy-night.js` | Adds snow, tints every layer blue and pushes the camera in: particles, effects and the camera |
 

@@ -12,6 +12,16 @@ notes on GitHub are its section here.
   the playhead onto the selected layers (also in the Timeline menu). The
   pose commands (⌥⌘C, ⌥⌘V) are now called Copy Pose and Paste Pose.
 
+### Scripting
+
+- Scripts can build characters: skeletons (`addSkeleton`, `addBone`,
+  `setBone` for targets, limits and dynamics, `poseBone`), how layers
+  follow them (`follows`, limbs included), drawings (`addDrawing`,
+  `showDrawing`), sound (`importAudio`) and lip sync (`lipSync`, from
+  loudness or a timing file); and web pages: `button` and
+  `setFrameAction`. `addLayer` takes `text`. A new example script,
+  `walk-cycle.js`, rigs a walking character.
+
 ## [0.4.0]
 
 Rigging that bends the way characters do, an easier start, and a
