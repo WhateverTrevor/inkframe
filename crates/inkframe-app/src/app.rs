@@ -49,6 +49,8 @@ pub(crate) enum Command {
     BatchExport,
     /// Opens the gallery of example projects.
     OpenExample,
+    /// Help › Take the Tour: the first-run tour again.
+    StartTour,
     /// Opens the Vectorise window for the selected layer.
     Vectorise,
     NewParticleLayer(inkframe_core::Preset),
@@ -175,6 +177,8 @@ pub(crate) enum Command {
 pub(crate) const FILE_EXTENSION: &str = "inkf";
 /// The guide that walks through a first animation, and where problems are
 /// reported (Help menu).
+/// The guidebook PDF is attached to each release.
+const GUIDEBOOK_URL: &str = "https://github.com/WhateverTrevor/inkframe/releases/latest";
 const GUIDE_URL: &str = "https://github.com/WhateverTrevor/inkframe/blob/main/docs/GETTING_STARTED.md";
 const ISSUES_URL: &str = "https://github.com/WhateverTrevor/inkframe/issues";
 pub(crate) const SCRIPTING_URL: &str =
@@ -245,6 +249,11 @@ pub struct InkframeApp {
     ctx: egui::Context,
     /// Find a Command (see `command_finder.rs`).
     finder: crate::command_finder::CommandFinder,
+    /// The first-run tour (see `tour.rs`), where the parts of the window
+    /// it points at were drawn this frame, and whether it's been seen.
+    tour: crate::tour::Tour,
+    tour_targets: crate::tour::Targets,
+    toured: bool,
 }
 
 impl InkframeApp {
@@ -292,6 +301,9 @@ impl InkframeApp {
             clipboard: None,
             ctx: cc.egui_ctx.clone(),
             finder: Default::default(),
+            tour: Default::default(),
+            tour_targets: Default::default(),
+            toured: false,
         };
         // Screenshots always use the usual layout, so they look the same
         // on every machine.
@@ -313,6 +325,15 @@ impl InkframeApp {
             app.editor.lock_guides = prefs.lock_guides;
             app.editor.snap_to_guides = !prefs.no_guide_snapping;
             app.batch.restore(prefs.batch_jobs(), prefs.batch_folder.clone());
+            app.toured = prefs.toured;
+        }
+        // The tour shows the first time Inkframe opens, and never in a
+        // screenshot unless asked for.
+        if app.screenshot.is_none() && !app.toured {
+            app.tour.start();
+        }
+        if let Some(card) = AutoScreenshot::tour() {
+            app.tour.start_at(card);
         }
         app.saved_prefs = app.current_prefs();
         if app.screenshot.is_none() {
@@ -797,6 +818,7 @@ impl InkframeApp {
             Command::Export => self.export.open(&self.editor.doc),
             Command::BatchExport => self.batch.open(),
             Command::OpenExample => self.examples.open(&self.ctx),
+            Command::StartTour => self.tour.start(),
             Command::Vectorise => self.vectorise.open(&self.editor),
             Command::ExportPsd => self.export_psd(),
             Command::ToggleMaximize => {
@@ -1588,9 +1610,14 @@ impl InkframeApp {
                 ui.weak("Drag an area's corner to split or join it,\nCtrl+Space to fill the window with it.");
             });
             ui.menu_button("Scripts", |ui| self.scripts.menu(ui, &self.editor));
-            ui.menu_button("Help", |ui| {
+            let help = ui.menu_button("Help", |ui| {
                 item(ui, "Find a Command…", Some(shortcuts::FIND_COMMAND), Command::OpenFinder, true);
+                item(ui, "Take the Tour", None, Command::StartTour, true);
                 ui.separator();
+                if ui.button("Inkframe for Artists (Guidebook)").clicked() {
+                    open_in_browser(GUIDEBOOK_URL);
+                    ui.close();
+                }
                 if ui.button("Getting Started Guide").clicked() {
                     open_in_browser(GUIDE_URL);
                     ui.close();
@@ -1601,6 +1628,7 @@ impl InkframeApp {
                 }
                 ui.weak(format!("Inkframe {}", env!("CARGO_PKG_VERSION")));
             });
+            crate::tour::Targets::note(&mut self.tour_targets.help, help.response.rect);
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // The workspace switcher, at the top right as in Animate.
@@ -1624,11 +1652,11 @@ impl InkframeApp {
                 // Find a Command, where it's easy to see.
                 ui.add_space(8.0);
                 let keys = ctx.format_shortcut(&shortcuts::FIND_COMMAND);
-                if ui
+                let find = ui
                     .add(crate::icons::LabelledButton::new(crate::icons::Icon::Search, &format!("Find a command  {keys}")))
-                    .on_hover_text("Search every command and tool by name")
-                    .clicked()
-                {
+                    .on_hover_text("Search every command and tool by name");
+                crate::tour::Targets::note(&mut self.tour_targets.finder, find.rect);
+                if find.clicked() {
                     chosen = Some(Command::OpenFinder);
                 }
             });
@@ -1641,6 +1669,15 @@ impl InkframeApp {
 
     // ---------------------------------------------------------------- files
 
+    /// Notes that the tour has been seen, so it doesn't open by itself
+    /// again, and does what its last card asked.
+    fn tour_ended(&mut self, ended: crate::tour::Ended) {
+        self.toured = true;
+        if ended == crate::tour::Ended::OpenExamples {
+            self.execute(Command::OpenExample);
+        }
+    }
+
     /// The settings to keep for next time, as they are now.
     fn current_prefs(&self) -> Prefs {
         Prefs {
@@ -1649,6 +1686,7 @@ impl InkframeApp {
             hide_guides: !self.editor.show_guides,
             lock_guides: self.editor.lock_guides,
             no_guide_snapping: !self.editor.snap_to_guides,
+            toured: self.toured,
             ..Prefs::gather(self.editor.guides, self.batch.jobs(), self.batch.chosen_folder())
         }
     }
@@ -1945,10 +1983,26 @@ impl InkframeApp {
 
     /// One area's editor.
     fn show_area(&mut self, ui: &mut egui::Ui, area: AreaId, kind: Kind) {
+        // Where the tour can find this area.
+        let targets = &mut self.tour_targets;
+        match kind {
+            Kind::Tools => crate::tour::Targets::note(&mut targets.tools, ui.max_rect()),
+            Kind::Properties => crate::tour::Targets::note(&mut targets.properties, ui.max_rect()),
+            Kind::Timeline => crate::tour::Targets::note(&mut targets.timeline, ui.max_rect()),
+            _ => {}
+        }
         match kind {
             Kind::Stage => {
                 // What can be done now, above the stage (see `context_bar.rs`).
+                let top = ui.cursor().top();
                 let asked = crate::context_bar::show(ui, &mut self.editor);
+                let full = ui.max_rect();
+                let bar = egui::Rect::from_x_y_ranges(full.x_range(), top..=ui.cursor().top());
+                crate::tour::Targets::note(&mut self.tour_targets.context_bar, bar);
+                crate::tour::Targets::note(
+                    &mut self.tour_targets.stage,
+                    egui::Rect::from_x_y_ranges(full.x_range(), bar.max.y..=full.max.y),
+                );
                 if self.editor.timeline() != TimelineId::Main {
                     breadcrumbs(ui, &mut self.editor);
                 }
@@ -2073,7 +2127,17 @@ impl InkframeApp {
 impl eframe::App for InkframeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        self.handle_shortcuts(&ctx);
+        self.tour_targets = Default::default();
+        // The tour waits for the Recover Unsaved Work window, and has the
+        // keyboard while it's open.
+        let touring = self.tour.is_open() && self.recoveries.is_empty();
+        if touring {
+            if let Some(ended) = self.tour.keys(&ctx) {
+                self.tour_ended(ended);
+            }
+        } else {
+            self.handle_shortcuts(&ctx);
+        }
         self.import_dropped_files(&ctx);
         // Decode any image that's new (just imported, or brought back by
         // undo) before the stage draws.
@@ -2138,6 +2202,11 @@ impl eframe::App for InkframeApp {
         self.scripts.show(&ctx, &mut self.editor);
         if let Some(path) = self.examples.show(&ctx) {
             self.open_example(&path);
+        }
+        if self.recoveries.is_empty()
+            && let Some(ended) = self.tour.show(&ctx, &self.tour_targets)
+        {
+            self.tour_ended(ended);
         }
 
         let dt = ctx.input(|i| i.stable_dt) as f64;

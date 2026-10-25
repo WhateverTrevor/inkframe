@@ -58,6 +58,7 @@ mod text_edit;
 mod theme;
 mod timeline;
 mod toolbar;
+mod tour;
 mod value_graph;
 mod vectorise_dialog;
 mod xsheet;

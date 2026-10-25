@@ -3,6 +3,15 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
+## Unreleased
+
+### First-run tour
+
+- The first time Inkframe opens, a tour points out the toolbar, the
+  context bar, the stage, Properties, the timeline, Find a Command and
+  Help, lighting each in turn. Help › Take the Tour shows it again, and
+  Help links to the guidebook.
+
 ## [0.3.0]
 
 Moho-style character rigging, Animate's drawing and export tools, an
