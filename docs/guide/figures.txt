@@ -11,6 +11,7 @@
 workspace        | examples/bouncing-ball.inkf | SELECT=Ball
 area-menu        | examples/bouncing-ball.inkf | AREA_MENU=1
 workspace-anim   | examples/bouncing-ball.inkf | SELECT=Ball WORKSPACE=Animator
+tour             | examples/bouncing-ball.inkf | TOUR=2
 finder           | examples/bouncing-ball.inkf | FINDER=bulge
 examples         | -                           | EXAMPLES=1
 

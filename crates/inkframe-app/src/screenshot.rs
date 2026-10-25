@@ -94,6 +94,7 @@
 //! * `INKFRAME_SCREENSHOT_PRESETS=1` shows Motion Presets in place of Properties, with the
 //!   selected layer's movement saved (in a temporary folder) and Bounce In picked.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
+//! * `INKFRAME_SCREENSHOT_TOUR=2` shows the first-run tour's second card.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
 //!   beside the timeline, to show the layout's areas.
@@ -429,6 +430,11 @@ impl AutoScreenshot {
     /// Whether to put the arm's layers (in examples/rig.inkf) in a folder.
     pub fn folder() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_FOLDER").is_some()
+    }
+
+    /// Which card of the first-run tour to show, counting from 1.
+    pub fn tour() -> Option<usize> {
+        std::env::var("INKFRAME_SCREENSHOT_TOUR").ok()?.parse().ok()
     }
 
     /// Whether to show the Stage area's editor menu open.

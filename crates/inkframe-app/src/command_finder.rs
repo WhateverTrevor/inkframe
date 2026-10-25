@@ -196,6 +196,7 @@ pub(crate) fn entries() -> Vec<Entry> {
             .icon(Icon::Perspective),
         entry("Show Guides", "View › Guides", Command::ToggleGuides).keys(shortcuts::SHOW_GUIDES),
         entry("Snap to Guides", "View › Guides", Command::ToggleSnapToGuides).keys(shortcuts::SNAP_TO_GUIDES),
+        entry("Take the Tour", "Help", Command::StartTour).also("welcome introduction tutorial walkthrough"),
         // Tools, by the slot they're in.
         tool_entry(Tool::Select),
         tool_entry(Tool::Subselect),

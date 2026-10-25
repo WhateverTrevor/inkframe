@@ -1,5 +1,6 @@
 //! Settings that carry over to the next time Inkframe runs: the framing
-//! guides, the Batch Export queue and where drawing goes.
+//! guides, the Batch Export queue, where drawing goes, and whether the
+//! first-run tour has been seen.
 //!
 //! Like the window layout (see `layout.rs`), these are the person's, not
 //! the document's, so they live in their own file in the settings folder.
@@ -34,6 +35,8 @@ pub struct Prefs {
     pub hide_guides: bool,
     pub lock_guides: bool,
     pub no_guide_snapping: bool,
+    /// Whether the first-run tour has been seen (finished or skipped).
+    pub toured: bool,
 }
 
 /// A Batch Export job as saved: the format by its short name, the same
@@ -68,6 +71,7 @@ impl Prefs {
             hide_guides: false,
             lock_guides: false,
             no_guide_snapping: false,
+            toured: false,
         }
     }
 

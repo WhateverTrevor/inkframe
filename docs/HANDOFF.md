@@ -893,6 +893,16 @@ after the Harmony features (palettes to master controllers).
     do `target-counter`); a sprite sheet must fit one 8192² image, so the
     batch figure shows the bouncing ball's sheet failing (a multi-sheet
     export would fix that).
+114. First-run tour: `tour.rs` (`Tour` with 8 `STEPS`, each a `Target`;
+    `Targets` noted each frame by `show_area` (Tools, Properties,
+    Timeline, the Stage's context bar and stage) and `menu_bar` (Find a
+    command button, Help menu); a Foreground shade with the target cut
+    out takes the clicks; the card is placed beside it by `place`). The
+    app skips its shortcuts while touring and waits for the recovery
+    window. `Prefs::toured` saves that it was seen; `Command::StartTour`
+    (Help › Take the Tour, Find a Command); Help links the guidebook
+    (releases/latest). Hook `INKFRAME_SCREENSHOT_TOUR=n`; guidebook
+    figure `tour` in chapter 1.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

@@ -5,6 +5,7 @@ Every animation program is a desk with the same few things on it: somewhere to d
 In this chapter, we're going to cover the following main topics:
 
 - A tour of the window
+- The first-run tour
 - Areas, tabs and workspaces
 - Finding any command
 - Opening the examples
@@ -45,6 +46,12 @@ You'll spend most of your time on the stage, so it's worth learning to move arou
 ### Playing and stepping through time
 
 Press [[Enter]] to play the animation and [[Enter]] again to stop. The loop button among the play controls repeats it. [[,]] and [[.]] (or the arrow keys) step back and forward a frame at a time, and [[Home]] and [[End]] jump to the first and last frames. You can also click or drag along the numbers at the top of the timeline (the *ruler*) to *scrub*: to move through time by hand, watching the picture change.
+
+## The first-run tour
+
+The first time Inkframe opens, it offers a tour of its own: a card for each part of the window, with that part lit up and the rest dimmed. Click **Next** (or press [[Enter]]) to move on, **Back** (or [[←]]) to go back, and **Skip tour** (or [[Esc]]) to leave it. Take it again at any time with **Help › Take the Tour**.
+
+![The tour's card for the toolbar, with the rest of the window dimmed](tour)
 
 ## Areas, tabs and workspaces
 
@@ -105,6 +112,6 @@ Press [[⌘S]] to save. Inkframe projects are `.inkf` files. While a project has
 
 ## Summary
 
-In this chapter, we toured Inkframe's window: the menu bar, toolbar, context bar, stage, Properties and timeline. We saw how areas can show any editor and be split, joined and rearranged, and how workspaces set them up for different jobs. Most usefully, we met Find a Command ([[⌘K]]), which finds any command by name or by what it does.
+In this chapter, we toured Inkframe's window (as its own first-run tour does): the menu bar, toolbar, context bar, stage, Properties and timeline. We saw how areas can show any editor and be split, joined and rearranged, and how workspaces set them up for different jobs. Most usefully, we met Find a Command ([[⌘K]]), which finds any command by name or by what it does.
 
 In the next chapter, we'll start drawing.
