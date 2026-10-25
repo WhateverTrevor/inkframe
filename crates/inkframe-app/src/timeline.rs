@@ -15,6 +15,7 @@ use std::collections::HashSet;
 use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2};
 use inkframe_core::{AnyChannel, AudioId, Easing, Layer, LayerId, Property, TimelineId};
 
+use crate::app::Command;
 use crate::audio_engine::AudioEngine;
 use crate::convert::to_color32;
 use crate::editor::Editor;
@@ -330,13 +331,23 @@ impl TimelineView {
         }
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) {
+    /// Draws the timeline. Returns a command its menus asked the app for
+    /// (Cut, Copy and Paste Frames, which need the app's clipboard);
+    /// `frames_copied` says whether there are copied frames to paste.
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        audio: &mut AudioEngine,
+        frames_copied: bool,
+    ) -> Option<Command> {
         transport_bar(ui, editor, &mut self.graph_mode);
         ui.add_space(2.0);
         if self.graph_mode {
             self.graph_grid(ui, editor);
+            None
         } else {
-            self.grid(ui, editor, audio);
+            self.grid(ui, editor, audio, frames_copied)
         }
     }
 
@@ -456,7 +467,13 @@ impl TimelineView {
             .collect()
     }
 
-    fn grid(&mut self, ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) {
+    fn grid(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        audio: &mut AudioEngine,
+        frames_copied: bool,
+    ) -> Option<Command> {
         let (response, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         let rect = response.rect;
         #[cfg(test)]
@@ -487,7 +504,7 @@ impl TimelineView {
 
         self.handle_input(ui, &response, editor, &layout, &rows, &audio_rows);
         self.update_cursor(ui, &response, editor, &layout, &rows);
-        context_menu(&response, editor, self.context_row, self.context_audio);
+        let asked = context_menu(&response, editor, self.context_row, self.context_audio, frames_copied);
         if let Some((layer, square)) = self.color_menu {
             let mut open = true;
             egui::Popup::new(egui::Id::new("layer-colour"), ui.ctx().clone(), square, ui.layer_id())
@@ -562,6 +579,7 @@ impl TimelineView {
         let line = Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color);
         painter.vline(layout.frames.left(), rect.y_range(), line);
         painter.hline(rect.x_range(), layout.frames.top(), line);
+        asked
     }
 
     /// A card dragged from the Library onto the rows: shows the frame and
@@ -1275,7 +1293,14 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) 
     });
 }
 
-fn context_menu(response: &egui::Response, editor: &mut Editor, row: Option<Row>, audio: Option<AudioId>) {
+fn context_menu(
+    response: &egui::Response,
+    editor: &mut Editor,
+    row: Option<Row>,
+    audio: Option<AudioId>,
+    frames_copied: bool,
+) -> Option<Command> {
+    let mut asked = None;
     response.context_menu(|ui| {
         if let Some(id) = audio {
             let Some(track) = editor.doc.audio_track_mut(id) else { return };
@@ -1373,6 +1398,28 @@ fn context_menu(response: &egui::Response, editor: &mut Editor, row: Option<Row>
         }
         ui.menu_button("Layer Colour", |ui| color_choices(ui, editor, row.layer));
         ui.separator();
+        // The picked frames, as the Timeline menu and ⌘X, ⌘C and ⌘V have them.
+        let picked = editor.frame_range.is_some();
+        for (label, keys, command, enabled) in [
+            ("Cut Frames", "⌘X", Command::CutFrames, picked),
+            ("Copy Frames", "⌘C", Command::CopyFrames, picked),
+            ("Paste Frames", "⌘V", Command::PasteFrames, frames_copied),
+        ] {
+            let button = egui::Button::new(label).shortcut_text(keys);
+            if ui
+                .add_enabled(enabled, button)
+                .on_disabled_hover_text(if enabled || label == "Paste Frames" {
+                    "Copy some frames first"
+                } else {
+                    "Shift-drag along a row to pick frames first"
+                })
+                .clicked()
+            {
+                asked = Some(command);
+                ui.close();
+            }
+        }
+        ui.separator();
         if ui.button("Duplicate Layer").clicked() {
             editor.duplicate_selected_layer();
             ui.close();
@@ -1382,6 +1429,7 @@ fn context_menu(response: &egui::Response, editor: &mut Editor, row: Option<Row>
             ui.close();
         }
     });
+    asked
 }
 
 /// The layer colours to pick from, and Automatic (one picked by the
@@ -1926,12 +1974,60 @@ mod tests {
         track.position.set(20, Point::new(100.0, 0.0));
 
         let mut h = Harness::new_ui_state(
-            |ui, (timeline, editor, audio): &mut State| timeline.show(ui, editor, audio),
+            |ui, (timeline, editor, audio): &mut State| {
+                timeline.show(ui, editor, audio, false);
+            },
             (TimelineView::default(), editor, AudioEngine::without_output()),
         );
         h.set_size(vec2(1000.0, 300.0));
         h.run();
         (h, id)
+    }
+
+    #[test]
+    fn the_right_click_menu_cuts_copies_and_pastes_picked_frames() {
+        use egui_kittest::kittest::Queryable;
+        type Asking = (TimelineView, Editor, AudioEngine, Option<Command>);
+        let mut editor = Editor::new(Document::default());
+        let id = editor.doc.add_layer("A", vec![], 0, Transform::default());
+        editor.select(Some(id));
+        editor.frame_range = Some((2, 6));
+        let mut h = Harness::new_ui_state(
+            |ui, (timeline, editor, audio, asked): &mut Asking| {
+                if let Some(command) = timeline.show(ui, editor, audio, false) {
+                    *asked = Some(command);
+                }
+            },
+            (TimelineView::default(), editor, AudioEngine::without_output(), None),
+        );
+        h.set_size(vec2(1000.0, 300.0));
+        h.run();
+        let at = {
+            let timeline = &h.state().0;
+            let layout = Layout::new(timeline.grid_rect.unwrap(), timeline.scroll, &timeline.heights);
+            pos2(layout.frame_center_x(4), layout.row_rect(0, layout.frames).center().y)
+        };
+        h.hover_at(at);
+        h.run();
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.run();
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.run();
+        h.run();
+        h.get_by_label("Copy Frames ⌘C").click();
+        h.run();
+        assert_eq!(h.state().3, Some(Command::CopyFrames));
+        assert!(h.query_by_label("Copy Frames ⌘C").is_none(), "the menu closes");
     }
 
     /// Screen position of a frame's cell in a given row.

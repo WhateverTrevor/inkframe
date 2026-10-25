@@ -887,7 +887,13 @@ impl InkframeApp {
                     self.editor.paste(clipboard, Some(center));
                 }
             }
-            Command::PasteInPlace | Command::PastePose | Command::PasteFrames => {
+            // Paste Frames pastes copied frames only, never layers copied since.
+            Command::PasteFrames => {
+                if let Some(Clipboard::Frames(frames)) = &self.clipboard {
+                    self.editor.paste_frames(frames);
+                }
+            }
+            Command::PasteInPlace | Command::PastePose => {
                 if let Some(clipboard) = &self.clipboard {
                     self.editor.paste(clipboard, None);
                 }
@@ -2059,16 +2065,21 @@ impl InkframeApp {
                 }
             }
             Kind::Timeline | Kind::GraphEditor => {
+                let frames_copied = matches!(self.clipboard, Some(Clipboard::Frames(_)));
+                let mut asked = None;
                 if let Some(timeline) = self.views.timelines.get_mut(&area) {
                     // The area's kind says which mode; the Graph button
                     // in the transport bar switches the kind.
                     let graph = kind == Kind::GraphEditor;
                     timeline.set_graph_mode(graph);
-                    timeline.show(ui, &mut self.editor, &mut self.audio);
+                    asked = timeline.show(ui, &mut self.editor, &mut self.audio, frames_copied);
                     if timeline.graph_mode() != graph {
                         let other = if graph { Kind::Timeline } else { Kind::GraphEditor };
                         self.views.retype = Some((area, other));
                     }
+                }
+                if let Some(command) = asked {
+                    self.execute(command);
                 }
             }
             Kind::Properties => {
