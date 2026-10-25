@@ -60,8 +60,9 @@
 //! * `INKFRAME_SCREENSHOT_OPEN=Ball` opens the named instance layer's symbol in place (after `_FRAME`).
 //! * `INKFRAME_SCREENSHOT_TYPE=Title` starts typing into the named text layer, with its text selected.
 //! * `INKFRAME_SCREENSHOT_GRAPH=1` shows the value graph in the timeline.
-//! * `INKFRAME_SCREENSHOT_LIPSYNC=1` opens the Lip Sync window for the selected layer;
-//!   `=apply` also applies it from loudness once the sound has loaded.
+//! * `INKFRAME_SCREENSHOT_LIPSYNC=1` opens the Lip Sync window for the selected layer
+//!   (giving a project with no sound a made-up line of dialogue first); `=apply` also
+//!   applies it from loudness once the sound has loaded.
 //! * `INKFRAME_SCREENSHOT_EXPORT=sprite` opens the Export window set to sprite sheets
 //!   (or another format by the start of its name, such as `png` or `h264`).
 //! * `INKFRAME_SCREENSHOT_BATCH=1` opens Batch Export with the open project and the
@@ -675,27 +676,56 @@ pub fn library_demo(editor: &mut Editor) {
             editor.doc.move_asset(Asset::Image(image), "Reference");
         }
     }
-    // A tenth of a second of silence: a valid WAV is a 44-byte header and
-    // the samples.
+    // A tenth of a second of silence.
     let sound = std::env::temp_dir().join("whoosh.wav");
-    let samples = 4410u32 * 2;
-    let mut wav = Vec::new();
-    for (chunk, value) in [(b"RIFF", 36 + samples), (b"WAVE", 0)] {
-        wav.extend_from_slice(chunk);
-        if chunk == b"RIFF" {
-            wav.extend_from_slice(&value.to_le_bytes());
-        }
+    if write_wav(&sound, &[0; 4410]).is_ok() {
+        editor.import_audio(&sound);
     }
-    wav.extend_from_slice(b"fmt ");
+}
+
+/// Gives a project with no sound a made-up line of dialogue, for the Lip
+/// Sync window to work from: two seconds of a hum that swells and fades
+/// like syllables, with pauses between words, so its loudness reads like
+/// speech.
+pub fn add_dialogue(editor: &mut Editor) {
+    if !editor.doc.audio.is_empty() {
+        return;
+    }
+    const RATE: f32 = 44_100.0;
+    let samples: Vec<i16> = (0..2 * 44_100)
+        .map(|n| {
+            let t = n as f32 / RATE;
+            // Five syllables a second, with a word's pause every third.
+            let syllable = (t * 5.0 * std::f32::consts::PI).sin().abs();
+            let word = if (t * 5.0) as u32 % 3 == 2 { 0.15 } else { 1.0 };
+            let voice =
+                (t * 180.0 * std::f32::consts::TAU).sin() + 0.4 * (t * 360.0 * std::f32::consts::TAU).sin();
+            (voice * syllable * word * 9_000.0) as i16
+        })
+        .collect();
+    let sound = std::env::temp_dir().join("dialogue.wav");
+    if write_wav(&sound, &samples).is_ok() {
+        editor.import_audio(&sound);
+    }
+}
+
+/// Writes 16-bit mono samples at 44.1 kHz as a WAV file: a 44-byte header
+/// and the samples.
+fn write_wav(path: &std::path::Path, samples: &[i16]) -> std::io::Result<()> {
+    let bytes = samples.len() as u32 * 2;
+    let mut wav = Vec::with_capacity(44 + bytes as usize);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + bytes).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
     for value in [16u32, 1 | (1 << 16), 44_100, 88_200, 2 | (16 << 16)] {
         wav.extend_from_slice(&value.to_le_bytes());
     }
     wav.extend_from_slice(b"data");
-    wav.extend_from_slice(&samples.to_le_bytes());
-    wav.resize(wav.len() + samples as usize, 0);
-    if std::fs::write(&sound, wav).is_ok() {
-        editor.import_audio(&sound);
+    wav.extend_from_slice(&bytes.to_le_bytes());
+    for sample in samples {
+        wav.extend_from_slice(&sample.to_le_bytes());
     }
+    std::fs::write(path, wav)
 }
 
 /// Gradient fills and line styles: a sky fading top to bottom, a sun with

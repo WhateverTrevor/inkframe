@@ -760,6 +760,7 @@ impl InkframeApp {
                 }
             }
             if AutoScreenshot::lip_sync() {
+                crate::screenshot::add_dialogue(&mut app.editor);
                 app.lip_sync.open(&app.editor);
             }
             if AutoScreenshot::expand_timeline() {

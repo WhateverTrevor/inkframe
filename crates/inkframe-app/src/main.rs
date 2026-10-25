@@ -42,6 +42,7 @@ mod node_view;
 mod panels;
 mod pen;
 mod prefs;
+mod reference;
 mod rhubarb;
 mod screenshot;
 mod scripts;
@@ -67,6 +68,11 @@ fn main() -> eframe::Result {
     let mut args = std::env::args().skip(1).peekable();
     if args.peek().is_some_and(|a| a == "--export") {
         std::process::exit(cli::run(args.skip(1).collect()));
+    }
+    // Every tool and command as Markdown, for the guidebook (see `docs/guide`).
+    if args.peek().is_some_and(|a| a == "--reference") {
+        print!("{}", reference::markdown());
+        return Ok(());
     }
     if args.peek().is_some_and(|a| a == "--script") {
         std::process::exit(cli_script::run(args.skip(1).collect()));

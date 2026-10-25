@@ -378,6 +378,15 @@ callbacks or retained widget trees. Panels read and change `Editor` directly.
 - `windows.rs` stages `inkframe.exe` (plus an optional ffmpeg) and runs Inno
   Setup on `packaging/windows/inkframe.iss` to make a `setup.exe`. The
   executable's icon is embedded by `crates/inkframe-app/build.rs`.
+- `guide.rs` builds the guidebook PDF (`cargo xtask guide`): takes the
+  screenshots `docs/guide/figures.txt` lists through the app's
+  `INKFRAME_SCREENSHOT_*` hooks, turns the Markdown chapters in
+  `docs/guide/chapters/` into one HTML page with its own small converter
+  (figures with crops and callouts, numbered figure references, Tip and
+  Important note boxes, keys), adds the tool and command tables from
+  `inkframe --reference` (`crates/inkframe-app/src/reference.rs`, built
+  from `Tool::GROUPS` and `command_finder::entries()`), and prints it
+  with headless Chrome. See `docs/guide/README.md`.
 - `util.rs` holds the steps both platforms share (release build, licences,
   bundling ffmpeg).
 

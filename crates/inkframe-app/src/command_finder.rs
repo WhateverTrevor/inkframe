@@ -138,11 +138,11 @@ pub(crate) fn entries() -> Vec<Entry> {
             .keys(shortcuts::ADD_SHAPE_HINT)
             .also("morph tween"),
         entry("Merge Down", "Modify", Command::MergeDown).also("paint layers flatten"),
-        entry("New Drawing", "Drawings", Command::NewDrawing).also("substitution frame by frame"),
-        entry("Duplicate Drawing", "Drawings", Command::DuplicateDrawing),
-        entry("Next Drawing", "Drawings", Command::NextDrawing).keys(shortcuts::NEXT_DRAWING),
-        entry("Previous Drawing", "Drawings", Command::PreviousDrawing).keys(shortcuts::PREVIOUS_DRAWING),
-        entry("Lip Sync…", "Drawings", Command::LipSync).also("mouth audio phonemes"),
+        entry("New Drawing", "Modify", Command::NewDrawing).also("substitution frame by frame"),
+        entry("Duplicate Drawing", "Modify", Command::DuplicateDrawing),
+        entry("Next Drawing", "Modify", Command::NextDrawing).keys(shortcuts::NEXT_DRAWING),
+        entry("Previous Drawing", "Modify", Command::PreviousDrawing).keys(shortcuts::PREVIOUS_DRAWING),
+        entry("Lip Sync…", "Modify", Command::LipSync).also("mouth audio phonemes"),
         entry("Insert Keyframe", "Timeline", Command::InsertKeyframe)
             .keys(shortcuts::INSERT_KEYFRAME)
             .also("key f6"),

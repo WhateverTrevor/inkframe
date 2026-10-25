@@ -1,0 +1,83 @@
+# The guidebook's screenshots, taken fresh by `cargo xtask guide`.
+#
+# One a line: name | project to open (- for none) | settings
+#
+# The settings are the app's screenshot hooks without their
+# INKFRAME_SCREENSHOT_ prefix (crates/inkframe-app/src/screenshot.rs lists
+# them all); quote a value with spaces in it. A chapter shows a figure
+# with ![Caption](name).
+
+# Chapter 1: Meet Inkframe
+workspace        | examples/bouncing-ball.inkf | SELECT=Ball
+area-menu        | examples/bouncing-ball.inkf | AREA_MENU=1
+workspace-anim   | examples/bouncing-ball.inkf | SELECT=Ball WORKSPACE=Animator
+finder           | examples/bouncing-ball.inkf | FINDER=bulge
+examples         | -                           | EXAMPLES=1
+
+# Chapter 2: Drawing with vectors
+new-layer        | examples/bouncing-ball.inkf | SELECT=Ball NEW_LAYER=1
+pen-handles      | -                           | PEN_HANDLES=1
+pressure-lines   | -                           | LINES=1
+styles           | -                           | STYLES=1
+combine          | -                           | COMBINE=1
+welds            | -                           | WELDS=1
+envelope         | -                           | ENVELOPE=1
+brushes          | -                           | BRUSHES=1
+textures         | -                           | TEXTURES=1
+rulers           | examples/bouncing-ball.inkf | RULERS=1
+perspective      | -                           | PERSPECTIVE=1
+
+# Chapter 3: Painting and colour
+paint            | -                           | PAINT=1
+paint-tools      | -                           | PAINT=tools
+paint-select     | -                           | PAINT=select
+ink              | -                           | INK=1
+palette          | examples/rig.inkf           | PALETTE=1 WORKSPACE=Designer
+vectorise        | -                           | PAINT=1 VECTORISE=ink
+
+# Chapter 4: Your first animation
+bounce-path      | examples/bouncing-ball.inkf | SELECT=Ball FRAME=6
+bounce-onion     | examples/bouncing-ball.inkf | SELECT=Ball FRAME=12 ONION=1
+bounce-expand    | examples/bouncing-ball.inkf | SELECT=Ball FRAME=6 EXPAND=1
+graph            | examples/bouncing-ball.inkf | SELECT=Ball GRAPH=1
+presets          | examples/bouncing-ball.inkf | SELECT=Ball PRESETS=1
+
+# Chapter 5: Frame by frame
+inbetweens       | -                           | INBETWEENS=1
+shape-tween      | -                           | SHAPE_TWEEN=1
+light-table      | examples/rig.inkf           | LIGHT_TABLE=1
+xsheet           | examples/rig.inkf           | XSHEET=1
+lipsync          | examples/rig.inkf           | SELECT=Mouth LIPSYNC=1
+
+# Chapter 6: Symbols, the Library and organising
+library          | examples/bouncing-ball.inkf | GROUP=1 LIBRARY=1
+swap             | examples/bouncing-ball.inkf | GROUP=1 SWAP=1
+folder           | examples/rig.inkf           | FOLDER=1
+templates        | examples/rig.inkf           | TEMPLATES=1
+
+# Chapter 7: Rigging a character
+rig-bone         | examples/rig.inkf           | SELECT=Forearm TOOL=Bone
+skeleton         | -                           | SKELETON=1 TOOL=Bone
+setup            | -                           | SKELETON=1 SETUP=1 TOOL="Add Bone"
+bones-panel      | -                           | SMART=1 BONES=1
+targets          | -                           | TARGETS=1 TOOL=Bone
+
+# Chapter 8: Smart bones, corrections and dynamics
+smart            | -                           | SMART=1 TOOL=Bone
+correction       | -                           | CORRECTION=1 TOOL=Bone
+dynamics         | -                           | DYNAMICS=1 TOOL=Bone
+
+# Chapter 9: The camera, depth and effects
+camera           | examples/bouncing-ball.inkf | CAMERA=1
+multiplane       | -                           | MULTIPLANE=1
+guides           | examples/bouncing-ball.inkf | CAMERA=1 GUIDES=safe,field
+effects          | examples/rig.inkf           | EFFECTS=1
+motion-blur      | -                           | MOTION_BLUR=1
+particles        | -                           | PARTICLES=1
+nodes            | examples/rig.inkf           | NODES=1
+
+# Chapter 10: Exporting your work
+export           | examples/bouncing-ball.inkf | EXPORT=h264
+export-sprite    | examples/bouncing-ball.inkf | EXPORT=sprite
+buttons          | -                           | BUTTONS=1
+batch            | examples/bouncing-ball.inkf | BATCH=1
