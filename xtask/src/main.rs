@@ -5,13 +5,13 @@
 //! every platform and anyone who can read the app's code can read these too.
 //! The alias that makes `cargo xtask` work lives in `.cargo/config.toml`.
 
+mod guide;
 mod icon;
 mod samples;
 // Bundling uses tools that only exist on macOS (iconutil, codesign, hdiutil).
 #[cfg(target_os = "macos")]
 mod macos;
 // Each platform's packaging uses a different subset of these helpers.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod util;
 // Building the installer needs Inno Setup, a Windows program.
 #[cfg(windows)]
@@ -24,6 +24,7 @@ const USAGE: &str = "\
 Usage: cargo xtask <task>
 
 Tasks:
+  guide [--keep-shots]       Build the guidebook PDF in target/guide/ (needs Google Chrome)
   icon                       Redraw the app icon PNGs in assets/icon/
   samples                    Rebuild the sample projects in examples/
   bundle-macos [options]     Build target/release/Inkframe.app
@@ -39,6 +40,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("icon") => write_icon_pngs(),
+        Some("guide") => guide::Options::parse(&args[1..]).and_then(|options| guide::build(&options)),
         Some("samples") => samples::write_all(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples")),
         #[cfg(target_os = "macos")]
         Some("bundle-macos") => macos::Options::parse(&args[1..]).and_then(|options| macos::bundle(&options)),

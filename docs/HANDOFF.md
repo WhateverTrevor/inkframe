@@ -881,6 +881,18 @@ after the Harmony features (palettes to master controllers).
     StepOut, Inbetween, Check, Cross) and `icons::LabelledButton`. Hook
     `INKFRAME_SCREENSHOT_FINDER=query`. Ideas not done: icons in menus,
     collapsible Properties sections with icons, a first-run tour.
+113. Guidebook: `docs/guide/` (chapters, `figures.txt`, `style.css`,
+    README on extending it) built by `xtask/src/guide.rs` (`cargo xtask
+    guide [--keep-shots]` → `target/guide/Inkframe-for-Artists.pdf`; own
+    Markdown subset; headless Chrome `--print-to-pdf`, `CHROME` to
+    override). Appendices come from `inkframe --reference`
+    (`reference.rs`). When adding a tool or feature, add words to its
+    chapter and a figure line if it needs a new scene. The LIPSYNC hook now
+    makes up a line of dialogue (`screenshot::add_dialogue`) when the
+    project has no sound. Known: the TOC has no page numbers (Chrome can't
+    do `target-counter`); a sprite sheet must fit one 8192² image, so the
+    batch figure shows the bouncing ball's sheet failing (a multi-sheet
+    export would fix that).
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

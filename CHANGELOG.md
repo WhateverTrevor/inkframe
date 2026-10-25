@@ -21,6 +21,17 @@ notes on GitHub are its section here.
 - Find a Command (⌘K): search every command and tool by name.
 - Toolbar tips say what each tool does; new icons throughout.
 
+### Guidebook
+
+- *Inkframe for Artists*, a beginner's guide in the style of a Packt
+  book: ten chapters from the workspace to rigging, smart bones and
+  export, with screenshots of every step and appendices of every tool and
+  command. `cargo xtask guide` builds it as a PDF, taking fresh
+  screenshots, so it keeps up with the app.
+- `inkframe --reference` prints every tool and command as Markdown tables.
+- Find a Command named the Drawings commands' menu wrongly; they're in
+  Modify.
+
 ### Interactive web pages
 
 - Layers can be buttons (Play, Stop, Go to a frame, Open a link) and
