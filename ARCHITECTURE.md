@@ -190,7 +190,13 @@ other; the buffer covers only the pixels the layer can reach.
 
 For speed, each frame is split into fixed-height horizontal bands that are
 drawn in parallel on every CPU core, and shapes outside a band are skipped
-before their outlines are built.
+before their outlines are built. Each worker draws inside
+`inkframe_core::with_pose_cache`, so a skeleton's pose (IK for target
+bones, dynamics) is worked out once per worker rather than for every layer
+it bends in every band. `tests/heavy_scene.rs` (ignored; run in release)
+times a 500-layer scene with 24 rigged walkers and particles, and the app's
+`INKFRAME_SCREENSHOT_BENCH=n` hook times its own updates while stepping
+through frames.
 
 Text is laid out in `text.rs`: fontdb finds the font, harfrust shapes the
 string into positioned glyphs (kerning, ligatures, complex scripts) and

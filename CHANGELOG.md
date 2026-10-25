@@ -13,6 +13,13 @@ notes on GitHub are its section here.
   layer drawn frame by frame, its drawings and swaps come along too. The
   pose commands (⌥⌘C, ⌥⌘V) are now called Copy Pose and Paste Pose.
 
+### Speed
+
+- Characters on skeletons draw faster: each skeleton's pose is worked out
+  once a frame rather than for every layer it bends, which made a
+  500-layer scene with 24 rigged walkers about 30% quicker to draw, and
+  scrubbing it with a layer selected five times quicker.
+
 ### Scripting
 
 - Scripts can build characters: skeletons (`addSkeleton`, `addBone`,

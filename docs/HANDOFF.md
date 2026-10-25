@@ -980,6 +980,18 @@ after the Harmony features (palettes to master controllers).
     names bones (resolves names to places). Rhubarb itself isn't runnable
     from scripts (it lives in the app). Example `walk-cycle.js` (8 example
     scripts; tests/examples.rs runs it). Docs in SCRIPTING.md.
+123. Speed check: `crates/inkframe-render/tests/heavy_scene.rs` (ignored;
+    `cargo test --release -p inkframe-render --test heavy_scene -- --ignored
+    --nocapture`; HEAVY_SCENE_PNG / HEAVY_SCENE_SAVE env vars) and app hook
+    `INKFRAME_SCREENSHOT_BENCH=n` (InkframeApp::ui split into update_ui +
+    step_bench). Profiling (macOS `sample`) showed Skeleton::pose recomputed
+    per bound layer per band; fix: core `with_pose_cache` (thread-local,
+    keyed by skeleton address + frame, scoped with a Drop guard, nested
+    scopes share) around each `in_bands` worker. Results on the heavy scene:
+    render 7.8 -> 5.6 ms (half size), 10.2 -> 7.0 ms (full); app update with
+    a layer selected 56 -> 10 ms; with onion skins ~43 ms (5 renders: real
+    work, left). Ideas: the stage's RenderKey clones the whole document each
+    frame to compare; particles are simulated from scratch per frame.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

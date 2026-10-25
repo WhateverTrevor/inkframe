@@ -329,6 +329,38 @@ impl Bone {
     }
 }
 
+thread_local! {
+    /// Poses worked out inside [`with_pose_cache`] on this thread, by
+    /// skeleton (where it is in memory, which can't change while the
+    /// document is borrowed to draw it) and frame. `None` outside one.
+    static POSE_CACHE: std::cell::RefCell<Option<std::collections::HashMap<(usize, u32), Pose>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `f` with poses cached: each skeleton's pose on a frame is worked
+/// out once, however many layers it bends. Only for code that reads a
+/// document it holds borrowed, unchanging, throughout, as drawing a frame
+/// does: a pose cached before an edit would otherwise outlive it. The cache
+/// goes when `f` returns (or panics); one already running is shared.
+pub fn with_pose_cache<R>(f: impl FnOnce() -> R) -> R {
+    struct Clear;
+    impl Drop for Clear {
+        fn drop(&mut self) {
+            POSE_CACHE.with(|cache| *cache.borrow_mut() = None);
+        }
+    }
+    let started = POSE_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let start = cache.is_none();
+        if start {
+            *cache = Some(std::collections::HashMap::new());
+        }
+        start
+    });
+    let _clear = started.then_some(Clear);
+    f()
+}
+
 impl Skeleton {
     /// The bone `index` hangs from, if it's a real one earlier in the list.
     fn parent_of(&self, index: usize) -> Option<usize> {
@@ -349,7 +381,27 @@ impl Skeleton {
 
     /// Where every bone is on `frame`. Bones with dynamics are simulated
     /// up to it, swinging after the bones they hang from.
+    ///
+    /// Inside [`with_pose_cache`], each skeleton's pose on a frame is worked
+    /// out once and reused: every layer a skeleton bends asks for it, and
+    /// target bones and dynamics make it costly.
     pub fn pose(&self, frame: u32) -> Pose {
+        let key = (self as *const Skeleton as usize, frame);
+        if let Some(pose) =
+            POSE_CACHE.with(|cache| cache.borrow().as_ref().and_then(|c| c.get(&key).cloned()))
+        {
+            return pose;
+        }
+        let pose = self.work_out_pose(frame);
+        POSE_CACHE.with(|cache| {
+            if let Some(cache) = cache.borrow_mut().as_mut() {
+                cache.insert(key, pose.clone());
+            }
+        });
+        pose
+    }
+
+    fn work_out_pose(&self, frame: u32) -> Pose {
         if self.bones.iter().all(|b| b.dynamics.is_none()) {
             let placing = self.placing(frame);
             return self.pose_with(|i, _| placing[i]);
@@ -1422,6 +1474,32 @@ mod tests {
         assert!((height(&doc, 0) - 10.0).abs() < 1e-2);
         // Turned 20° of the action's 40°: halfway to the tall bar.
         assert!((height(&doc, 10) - 20.0).abs() < 0.5, "{}", height(&doc, 10));
+    }
+
+    #[test]
+    fn cached_poses_last_only_as_long_as_their_scope() {
+        let mut skeleton = Skeleton::default();
+        let bone = skeleton.add_bone(None, Point::new(0.0, 0.0), Point::new(100.0, 0.0), 0);
+        let tip = |s: &Skeleton| s.pose(0).moves[bone].apply(Point::new(100.0, 0.0));
+        let still = with_pose_cache(|| {
+            let first = tip(&skeleton);
+            // Asked again in the scope (as every layer it bends asks), the same.
+            assert_eq!(with_pose_cache(|| tip(&skeleton)), first);
+            first
+        });
+        // Turned afterwards, it's posed afresh: nothing cached survives.
+        skeleton.bones[bone].turn.set(0, 90.0);
+        let turned = tip(&skeleton);
+        assert!(still.distance(turned) > 100.0, "{still:?} {turned:?}");
+        // And a scope that panics still clears it.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            with_pose_cache(|| {
+                tip(&skeleton);
+                panic!("drawing failed");
+            })
+        }));
+        skeleton.bones[bone].turn.set(0, 0.0);
+        assert!(tip(&skeleton).distance(still) < 1e-3);
     }
 
     #[test]

@@ -307,7 +307,9 @@ Roughly in priority order:
 - Code-signed Windows installer (the unsigned one already builds with
   `cargo xtask bundle-windows`)
 - GPU stage preview, if very large scenes ever outgrow the CPU renderer
-  (2,000 layers currently redraw in about 30 ms)
+  (2,000 layers currently redraw in about 30 ms; a 500-layer scene with 24
+  rigged, walking characters and particles in about 6 ms, and the editor
+  steps through it at about 10 ms a frame)
 
 ## License
 

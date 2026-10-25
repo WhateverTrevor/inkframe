@@ -260,6 +260,9 @@ pub struct InkframeApp {
     /// it points at were drawn this frame, and whether it's been seen.
     tour: crate::tour::Tour,
     tour_targets: crate::tour::Targets,
+    /// For the screenshot hook's bench: frames left to step through, and
+    /// how long each update took (see `AutoScreenshot::bench`).
+    bench: Option<(u32, Vec<std::time::Duration>)>,
     toured: bool,
 }
 
@@ -310,6 +313,7 @@ impl InkframeApp {
             finder: Default::default(),
             tour: Default::default(),
             tour_targets: Default::default(),
+            bench: AutoScreenshot::bench().map(|frames| (frames, Vec::new())),
             toured: false,
         };
         // Screenshots always use the usual layout, so they look the same
@@ -2166,7 +2170,43 @@ impl InkframeApp {
 }
 
 impl eframe::App for InkframeApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let started = std::time::Instant::now();
+        self.update_ui(ui, frame);
+        self.step_bench(ui.ctx(), started.elapsed());
+    }
+}
+
+impl InkframeApp {
+    /// The screenshot hook's bench: each update moves on a frame, as
+    /// scrubbing does, and is timed; once through, the times are printed.
+    fn step_bench(&mut self, ctx: &egui::Context, took: std::time::Duration) {
+        let Some((left, times)) = &mut self.bench else { return };
+        if *left == 0 {
+            return;
+        }
+        times.push(took);
+        *left -= 1;
+        let last = self.editor.last_frame();
+        self.editor.set_frame((self.editor.frame + 1) % (last + 1));
+        ctx.request_repaint();
+        if *left == 0 {
+            // The first update builds caches (thumbnails, text layout), so
+            // it's left out of the average.
+            let steady = &times[1.min(times.len())..];
+            let ms = |d: &std::time::Duration| d.as_secs_f64() * 1000.0;
+            let average = steady.iter().map(ms).sum::<f64>() / steady.len().max(1) as f64;
+            let worst = steady.iter().map(ms).fold(0.0, f64::max);
+            let layers = self.editor.doc.all_layers().count();
+            println!(
+                "Bench: {layers} layers, {} updates, {average:.1} ms on average, {worst:.1} ms at worst (first {:.1} ms)",
+                steady.len(),
+                times.first().map_or(0.0, ms)
+            );
+        }
+    }
+
+    fn update_ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.tour_targets = Default::default();
         // The tour waits for the Recover Unsaved Work window, and has the
@@ -2272,7 +2312,8 @@ impl eframe::App for InkframeApp {
             if AutoScreenshot::lip_sync_apply() && !self.audio.is_busy() {
                 self.lip_sync.apply_once(&mut self.editor, &mut self.audio);
             }
-            screenshot.update(&ctx, self.audio.is_busy() || self.lip_sync.is_busy());
+            let benching = self.bench.as_ref().is_some_and(|(left, _)| *left > 0);
+            screenshot.update(&ctx, self.audio.is_busy() || self.lip_sync.is_busy() || benching);
         }
     }
 }
