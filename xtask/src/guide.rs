@@ -27,6 +27,7 @@
 //! * `{{reference:tools}}` and `{{reference:commands}}` are the generated
 //!   tables.
 
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -99,26 +100,120 @@ pub fn build(options: &Options) -> Result<(), String> {
     }
     let css = read(&source.join("style.css"))?;
     let html_path = out.join("guide.html");
-    write(&html_path, book.html(&css).as_bytes())?;
-
     let pdf = out.join("Inkframe-for-Artists.pdf");
     let chrome = std::env::var("CHROME").map(PathBuf::from).unwrap_or_else(|_| default_chrome());
-    println!("Printing the PDF…");
+
+    // Chrome can't number the contents itself (it has no `target-counter`),
+    // so the book is printed, the page each heading landed on read back from
+    // the PDF, and printed again with the numbers in. Numbers can push the
+    // contents onto another page, moving everything after, so it goes round
+    // until the numbers it prints are the ones it finds.
+    let mut pages = HashMap::new();
+    for pass in 1..=4 {
+        write(&html_path, book.html(&css, &pages).as_bytes())?;
+        println!("Printing the PDF{}…", if pass > 1 { " again, with page numbers" } else { "" });
+        print_pdf(&chrome, &html_path, &pdf)?;
+        let bytes = std::fs::read(&pdf).map_err(|e| format!("couldn't read {}: {e}", pdf.display()))?;
+        let found = page_numbers(&bytes);
+        if found.is_empty() {
+            println!("(Couldn't find the headings in the PDF, so the contents have no page numbers.)");
+            break;
+        }
+        if found == pages {
+            break;
+        }
+        pages = found;
+    }
+    println!("Wrote {}", pdf.display());
+    Ok(())
+}
+
+fn print_pdf(chrome: &Path, html: &Path, pdf: &Path) -> Result<(), String> {
     output(
-        Command::new(&chrome)
+        Command::new(chrome)
             .arg("--headless=new")
             .arg("--disable-gpu")
             .arg("--no-pdf-header-footer")
             .arg("--allow-file-access-from-files")
             .arg("--virtual-time-budget=30000")
             .arg(format!("--print-to-pdf={}", pdf.display()))
-            .arg(format!("file://{}", html_path.display())),
+            .arg(format!("file://{}", html.display())),
     )
+    .map(|_| ())
     .map_err(|e| {
         format!("{e}\n(Chrome prints the book: set CHROME to where it is, if not {})", chrome.display())
-    })?;
-    println!("Wrote {}", pdf.display());
-    Ok(())
+    })
+}
+
+/// The page (counting from 1) each named place in a PDF Chrome printed is
+/// on: the anchors of the book's headings, which Chrome writes as named
+/// destinations for the contents' links.
+///
+/// Chrome (Skia) writes these as plain objects: the catalog names a
+/// `/Dests` dictionary of `/name [page 0 R /XYZ …]` and the `/Pages` tree,
+/// whose leaves in order are the pages. Anything unexpected gives an empty
+/// map, and the contents go without numbers rather than the build failing.
+fn page_numbers(pdf: &[u8]) -> HashMap<String, usize> {
+    let text = String::from_utf8_lossy(pdf);
+    // Each object's body, by its number. A chunk ends at `endobj`; its
+    // object's header is the last `N 0 obj` in it.
+    let mut objects: HashMap<u32, &str> = HashMap::new();
+    for chunk in text.split("endobj") {
+        let Some(header) = chunk.rfind(" 0 obj") else { continue };
+        let digits = chunk[..header].bytes().rev().take_while(u8::is_ascii_digit).count();
+        if let Ok(number) = chunk[header - digits..header].parse() {
+            objects.insert(number, &chunk[header + " 0 obj".len()..]);
+        }
+    }
+    let reference_after = |body: &str, key: &str| -> Option<u32> {
+        let rest = &body[body.find(key)? + key.len()..];
+        rest.split_whitespace().next()?.parse().ok()
+    };
+    let Some(catalog) = objects.values().find(|body| body.contains("/Type /Catalog")) else {
+        return HashMap::new();
+    };
+    let (Some(root), Some(dests)) = (reference_after(catalog, "/Pages"), reference_after(catalog, "/Dests"))
+    else {
+        return HashMap::new();
+    };
+
+    // The pages in order: the page tree's leaves, depth first.
+    let mut order: HashMap<u32, usize> = HashMap::new();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        let Some(body) = objects.get(&node) else { continue };
+        if body.contains("/Type /Pages") {
+            let kids = body.find("/Kids [").and_then(|at| {
+                let rest = &body[at + "/Kids [".len()..];
+                rest.find(']').map(|end| references(&rest[..end]))
+            });
+            // Pushed last first, so they're taken in order.
+            stack.extend(kids.unwrap_or_default().into_iter().rev());
+        } else {
+            let next = order.len() + 1;
+            order.insert(node, next);
+        }
+    }
+
+    let mut pages = HashMap::new();
+    let Some(body) = objects.get(&dests) else { return pages };
+    for entry in body.split('/').skip(1) {
+        let Some((name, target)) = entry.split_once('[') else { continue };
+        if let Some(page) = references(target).first().and_then(|object| order.get(object)) {
+            pages.insert(name.trim().to_owned(), *page);
+        }
+    }
+    pages
+}
+
+/// The object numbers of the references (`12 0 R`) in `text`.
+fn references(text: &str) -> Vec<u32> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    words
+        .windows(3)
+        .filter(|w| w[1] == "0" && w[2].starts_with('R'))
+        .filter_map(|w| w[0].parse().ok())
+        .collect()
 }
 
 fn default_chrome() -> PathBuf {
@@ -244,18 +339,26 @@ impl<'a> Book<'a> {
         Ok(())
     }
 
-    fn html(&self, css: &str) -> String {
+    /// The book as one page, with the contents numbered from `pages` (by
+    /// anchor) where it has them.
+    fn html(&self, css: &str, pages: &HashMap<String, usize>) -> String {
         let version = env!("CARGO_PKG_VERSION");
+        // A dotted leader and the page number, or nothing yet.
+        let page = |anchor: &str| match pages.get(anchor) {
+            Some(n) => format!(r#"<span class="toc-dots"></span><span class="toc-page">{n}</span>"#),
+            None => String::new(),
+        };
         let mut contents = String::new();
         for Contents { label, title, anchor, sections } in &self.contents {
             let _ = write!(
                 contents,
-                r##"<li class="toc-chapter"><a href="#{anchor}"><span class="toc-label">{label}</span> {title}</a>"##
+                r##"<li class="toc-chapter"><a href="#{anchor}"><span class="toc-label">{label}</span> {title}{}</a>"##,
+                page(anchor)
             );
             if !sections.is_empty() {
                 contents.push_str("<ul>");
                 for (section, id) in sections {
-                    let _ = write!(contents, r##"<li><a href="#{id}">{section}</a></li>"##);
+                    let _ = write!(contents, r##"<li><a href="#{id}">{section}{}</a></li>"##, page(id));
                 }
                 contents.push_str("</ul>");
             }
@@ -662,6 +765,24 @@ mod tests {
     #[test]
     fn settings_can_quote_spaces() {
         assert_eq!(settings_words(r#"SKELETON=1  TOOL="Add Bone""#), ["SKELETON=1", r#"TOOL="Add Bone""#]);
+    }
+
+    #[test]
+    fn page_numbers_are_read_from_the_pdf() {
+        // A PDF as Chrome writes it, cut down: three pages in a two-level
+        // tree, and two anchors.
+        let pdf = b"%PDF-1.4\n\
+            1 0 obj\n<</Type /Catalog\n/Pages 9 0 R\n/Dests 10 0 R>>\nendobj\n\
+            2 0 obj\n<</Type /Page\n/Parent 8 0 R>>\nendobj\n\
+            3 0 obj\n<</Type /Page\n/Parent 8 0 R>>\nendobj\n\
+            4 0 obj\n<</Type /Page\n/Parent 9 0 R>>\nendobj\n\
+            8 0 obj\n<</Type /Pages\n/Count 2\n/Kids [2 0 R 3 0 R]\n/Parent 9 0 R>>\nendobj\n\
+            9 0 obj\n<</Type /Pages\n/Count 3\n/Kids [8 0 R 4 0 R]>>\nendobj\n\
+            10 0 obj\n<</preface [2 0 R /XYZ 0 662.25 0]\n/drawing-the-pen [4 0 R /XYZ 0 300 0]>>\nendobj\n";
+        let pages = page_numbers(pdf);
+        assert_eq!(pages.get("preface"), Some(&1));
+        assert_eq!(pages.get("drawing-the-pen"), Some(&3));
+        assert!(page_numbers(b"not a pdf").is_empty());
     }
 
     #[test]

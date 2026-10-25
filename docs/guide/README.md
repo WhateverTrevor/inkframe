@@ -12,7 +12,10 @@ cargo xtask guide
 ```
 
 This builds the app, takes every screenshot the book uses, and prints the
-book with Google Chrome to `target/guide/Inkframe-for-Artists.pdf`. It
+book with Google Chrome to `target/guide/Inkframe-for-Artists.pdf`. It's
+printed twice: Chrome can't number the contents itself, so the build reads
+back which page each heading landed on and prints it again with the page
+numbers in. It
 takes about a minute, most of it screenshots; when only the words have
 changed, `cargo xtask guide --keep-shots` reuses the last ones and takes
 seconds. Set `CHROME` to use a Chrome or Chromium somewhere other than

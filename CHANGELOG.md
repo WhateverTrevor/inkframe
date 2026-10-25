@@ -19,6 +19,10 @@ notes on GitHub are its section here.
   data file, naming the others as TexturePacker's multipack does), rather
   than failing. Only a single frame bigger than that is still an error.
 
+### Guidebook
+
+- The guidebook's contents have page numbers, with dotted leaders.
+
 ### Node View keeps its arrangement
 
 - Nodes dragged in the Node View stay where they were put, saved with the

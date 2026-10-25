@@ -392,7 +392,10 @@ callbacks or retained widget trees. Panels read and change `Editor` directly.
   Important note boxes, keys), adds the tool and command tables from
   `inkframe --reference` (`crates/inkframe-app/src/reference.rs`, built
   from `Tool::GROUPS` and `command_finder::entries()`), and prints it
-  with headless Chrome. See `docs/guide/README.md`.
+  with headless Chrome. The contents' page numbers take a second printing:
+  `page_numbers` reads the PDF's named destinations (one per heading
+  anchor) and page tree back, and the book is printed again until the
+  numbers settle. See `docs/guide/README.md`.
 - `util.rs` holds the steps both platforms share (release build, licences,
   bundling ffmpeg).
 
