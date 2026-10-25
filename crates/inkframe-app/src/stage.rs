@@ -12,6 +12,8 @@ mod lattice;
 mod perspective;
 mod rulers;
 
+use std::collections::HashMap;
+
 use egui::{Align2, Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{
     Affine, Anchor, Bend, BrushMode, BrushStroke, Canvas, CanvasId, Color, Combine, Document, Element,
@@ -806,11 +808,12 @@ fn draw_hints(painter: &egui::Painter, editor: &Editor, view: View) {
     }
 }
 
-/// Everything that affects the rendered stage image. If none of it changed
-/// since last time, we can skip re-rendering and reuse the texture.
+/// Everything besides the document that affects the rendered stage image
+/// (the document is compared in place, and only copied when the stage is
+/// redrawn). If none of it changed since last time, we can skip
+/// re-rendering and reuse the texture.
 #[derive(PartialEq)]
 struct RenderKey {
-    doc: Document,
     timeline: TimelineId,
     to_stage: Affine,
     surroundings: Vec<Surrounding>,
@@ -850,6 +853,10 @@ pub struct StageView {
     ants: Option<(usize, Vec<(Point, Point)>)>,
     texture: Option<egui::TextureHandle>,
     rendered: Option<RenderKey>,
+    /// The document the texture was drawn from.
+    rendered_doc: Option<Document>,
+    /// Onion skin ghosts drawn so far (see `GhostCache`).
+    ghosts: GhostCache,
     /// The viewport from the last frame, for zoom commands that come from menus.
     last_area: Rect,
     /// A drag inside a layer (see `inside.rs`).
@@ -887,6 +894,8 @@ impl Default for StageView {
             ants: None,
             texture: None,
             rendered: None,
+            rendered_doc: None,
+            ghosts: GhostCache::default(),
             last_area: Rect::NOTHING,
             shape_drag: None,
             typing: TypingHistory::default(),
@@ -2987,7 +2996,6 @@ impl StageView {
         // Inside a layer, the others fade, as with the light table.
         let light_table = editor.inside_layer().or(editor.selection.filter(|_| editor.light_table));
         let key = RenderKey {
-            doc: doc.clone(),
             timeline,
             frame: editor.frame,
             to_stage,
@@ -2999,8 +3007,17 @@ impl StageView {
             shown_mask,
             light_table,
         };
-        if self.rendered.as_ref() == Some(&key) {
+        // Compared in place: copying the whole document on every update
+        // just to compare it costs time on a big scene.
+        let same_doc = self.rendered_doc.as_ref() == Some(doc);
+        if same_doc && self.rendered.as_ref() == Some(&key) {
             return;
+        }
+        // Ghosts drawn for another version of the document, or another view
+        // of it, are no use.
+        let ghost_key = GhostKey { timeline, to_stage, size, images: key.images, fonts: key.fonts };
+        if !same_doc || self.ghosts.key.as_ref() != Some(&ghost_key) {
+            self.ghosts = GhostCache { key: Some(ghost_key), frames: HashMap::new() };
         }
 
         let Some(mut pixmap) = tiny_skia::Pixmap::new(size.0, size.1) else {
@@ -3035,7 +3052,7 @@ impl StageView {
         }
 
         if let Some(onion) = onion {
-            draw_onion_skins(&mut pixmap, editor, onion, scale);
+            draw_onion_skins(&mut pixmap, editor, onion, scale, &mut self.ghosts);
         }
         let options = RenderOptions {
             scale,
@@ -3057,42 +3074,109 @@ impl StageView {
             None => self.texture = Some(ctx.load_texture("stage", image, egui::TextureOptions::LINEAR)),
         }
         self.rendered = Some(key);
+        if !same_doc {
+            self.rendered_doc = Some(doc.clone());
+        }
     }
 }
 
 /// Draws faint, tinted copies of neighbouring frames: blue for the past,
 /// green for the future (the same convention as most 2D animation tools).
 /// Nearer frames are stronger so the direction of motion reads clearly.
-fn draw_onion_skins(pixmap: &mut tiny_skia::Pixmap, editor: &Editor, onion: OnionSkin, scale: f32) {
+///
+/// A ghost is all one colour, so only where a frame covers the stage, and
+/// how solidly, matters: that's drawn once per frame and kept in `ghosts`,
+/// so stepping through the animation draws just the frames newly in reach.
+fn draw_onion_skins(
+    pixmap: &mut tiny_skia::Pixmap,
+    editor: &Editor,
+    onion: OnionSkin,
+    scale: f32,
+    ghosts: &mut GhostCache,
+) {
     let (doc, frame, timeline, to_stage) =
         (&editor.doc, editor.frame, editor.timeline(), editor.timeline_transform());
-    let mut ghost_at = |f: u32, options: &RenderOptions| {
-        render_timeline_into(pixmap, doc, timeline, f, to_stage, None, options);
-    };
-    let ghost = |distance: u32, count: u32, tint| RenderOptions {
+    let (width, height) = (pixmap.width(), pixmap.height());
+    let options = RenderOptions {
         scale,
         draw_background: false,
-        tint: Some(tint),
         images: Some(&editor.images),
         // A guide doesn't move with the animation, so ghosts of it would
         // only clutter.
         show_guides: false,
         show_mask: None,
         light_table: None,
-        opacity: 0.45 * (count - distance + 1) as f32 / count as f32,
+        tint: None,
+        opacity: 1.0,
     };
+    let mut wanted = Vec::new();
     // Farthest first, so nearer ghosts paint on top.
     for distance in (1..=onion.before).rev() {
         if let Some(f) = frame.checked_sub(distance) {
-            ghost_at(f, &ghost(distance, onion.before, ONION_BEFORE));
+            wanted.push((f, distance, onion.before, ONION_BEFORE));
         }
     }
     for distance in (1..=onion.after).rev() {
         let f = frame + distance;
         if f <= editor.last_frame() {
-            ghost_at(f, &ghost(distance, onion.after, ONION_AFTER));
+            wanted.push((f, distance, onion.after, ONION_AFTER));
         }
     }
+    // Frames out of reach go, so the cache stays the size of the ghosts.
+    ghosts.frames.retain(|f, _| wanted.iter().any(|(w, ..)| w == f));
+    for (f, distance, count, tint) in wanted {
+        let coverage = ghosts.frames.entry(f).or_insert_with(|| {
+            let Some(mut alone) = tiny_skia::Pixmap::new(width, height) else { return Vec::new() };
+            render_timeline_into(&mut alone, doc, timeline, f, to_stage, None, &options);
+            alone.pixels().iter().map(|p| p.alpha()).collect()
+        });
+        let opacity = 0.45 * (count - distance + 1) as f32 / count as f32;
+        paint_coverage(pixmap, coverage, tint, opacity);
+    }
+}
+
+/// Paints `tint` over `pixmap` wherever `coverage` (one alpha a pixel) has
+/// something, `opacity` as strong.
+fn paint_coverage(pixmap: &mut tiny_skia::Pixmap, coverage: &[u8], tint: inkframe_core::Color, opacity: f32) {
+    if coverage.len() != pixmap.pixels().len() {
+        return;
+    }
+    let strength = (opacity.clamp(0.0, 1.0) * 255.0).round() as u32;
+    for (pixel, &cover) in pixmap.pixels_mut().iter_mut().zip(coverage) {
+        if cover == 0 {
+            continue;
+        }
+        // Premultiplied: the tint's share, and what's left of what was there.
+        let a = (cover as u32 * strength + 127) / 255;
+        let keep = 255 - a;
+        let mix = |src: u8, dst: u8| ((src as u32 * a + dst as u32 * keep + 127) / 255).min(255) as u8;
+        let (r, g, b) = (mix(tint.r, pixel.red()), mix(tint.g, pixel.green()), mix(tint.b, pixel.blue()));
+        let alpha = (a + pixel.alpha() as u32 * keep / 255).min(255) as u8;
+        if let Some(blended) =
+            tiny_skia::PremultipliedColorU8::from_rgba(r.min(alpha), g.min(alpha), b.min(alpha), alpha)
+        {
+            *pixel = blended;
+        }
+    }
+}
+
+/// What onion skin ghosts were drawn for: they hold while these and the
+/// document stay the same.
+#[derive(Debug, Clone, PartialEq)]
+struct GhostKey {
+    timeline: TimelineId,
+    to_stage: Affine,
+    size: (u32, u32),
+    images: u64,
+    fonts: u64,
+}
+
+/// Onion skin ghosts drawn so far: for each frame, how much it covers each
+/// pixel of the stage texture.
+#[derive(Default)]
+struct GhostCache {
+    key: Option<GhostKey>,
+    frames: HashMap<u32, Vec<u8>>,
 }
 
 /// Turns a finished gesture into a document change.
@@ -3887,6 +3971,26 @@ fn snap_to_guides(editor: &Editor, view: View, p: Point) -> Point {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ghosts_are_painted_from_coverage_in_their_tint() {
+        let mut pixmap = tiny_skia::Pixmap::new(3, 1).unwrap();
+        pixmap.fill(tiny_skia::Color::WHITE);
+        let tint = inkframe_core::Color::rgb(0, 0, 255);
+        // Nothing, fully covered, half covered; at full strength.
+        paint_coverage(&mut pixmap, &[0, 255, 128], tint, 1.0);
+        fn px(pixmap: &tiny_skia::Pixmap, i: usize) -> (u8, u8, u8, u8) {
+            let p = pixmap.pixels()[i];
+            (p.red(), p.green(), p.blue(), p.alpha())
+        }
+        assert_eq!(px(&pixmap, 0), (255, 255, 255, 255));
+        assert_eq!(px(&pixmap, 1), (0, 0, 255, 255));
+        let (r, _, b, a) = px(&pixmap, 2);
+        assert!((r as i32 - 127).abs() <= 1 && b == 255 && a == 255, "{:?}", px(&pixmap, 2));
+        // Coverage of the wrong size (a texture resized since) paints nothing.
+        paint_coverage(&mut pixmap, &[255], tint, 1.0);
+        assert_eq!(px(&pixmap, 0), (255, 255, 255, 255));
+    }
 
     #[test]
     fn view_round_trips() {
