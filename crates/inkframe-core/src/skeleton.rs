@@ -238,6 +238,10 @@ pub enum BoneBinding {
     Region,
     /// The whole layer moves with one bone (by its place in the skeleton).
     Bone(usize),
+    /// Each point follows the bones near it, but only this bone and the
+    /// bones hanging from it: a limb. Two legs drawn over each other (a
+    /// walk from the side) each bend with their own bones alone.
+    Limb(usize),
     /// The layer stays put.
     Unbound,
 }
@@ -520,26 +524,49 @@ impl Skeleton {
     /// fractions that add up to 1. Near a bone it's nearly all that bone;
     /// halfway between two, half each.
     pub fn weights(&self, p: Point) -> Vec<f32> {
+        self.weights_among(p, None)
+    }
+
+    /// As [`Skeleton::weights`], counting only the bones `among` marks (all
+    /// of them with `None`); the rest pull on nothing.
+    fn weights_among(&self, p: Point, among: Option<&[bool]>) -> Vec<f32> {
+        let counts = |i: usize| among.is_none_or(|a| a.get(i).copied().unwrap_or(false));
         let raw: Vec<f32> = self
             .bones
             .iter()
-            .map(|b| {
+            .enumerate()
+            .map(|(i, b)| {
+                if !counts(i) {
+                    return 0.0;
+                }
                 let reach = (p.distance_to_segment(b.start, b.end) / b.strength.max(1e-3)).powi(4);
                 1.0 / (1e-6 + reach)
             })
             .collect();
         let sum: f32 = raw.iter().sum();
         if sum <= 0.0 || !sum.is_finite() {
-            return vec![1.0 / self.bones.len().max(1) as f32; self.bones.len()];
+            let shared = (0..self.bones.len()).filter(|&i| counts(i)).count().max(1) as f32;
+            return (0..self.bones.len()).map(|i| if counts(i) { 1.0 / shared } else { 0.0 }).collect();
         }
         raw.into_iter().map(|w| w / sum).collect()
+    }
+
+    /// The bones a [`BoneBinding::Limb`] at `bone` follows: it and every
+    /// bone hanging from it, marked by place.
+    pub fn limb(&self, bone: usize) -> Vec<bool> {
+        (0..self.bones.len()).map(|i| self.chain(i).contains(&bone)).collect()
     }
 
     /// Where the point `p` (at rest, in the timeline's coordinates) goes
     /// in `pose`, bound by region.
     pub fn carry(&self, pose: &Pose, p: Point) -> Point {
+        self.carry_among(pose, p, None)
+    }
+
+    /// As [`Skeleton::carry`], following only the bones `among` marks.
+    pub fn carry_among(&self, pose: &Pose, p: Point, among: Option<&[bool]>) -> Point {
         let mut to = Point::ZERO;
-        for (w, m) in self.weights(p).into_iter().zip(&pose.moves) {
+        for (w, m) in self.weights_among(p, among).into_iter().zip(&pose.moves) {
             if w > 1e-5 {
                 to = to + m.apply(p) * w;
             }
@@ -571,13 +598,19 @@ impl Skeleton {
         // scaled).
         let piece = (shortest / 4.0 / to_rest.average_scale().max(1e-3)).max(1.0);
         let follow = |bone: usize| pose.moves.get(bone).map(|m| from_rest.pre_concat(*m).pre_concat(to_rest));
+        let limb = match binding {
+            BoneBinding::Limb(bone) => Some(self.limb(bone)),
+            _ => None,
+        };
         // Where a point goes: with its own bone, or else as the layer does.
         let bend = |bone: Option<usize>, p: Point| match bone.or(match binding {
             BoneBinding::Bone(b) => Some(b),
             _ => None,
         }) {
             Some(b) => follow(b).map_or(p, |m| m.apply(p)),
-            None if binding == BoneBinding::Region => from_rest.apply(self.carry(pose, to_rest.apply(p))),
+            None if matches!(binding, BoneBinding::Region | BoneBinding::Limb(_)) => {
+                from_rest.apply(self.carry_among(pose, to_rest.apply(p), limb.as_deref()))
+            }
             None => p,
         };
         elements
@@ -597,7 +630,7 @@ impl Skeleton {
                         });
                         m.and_then(|m| element.transformed(m)).unwrap_or_else(|| element.clone())
                     }
-                    BoneBinding::Region => bend_element(element, piece, &[], &bend),
+                    BoneBinding::Region | BoneBinding::Limb(_) => bend_element(element, piece, &[], &bend),
                 },
                 ShapeBones::Points(bones) => bend_element(element, piece, bones, &bend),
             })
@@ -824,6 +857,14 @@ impl LayerBend<'_> {
             BoneBinding::Bone(_) => self.rigid().map_or(p, |m| m.apply(p)),
             BoneBinding::Region => {
                 self.from_bones.apply(self.skeleton.carry(&self.pose, self.to_bones.apply(p)))
+            }
+            BoneBinding::Limb(bone) => {
+                let limb = self.skeleton.limb(bone);
+                self.from_bones.apply(self.skeleton.carry_among(
+                    &self.pose,
+                    self.to_bones.apply(p),
+                    Some(&limb),
+                ))
             }
         }
     }
@@ -1381,6 +1422,32 @@ mod tests {
         assert!((height(&doc, 0) - 10.0).abs() < 1e-2);
         // Turned 20° of the action's 40°: halfway to the tall bar.
         assert!((height(&doc, 10) - 20.0).abs() < 0.5, "{}", height(&doc, 10));
+    }
+
+    #[test]
+    fn a_layer_bound_to_a_limb_ignores_the_other_bones() {
+        // Two legs over the same spot, from a hip: each a thigh and a shin.
+        let mut skeleton = Skeleton::default();
+        let hip = skeleton.add_bone(None, Point::new(0.0, -10.0), Point::new(0.0, 0.0), 0);
+        let mut thighs = Vec::new();
+        for _ in 0..2 {
+            let thigh = skeleton.add_bone(Some(hip), Point::new(0.0, 0.0), Point::new(0.0, 100.0), 0);
+            skeleton.add_bone(Some(thigh), Point::new(0.0, 100.0), Point::new(0.0, 200.0), 0);
+            thighs.push(thigh);
+        }
+        // Swing the second leg forward from the hip; the first hangs still.
+        skeleton.bones[thighs[1]].turn.set(0, -40.0);
+        let pose = skeleton.pose(0);
+        let ankle = Point::new(0.0, 190.0);
+        let first = skeleton.limb(thighs[0]);
+        assert_eq!(first.iter().filter(|&&b| b).count(), 2, "the thigh and its shin");
+        let still = skeleton.carry_among(&pose, ankle, Some(&first));
+        assert!(still.distance(ankle) < 1e-3, "{still:?}");
+        let swung = skeleton.carry_among(&pose, ankle, Some(&skeleton.limb(thighs[1])));
+        assert!(swung.x > 100.0, "{swung:?}");
+        // Bound by region, the same point is pulled halfway between.
+        let both = skeleton.carry(&pose, ankle);
+        assert!((both.x - swung.x / 2.0).abs() < 5.0, "{both:?}");
     }
 
     #[test]

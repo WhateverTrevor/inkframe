@@ -78,4 +78,4 @@ Each finished job is ticked, with a link that shows its file in Finder or Explor
 
 In this chapter, we exported animations from the Export window in the right format for each destination: video, image sequences, sprite sheets, SVG, Lottie and web pages. We made a web page interactive with buttons and frame actions, and exported many projects at once with Batch Export.
 
-That's the end of the tour. Appendix A lists every tool and its key, and Appendix B every command and where to find it, for when you need to look something up. Now go and make something move.
+That's the end of the tour of Inkframe's tools. The next three chapters are projects that put them together, start to finish: a walk cycle, a talking head and an interactive web banner.

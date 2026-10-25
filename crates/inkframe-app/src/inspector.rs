@@ -651,7 +651,6 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 /// A skeleton's picked bone, for its folder; for a layer in that folder,
 /// how it follows the bones (see `skeleton.rs` in the core).
 fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
-    use inkframe_core::BoneBinding;
     let frame = editor.frame;
     let Some(layer) = editor.doc.layer(id) else { return };
     if layer.skeleton.is_some() {
@@ -779,23 +778,18 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let names: Vec<String> =
         owner.skeleton.iter().flat_map(|s| s.bones.iter().map(|b| b.name.clone())).collect();
     let current = layer.bone_binding;
-    let label = |binding: BoneBinding| match binding {
-        BoneBinding::Region => "Nearby bones".to_owned(),
-        BoneBinding::Bone(i) => names.get(i).cloned().unwrap_or_else(|| "Nearby bones".to_owned()),
-        BoneBinding::Unbound => "None".to_owned(),
-    };
+    // Bones with others hanging from them, which a layer can follow as a limb.
+    let limbs: Vec<bool> = owner
+        .skeleton
+        .iter()
+        .flat_map(|s| (0..s.bones.len()).map(|i| s.limb(i).iter().filter(|&&b| b).count() > 1))
+        .collect();
     let mut chosen = current;
     ui.horizontal(|ui| {
         ui.label("Follows").on_hover_text(
-            "Nearby bones bends the drawing round its joints; one bone moves it whole, as a hand or a hat should",
+            "Nearby bones bends the drawing round its joints; a limb bends it with one bone and those below it only (for legs drawn over each other); one bone moves it whole, as a hand or a hat should",
         );
-        egui::ComboBox::from_id_salt("bone binding").selected_text(label(current)).show_ui(ui, |ui| {
-            ui.selectable_value(&mut chosen, BoneBinding::Region, label(BoneBinding::Region));
-            for i in 0..names.len() {
-                ui.selectable_value(&mut chosen, BoneBinding::Bone(i), label(BoneBinding::Bone(i)));
-            }
-            ui.selectable_value(&mut chosen, BoneBinding::Unbound, label(BoneBinding::Unbound));
-        });
+        chosen = binding_menu(ui, "bone binding", current, &names, &limbs);
     });
     if chosen != current {
         editor.set_bone_binding(id, chosen);
@@ -888,6 +882,54 @@ fn pin_controls(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, names: &[St
             }
         }
     }
+}
+
+/// What a layer following `binding` is called in a menu, with the bones'
+/// `names`.
+pub(crate) fn binding_label(binding: inkframe_core::BoneBinding, names: &[String]) -> String {
+    use inkframe_core::BoneBinding;
+    let name = |i: usize| names.get(i).cloned();
+    match binding {
+        BoneBinding::Region => "Nearby bones".to_owned(),
+        BoneBinding::Limb(i) => {
+            name(i).map_or_else(|| "Nearby bones".to_owned(), |n| format!("{n} and below"))
+        }
+        BoneBinding::Bone(i) => name(i).unwrap_or_else(|| "Nearby bones".to_owned()),
+        BoneBinding::Unbound => "None".to_owned(),
+    }
+}
+
+/// A menu of how a layer can follow a skeleton's bones: nearby bones, a
+/// limb (each bone with others hanging from it, marked in `limbs`), one
+/// bone whole, or none. Returns the choice.
+pub(crate) fn binding_menu(
+    ui: &mut egui::Ui,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    current: inkframe_core::BoneBinding,
+    names: &[String],
+    limbs: &[bool],
+) -> inkframe_core::BoneBinding {
+    use inkframe_core::BoneBinding;
+    let mut chosen = current;
+    egui::ComboBox::from_id_salt(id).selected_text(binding_label(current, names)).show_ui(ui, |ui| {
+        let mut option = |ui: &mut egui::Ui, binding| {
+            ui.selectable_value(&mut chosen, binding, binding_label(binding, names));
+        };
+        option(ui, BoneBinding::Region);
+        if limbs.iter().any(|&l| l) {
+            ui.label(section_text("Bend with a limb"));
+            for i in (0..names.len()).filter(|&i| limbs.get(i).copied().unwrap_or(false)) {
+                option(ui, BoneBinding::Limb(i));
+            }
+        }
+        ui.label(section_text("Move with one bone"));
+        for i in 0..names.len() {
+            option(ui, BoneBinding::Bone(i));
+        }
+        ui.separator();
+        option(ui, BoneBinding::Unbound);
+    });
+    chosen
 }
 
 /// A switch folder for the smart bone section: its id and name, and its

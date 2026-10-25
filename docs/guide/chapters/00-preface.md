@@ -2,7 +2,7 @@
 
 Inkframe is a free, open-source 2D animation studio. It draws and paints, rigs characters with bones, animates with keyframes or frame by frame, and exports to video, the web and game engines. If you have used Adobe Animate, Toon Boom Harmony, Moho or Photoshop, much of it will feel familiar on purpose: the tools sit where you expect them, and their shortcuts are the ones your fingers already know.
 
-This book is a guided tour of Inkframe for artists. It doesn't assume you have animated before, only that you like to draw. Each chapter teaches a group of tools by using them, with screenshots of the real app beside every step, and ends with something that moves.
+This book is a guided tour of Inkframe for artists. It doesn't assume you have animated before, only that you like to draw. Each chapter teaches a group of tools by using them, with screenshots of the real app beside every step, and ends with something that moves; the last three are projects that bring them together.
 
 ## Who this book is for
 
@@ -29,6 +29,12 @@ This book is for illustrators, cartoonists and students who want to make their d
 *Chapter 9, The Camera, Depth and Effects*, moves the camera through a multiplane scene, then adds filters, colour effects, motion blur and particles.
 
 *Chapter 10, Exporting Your Work*, gets your animation out as video, image sequences, sprite sheets, Lottie and interactive web pages, one project or many at a time.
+
+*Chapter 11, Project: A Walk Cycle*, draws a character side on, rigs its legs on target bones, and walks it across the stage in a looping symbol.
+
+*Chapter 12, Project: A Talking Head*, gives a character mouth shapes, times them to recorded dialogue with lip sync, and adds a nod of the head.
+
+*Chapter 13, Project: An Interactive Web Banner*, animates a banner with motion presets and gives it a button that opens a link, exported as a web page.
 
 *Appendix A* lists every tool and its key, and *Appendix B* every command and where to find it.
 

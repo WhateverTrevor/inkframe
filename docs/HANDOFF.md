@@ -949,6 +949,18 @@ after the Harmony features (palettes to master controllers).
     depth first) and the book is printed up to 4 times until the numbers
     it prints match what it reads. `Book::html(css, pages)` adds a dotted
     leader and number to each entry. No numbers found: prints without.
+120. Guidebook projects + limb binding (format v39): chapters
+    11-project-walk, 12-project-talking-head, 13-project-web-banner (preface
+    and ch. 10 point to them). Hooks `INKFRAME_SCREENSHOT_WALK=drawn|rigged|
+    follows` (walk_demo: overlapping legs on target feet, 24-frame cycle,
+    hips bob) and `_BANNER=1` (banner_demo: 970×250, Pop In title, Open
+    link button with a parented label, Stop on the last frame). Building
+    the walk showed region binding can't keep overlapping legs apart, so
+    core `BoneBinding::Limb(bone)` (`Skeleton::limb`, `carry_among`,
+    `weights_among`) and the app's shared `inspector::binding_menu`/
+    `binding_label` (Properties and Bones panel). Ideas: script API for
+    skeletons, lip sync and buttons (the projects' scenes are built in
+    Rust hooks because scripts can't yet).
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)
