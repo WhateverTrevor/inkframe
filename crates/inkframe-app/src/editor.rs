@@ -338,6 +338,9 @@ pub struct Editor {
     /// Rig setup, as Moho's frame 0: skeletons shown at rest, to draw and
     /// paint on and rig, rather than posed (see `skeleton.rs`).
     pub rig_setup: bool,
+    /// The Properties sections folded away, by key (see `inspector.rs`):
+    /// the person's, kept for next time with their settings.
+    pub folded_sections: std::collections::BTreeSet<String>,
     /// A smart bone's correction being drawn (see `skeleton.rs`).
     pub correcting: Option<crate::skeleton::Correcting>,
     /// A smart bone being shown at a turn of its own, its actions scrubbed
@@ -428,6 +431,7 @@ impl Editor {
             selected_bone: None,
             picked_anchor: None,
             rig_setup: false,
+            folded_sections: Default::default(),
             correcting: None,
             previewing: None,
             frame_range: None,

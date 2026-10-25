@@ -19,6 +19,13 @@ notes on GitHub are its section here.
   data file, naming the others as TexturePacker's multipack does), rather
   than failing. Only a single frame bigger than that is still an error.
 
+### Foldable Properties sections
+
+- Every section of Properties (Transform, Easing, Effects, Drawings,
+  Particles, Skeleton, Smart bone and the rest) has a title with an icon
+  that folds it away when clicked, and opens it again. What's folded is
+  remembered for next time.
+
 ### Smart bone action timeline
 
 - Each smart bone has an action timeline, as Moho's: a strip across its

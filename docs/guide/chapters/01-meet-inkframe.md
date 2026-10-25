@@ -26,7 +26,7 @@ Here's what each numbered part is for:
 2. **The toolbar**: the drawing, painting, rigging and camera tools. Tools that share a slot have a small triangle in their corner; right-click the slot, or press the tool's key with [[⇧]], to switch between them.
 3. **The context bar**: the current tool, and buttons for what you can do right now. With a layer selected, it offers **Symbol**, **Distort**, **Envelope** and **Break apart**; with a bone tool, it offers to add bones or pose them. Its right end turns on the rulers, the perspective guide, onion skins, the light table and rig setup.
 4. **The stage**: your picture. What's inside the frame is what gets exported; you can draw outside it too, for things that will move in.
-5. **Properties**: settings for whatever you're working on, in three tabs: **Tool** (the current tool's settings), **Layer** (the selected layer's) and **Document** (the whole project's: its size, frame rate and length).
+5. **Properties**: settings for whatever you're working on, in three tabs: **Tool** (the current tool's settings), **Layer** (the selected layer's) and **Document** (the whole project's: its size, frame rate and length). A long panel is split into sections, such as Transform and Easing: click a section's title to fold it away, and again to open it. Inkframe remembers what you've folded.
 6. **The timeline**: your layers, one per row, and their keyframes over time. The red marker is the *playhead*, the frame you're looking at.
 7. **Find a Command**: a search box for every command and tool. More on this shortly.
 8. **Fill and Stroke**: the colours new shapes are drawn in. The ⊘ beside each turns it off.

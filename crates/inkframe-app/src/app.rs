@@ -328,6 +328,7 @@ impl InkframeApp {
             app.editor.snap_to_guides = !prefs.no_guide_snapping;
             app.batch.restore(prefs.batch_jobs(), prefs.batch_folder.clone());
             app.toured = prefs.toured;
+            app.editor.folded_sections = prefs.folded_sections.iter().cloned().collect();
         }
         // The tour shows the first time Inkframe opens, and never in a
         // screenshot unless asked for.
@@ -1699,6 +1700,7 @@ impl InkframeApp {
             lock_guides: self.editor.lock_guides,
             no_guide_snapping: !self.editor.snap_to_guides,
             toured: self.toured,
+            folded_sections: self.editor.folded_sections.iter().cloned().collect(),
             ..Prefs::gather(self.editor.guides, self.batch.jobs(), self.batch.chosen_folder())
         }
     }
