@@ -3,56 +3,46 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
-## Unreleased
+## [0.4.0]
 
-### First-run tour
+Rigging that bends the way characters do, an easier start, and a
+guidebook with projects. Projects saved by 0.4.0 can use a newer file
+format, which 0.3.0 can't open; 0.4.0 opens older projects as they were.
 
-- The first time Inkframe opens, a tour points out the toolbar, the
-  context bar, the stage, Properties, the timeline, Find a Command and
-  Help, lighting each in turn. Help › Take the Tour shows it again, and
-  Help links to the guidebook.
+### Getting started
 
-### Sprite sheets on several images
+- The first time Inkframe opens, a tour points out each part of the
+  window in turn: the toolbar, the context bar, the stage, Properties,
+  the timeline, Find a Command and Help. Help › Take the Tour shows it
+  again, and Help links to the guidebook.
+- The guidebook, *Inkframe for Artists*, attached to this release, gains
+  page numbers in its contents and three projects, start to finish: a
+  walk cycle on a skeleton with target feet, a lip-synced talking head,
+  and an interactive web banner.
+
+### Rigging
+
+- **Limbs:** a layer in a skeleton can follow a limb (**Thigh and
+  below**), bending with that bone and the bones hanging from it only, so
+  two legs drawn over each other, as in a walk from the side, each bend
+  with their own bones. File format 39.
+- **Action timeline:** each smart bone has a timeline of its own, as in
+  Moho: a strip across its turns. Drag along it to preview the bone at
+  any turn without keying anything, retime its actions and correction
+  keys by dragging, and key corrections at a previewed turn.
+
+### Workspace
+
+- Every section of Properties folds away when its title is clicked, and
+  what's folded is remembered.
+- Nodes arranged in the Node View stay where they were put, saved with
+  the project. Nodes and wires no longer jump when grabbed.
+
+### Export
 
 - A sprite sheet whose frames don't fit on one 8192 × 8192 image is shared
-  out over as few as it needs (`walk-0.png`, `walk-1.png`…, each with its
-  data file, naming the others as TexturePacker's multipack does), rather
-  than failing. Only a single frame bigger than that is still an error.
-
-### Guidebook
-
-- The guidebook's contents have page numbers, with dotted leaders.
-- Three project chapters, start to finish: a walk cycle on a skeleton
-  with target feet, a lip-synced talking head, and an interactive web
-  banner.
-
-### Limbs
-
-- A layer in a skeleton can follow a limb (**Thigh and below**): it bends
-  with that bone and the bones hanging from it, ignoring the rest, so two
-  legs drawn over each other, as in a walk from the side, each bend with
-  their own bones. File format 39.
-
-### Node View keeps its arrangement
-
-- Nodes dragged in the Node View stay where they were put, saved with the
-  project (Arrange lays them out again). Grabbing a node no longer makes
-  it jump, and the view no longer slides as a node is dragged. Older
-  versions of Inkframe open such projects and ignore the arrangement.
-
-### Foldable Properties sections
-
-- Every section of Properties (Transform, Easing, Effects, Drawings,
-  Particles, Skeleton, Smart bone and the rest) has a title with an icon
-  that folds it away when clicked, and opens it again. What's folded is
-  remembered for next time.
-
-### Smart bone action timeline
-
-- Each smart bone has an action timeline, as Moho's: a strip across its
-  turns in its properties. Drag along it to preview the bone at any turn
-  without keying anything; drag actions' turns and corrections' keys to
-  retime them, and key corrections at a previewed turn.
+  out over as few as it needs, as TexturePacker's multipack does, rather
+  than failing.
 
 ## [0.3.0]
 
