@@ -55,6 +55,8 @@
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
 //!   and a word bent by an envelope, its handles still out.
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
+//! * `INKFRAME_SCREENSHOT_FOLD=transform,easing` folds those Properties sections
+//!   (by key, as in `inspector.rs`).
 //! * `INKFRAME_SCREENSHOT_ACTIONS=40` previews the picked bone turned 40° on its
 //!   action timeline (with `_SMART` or `_CORRECTION`).
 //! * `INKFRAME_SCREENSHOT_EXPAND=1` expands every layer's property rows in the timeline.
@@ -256,6 +258,9 @@ impl AutoScreenshot {
                 Some(tool) => editor.use_tool(tool),
                 None => eprintln!("Unknown tool {name:?} in INKFRAME_SCREENSHOT_TOOL"),
             }
+        }
+        if let Some(keys) = var("INKFRAME_SCREENSHOT_FOLD") {
+            editor.folded_sections.extend(keys.split(',').map(str::to_owned));
         }
         if let Some(turn) = var("INKFRAME_SCREENSHOT_ACTIONS").and_then(|v| v.parse::<f32>().ok())
             && let (Some(id), Some(bone)) = (editor.active_skeleton(), editor.selected_bone)

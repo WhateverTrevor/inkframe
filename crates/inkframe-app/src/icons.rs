@@ -106,6 +106,15 @@ pub enum Icon {
     Check,
     /// A cross: cancelling.
     Cross,
+    // Properties sections.
+    /// Arrows out four ways: moving, the transform.
+    Transform,
+    /// A four-pointed star and specks: particles.
+    Sparkle,
+    /// A sun with rays: effects and filters.
+    Effects,
+    /// A square and a circle: a drawing's shapes.
+    Shapes,
 }
 
 /// Draws `icon` filling `rect` (best square) in `color`.
@@ -638,6 +647,38 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
             line(&[(0.2, 0.2), (0.8, 0.8)]);
             line(&[(0.8, 0.2), (0.2, 0.8)]);
         }
+        Icon::Transform => {
+            line(&[(0.5, 0.1), (0.5, 0.9)]);
+            line(&[(0.1, 0.5), (0.9, 0.5)]);
+            line(&[(0.36, 0.24), (0.5, 0.1), (0.64, 0.24)]);
+            line(&[(0.36, 0.76), (0.5, 0.9), (0.64, 0.76)]);
+            line(&[(0.24, 0.36), (0.1, 0.5), (0.24, 0.64)]);
+            line(&[(0.76, 0.36), (0.9, 0.5), (0.76, 0.64)]);
+        }
+        Icon::Sparkle => {
+            fill(&[(0.42, 0.1), (0.5, 0.42), (0.42, 0.74), (0.34, 0.42)]);
+            fill(&[(0.1, 0.42), (0.42, 0.34), (0.74, 0.42), (0.42, 0.5)]);
+            for (x, y) in [(0.78, 0.18), (0.82, 0.78), (0.2, 0.86)] {
+                painter.circle_filled(at(x, y), side * 0.06, color);
+            }
+        }
+        Icon::Effects => {
+            painter.circle_filled(at(0.5, 0.5), side * 0.17, color);
+            for i in 0..8 {
+                let a = i as f32 * TAU / 8.0;
+                let (c, s) = (a.cos(), a.sin());
+                line(&[(0.5 + 0.3 * c, 0.5 + 0.3 * s), (0.5 + 0.42 * c, 0.5 + 0.42 * s)]);
+            }
+        }
+        Icon::Shapes => {
+            painter.rect_stroke(
+                Rect::from_min_max(at(0.1, 0.1), at(0.58, 0.58)),
+                1.0,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
+            painter.add(Shape::line(arc(0.62, 0.62, 0.26, 0.0, TAU), stroke));
+        }
     }
 }
 
@@ -811,6 +852,23 @@ mod tests {
             MatchHeight,
             NoColor,
             Chevron,
+            Search,
+            Symbol,
+            Distort,
+            Envelope,
+            Combine,
+            BreakApart,
+            RigSetup,
+            Perspective,
+            Ruler,
+            StepOut,
+            Inbetween,
+            Check,
+            Cross,
+            Transform,
+            Sparkle,
+            Effects,
+            Shapes,
         ];
         let ctx = egui::Context::default();
         let rect = Rect::from_min_size(pos2(100.0, 100.0), Vec2::splat(16.0));

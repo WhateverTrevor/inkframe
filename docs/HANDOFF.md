@@ -924,6 +924,16 @@ after the Harmony features (palettes to master controllers).
     `smart_bone_section`; correction chips there became a key count.
     `Command::EndPreview` (context bar note, Esc). Hook
     `INKFRAME_SCREENSHOT_ACTIONS=deg`; guidebook figure `actions` (ch. 8).
+117. Foldable Properties sections: `inspector::section(ui, editor, key,
+    title, icon) -> bool` (arrow, icon, spaced capitals, hairline; click
+    toggles `Editor::folded_sections` by key; labelled as a
+    CollapsingHeader for accessibility/tests); each section returns early
+    when folded (deformer, drawings, particles, shapes check their layer
+    first, so the title only shows where the section would). New sections:
+    "Parent and pivot" (rig_section), "Shapes"; Particles/Effects/Drawings
+    titles converted. New icons Transform, Sparkle, Effects, Shapes (icon
+    test now lists every icon). Saved as `Prefs::folded_sections`. Hook
+    `INKFRAME_SCREENSHOT_FOLD=key,key`.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

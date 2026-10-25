@@ -11,6 +11,7 @@ use crate::audio_engine::AudioEngine;
 use crate::convert::color_button;
 use crate::easing_editor;
 use crate::editor::Editor;
+use crate::icons::Icon;
 
 /// The Properties panel's tabs, as Animate's: the current tool, the
 /// selected layer, and the document.
@@ -654,7 +655,9 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
     let Some(layer) = editor.doc.layer(id) else { return };
     if layer.skeleton.is_some() {
-        section(ui, "Skeleton");
+        if !section(ui, editor, "skeleton", "Skeleton", Icon::Bones) {
+            return;
+        }
         let picked = editor.selected_bone;
         let mut delete = false;
         let Some(skeleton) = editor.doc.layer_mut(id).and_then(|l| l.skeleton.as_mut()) else { return };
@@ -768,6 +771,10 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         ui.add_space(8.0);
         return;
     }
+    if editor.doc.skeleton_layer_of(layer).is_none() || !section(ui, editor, "bones", "Bones", Icon::Bones) {
+        return;
+    }
+    let Some(layer) = editor.doc.layer(id) else { return };
     let Some(owner) = editor.doc.skeleton_layer_of(layer) else { return };
     let names: Vec<String> =
         owner.skeleton.iter().flat_map(|s| s.bones.iter().map(|b| b.name.clone())).collect();
@@ -777,7 +784,6 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         BoneBinding::Bone(i) => names.get(i).cloned().unwrap_or_else(|| "Nearby bones".to_owned()),
         BoneBinding::Unbound => "None".to_owned(),
     };
-    section(ui, "Bones");
     let mut chosen = current;
     ui.horizontal(|ui| {
         ui.label("Follows").on_hover_text(
@@ -893,10 +899,9 @@ type SwitchChoices = (LayerId, String, Vec<(LayerId, String)>);
 fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone: usize) {
     use inkframe_core::SmartAction;
     let frame = editor.frame;
-    ui.add_space(6.0);
-    ui.label(section_text("Smart bone")).on_hover_text(
-        "As this bone turns, it can reshape a layer (by hand at keyed turns, or toward another drawing), or have a switch show another layer",
-    );
+    if !section(ui, editor, "smart bone", "Smart bone", Icon::Dial) {
+        return;
+    }
     // First, as it may preview the bone at another turn, or retime actions.
     action_timeline(ui, editor, id, bone);
     let members = editor.skeleton_members(id);
@@ -1138,6 +1143,11 @@ fn action_timeline(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone: us
 /// move and how they change as they age (see `particles.rs` in the core).
 fn particles_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     use inkframe_core::{Emitter, EmitterShape, Preset, Sprite};
+    if editor.doc.layer(id).is_none_or(|l| l.particles.is_none())
+        || !section(ui, editor, "particles", "Particles", Icon::Sparkle)
+    {
+        return;
+    }
     let Some(emitter) = editor.doc.layer_mut(id).and_then(|l| l.particles.as_mut()) else { return };
     let number = |ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeInclusive<f32>, suffix: &str| {
         ui.add(DragValue::new(value).range(range).speed(1.0).suffix(suffix.to_owned()));
@@ -1152,7 +1162,7 @@ fn particles_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         }
     };
 
-    egui::CollapsingHeader::new("Particles").id_salt("particles").default_open(true).show(ui, |ui| {
+    ui.scope(|ui| {
         ui.horizontal_wrapped(|ui| {
             ui.weak("Start from");
             for preset in Preset::ALL {
@@ -1319,17 +1329,15 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let keyed = layer.track.effects.key_at(frame).is_some();
     let animated = layer.track.effects.keys().len() > 1;
     let mut fx = before.clone();
+    if !section(ui, editor, "effects", "Effects", Icon::Effects) {
+        return;
+    }
     ui.horizontal(|ui| {
         if key_toggle(ui, Property::Effects, keyed).clicked() {
             editor.toggle_property_key(id, Property::Effects);
         }
-        ui.label(section_text("Effects"));
-        if animated {
-            ui.weak("animated");
-        }
-    })
-    .response
-    .on_hover_text("Change them on another frame to animate them, as with the transform");
+        ui.weak(if animated { "Animated" } else { "Change them on another frame to animate them" });
+    });
 
     egui::CollapsingHeader::new("Colour Effect")
         .id_salt("color_effect")
@@ -1565,7 +1573,9 @@ fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         return;
     };
 
-    section(ui, "Symbol instance");
+    if !section(ui, editor, "instance", "Symbol instance", Icon::Symbol) {
+        return;
+    }
     ui.weak("Double-click it on the stage (or Modify › Edit Symbol) to work on the layers inside.");
     let frame = editor.frame;
     let (showing, swaps) = editor.doc.layer(id).map_or((instance.symbol, 0), |l| {
@@ -1682,7 +1692,9 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
     let mut depth = layer.track.depth_at(frame as f32);
     let mut depth_changed = false;
 
-    section(ui, format!("Transform at frame {}", frame + 1));
+    if !section(ui, editor, "transform", format!("Transform at frame {}", frame + 1), Icon::Transform) {
+        return;
+    }
 
     // Scale and opacity are stored as fractions but edited as percentages,
     // which is what people expect to type.
@@ -1775,6 +1787,9 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
 /// How the layer hangs in a character rig: the layer it's attached to, and
 /// the pivot it turns around.
 fn rig_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) {
+    if !section(ui, editor, "parent and pivot", "Parent and pivot", Icon::Nodes) {
+        return;
+    }
     let Some(layer) = editor.doc.layer(id) else { return };
     // Only layers it can attach to without making a loop.
     let parents: Vec<(LayerId, String)> = editor
@@ -1866,11 +1881,15 @@ fn rig_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) 
 /// bends on this frame, and how soft the bends are.
 fn deformer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
+    if editor.doc.layer(id).is_none_or(|l| l.instance.is_some())
+        || !section(ui, editor, "deformer", "Deformer", Icon::Envelope)
+    {
+        return;
+    }
     let Some(layer) = editor.doc.layer_mut(id).filter(|l| l.instance.is_none()) else { return };
     // The drawing as drawn, not bent, is what the bones are laid along.
     let rest_bounds = layer.elements_at(frame).iter().map(|e| e.bounds()).reduce(|a, b| a.union(b));
 
-    section(ui, "Deformer");
     let Some(deformer) = &mut layer.deformer else {
         let add = ui
             .add_enabled(rest_bounds.is_some(), egui::Button::new("Add Bend Deformer"))
@@ -1920,10 +1939,14 @@ fn deformer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 /// warp it when dragged (see `warp.rs` in the core).
 fn warp_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
+    if editor.doc.layer(id).is_none_or(|l| l.instance.is_some())
+        || !section(ui, editor, "free-form deformer", "Free-Form Deformer", Icon::Distort)
+    {
+        return;
+    }
     let Some(layer) = editor.doc.layer_mut(id).filter(|l| l.instance.is_none()) else { return };
     let rest_bounds = layer.elements_at(frame).iter().map(|e| e.bounds()).reduce(|a, b| a.union(b));
 
-    section(ui, "Free-Form Deformer");
     let Some(warp) = &mut layer.warp else {
         ui.horizontal(|ui| {
             for size in [3, 4] {
@@ -1964,16 +1987,19 @@ fn warp_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 /// to show it from the current frame on.
 fn drawings_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
-    let Some(layer) = editor.doc.layer(id).filter(|l| l.instance.is_none()) else { return };
+    if editor.doc.layer(id).is_none_or(|l| l.instance.is_some())
+        || !section(ui, editor, "drawings", "Drawings", Icon::ExposureSheet)
+    {
+        return;
+    }
+    let Some(layer) = editor.doc.layer(id) else { return };
     let showing = layer.drawing_index_at(frame);
     let names: Vec<String> = layer.drawings.iter().map(|d| d.name.clone()).collect();
 
-    ui.horizontal(|ui| {
-        ui.label(section_text("Drawings"));
-        ui.weak("[ ] to flip through");
-    });
     if names.len() == 1 {
         ui.weak("Add drawings to swap between, like mouth shapes or hand poses.");
+    } else {
+        ui.weak("[ and ] flip through them.");
     }
     let mut picked = None;
     ui.horizontal_wrapped(|ui| {
@@ -2165,7 +2191,9 @@ fn easing_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u3
         editor.focused_property = tweens[0].0;
     }
 
-    section(ui, "Easing");
+    if !section(ui, editor, "easing", "Easing", Icon::Graph) {
+        return;
+    }
     let mut changes = Vec::new();
     egui::Grid::new("easing").num_columns(3).spacing([8.0, 4.0]).show(ui, |ui| {
         for (property, tween) in &tweens {
@@ -2234,6 +2262,12 @@ fn easing_combo(ui: &mut egui::Ui, id_salt: Property, easing: &mut Easing) -> bo
 }
 
 fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    let frame = editor.frame;
+    if editor.doc.layer(id).is_none_or(|l| l.elements_at(frame).is_empty())
+        || !section(ui, editor, "shapes", "Shapes", Icon::Shapes)
+    {
+        return;
+    }
     // What the image rows show, gathered before the layer is borrowed for
     // editing (it lives inside the same document).
     let images: Vec<ImageInfo> = editor
@@ -2258,7 +2292,6 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         .flat_map(|(families, problem)| families.iter().map(move |family| (family.clone(), problem.clone())))
         .collect();
     let symbols = brush_symbols(editor);
-    let frame = editor.frame;
     let Some(layer) = editor.doc.layer_mut(id) else { return };
     let elements = layer.elements_at_mut(frame);
     let count = elements.len();
@@ -2788,20 +2821,77 @@ pub fn audio_section(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEn
 pub enum AudioAction {
     Import,
 }
-/// A section title in the properties panel: small, spaced capitals with a
-/// hairline running on to the panel's edge, so a long panel is easy to
-/// scan for the part you want.
-fn section(ui: &mut egui::Ui, title: impl Into<String>) {
+/// A section of the properties panel, under a title row: an arrow, an
+/// icon, small spaced capitals and a hairline running on to the panel's
+/// edge, so a long panel is easy to scan for the part you want. Clicking
+/// the row folds the section away, or opens it again. Returns whether it's
+/// open: a folded section shows nothing more.
+///
+/// What's folded is kept by `key` (a title can change, as the transform's
+/// does with the frame), with the person's settings for next time.
+fn section(ui: &mut egui::Ui, editor: &mut Editor, key: &str, title: impl Into<String>, icon: Icon) -> bool {
+    let open = !editor.folded_sections.contains(key);
+    let title = title.into();
     ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        ui.label(section_text(title));
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 18.0), egui::Sense::click());
+    // Named for screen readers (and tests), as egui's own folding headers are.
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::CollapsingHeader, true, &title));
+    let colour = if response.hovered() { crate::theme::TEXT } else { crate::theme::TEXT_WEAK };
+    let painter = ui.painter();
+    let middle = rect.center().y;
+    // The arrow: down when open, right when folded.
+    let (x, s) = (rect.left() + 5.0, 3.5);
+    let arrow = if open {
+        vec![
+            egui::pos2(x - s, middle - s / 2.0),
+            egui::pos2(x, middle + s / 2.0),
+            egui::pos2(x + s, middle - s / 2.0),
+        ]
+    } else {
+        vec![
+            egui::pos2(x - s / 2.0, middle - s),
+            egui::pos2(x + s / 2.0, middle),
+            egui::pos2(x - s / 2.0, middle + s),
+        ]
+    };
+    painter.add(egui::Shape::line(arrow, egui::Stroke::new(1.4, colour)));
+    crate::icons::paint(
+        painter,
+        icon,
+        egui::Rect::from_center_size(egui::pos2(rect.left() + 21.0, middle), egui::vec2(13.0, 13.0)),
+        colour,
+    );
+    let galley = egui::WidgetText::from(section_text(&title).color(colour)).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Truncate),
+        rect.width() - 40.0,
+        egui::TextStyle::Body,
+    );
+    let text_at = egui::pos2(rect.left() + 33.0, middle - galley.size().y / 2.0);
+    let text_end = text_at.x + galley.size().x;
+    ui.painter().galley(text_at, galley, colour);
+    if text_end + 8.0 < rect.right() {
         ui.painter().hline(
-            rect.x_range(),
-            rect.center().y,
+            text_end + 8.0..=rect.right(),
+            middle,
             (1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
         );
+    }
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(if open {
+        "Fold this section away"
+    } else {
+        "Show this section"
     });
+    if response.clicked() {
+        if open {
+            editor.folded_sections.insert(key.to_owned());
+        } else {
+            editor.folded_sections.remove(key);
+        }
+    }
+    // Folded or opened this frame, it's drawn as it now is from the next.
+    open
 }
 
 /// A section title's text, for titles that share their row with controls.
@@ -2888,6 +2978,32 @@ mod tests {
     use inkframe_core::{Document, Point, Transform};
 
     use super::*;
+
+    #[test]
+    fn a_section_folds_away_and_opens_again() {
+        let mut editor = Editor::new(Document::default());
+        let id = editor.doc.add_layer("Ball", Vec::new(), 0, Transform::default());
+        editor.select(Some(id));
+        let mut h = Harness::new_ui_state(
+            |ui, editor: &mut Editor| {
+                egui::ScrollArea::vertical().show(ui, |ui| layer_tab(ui, editor));
+            },
+            editor,
+        );
+        h.set_size(vec2(360.0, 3000.0));
+        h.run();
+        assert!(h.query_by_label("Position").is_some());
+        h.get_by_label("Transform at frame 1").click();
+        h.run();
+        h.run();
+        assert!(h.query_by_label("Position").is_none(), "folded away");
+        assert!(h.state().folded_sections.contains("transform"));
+        h.get_by_label("Transform at frame 1").click();
+        h.run();
+        h.run();
+        assert!(h.query_by_label("Position").is_some(), "open again");
+        assert!(h.state().folded_sections.is_empty());
+    }
 
     #[test]
     fn with_several_layers_selected_effects_can_be_given_to_them_all() {
