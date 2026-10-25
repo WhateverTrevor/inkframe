@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::channel::{AnyChannel, Channel, Key};
+use crate::channel::{Animatable, AnyChannel, Channel, Key};
 use crate::easing::Easing;
 use crate::effects::Effects;
 use crate::geometry::Point;
@@ -428,9 +428,107 @@ impl From<TrackFormat> for Track {
     }
 }
 
+/// Copying and pasting spans of keyframes (Cut, Copy and Paste Frames, see
+/// `clipboard.rs`).
+impl Track {
+    /// The animation from `first` to `last` (inclusive), as a track of its
+    /// own starting on frame 0: the keys between, and the values at both
+    /// ends keyed, so pasted it plays the same whatever was either side.
+    pub fn copy_span(&self, first: u32, last: u32) -> Track {
+        Track {
+            position: copy_span(&self.position, first, last),
+            rotation: copy_span(&self.rotation, first, last),
+            scale: copy_span(&self.scale, first, last),
+            skew: copy_span(&self.skew, first, last),
+            opacity: copy_span(&self.opacity, first, last),
+            effects: copy_span(&self.effects, first, last),
+            depth: copy_span(&self.depth, first, last),
+            ..self.clone()
+        }
+    }
+
+    /// Puts `copied` (from [`Track::copy_span`], `length` frames long) on
+    /// this track from frame `at`, replacing any keys there. What comes
+    /// after plays as it did.
+    pub fn paste_span(&mut self, copied: &Track, at: u32, length: u32) {
+        paste_span(&mut self.position, &copied.position, at, length);
+        paste_span(&mut self.rotation, &copied.rotation, at, length);
+        paste_span(&mut self.scale, &copied.scale, at, length);
+        paste_span(&mut self.skew, &copied.skew, at, length);
+        paste_span(&mut self.opacity, &copied.opacity, at, length);
+        paste_span(&mut self.effects, &copied.effects, at, length);
+        paste_span(&mut self.depth, &copied.depth, at, length);
+    }
+
+    /// Takes out the keys from `first` to `last`, keying the frame after so
+    /// what follows plays as it did; the span then tweens across.
+    pub fn clear_span(&mut self, first: u32, last: u32) {
+        for channel in self.channels_mut() {
+            channel.insert_key(last + 1);
+            for frame in channel.key_frames() {
+                if (first..=last).contains(&frame) {
+                    channel.remove_key(frame);
+                }
+            }
+        }
+    }
+}
+
+fn copy_span<T: Animatable>(channel: &Channel<T>, first: u32, last: u32) -> Channel<T> {
+    let mut span = channel.clone();
+    span.insert_key(first);
+    span.insert_key(last);
+    span.retime(&|frame| (first..=last).contains(&frame).then(|| frame - first), first);
+    span
+}
+
+fn paste_span<T: Animatable>(channel: &mut Channel<T>, copied: &Channel<T>, at: u32, length: u32) {
+    // Keyed just after, so what follows doesn't change; then the keys under
+    // the pasted span go, and the copied ones come in.
+    channel.insert_key(at + length);
+    for frame in channel.key_frames() {
+        if (at..at + length).contains(&frame) {
+            channel.remove_key(frame);
+        }
+    }
+    for key in copied.keys() {
+        channel.put(Key { frame: key.frame + at, ..key.clone() });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_span_of_keys_is_copied_and_pasted_elsewhere() {
+        // Moves from x 0 on frame 0 to x 100 on frame 10, and back by 20.
+        let mut track = Track::new(0, Transform::default());
+        track.set_pose(10, Transform::at(Point::new(100.0, 0.0)));
+        track.set_pose(20, Transform::default());
+        let x = |t: &Track, f: u32| t.sample(f as f32).position.x;
+
+        // Frames 5 to 10: halfway there, then all the way.
+        let span = track.copy_span(5, 10);
+        assert_eq!(span.position.key_frames(), [0, 5]);
+        assert!((x(&span, 0) - 50.0).abs() < 1e-3 && (x(&span, 5) - 100.0).abs() < 1e-3);
+
+        // Pasted on frame 30 of another layer, standing still at x 7.
+        let mut other = Track::new(0, Transform::at(Point::new(7.0, 0.0)));
+        other.paste_span(&span, 30, 6);
+        assert!((x(&other, 30) - 50.0).abs() < 1e-3);
+        assert!((x(&other, 35) - 100.0).abs() < 1e-3);
+        // Before it, as it was; after it, too (keyed just after).
+        assert!((x(&other, 0) - 7.0).abs() < 1e-3);
+        assert_eq!(other.position.key_frames(), [0, 30, 35, 36]);
+        assert!((x(&other, 36) - 7.0).abs() < 1e-3);
+
+        // Cutting frames 8 to 12 takes out the key on 10, keying 13 so the
+        // way back is unchanged.
+        track.clear_span(8, 12);
+        assert_eq!(track.position.key_frames(), [0, 13, 20]);
+        assert!((x(&track, 13) - 70.0).abs() < 1e-3);
+    }
 
     fn at_x(x: f32) -> Transform {
         Transform::at(Point::new(x, 0.0))

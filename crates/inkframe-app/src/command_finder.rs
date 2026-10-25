@@ -154,6 +154,9 @@ pub(crate) fn entries() -> Vec<Entry> {
         entry("Insert Blank Keyframe", "Timeline", Command::InsertBlankKeyframe)
             .keys(shortcuts::INSERT_BLANK_KEYFRAME),
         entry("Reverse Frames", "Timeline", Command::ReverseFrames),
+        entry("Cut Frames", "Timeline", Command::CutFrames).also("keyframes keys move"),
+        entry("Copy Frames", "Timeline", Command::CopyFrames).also("keyframes keys duplicate"),
+        entry("Paste Frames", "Timeline", Command::PasteFrames).also("keyframes keys"),
         entry("Create Shape Tween", "Timeline", Command::CreateShapeTween).also("morph"),
         entry("Draw Inbetweens", "Timeline", Command::MakeInbetweens)
             .icon(Icon::Inbetween)

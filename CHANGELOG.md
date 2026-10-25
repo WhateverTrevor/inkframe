@@ -3,6 +3,15 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
+## Unreleased
+
+### Timeline
+
+- Cut, Copy and Paste Frames, as in Animate: with frames picked in the
+  timeline, ⌘X, ⌘C and ⌘V cut, copy and paste their keyframes, pasted at
+  the playhead onto the selected layers (also in the Timeline menu). The
+  pose commands (⌥⌘C, ⌥⌘V) are now called Copy Pose and Paste Pose.
+
 ## [0.4.0]
 
 Rigging that bends the way characters do, an easier start, and a
