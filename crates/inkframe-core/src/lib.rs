@@ -43,6 +43,7 @@ mod line;
 mod lip_sync;
 mod mask;
 mod morph;
+mod node_places;
 mod paint;
 mod palette;
 mod particles;
@@ -105,6 +106,7 @@ pub use lip_sync::{
     LipSyncError, MouthCue, MouthMap, MouthShape, cues_from_loudness, parse_papagayo, parse_rhubarb,
 };
 pub use morph::{ShapeTween, morph};
+pub use node_places::{NodePlace, NodeRef};
 pub use paint::{Canvas, CanvasId, TILE, premultiply, unpremultiply};
 pub use palette::{Palette, Swatch};
 pub use particles::{Emitter, EmitterShape, MAX_PARTICLES, Particle, Preset, Sprite};

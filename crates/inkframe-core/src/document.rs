@@ -93,6 +93,9 @@ pub struct Document {
     /// A perspective guide over the stage (see `perspective.rs`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub perspective: Option<crate::Perspective>,
+    /// Where nodes have been moved in the node view (see `node_places.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub node_places: Vec<crate::NodePlace>,
     /// Plain colours, as the Swatches panel saved them before there was a
     /// palette; loading makes each a swatch.
     #[serde(default, rename = "swatches", skip_serializing)]
@@ -366,6 +369,7 @@ impl Default for Document {
             library_folders: Vec::new(),
             ruler_guides: Vec::new(),
             perspective: None,
+            node_places: Vec::new(),
             frame_actions: Vec::new(),
             old_swatches: Vec::new(),
             next_canvas_id: 1,

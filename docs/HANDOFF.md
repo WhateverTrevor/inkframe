@@ -934,6 +934,15 @@ after the Harmony features (palettes to master controllers).
     titles converted. New icons Transform, Sparkle, Effects, Shapes (icon
     test now lists every icon). Saved as `Prefs::folded_sections`. Hook
     `INKFRAME_SCREENSHOT_FOLD=key,key`.
+118. Saved Node View positions (no format bump: an optional field older
+    builds ignore): core `node_places.rs` (`NodeRef` enum, now the app's
+    `NodeKey` by re-export; `NodePlace{symbol: Option<SymbolId>, node,
+    at}`; `Document::node_place`/`set_node_place`/`clear_node_places`),
+    `Document::node_places`. The node view reads and writes them (a node
+    drag is an ordinary document change, so it undoes and marks the
+    project unsaved); Arrange clears the timeline's. Fixed: drags start
+    from the press origin (nodes and wires no longer jump on grab), and
+    dragging a node stops the auto-fit so the canvas doesn't slide.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

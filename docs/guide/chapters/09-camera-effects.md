@@ -69,7 +69,7 @@ Particles are soft dots, or copies of whatever is drawn in the layer: draw a lea
 
 ## The Node View
 
-For those who like to see how a scene is wired together, the **Node View** (in any area's menu, under General) shows the layers as a graph, as in Harmony. Each layer feeds its parent's children, its masks and its effects, and everything flows into the **Composite** and on to the **Display**. Drag from an output to an input to rewire it: attaching a layer, masking one with another, or restacking. It's the same scene as the timeline shows, so the two always agree.
+For those who like to see how a scene is wired together, the **Node View** (in any area's menu, under General) shows the layers as a graph, as in Harmony. Each layer feeds its parent's children, its masks and its effects, and everything flows into the **Composite** and on to the **Display**. Drag from an output to an input to rewire it: attaching a layer, masking one with another, or restacking. It's the same scene as the timeline shows, so the two always agree. Drag nodes to arrange them as you like: where you put them is saved with the project, and **Arrange** lays them out tidily again.
 
 ![The Rig in the Node View: each part feeds the Composite, and the Composite the Display](nodes){crop=0.38,0.78,0.24,0.2}
 
