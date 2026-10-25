@@ -80,7 +80,7 @@ planned (the code is already cross-platform and CI builds it on Windows).
   | Format | Alpha | Use it for |
   |---|---|---|
   | PNG sequence | ✔ | Lossless frames for any tool |
-  | Sprite sheet (PNG + JSON) | ✔ | Games: every frame on one image, cropped to the drawing, held frames packed once, with TexturePacker-style data for Phaser, PixiJS, Godot and Unity |
+  | Sprite sheet (PNG + JSON) | ✔ | Games: every frame packed onto one image (or, past 8192 × 8192, several numbered ones, as TexturePacker's multipack), cropped to the drawing, held frames packed once, with TexturePacker-style data for Phaser, PixiJS, Godot and Unity |
   | Apple ProRes 4444 / 4444 XQ | ✔ | Masters for editing and compositing |
   | Apple ProRes 422 HQ | — | High quality, smaller files |
   | H.264 MP4 | — | Review copies and the web |

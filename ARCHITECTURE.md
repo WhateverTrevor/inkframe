@@ -296,7 +296,10 @@ Sprite sheets (`sprite_sheet.rs`) render every frame, crop each to its
 drawn pixels, and keep one copy of frames that come out identical (held
 drawings). Every cell is the union of those areas, so frames stay aligned;
 `Grid::fit` lays the cells out near-square within 8192 px with 2 px
-padding. The JSON beside the PNG is TexturePacker's "JSON hash"
+padding. Cells too many for one sheet are shared out evenly over as few
+as hold them (`pack`), written as `name-0.png`, `name-1.png`…, each with
+its own JSON listing its frames and the others' JSON in
+`meta.related_multi_packs` (TexturePacker's multipack). The JSON beside the PNG is TexturePacker's "JSON hash"
 (`frames` with `trimmed`/`spriteSourceSize`/`sourceSize` recording the
 crop, `animations`, `meta`), plus a per-frame `duration` as Aseprite
 writes. No audio.

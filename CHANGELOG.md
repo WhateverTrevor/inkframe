@@ -12,6 +12,13 @@ notes on GitHub are its section here.
   Help, lighting each in turn. Help › Take the Tour shows it again, and
   Help links to the guidebook.
 
+### Sprite sheets on several images
+
+- A sprite sheet whose frames don't fit on one 8192 × 8192 image is shared
+  out over as few as it needs (`walk-0.png`, `walk-1.png`…, each with its
+  data file, naming the others as TexturePacker's multipack does), rather
+  than failing. Only a single frame bigger than that is still an error.
+
 ## [0.3.0]
 
 Moho-style character rigging, Animate's drawing and export tools, an
