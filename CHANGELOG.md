@@ -19,6 +19,13 @@ notes on GitHub are its section here.
   data file, naming the others as TexturePacker's multipack does), rather
   than failing. Only a single frame bigger than that is still an error.
 
+### Node View keeps its arrangement
+
+- Nodes dragged in the Node View stay where they were put, saved with the
+  project (Arrange lays them out again). Grabbing a node no longer makes
+  it jump, and the view no longer slides as a node is dragged. Older
+  versions of Inkframe open such projects and ignore the arrangement.
+
 ### Foldable Properties sections
 
 - Every section of Properties (Transform, Easing, Effects, Drawings,

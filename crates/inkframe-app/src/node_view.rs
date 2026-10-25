@@ -10,7 +10,9 @@
 //! The graph isn't a second model of the scene: it's built from the layers
 //! every frame, and rewiring it changes the same settings the timeline and
 //! Properties show (a layer's parent, its mask, its place in the stack, its
-//! filters). Only where the nodes sit is the view's own.
+//! filters). Only where nodes have been dragged to is kept besides, saved
+//! with the project (see `node_places.rs` in the core), so the view opens
+//! as it was left.
 
 use std::collections::HashMap;
 
@@ -21,17 +23,8 @@ use crate::convert::to_color32;
 use crate::editor::Editor;
 use crate::theme;
 
-/// A node, by what it stands for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum NodeKey {
-    Layer(LayerId),
-    /// A layer's colour effect.
-    ColorEffect(LayerId),
-    /// A layer's filter, by its place in the list.
-    Filter(LayerId, usize),
-    Composite,
-    Display,
-}
+/// A node, by what it stands for (the core's, as its place is saved).
+pub use inkframe_core::NodeRef as NodeKey;
 
 /// A place a wire starts or ends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,9 +142,10 @@ pub struct NodeView {
     /// Where the canvas origin is, from the area's top-left, in points.
     pan: Vec2,
     zoom: Option<f32>,
-    /// Nodes the user has moved. The rest are laid out automatically.
-    moved: HashMap<NodeKey, Pos2>,
     drag: Option<Drag>,
+    /// Where the canvas origin was drawn last frame, and at what zoom.
+    #[cfg(test)]
+    drawn: (Pos2, f32),
 }
 
 enum Drag {
@@ -171,7 +165,8 @@ impl NodeView {
     pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         ui.horizontal(|ui| {
             if ui.button("Arrange").on_hover_text("Lay the nodes out again").clicked() {
-                self.moved.clear();
+                let timeline = editor.timeline();
+                editor.doc.clear_node_places(timeline);
                 self.pan = Vec2::ZERO;
                 self.zoom = None;
             }
@@ -195,6 +190,10 @@ impl NodeView {
                 (fit, origin)
             }
         };
+        #[cfg(test)]
+        {
+            self.drawn = (origin, zoom);
+        }
         let to_screen = |p: Pos2| origin + p.to_vec2() * zoom;
         let to_canvas = |p: Pos2| Pos2::ZERO + (p - origin) / zoom;
 
@@ -245,7 +244,9 @@ impl NodeView {
         let doc = &editor.doc;
         let frame = editor.frame;
         let row = |i: usize| 20.0 + i as f32 * (LAYER_SIZE.y + 28.0);
-        let place = |key: NodeKey, default: Pos2| self.moved.get(&key).copied().unwrap_or(default);
+        let timeline = editor.timeline();
+        let place =
+            |key: NodeKey, default: Pos2| doc.node_place(timeline, key).map_or(default, |p| pos2(p.x, p.y));
 
         let mut nodes = Vec::new();
         let mut wires = Vec::new();
@@ -368,8 +369,10 @@ impl NodeView {
                 })
                 .map(|(port, _)| *port)
         };
+        // Where the button went down, not where the pointer has got to by
+        // the time it counts as a drag, so a node doesn't jump as it's grabbed.
         if response.drag_started()
-            && let Some(p) = response.interact_pointer_pos()
+            && let Some(p) = ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos())
         {
             self.drag = Some(match port_under(p, true) {
                 Some(from) => Drag::Wire { from },
@@ -388,7 +391,12 @@ impl NodeView {
                     self.zoom = Some(zoom);
                 }
                 Drag::Node { key, grab } => {
-                    self.moved.insert(*key, to_canvas(p) - *grab);
+                    // The view stops fitting itself to the graph, or it
+                    // would slide under the pointer as the node moved.
+                    self.zoom = Some(zoom);
+                    let at = to_canvas(p) - *grab;
+                    let timeline = editor.timeline();
+                    editor.doc.set_node_place(timeline, *key, inkframe_core::Point::new(at.x, at.y));
                 }
                 Drag::Wire { .. } => ui.ctx().set_cursor_icon(CursorIcon::Grabbing),
             }
@@ -633,6 +641,41 @@ mod tests {
         let ids =
             ["A", "B", "C"].map(|n| doc.add_layer(n, Vec::new(), 0, Transform::at(Point::new(100.0, 100.0))));
         (doc, ids)
+    }
+
+    #[test]
+    fn a_dragged_node_stays_where_it_was_put_in_the_project() {
+        use egui_kittest::Harness;
+
+        let (doc, [a, _, _]) = doc();
+        let mut h = Harness::new_ui_state(
+            |ui, (view, editor): &mut (NodeView, Editor)| view.show(ui, editor),
+            (NodeView::default(), Editor::new(doc)),
+        );
+        h.set_size(vec2(900.0, 600.0));
+        h.run();
+        let (view, editor) = h.state();
+        let graph = view.layout(editor);
+        let node = graph.nodes.iter().find(|n| n.key == NodeKey::Layer(a)).unwrap().rect;
+        let (origin, zoom) = view.drawn;
+        let screen = |p: Pos2| origin + p.to_vec2() * zoom;
+        // Grab it by its title, clear of its ports, and move it 60 points.
+        let grab = screen(node.center_top() + vec2(0.0, 8.0));
+        h.drag_at(grab);
+        h.run();
+        h.hover_at(grab + vec2(60.0, 30.0));
+        h.run();
+        h.drop_at(grab + vec2(60.0, 30.0));
+        h.run();
+
+        let editor = &h.state().1;
+        let moved =
+            editor.doc.node_place(TimelineId::Main, NodeKey::Layer(a)).expect("saved in the document");
+        let expected = node.min + vec2(60.0, 30.0) / zoom;
+        assert!((moved.x - expected.x).abs() < 1.0 && (moved.y - expected.y).abs() < 1.0, "{moved:?}");
+        // So it's still there in a copy of the project, as saved.
+        let saved: Document = serde_json::from_str(&serde_json::to_string(&editor.doc).unwrap()).unwrap();
+        assert_eq!(saved.node_place(TimelineId::Main, NodeKey::Layer(a)), Some(moved));
     }
 
     #[test]
