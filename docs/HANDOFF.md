@@ -969,7 +969,7 @@ after the Harmony features (palettes to master controllers).
     timeline, picks the pasted span). ⌘X/⌘C/⌘V act on frames while
     `frame_range` is set; `Editor::select` of another layer clears it.
     Old pose copy renamed `Command::CopyPose`/`PastePose` (`COPY_POSE`,
-    Edit › Copy Pose). Drawings/swaps aren't copied, only keyframes.
+    Edit › Copy Pose). Drawings and swaps come along for layers with >1 drawing: core `Layer::copy_span`/`paste_span`/`clear_span` (frames.rs) and `CopiedRow{track, drawings: Vec<(offset, Drawing)>}`; paste reuses a drawing with the same art (`drawing_like`), else adds it (renamed if taken), and re-keys what showed after the span.
 122. Script API for characters and the web: `inkframe-script/src/rigging.rs`
     natives (addSkeleton, bones/addBone/setBone/poseBone by place,
     follows/setFollows, drawings/addDrawing/showDrawing, importAudio (sound
@@ -980,6 +980,18 @@ after the Harmony features (palettes to master controllers).
     names bones (resolves names to places). Rhubarb itself isn't runnable
     from scripts (it lives in the app). Example `walk-cycle.js` (8 example
     scripts; tests/examples.rs runs it). Docs in SCRIPTING.md.
+123. Speed check: `crates/inkframe-render/tests/heavy_scene.rs` (ignored;
+    `cargo test --release -p inkframe-render --test heavy_scene -- --ignored
+    --nocapture`; HEAVY_SCENE_PNG / HEAVY_SCENE_SAVE env vars) and app hook
+    `INKFRAME_SCREENSHOT_BENCH=n` (InkframeApp::ui split into update_ui +
+    step_bench). Profiling (macOS `sample`) showed Skeleton::pose recomputed
+    per bound layer per band; fix: core `with_pose_cache` (thread-local,
+    keyed by skeleton address + frame, scoped with a Drop guard, nested
+    scopes share) around each `in_bands` worker. Results on the heavy scene:
+    render 7.8 -> 5.6 ms (half size), 10.2 -> 7.0 ms (full); app update with
+    a layer selected 56 -> 10 ms; with onion skins ~43 ms (5 renders: real
+    work, left). Ideas: the stage's RenderKey clones the whole document each
+    frame to compare; particles are simulated from scratch per frame.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

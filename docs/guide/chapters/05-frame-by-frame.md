@@ -47,7 +47,7 @@ The frame commands work as they do in Animate. [[⇧]]-click or [[⇧]]-drag alo
 | **Copy Frames** | [[⌘C]] | Copies the picked frames' keyframes. |
 | **Paste Frames** | [[⌘V]] | Pastes them at the playhead, on the selected layers. |
 
-Cut, Copy and Paste act on keyframes while frames are picked, as in Animate, and on layers otherwise. Copied frames paste onto the same number of layers, row for row, or a single row onto every selected layer, replacing the keys they land on.
+Cut, Copy and Paste act on frames while frames are picked, as in Animate, and on layers otherwise. On a layer drawn frame by frame, the frames' drawings come along too, so a stretch of mouth shapes or a blink can be copied to another mouth or another time; a drawing the target already has is reused. Copied frames paste onto the same number of layers, row for row, or a single row onto every selected layer, replacing the keys they land on.
 
 **Timeline › Edit Multiple Frames** (or its button beside the onion skin) lets you move a drawing on many frames at once: dragging a layer then moves it on every picked frame, rather than just the current one.
 

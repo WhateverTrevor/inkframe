@@ -105,6 +105,9 @@
 //! * `INKFRAME_SCREENSHOT_PRESETS=1` shows Motion Presets in place of Properties, with the
 //!   selected layer's movement saved (in a temporary folder) and Bounce In picked.
 //! * `INKFRAME_SCREENSHOT_XSHEET=1` opens the exposure sheet.
+//! * `INKFRAME_SCREENSHOT_BENCH=48` steps through that many frames, one per
+//!   update, as scrubbing does, before the screenshot, and prints how long
+//!   the updates took: a check on how the editor copes with a big scene.
 //! * `INKFRAME_SCREENSHOT_TOUR=2` shows the first-run tour's second card.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
@@ -460,6 +463,11 @@ impl AutoScreenshot {
     /// Which card of the first-run tour to show, counting from 1.
     pub fn tour() -> Option<usize> {
         std::env::var("INKFRAME_SCREENSHOT_TOUR").ok()?.parse().ok()
+    }
+
+    /// How many frames to step through, timing each update, first.
+    pub fn bench() -> Option<u32> {
+        std::env::var("INKFRAME_SCREENSHOT_BENCH").ok()?.parse().ok()
     }
 
     /// Whether to show the Stage area's editor menu open.

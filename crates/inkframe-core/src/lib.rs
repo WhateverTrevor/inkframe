@@ -80,7 +80,7 @@ pub use boolean::{Area, CombineError, ShapeOp, area_of, break_apart, combine};
 pub use brush::{BrushMode, BrushSettings, BrushStroke, DabPath};
 pub use camera::FOCAL_LENGTH;
 pub use channel::{Animatable, AnyChannel, Bend, Channel, Key, MotionCurve, Tween};
-pub use clipboard::{Clipboard, CopiedFrames, CopiedKeyframe, CopiedLayers, CopiedShapes};
+pub use clipboard::{Clipboard, CopiedFrames, CopiedKeyframe, CopiedLayers, CopiedRow, CopiedShapes};
 pub use color::{Color, ParseColorError};
 pub use controller::{Controller, ControllerPose};
 pub use deform::Deformer;
@@ -119,7 +119,7 @@ pub use selection::{Combine, Selection};
 pub use shape::{Dash, GradientStop, LineCap, LineJoin, Path, Segment, Shape, ShapeGradient, Stroke, Style};
 pub use skeleton::{
     Bone, BoneBinding, BonePoints, CorrectionKey, Dynamics, LayerBend, MESH_CELL, Pose, RestPart,
-    RestPoseView, ShapeBones, Skeleton, SmartAction, TurnPreview, corrected, mesh_lines,
+    RestPoseView, ShapeBones, Skeleton, SmartAction, TurnPreview, corrected, mesh_lines, with_pose_cache,
 };
 pub use switch::SwitchKey;
 pub use symbol::{ConvertError, Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId, SymbolSwap};

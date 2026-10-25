@@ -173,9 +173,11 @@ fn in_bands(pixmap: &mut Pixmap, draw: impl Fn(&mut PixmapMut, Affine) + Sync) {
         draw(&mut band, Affine::translate(Point::new(0.0, -(top as f32))));
     };
     let workers = std::thread::available_parallelism().map_or(1, |n| n.get()).min(bands.len());
+    // Each worker works out each skeleton's pose once, for every layer it
+    // bends in every band it draws (the document can't change meanwhile).
     if workers <= 1 || height < 2 * BAND_HEIGHT {
         // Small images (thumbnails, tests) aren't worth starting threads for.
-        bands.iter_mut().for_each(|(top, rows)| draw_band(*top, rows));
+        inkframe_core::with_pose_cache(|| bands.iter_mut().for_each(|(top, rows)| draw_band(*top, rows)));
         return;
     }
     // Deal the bands out round-robin, so each worker gets a mix of the top,
@@ -187,7 +189,11 @@ fn in_bands(pixmap: &mut Pixmap, draw: impl Fn(&mut PixmapMut, Affine) + Sync) {
     std::thread::scope(|scope| {
         for share in shares {
             let draw_band = &draw_band;
-            scope.spawn(move || share.into_iter().for_each(|(top, rows)| draw_band(top, rows)));
+            scope.spawn(move || {
+                inkframe_core::with_pose_cache(|| {
+                    share.into_iter().for_each(|(top, rows)| draw_band(top, rows))
+                })
+            });
         }
     });
 }

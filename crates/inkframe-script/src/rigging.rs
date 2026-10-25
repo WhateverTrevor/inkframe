@@ -322,17 +322,16 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, native: &Object<'js>, state: &Shared)
         let frame = frame_index(&ctx, &json!(frame), "frame")?;
         let mut state = s.borrow_mut();
         let base = state.base_dir.clone();
-        let file = crate::files::resolve(&path, base.as_deref()).map_err(|e| throw(&ctx, e))?;
-        let is_sound = file
+        // The kind of file first, before where it is: anything but a sound
+        // is refused however its path is written.
+        let is_sound = Path::new(&path)
             .extension()
             .and_then(|e| e.to_str())
             .is_some_and(|e| AUDIO_EXTENSIONS.contains(&e.to_lowercase().as_str()));
         if !is_sound {
-            return Err(throw(
-                &ctx,
-                format!("{} isn't a sound file ({})", file.display(), AUDIO_EXTENSIONS.join(", ")),
-            ));
+            return Err(throw(&ctx, format!("{path} isn't a sound file ({})", AUDIO_EXTENSIONS.join(", "))));
         }
+        let file = crate::files::resolve(&path, base.as_deref()).map_err(|e| throw(&ctx, e))?;
         if !file.is_file() {
             return Err(throw(&ctx, format!("there's no file at {}", file.display())));
         }
