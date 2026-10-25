@@ -117,7 +117,7 @@ pub use selection::{Combine, Selection};
 pub use shape::{Dash, GradientStop, LineCap, LineJoin, Path, Segment, Shape, ShapeGradient, Stroke, Style};
 pub use skeleton::{
     Bone, BoneBinding, BonePoints, CorrectionKey, Dynamics, LayerBend, MESH_CELL, Pose, RestPart,
-    RestPoseView, ShapeBones, Skeleton, SmartAction, corrected, mesh_lines,
+    RestPoseView, ShapeBones, Skeleton, SmartAction, TurnPreview, corrected, mesh_lines,
 };
 pub use switch::SwitchKey;
 pub use symbol::{ConvertError, Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId, SymbolSwap};

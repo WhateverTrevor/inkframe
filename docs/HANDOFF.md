@@ -911,6 +911,19 @@ after the Harmony features (palettes to master controllers).
     animation) and `meta.related_multi_packs`. `Grid::fit` falls back to
     the widest grid when the square one is too tall. `exported_file` names
     the first sheet for the Export and Batch windows' links.
+116. Smart bone action timeline (no format change): core `Bone::preview:
+    TurnPreview` (serde skip; PartialEq always true; Clone gives None, so
+    history snapshots, `settled_doc` and exports never carry it) and
+    `Bone::shown_turn` (used by `turn_at`, `posed_elements`,
+    `smart_switch`, the app's correction start/check, the limits wedge and
+    Bones panel). App `Editor::previewing` + `preview_turn`/`end_preview`/
+    `previewed_turn`/`check_preview` (stage, before check_correction: other
+    frame, bone or lost preview ends it, and a correction drawn at the
+    preview is keyed as it moves on). `action_timeline.rs` strip (`span`,
+    `show` -> `Asked::{Preview, EndPreview, Edit}`), drawn first in
+    `smart_bone_section`; correction chips there became a key count.
+    `Command::EndPreview` (context bar note, Esc). Hook
+    `INKFRAME_SCREENSHOT_ACTIONS=deg`; guidebook figure `actions` (ch. 8).
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

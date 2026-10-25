@@ -19,6 +19,13 @@ notes on GitHub are its section here.
   data file, naming the others as TexturePacker's multipack does), rather
   than failing. Only a single frame bigger than that is still an error.
 
+### Smart bone action timeline
+
+- Each smart bone has an action timeline, as Moho's: a strip across its
+  turns in its properties. Drag along it to preview the bone at any turn
+  without keying anything; drag actions' turns and corrections' keys to
+  retime them, and key corrections at a previewed turn.
+
 ## [0.3.0]
 
 Moho-style character rigging, Animate's drawing and export tools, an

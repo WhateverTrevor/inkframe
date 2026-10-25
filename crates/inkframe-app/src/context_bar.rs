@@ -86,6 +86,24 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
         act(ui, command, Icon::Cross, "Cancel", "Drop the changes (Esc)", Command::CancelCorrection);
         return;
     }
+    // A bone shown at a turn of its own, from its action timeline: the pose
+    // on the stage isn't the animation's, so say so.
+    if let Some((id, bone, _)) = editor.previewing
+        && let Some(turn) = editor.previewed_turn(id, bone)
+    {
+        let name =
+            editor.skeleton(id).and_then(|s| s.bones.get(bone)).map_or_else(String::new, |b| b.name.clone());
+        ui.label(format!("Previewing {name} at {turn:.0}°: nothing is keyed"));
+        act(
+            ui,
+            command,
+            Icon::Cross,
+            "Back to the animation",
+            "Show the bone as animated again (Esc)",
+            Command::EndPreview,
+        );
+        return;
+    }
     if let Some(lattice) = &editor.lattice {
         ui.label(format!("{}: drag the handles", lattice.kind.name()));
         act(

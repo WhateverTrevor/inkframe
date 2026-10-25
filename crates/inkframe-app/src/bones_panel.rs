@@ -94,7 +94,7 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                         ui.weak(RichText::new(marks).small());
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let turn = b.turn.sample(frame as f32).unwrap_or(0.0);
+                        let turn = b.shown_turn(frame as f32);
                         if turn.abs() >= 0.5 {
                             ui.weak(format!("{turn:.0}°"));
                         }

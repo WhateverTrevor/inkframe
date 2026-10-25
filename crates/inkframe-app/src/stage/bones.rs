@@ -345,7 +345,7 @@ fn draw_limits(painter: &egui::Painter, editor: &Editor, view: View, id: LayerId
     let Some((start, end)) = skeleton.posed_ends(bone, editor.frame) else { return };
     // The bone's direction now, less its turn now, is where a turn of 0
     // points; the wedge spans the turns from there.
-    let turn = b.turn.sample(editor.frame as f32).map_or(0.0, |t| limits.clamp(t));
+    let turn = limits.clamp(b.shown_turn(editor.frame as f32));
     let along = end - start;
     let zero = along.y.atan2(along.x) - turn.to_radians();
     let radius = b.length() * 0.6;

@@ -123,6 +123,8 @@ pub(crate) enum Command {
     NewSkeleton,
     FinishCorrection,
     CancelCorrection,
+    /// Shows a smart bone previewed on its action timeline as animated again.
+    EndPreview,
     NewSwitch,
     DeleteBone,
     FinishLattice,
@@ -940,6 +942,7 @@ impl InkframeApp {
             Command::NewSkeleton => editor.new_skeleton(),
             Command::FinishCorrection => editor.finish_correction(),
             Command::CancelCorrection => editor.cancel_correction(),
+            Command::EndPreview => editor.end_preview(),
             Command::NewSwitch => editor.new_switch(),
             Command::DeleteBone => {
                 editor.delete_bone();
@@ -1140,8 +1143,17 @@ impl InkframeApp {
             } else if bending {
                 // Enter or Escape leaves a Distort or Envelope's shapes bent.
                 &[(Key::Enter, Command::FinishLattice), (Key::Escape, Command::FinishLattice)]
+            } else if bone_picked && self.editor.previewing.is_some() {
+                // Escape puts a bone previewed at another turn back.
+                &[
+                    (Key::Backspace, Command::DeleteBone),
+                    (Key::Delete, Command::DeleteBone),
+                    (Key::Escape, Command::EndPreview),
+                ]
             } else if bone_picked {
                 &[(Key::Backspace, Command::DeleteBone), (Key::Delete, Command::DeleteBone)]
+            } else if self.editor.previewing.is_some() {
+                &[(Key::Escape, Command::EndPreview)]
             } else if anchor_selected {
                 &[(Key::Backspace, Command::DeleteAnchor), (Key::Delete, Command::DeleteAnchor)]
             } else if shapes_picked {
