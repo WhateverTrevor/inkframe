@@ -181,7 +181,7 @@ impl Layer {
 
     /// Drops keys that change nothing: ones showing the drawing that was
     /// already showing.
-    fn tidy_exposure(&mut self) {
+    pub(crate) fn tidy_exposure(&mut self) {
         let mut showing = 0;
         self.exposure.retain(|key| {
             let changes = key.drawing != showing;

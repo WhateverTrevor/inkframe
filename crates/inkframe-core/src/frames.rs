@@ -181,11 +181,142 @@ fn reverse_channel(channel: &mut dyn AnyChannel, first: u32, last: u32) {
     }
 }
 
+/// Cut, Copy and Paste Frames (see `clipboard.rs`): a layer's keyframes
+/// over a span, and for a layer drawn frame by frame, its drawings too.
+impl Layer {
+    /// What's on frames `first` to `last`: the keyframes, and the drawings
+    /// shown if the layer has more than one. A layer with a single drawing
+    /// is moved by its keys, so only its motion is copied, and pasting it
+    /// onto another layer never replaces that layer's artwork.
+    pub fn copy_span(&self, first: u32, last: u32) -> crate::CopiedRow {
+        let mut drawings = Vec::new();
+        if self.drawings.len() > 1 {
+            let mut showing = None;
+            for frame in first..=last {
+                let index = self.drawing_index_at(frame);
+                if showing != Some(index) {
+                    showing = Some(index);
+                    drawings.push((frame - first, self.drawings[index].clone()));
+                }
+            }
+        }
+        crate::CopiedRow { track: self.track.copy_span(first, last), drawings }
+    }
+
+    /// Puts a copied span on this layer from frame `at`, `length` long:
+    /// the keyframes, and any drawings, each matched to one of this layer's
+    /// that's the same or added as a new one, and shown where it was. What
+    /// showed after the span still shows there.
+    pub fn paste_span(&mut self, row: &crate::CopiedRow, at: u32, length: u32) {
+        self.track.paste_span(&row.track, at, length);
+        if row.drawings.is_empty() {
+            return;
+        }
+        let after = self.drawing_index_at(at + length);
+        let swaps: Vec<(u32, usize)> =
+            row.drawings.iter().map(|(offset, drawing)| (at + offset, self.drawing_like(drawing))).collect();
+        self.exposure.retain(|key| !(at..=at + length).contains(&key.frame));
+        for (frame, drawing) in swaps {
+            self.exposure.push(Exposure { frame, drawing });
+        }
+        self.exposure.push(Exposure { frame: at + length, drawing: after });
+        self.exposure.sort_by_key(|key| key.frame);
+        self.tidy_exposure();
+    }
+
+    /// Takes the keyframes and drawing swaps off frames `first` to `last`;
+    /// what showed before carries on through them, and what followed still
+    /// shows after.
+    pub fn clear_span(&mut self, first: u32, last: u32) {
+        self.track.clear_span(first, last);
+        if self.exposure.is_empty() {
+            return;
+        }
+        let after = self.drawing_index_at(last + 1);
+        self.exposure.retain(|key| !(first..=last + 1).contains(&key.frame));
+        self.exposure.push(Exposure { frame: last + 1, drawing: after });
+        self.exposure.sort_by_key(|key| key.frame);
+        self.tidy_exposure();
+    }
+
+    /// This layer's drawing with the same art as `drawing`, or a copy of
+    /// it added (renamed if its name is taken). Its place.
+    fn drawing_like(&mut self, drawing: &crate::Drawing) -> usize {
+        let same = |d: &crate::Drawing| d.elements == drawing.elements && d.colour_art == drawing.colour_art;
+        if let Some(index) = self.drawings.iter().position(same) {
+            return index;
+        }
+        let mut copy = drawing.clone();
+        if self.drawing_named(&copy.name).is_some() {
+            copy.name = self.next_drawing_name();
+        }
+        self.add_drawing(copy)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{Document, Drawing, Easing, Point, Transform};
 
     use super::*;
+
+    /// A mouth drawn frame by frame: "closed", "A" on frame 4, "O" on 8.
+    fn mouth(name: &str) -> Layer {
+        let mut doc = Document::default();
+        let id = doc.add_layer(name, Vec::new(), 0, Transform::default());
+        let mut layer = doc.layer(id).unwrap().clone();
+        layer.drawings[0].name = "closed".into();
+        let shape = |w: f32| crate::Element {
+            shape: crate::Shape::Ellipse { radius_x: w, radius_y: 10.0 },
+            style: crate::Style { fill: Some(crate::Color::BLACK), stroke: None, gradient: None },
+        };
+        let a = layer.add_drawing(Drawing::new("A", vec![shape(30.0)]));
+        let o = layer.add_drawing(Drawing::new("O", vec![shape(15.0)]));
+        layer.expose(4, a);
+        layer.expose(8, o);
+        layer
+    }
+
+    #[test]
+    fn copied_frames_take_their_drawings_along() {
+        let source = mouth("Mouth");
+        let row = source.copy_span(2, 9);
+        // From frame 2: closed, then A from 4 (2 in), then O from 8 (6 in).
+        let names: Vec<(u32, &str)> = row.drawings.iter().map(|(f, d)| (*f, d.name.as_str())).collect();
+        assert_eq!(names, [(0, "closed"), (2, "A"), (6, "O")]);
+
+        // Onto another mouth whose "A" is drawn differently, from frame 20:
+        // its own closed is reused, the copied A comes in renamed, and O is new.
+        let mut other = mouth("Other");
+        other.drawings[1].elements.clear();
+        let before = other.drawings.len();
+        other.paste_span(&row, 20, 8);
+        let shown = |layer: &Layer, f: u32| layer.drawings[layer.drawing_index_at(f)].name.clone();
+        assert_eq!(shown(&other, 20), "closed");
+        assert_eq!(shown(&other, 22), "1", "the copied A, renamed: Other has an A of its own");
+        assert_eq!(shown(&other, 26), "O");
+        assert_eq!(other.drawings.len(), before + 1, "O and closed were already there");
+        // After the span, what showed before the paste (O, from frame 8).
+        assert_eq!(shown(&other, 28), "O");
+        assert_eq!(shown(&other, 3), "closed", "before it, unchanged");
+
+        // A layer with one drawing copies only its motion.
+        let mut doc = Document::default();
+        let id = doc.add_layer("Ball", Vec::new(), 0, Transform::default());
+        assert!(doc.layer(id).unwrap().copy_span(0, 5).drawings.is_empty());
+    }
+
+    #[test]
+    fn cut_frames_leave_the_drawing_before_showing_through() {
+        let mut layer = mouth("Mouth");
+        layer.clear_span(3, 5);
+        let shown = |f: u32| layer.drawings[layer.drawing_index_at(f)].name.clone();
+        // A's swap on 4 is gone: closed carries on, and A shows from 6.
+        assert_eq!(
+            (shown(4), shown(5), shown(6), shown(8)),
+            ("closed".into(), "closed".into(), "A".into(), "O".into())
+        );
+    }
 
     /// A layer moving from x 0 on frame 0 to x 100 on frame 10, easing in,
     /// with a second drawing swapped in on frame 5.

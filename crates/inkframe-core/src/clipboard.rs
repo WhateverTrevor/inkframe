@@ -49,13 +49,23 @@ pub enum Clipboard {
     Frames(CopiedFrames),
 }
 
-/// The keyframes on a span of frames, `length` long: for each layer they
-/// came from (in the timeline's order), its animation over the span as a
-/// track starting at frame 0 (see [`Track::copy_span`]).
+/// What's on a span of frames, `length` long: one row for each layer it
+/// came from, in the timeline's order (see [`Layer::copy_span`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CopiedFrames {
     pub length: u32,
-    pub rows: Vec<Track>,
+    pub rows: Vec<CopiedRow>,
+}
+
+/// One layer's span of frames: its animation as a track starting at frame
+/// 0 (see [`Track::copy_span`]), and, for a layer drawn frame by frame,
+/// the drawings shown over the span, each from where it's first shown
+/// (0 being the span's first frame).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CopiedRow {
+    pub track: Track,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drawings: Vec<(u32, crate::Drawing)>,
 }
 
 /// Shapes copied from inside a layer, in the coordinates of the timeline

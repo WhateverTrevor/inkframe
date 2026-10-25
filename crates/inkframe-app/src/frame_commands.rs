@@ -44,11 +44,11 @@ impl Editor {
     /// clipboard (Copy Frames), or `None` with no frames picked.
     pub fn copy_frames(&self) -> Option<inkframe_core::Clipboard> {
         let (first, last) = self.picked_span()?;
-        let rows: Vec<inkframe_core::Track> = self
+        let rows: Vec<inkframe_core::CopiedRow> = self
             .frame_layers()
             .into_iter()
             .filter_map(|id| self.doc.layer(id))
-            .map(|layer| layer.track.copy_span(first, last))
+            .map(|layer| layer.copy_span(first, last))
             .collect();
         (!rows.is_empty()).then(|| {
             inkframe_core::Clipboard::Frames(inkframe_core::CopiedFrames { length: last - first + 1, rows })
@@ -62,7 +62,7 @@ impl Editor {
         let (first, last) = self.picked_span()?;
         for id in self.frame_layers() {
             if let Some(layer) = self.doc.layer_mut(id) {
-                layer.track.clear_span(first, last);
+                layer.clear_span(first, last);
             }
         }
         Some(copied)
@@ -80,7 +80,7 @@ impl Editor {
         for (i, id) in layers.into_iter().enumerate() {
             let row = if copied.rows.len() == 1 { copied.rows.first() } else { copied.rows.get(i) };
             if let (Some(row), Some(layer)) = (row, self.doc.layer_mut(id)) {
-                layer.track.paste_span(row, at, copied.length);
+                layer.paste_span(row, at, copied.length);
             }
         }
         self.grow_to(at + copied.length - 1);

@@ -969,7 +969,7 @@ after the Harmony features (palettes to master controllers).
     timeline, picks the pasted span). ⌘X/⌘C/⌘V act on frames while
     `frame_range` is set; `Editor::select` of another layer clears it.
     Old pose copy renamed `Command::CopyPose`/`PastePose` (`COPY_POSE`,
-    Edit › Copy Pose). Drawings/swaps aren't copied, only keyframes.
+    Edit › Copy Pose). Drawings and swaps come along for layers with >1 drawing: core `Layer::copy_span`/`paste_span`/`clear_span` (frames.rs) and `CopiedRow{track, drawings: Vec<(offset, Drawing)>}`; paste reuses a drawing with the same art (`drawing_like`), else adds it (renamed if taken), and re-keys what showed after the span.
 122. Script API for characters and the web: `inkframe-script/src/rigging.rs`
     natives (addSkeleton, bones/addBone/setBone/poseBone by place,
     follows/setFollows, drawings/addDrawing/showDrawing, importAudio (sound

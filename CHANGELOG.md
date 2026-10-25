@@ -9,7 +9,8 @@ notes on GitHub are its section here.
 
 - Cut, Copy and Paste Frames, as in Animate: with frames picked in the
   timeline, ⌘X, ⌘C and ⌘V cut, copy and paste their keyframes, pasted at
-  the playhead onto the selected layers (also in the Timeline menu). The
+  the playhead onto the selected layers (also in the Timeline menu). On a
+  layer drawn frame by frame, its drawings and swaps come along too. The
   pose commands (⌥⌘C, ⌥⌘V) are now called Copy Pose and Paste Pose.
 
 ### Scripting
