@@ -83,3 +83,17 @@ export           | examples/bouncing-ball.inkf | EXPORT=h264
 export-sprite    | examples/bouncing-ball.inkf | EXPORT=sprite
 buttons          | -                           | BUTTONS=1
 batch            | examples/bouncing-ball.inkf | BATCH=1
+
+# Chapter 11: Project: A Walk Cycle
+walk-drawn       | -                           | WALK=drawn
+walk-setup       | -                           | WALK=rigged SETUP=1 TOOL="Add Bone"
+walk-follows     | -                           | WALK=follows FRAME=1 FOLD="transform,parent and pivot,easing"
+walk-contact     | -                           | WALK=rigged TOOL=Bone FRAME=1
+walk-onion       | -                           | WALK=rigged TOOL=Bone FRAME=4 ONION=1
+
+# Chapter 12: Project: A Talking Head
+mouth-drawings   | examples/rig.inkf           | SELECT=Mouth FRAME=7 FOLD="transform,parent and pivot,easing,effects,deformer,free-form deformer"
+
+# Chapter 13: Project: An Interactive Web Banner
+banner           | -                           | BANNER=1
+banner-export    | -                           | BANNER=1 EXPORT=web

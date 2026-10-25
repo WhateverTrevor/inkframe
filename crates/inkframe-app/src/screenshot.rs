@@ -35,6 +35,13 @@
 //!   `_SMART` and the like).
 //! * `INKFRAME_SCREENSHOT_SETUP=1` turns on rig setup, showing skeletons at rest (with
 //!   `_SKELETON` and the like).
+//! * `INKFRAME_SCREENSHOT_WALK=rigged` builds the guidebook's walk project: a
+//!   character from the side whose feet, on target bones, step through a
+//!   24-frame walk cycle as the hips bob (`=drawn` stops before the rig;
+//!   `=follows` selects the near leg, to show how it follows its limb).
+//! * `INKFRAME_SCREENSHOT_BANNER=1` builds the guidebook's web banner project: a
+//!   970 × 250 stage with a title that pops in, a Shop Now button that opens a
+//!   link, and a Stop on the last frame.
 //! * `INKFRAME_SCREENSHOT_TARGETS=1` shows two legs whose shins reach for target bones on
 //!   the ground, crouching as the hips drop with the feet staying planted.
 //! * `INKFRAME_SCREENSHOT_BRUSHES=1` shows strokes drawn with art and pattern brushes: a
@@ -215,6 +222,12 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_TARGETS").is_some() {
             targets_demo(editor);
+        }
+        if let Some(stage) = var("INKFRAME_SCREENSHOT_WALK") {
+            walk_demo(editor, &stage);
+        }
+        if var("INKFRAME_SCREENSHOT_BANNER").is_some() {
+            banner_demo(editor);
         }
         if var("INKFRAME_SCREENSHOT_BRUSHES").is_some() {
             brushes_demo(editor);
@@ -1226,6 +1239,201 @@ fn targets_demo(editor: &mut Editor) {
     editor.select(Some(folder));
     editor.selected_bone = Some(2);
     editor.use_tool(Tool::Bone);
+}
+
+/// The guidebook's walk project (chapter "Project: A Walk Cycle"): a
+/// character from the side, legs on a skeleton whose shins reach for
+/// target bones under the feet. The feet are keyed through a walk on the
+/// spot, sliding back while planted and lifting forward, a half cycle
+/// apart, and the hips bob, lowest just after each contact and highest as
+/// the legs pass. With `drawn`, just the layers, before the rig.
+fn walk_demo(editor: &mut Editor, stage: &str) {
+    use inkframe_core::{
+        Affine, BoneBinding, Color, Element, Point, Shape, Skeleton, Stroke, Style, TimelineId, Transform,
+    };
+    let ink = Stroke::new(Color::rgb(30, 30, 40), 5.0);
+    let style = |c: Color| Style { fill: Some(c), stroke: Some(ink), gradient: None };
+    let placed = |shape: Shape, c: Color, at: Point| {
+        Element { shape, style: style(c) }.transformed(Affine::translate(at)).unwrap()
+    };
+    // Shapes in stage coordinates, each layer at the origin.
+    let leg = |x: f32, c: Color| {
+        placed(Shape::Rect { width: 56.0, height: 360.0, corner_radius: 28.0 }, c, Point::new(x, 600.0))
+    };
+    let doc = &mut editor.doc;
+    doc.duration = 24;
+    let far = doc.add_layer("Far leg", vec![leg(962.0, Color::rgb(70, 115, 190))], 0, Transform::default());
+    let near = doc.add_layer("Near leg", vec![leg(958.0, Color::rgb(90, 150, 230))], 0, Transform::default());
+    let body = doc.add_layer(
+        "Body",
+        vec![
+            placed(
+                Shape::Rect { width: 130.0, height: 210.0, corner_radius: 50.0 },
+                Color::rgb(240, 160, 70),
+                Point::new(960.0, 330.0),
+            ),
+            placed(
+                Shape::Ellipse { radius_x: 62.0, radius_y: 62.0 },
+                Color::rgb(250, 205, 160),
+                Point::new(968.0, 175.0),
+            ),
+        ],
+        0,
+        Transform::default(),
+    );
+    // The body goes in front of the far leg, behind the near one.
+    doc.place_layer(body, Some(far), None);
+    doc.place_layer(near, Some(body), None);
+    editor.select(Some(near));
+    if stage == "drawn" {
+        return;
+    }
+
+    let doc = &mut editor.doc;
+    let Some(folder) = doc.add_folder(TimelineId::Main, &[near, body, far]) else { return };
+    let mut skeleton = Skeleton::default();
+    let hips = skeleton.add_bone(None, Point::new(960.0, 380.0), Point::new(960.0, 430.0), 0);
+    skeleton.bones[hips].name = "Hips".into();
+    let mut feet = Vec::new();
+    let mut thighs = Vec::new();
+    for (side, x) in [("Near", 958.0), ("Far", 962.0)] {
+        let thigh = skeleton.add_bone(Some(hips), Point::new(x, 430.0), Point::new(x, 600.0), 0);
+        let shin = skeleton.add_bone(Some(thigh), Point::new(x, 600.0), Point::new(x, 770.0), 0);
+        let foot = skeleton.add_bone(None, Point::new(x, 770.0), Point::new(x + 50.0, 770.0), 0);
+        skeleton.bones[thigh].name = format!("{side} thigh");
+        skeleton.bones[shin].name = format!("{side} shin");
+        skeleton.bones[foot].name = format!("{side} foot");
+        skeleton.bones[shin].target = Some(foot);
+        skeleton.bones[shin].limits = Some(inkframe_core::RotationLimits { min: 0.0, max: 150.0 });
+        skeleton.bones[thigh].strength = 40.0;
+        skeleton.bones[shin].strength = 40.0;
+        feet.push((foot, x));
+        thighs.push(thigh);
+    }
+    // One foot's step, by frame of the cycle, from under its hip: planted
+    // in front and sliding back over 12 frames, then lifted and swung
+    // through. The far foot is half a cycle on.
+    let step = [(0, 90.0, 0.0), (12, -90.0, 0.0), (15, -65.0, -28.0), (18, 0.0, -48.0), (21, 65.0, -22.0)];
+    for (n, &(foot, hip)) in feet.iter().enumerate() {
+        let mut keys: Vec<(u32, Point)> = step
+            .iter()
+            .map(|&(f, dx, dy)| ((f + n as u32 * 12) % 24, Point::new(hip + dx, 770.0 + dy)))
+            .collect();
+        keys.sort_by_key(|&(f, _)| f);
+        // The cycle ends where it began, so it loops.
+        keys.push((24, keys[0].1));
+        for (frame, at) in keys {
+            skeleton.move_bone(foot, at, frame);
+        }
+    }
+    // The hips, low just after each contact and high as the legs pass.
+    for (frame, drop) in
+        [(0, 22.0), (3, 30.0), (6, 12.0), (9, 8.0), (12, 22.0), (15, 30.0), (18, 12.0), (21, 8.0), (24, 22.0)]
+    {
+        skeleton.move_bone(hips, Point::new(960.0, 380.0 + drop), frame);
+    }
+    let doc = &mut editor.doc;
+    // The legs are drawn over each other, so each bends with its own limb
+    // only; the body rides on the hips.
+    for (layer, binding) in [
+        (near, BoneBinding::Limb(thighs[0])),
+        (far, BoneBinding::Limb(thighs[1])),
+        (body, BoneBinding::Bone(hips)),
+    ] {
+        if let Some(layer) = doc.layer_mut(layer) {
+            layer.bone_binding = binding;
+        }
+    }
+    if let Some(layer) = doc.layer_mut(folder) {
+        layer.name = "Walker".into();
+        layer.skeleton = Some(skeleton);
+    }
+    editor.select(Some(folder));
+    editor.selected_bone = Some(feet[0].0);
+    if stage == "follows" {
+        editor.select(Some(near));
+    }
+}
+
+/// The guidebook's web banner project (chapter "Project: An Interactive
+/// Web Banner"): a 970 × 250 stage with a background, a title that pops in
+/// over the first frames, a line under it, and a Shop Now button that opens
+/// a link, with a Stop on the last frame so the banner ends on the button.
+fn banner_demo(editor: &mut Editor) {
+    use inkframe_core::{Color, Element, Point, Shape, ShapeGradient, Style, Text, Transform, WebAction};
+    let doc = &mut editor.doc;
+    (doc.width, doc.height, doc.duration) = (970, 250, 36);
+    let fill = |c: Color| Style { fill: Some(c), stroke: None, gradient: None };
+    let mut sky = ShapeGradient::linear(Color::rgb(255, 214, 150), Color::rgb(240, 120, 110));
+    (sky.from, sky.to) = (Point::new(0.0, 0.5), Point::new(1.0, 0.5));
+    let background = doc.add_layer(
+        "Background",
+        vec![Element {
+            shape: Shape::Rect { width: 970.0, height: 250.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::rgb(255, 214, 150)), stroke: None, gradient: Some(sky) },
+        }],
+        0,
+        Transform::at(Point::new(485.0, 125.0)),
+    );
+    // Text is placed from its left edge.
+    let text = |content: &str, size: f32, c: Color| Element {
+        shape: Shape::Text(Text::new(content, size)),
+        style: fill(c),
+    };
+    let title = doc.add_layer(
+        "Title",
+        vec![text("Spring Sale", 76.0, Color::rgb(60, 30, 50))],
+        0,
+        Transform::at(Point::new(60.0, 105.0)),
+    );
+    let line = doc.add_layer(
+        "Tagline",
+        vec![text("Everything 20% off this week", 30.0, Color::rgb(90, 50, 70))],
+        6,
+        Transform::at(Point::new(60.0, 175.0)),
+    );
+    let button = doc.add_layer(
+        "Shop Now",
+        vec![Element {
+            shape: Shape::Rect { width: 220.0, height: 76.0, corner_radius: 38.0 },
+            style: fill(Color::rgb(60, 30, 50)),
+        }],
+        12,
+        Transform::at(Point::new(800.0, 125.0)),
+    );
+    // Its label rides on it, attached as a part of a rig is.
+    let label = doc.add_layer(
+        "Label",
+        vec![text("Shop now", 30.0, Color::WHITE)],
+        12,
+        Transform::at(Point::new(734.0, 125.0)),
+    );
+    doc.set_parent(label, Some(button), 12);
+    // Pop In, as the Motion Presets panel gives it: from nothing, a little
+    // past full size, and settling.
+    if let Some(layer) = doc.layer_mut(title) {
+        let at = |scale: f32, opacity: f32| Transform {
+            scale: Point::new(scale, scale),
+            opacity,
+            ..Transform::at(Point::new(60.0, 105.0))
+        };
+        layer.track.set_pose(0, at(0.2, 0.0));
+        layer.track.set_pose(8, at(1.12, 1.0));
+        layer.track.set_pose(12, at(1.0, 1.0));
+    }
+    if let Some(layer) = doc.layer_mut(line) {
+        layer.track.set_pose(6, Transform { opacity: 0.0, ..Transform::at(Point::new(60.0, 175.0)) });
+        layer.track.set_pose(14, Transform::at(Point::new(60.0, 175.0)));
+    }
+    if let Some(layer) = doc.layer_mut(button) {
+        layer.track.set_pose(12, Transform::at(Point::new(1100.0, 125.0)));
+        layer.track.set_pose(20, Transform::at(Point::new(800.0, 125.0)));
+        layer.button = Some(WebAction::OpenLink("https://example.com/sale".into()));
+    }
+    doc.set_frame_action(35, Some(WebAction::Stop));
+    let _ = background;
+    editor.select(Some(button));
+    editor.frame = 35;
 }
 
 /// Strokes drawn with art and pattern brushes (see `art_brush.rs` in the

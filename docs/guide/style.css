@@ -110,6 +110,15 @@ body { margin: 0; }
 .toc ul li { font: 9pt/1.5 var(--sans); }
 .toc ul a { color: var(--muted); }
 .toc a { text-decoration: none; }
+/* Each entry: its title, a dotted leader and its page number. */
+.toc a { display: flex; align-items: baseline; }
+.toc-dots {
+  flex: 1;
+  margin: 0 4pt;
+  border-bottom: 0.75pt dotted #bbb;
+  min-width: 12pt;
+}
+.toc-page { font-variant-numeric: tabular-nums; }
 
 /* Chapters */
 .chapter { break-before: page; }

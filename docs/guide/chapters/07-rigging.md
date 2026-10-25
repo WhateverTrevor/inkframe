@@ -56,7 +56,7 @@ Pick a bone and its settings appear in the folder's properties. **Strength** set
 
 ## Binding layers, and pins
 
-By default, each layer bends with whichever bones are near it. Some parts should follow just one bone instead: a hand, a hat, a head. In a layer's properties, **Follows** binds it to one bone (or to none).
+By default, each layer bends with whichever bones are near it. Some parts should follow just one bone instead: a hand, a hat, a head. In a layer's properties, **Follows** binds it to one bone (or to none). It can also bind a layer to a *limb*, such as **Left thigh and below**: the layer bends with that bone and the bones hanging from it, and ignores the rest. That's what two legs drawn over each other need, as *Chapter 11* shows.
 
 *Pins* do the same for parts of a drawing. Double-click a layer and pick some shapes, or pick a single point with the Subselection tool, and in the layer's properties choose a bone under **Pin to**. The pinned shapes follow that bone alone, so an eye stays on the head while the face around it bends. Welded points (*Chapter 2*) pin together, so joined shapes don't crack apart as the skeleton bends them.
 

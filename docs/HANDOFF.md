@@ -889,8 +889,8 @@ after the Harmony features (palettes to master controllers).
     (`reference.rs`). When adding a tool or feature, add words to its
     chapter and a figure line if it needs a new scene. The LIPSYNC hook now
     makes up a line of dialogue (`screenshot::add_dialogue`) when the
-    project has no sound. Known: the TOC has no page numbers (Chrome can't
-    do `target-counter`); a sprite sheet must fit one 8192² image, so the
+    project has no sound. The TOC is numbered by printing twice
+    (see #119); a sprite sheet must fit one 8192² image, so the
     batch figure shows the bouncing ball's sheet failing (a multi-sheet
     export would fix that).
 114. First-run tour: `tour.rs` (`Tour` with 8 `STEPS`, each a `Target`;
@@ -943,6 +943,24 @@ after the Harmony features (palettes to master controllers).
     project unsaved); Arrange clears the timeline's. Fixed: drags start
     from the press origin (nodes and wires no longer jump on grab), and
     dragging a node stops the auto-fit so the canvas doesn't slide.
+119. Guidebook contents page numbers: `guide::page_numbers` parses Chrome's
+    PDF (plain objects: catalog `/Pages` + `/Dests`; `/Dests` maps each
+    heading anchor to `[page 0 R /XYZ …]`; page order from the tree,
+    depth first) and the book is printed up to 4 times until the numbers
+    it prints match what it reads. `Book::html(css, pages)` adds a dotted
+    leader and number to each entry. No numbers found: prints without.
+120. Guidebook projects + limb binding (format v39): chapters
+    11-project-walk, 12-project-talking-head, 13-project-web-banner (preface
+    and ch. 10 point to them). Hooks `INKFRAME_SCREENSHOT_WALK=drawn|rigged|
+    follows` (walk_demo: overlapping legs on target feet, 24-frame cycle,
+    hips bob) and `_BANNER=1` (banner_demo: 970×250, Pop In title, Open
+    link button with a parented label, Stop on the last frame). Building
+    the walk showed region binding can't keep overlapping legs apart, so
+    core `BoneBinding::Limb(bone)` (`Skeleton::limb`, `carry_among`,
+    `weights_among`) and the app's shared `inspector::binding_menu`/
+    `binding_label` (Properties and Bones panel). Ideas: script API for
+    skeletons, lip sync and buttons (the projects' scenes are built in
+    Rust hooks because scripts can't yet).
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

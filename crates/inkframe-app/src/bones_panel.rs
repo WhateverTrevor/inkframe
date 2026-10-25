@@ -5,7 +5,7 @@
 //! how each follows the bones. Rig setup is switched here too.
 
 use egui::RichText;
-use inkframe_core::{BoneBinding, LayerId, Skeleton};
+use inkframe_core::{LayerId, Skeleton};
 
 use crate::editor::{Editor, Tool};
 
@@ -114,6 +114,10 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
             ui.add_space(4.0);
             ui.label(RichText::new("Rigs").small().weak());
             let names: Vec<String> = skeleton.bones.iter().map(|b| b.name.clone()).collect();
+            // Bones with others hanging from them, which a layer can follow as a limb.
+            let limbs: Vec<bool> = (0..skeleton.bones.len())
+                .map(|i| skeleton.limb(i).iter().filter(|&&b| b).count() > 1)
+                .collect();
             for member in members {
                 let Some(layer) = editor.doc.layer(member) else { continue };
                 if layer.folder {
@@ -121,13 +125,6 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 }
                 let (layer_name, current) = (layer.name.clone(), layer.bone_binding);
                 let pins: usize = layer.drawings.iter().map(|d| d.bone_points.len()).sum();
-                let label = |binding: BoneBinding| match binding {
-                    BoneBinding::Region => "Nearby bones".to_owned(),
-                    BoneBinding::Bone(i) => {
-                        names.get(i).cloned().unwrap_or_else(|| "Nearby bones".to_owned())
-                    }
-                    BoneBinding::Unbound => "None".to_owned(),
-                };
                 let mut chosen = current;
                 ui.horizontal(|ui| {
                     if ui.selectable_label(editor.selection == Some(member), &layer_name).clicked() {
@@ -137,27 +134,8 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                         ui.weak(RichText::new(format!("{pins} pinned")).small());
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        egui::ComboBox::from_id_salt(("follows", member))
-                            .selected_text(label(current))
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(
-                                    &mut chosen,
-                                    BoneBinding::Region,
-                                    label(BoneBinding::Region),
-                                );
-                                for i in 0..names.len() {
-                                    ui.selectable_value(
-                                        &mut chosen,
-                                        BoneBinding::Bone(i),
-                                        label(BoneBinding::Bone(i)),
-                                    );
-                                }
-                                ui.selectable_value(
-                                    &mut chosen,
-                                    BoneBinding::Unbound,
-                                    label(BoneBinding::Unbound),
-                                );
-                            });
+                        chosen =
+                            crate::inspector::binding_menu(ui, ("follows", member), current, &names, &limbs);
                     });
                 });
                 if chosen != current {

@@ -19,6 +19,20 @@ notes on GitHub are its section here.
   data file, naming the others as TexturePacker's multipack does), rather
   than failing. Only a single frame bigger than that is still an error.
 
+### Guidebook
+
+- The guidebook's contents have page numbers, with dotted leaders.
+- Three project chapters, start to finish: a walk cycle on a skeleton
+  with target feet, a lip-synced talking head, and an interactive web
+  banner.
+
+### Limbs
+
+- A layer in a skeleton can follow a limb (**Thigh and below**): it bends
+  with that bone and the bones hanging from it, ignoring the rest, so two
+  legs drawn over each other, as in a walk from the side, each bend with
+  their own bones. File format 39.
+
 ### Node View keeps its arrangement
 
 - Nodes dragged in the Node View stay where they were put, saved with the
