@@ -11,6 +11,7 @@
 
 mod files;
 mod native;
+mod rigging;
 mod values;
 
 use std::cell::{Cell, RefCell};
@@ -426,5 +427,70 @@ mod round_two {
         "##,
         );
         assert_eq!(out.log, [r#"["Hand"] [0,-40]"#]);
+    }
+
+    #[test]
+    fn a_walk_is_rigged_and_posed_from_a_script() {
+        let out = run_on(
+            r##"
+            const doc = inkframe.document;
+            const near = doc.addLayer("Near leg", { rect: [50, 340], at: [960, 600] });
+            const far = doc.addLayer("Far leg", { rect: [50, 340], at: [960, 600] });
+            const walker = doc.addSkeleton([near, far], "Walker");
+            walker
+              .addBone("Hips", [960, 380], [960, 430])
+              .addBone("Near thigh", [960, 430], [960, 600], { parent: "Hips" })
+              .addBone("Near shin", [960, 600], [960, 770], { parent: "Near thigh" })
+              .addBone("Near foot", [960, 770], [1010, 770])
+              .setBone("Near shin", { target: "Near foot", limits: [0, 150] })
+              .poseBone("Near foot", 1, { moveTo: [1050, 770] })
+              .poseBone("Hips", 1, { moveTo: [960, 400] });
+            near.follows = { limb: "Near thigh" };
+            far.follows = "none";
+            const shin = walker.bones.find((b) => b.name === "Near shin");
+            console.log(walker.kind, walker.bones.length, shin.parent, shin.target, JSON.stringify(shin.limits));
+            console.log(JSON.stringify(near.follows), far.follows);
+        "##,
+        );
+        assert_eq!(out.log, ["folder 4 Near thigh Near foot [0,150]", r#"{"limb":"Near thigh"} none"#]);
+        // The planted foot pulls the leg forward: in the leg's own
+        // coordinates, it reaches well past its half-width of 25.
+        let doc = &out.document;
+        let near = doc.layers.iter().find(|l| l.name == "Near leg").unwrap();
+        let bounds =
+            doc.posed_elements(near, 0).iter().map(|e| e.bounds()).reduce(|a, b| a.union(b)).unwrap();
+        assert!(bounds.max.x > 60.0, "{bounds:?}");
+    }
+
+    #[test]
+    fn mouths_and_buttons_from_a_script() {
+        let out = run_on(
+            r##"
+            const doc = inkframe.document;
+            const mouth = doc.addLayer("Mouth", { ellipse: [60, 20] });
+            mouth.addDrawing("A", { copy: mouth.drawings[0] }).addDrawing("O").showDrawing("O", 5);
+            const title = doc.addLayer("Title", { text: "Spring Sale", size: 60 });
+            const shop = doc.addLayer("Shop", { rect: [200, 70], radius: 35 });
+            shop.button = { openLink: "https://example.com" };
+            doc.setFrameAction(doc.duration, "stop");
+            console.log(JSON.stringify(mouth.drawings), title.kind, JSON.stringify(shop.button));
+            console.log(JSON.stringify(doc.frameActions));
+        "##,
+        );
+        assert_eq!(out.log[0], r#"["1","A","O"] vector {"openLink":"https://example.com"}"#);
+        assert_eq!(out.log[1], r#"[{"action":"stop","frame":48}]"#);
+        let mouth = out.document.layers.iter().find(|l| l.name == "Mouth").unwrap();
+        assert_eq!(mouth.drawing_index_at(4), 2);
+    }
+
+    #[test]
+    fn sounds_are_the_only_files_a_script_can_bring_in() {
+        let error = run(Script {
+            limit: Some(Duration::from_secs(5)),
+            ..Script::new(r#"inkframe.document.importAudio("/etc/passwd")"#, Document::default())
+        })
+        .map(|_| ())
+        .expect_err("refused");
+        assert!(error.to_string().contains("isn't a sound file"), "{error}");
     }
 }

@@ -39,7 +39,7 @@ pub(crate) struct State {
     pub log: Vec<String>,
 }
 
-type Shared = Rc<RefCell<State>>;
+pub(crate) type Shared = Rc<RefCell<State>>;
 
 /// Installs the natives as `globalThis.__native`, which the prelude takes
 /// and removes.
@@ -124,6 +124,7 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, state: &Shared) -> rquickjs::Result<(
             "start": layer.start + 1,
             "end": layer.end.map(|e| e + 1),
             "parent": layer.parent.map(id_value),
+            "folder": layer.in_folder.map(id_value),
             "pivot": [layer.pivot.x, layer.pivot.y],
         })
         .to_string())
@@ -616,6 +617,7 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, state: &Shared) -> rquickjs::Result<(
         Ok(id_number(doc_mut(&ctx, &mut state, d)?.doc.add_camera()))
     });
 
+    crate::rigging::install(ctx, &native, state)?;
     ctx.globals().set("__native", native)?;
     Ok(())
 }
@@ -629,41 +631,41 @@ fn playback_name(playback: Playback) -> &'static str {
 }
 
 /// A JavaScript error with `message`, to return from a native.
-fn throw(ctx: &Ctx<'_>, message: impl AsRef<str>) -> rquickjs::Error {
+pub(crate) fn throw(ctx: &Ctx<'_>, message: impl AsRef<str>) -> rquickjs::Error {
     Exception::throw_message(ctx, message.as_ref())
 }
 
-fn gone(ctx: &Ctx<'_>) -> rquickjs::Error {
+pub(crate) fn gone(ctx: &Ctx<'_>) -> rquickjs::Error {
     throw(ctx, "that layer isn't in the document any more")
 }
 
-fn parse(ctx: &Ctx<'_>, json: &str) -> rquickjs::Result<Value> {
+pub(crate) fn parse(ctx: &Ctx<'_>, json: &str) -> rquickjs::Result<Value> {
     serde_json::from_str(json).map_err(|e| throw(ctx, format!("bad value: {e}")))
 }
 
-fn doc<'a>(ctx: &Ctx<'_>, state: &'a State, d: usize) -> rquickjs::Result<&'a Open> {
+pub(crate) fn doc<'a>(ctx: &Ctx<'_>, state: &'a State, d: usize) -> rquickjs::Result<&'a Open> {
     state.docs.get(d).ok_or_else(|| throw(ctx, "that document isn't open"))
 }
 
-fn doc_mut<'a>(ctx: &Ctx<'_>, state: &'a mut State, d: usize) -> rquickjs::Result<&'a mut Open> {
+pub(crate) fn doc_mut<'a>(ctx: &Ctx<'_>, state: &'a mut State, d: usize) -> rquickjs::Result<&'a mut Open> {
     state.docs.get_mut(d).ok_or_else(|| throw(ctx, "that document isn't open"))
 }
 
 /// Layer ids are numbers to scripts.
-fn id_value(id: LayerId) -> Value {
+pub(crate) fn id_value(id: LayerId) -> Value {
     serde_json::to_value(id).unwrap_or(Value::Null)
 }
 
-fn id_number(id: LayerId) -> f64 {
+pub(crate) fn id_number(id: LayerId) -> f64 {
     id_value(id).as_f64().unwrap_or(-1.0)
 }
 
-fn layer_id(n: f64) -> LayerId {
+pub(crate) fn layer_id(n: f64) -> LayerId {
     serde_json::from_value(json!(n.max(0.0) as u64))
         .unwrap_or_else(|_| serde_json::from_value(json!(0)).unwrap())
 }
 
-fn whole<T: TryFrom<u64>>(
+pub(crate) fn whole<T: TryFrom<u64>>(
     ctx: &Ctx<'_>,
     value: &Value,
     what: &str,
@@ -677,11 +679,11 @@ fn whole<T: TryFrom<u64>>(
 }
 
 /// A frame as scripts number it (from 1), as the document does (from 0).
-fn frame_index(ctx: &Ctx<'_>, value: &Value, what: &str) -> rquickjs::Result<u32> {
+pub(crate) fn frame_index(ctx: &Ctx<'_>, value: &Value, what: &str) -> rquickjs::Result<u32> {
     Ok(whole::<u32>(ctx, value, what, 1..=u64::from(u32::MAX))? - 1)
 }
 
-fn flag(ctx: &Ctx<'_>, value: &Value) -> rquickjs::Result<bool> {
+pub(crate) fn flag(ctx: &Ctx<'_>, value: &Value) -> rquickjs::Result<bool> {
     value.as_bool().ok_or_else(|| throw(ctx, "expected true or false"))
 }
 
@@ -697,11 +699,11 @@ fn color(ctx: &Ctx<'_>, value: &Value) -> rquickjs::Result<Color> {
     text.parse().map_err(|_| throw(ctx, format!("{text} isn't a colour like \"#ff6633\"")))
 }
 
-fn point(ctx: &Ctx<'_>, value: &Value) -> rquickjs::Result<Point> {
+pub(crate) fn point(ctx: &Ctx<'_>, value: &Value) -> rquickjs::Result<Point> {
     crate::values::point(value).map_err(|e| throw(ctx, e))
 }
 
-/// The shape described by `spec` (`rect`, `ellipse` or `polygon`, with
+/// The shape described by `spec` (`rect`, `ellipse`, `text` with `size`, or `polygon`, with
 /// `fill`, `stroke` and `strokeWidth`), if any.
 fn shape(ctx: &Ctx<'_>, spec: &Value) -> rquickjs::Result<Option<Element>> {
     let size = |v: &Value| -> rquickjs::Result<(f32, f32)> {
@@ -715,6 +717,9 @@ fn shape(ctx: &Ctx<'_>, spec: &Value) -> rquickjs::Result<Option<Element>> {
     } else if !spec["ellipse"].is_null() {
         let (width, height) = size(&spec["ellipse"])?;
         Shape::Ellipse { radius_x: width / 2.0, radius_y: height / 2.0 }
+    } else if let Some(content) = spec["text"].as_str() {
+        let size = spec["size"].as_f64().unwrap_or(48.0) as f32;
+        Shape::Text(inkframe_core::Text::new(content, size))
     } else if let Some(points) = spec["polygon"].as_array() {
         let points = points.iter().map(|p| point(ctx, p)).collect::<rquickjs::Result<Vec<_>>>()?;
         let Some((&start, rest)) = points.split_first() else {

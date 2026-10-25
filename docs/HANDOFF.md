@@ -970,6 +970,16 @@ after the Harmony features (palettes to master controllers).
     `frame_range` is set; `Editor::select` of another layer clears it.
     Old pose copy renamed `Command::CopyPose`/`PastePose` (`COPY_POSE`,
     Edit › Copy Pose). Drawings/swaps aren't copied, only keyframes.
+122. Script API for characters and the web: `inkframe-script/src/rigging.rs`
+    natives (addSkeleton, bones/addBone/setBone/poseBone by place,
+    follows/setFollows, drawings/addDrawing/showDrawing, importAudio (sound
+    extensions only, must exist), lipSync (loudness via inkframe_audio::decode
+    + peaks_per_frame, or Rhubarb .tsv/.txt / Papagayo .dat), button/
+    setButton, frameActions/setFrameAction), helpers in native.rs now
+    pub(crate); layerGet reports `folder`; addLayer `text`+`size`. Prelude
+    names bones (resolves names to places). Rhubarb itself isn't runnable
+    from scripts (it lives in the app). Example `walk-cycle.js` (8 example
+    scripts; tests/examples.rs runs it). Docs in SCRIPTING.md.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

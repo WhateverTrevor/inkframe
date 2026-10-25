@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+inkframe-audio.workspace = true
 inkframe-core.workspace = true
 inkframe-export.workspace = true
 # QuickJS, a small JavaScript engine compiled in from C. It starts with no
