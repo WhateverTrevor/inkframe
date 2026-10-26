@@ -39,7 +39,7 @@ Inkframe's brushes work as Photoshop's do, setting for setting, so a brush you k
 
 The **Brushes** panel lists the brushes, each by a sample stroke. Besides round brushes, the ready-made ones are a painter's set for scenes and backgrounds: pencil, chalk and charcoal; dry, bristle and flat brushes; watercolour; and stamping brushes for foliage, grass, clouds, rocks, spatter and stars. Click one to paint with it. The panel's buttons save the brush as it is now as a new preset, **Import** brushes (a brush set, or a Photoshop *.abr* file), **Export** yours as a brush set to share, and **Define from Selection**: a new tip from the selected pixels of a paint layer, dark being paint, as Photoshop's **Edit › Define Brush Preset** does. Right-click a saved brush to rename, update or delete it.
 
-![Every ready-made brush, one stroke each](brush-sheet)
+![Every ready-made brush, one stroke each](brush-sheet){crop=0.095,0.14,0.76,0.70}
 
 **Brush Settings** (**Edit › Brush Settings**, or the button in the Tool tab) holds every setting, a section at a time, picked from the list down its left. The checkbox beside a section turns it on and off, keeping its settings.
 
@@ -56,11 +56,11 @@ The **Brushes** panel lists the brushes, each by a sample stroke. Besides round 
 
 A stroke along the foot of the panel shows the brush as it stands.
 
-![Brush Settings at Shape Dynamics, for the Foliage brush](brush-settings)
+![The Brushes panel above Brush Settings at Shape Dynamics, for the Foliage brush](brush-settings){crop=0.76,0.035,1.0,0.82}
 
 For a quick change without leaving the canvas, right-click the stage with a painting tool: a small panel opens with the size and hardness over the brushes. Or hold [[⌃⌥]] and drag on the canvas (Alt and the right button on Windows): left and right resize the brush, up and down soften and harden it.
 
-![The brush quick menu, opened by right-clicking the stage](quick-brush)
+![The brush quick menu, opened by right-clicking the stage](quick-brush){crop=0.095,0.14,0.76,0.75}
 
 > Tip: Painting scenery, start with big, soft shapes in the Soft Round, then break them up with the stamping brushes: Clouds for the sky, Foliage and Sponge for trees, Grass and Rocks for the ground. Color Dynamics varies their greens and browns, so a few strokes look like many leaves.
 
