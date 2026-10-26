@@ -11,6 +11,7 @@
 //! drawn as handles that can be dragged. Dragging a preset's handle turns it
 //! into a Custom curve that starts from the preset's shape.
 
+use crate::i18n::tr;
 use egui::{Color32, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use inkframe_core::Easing;
 
@@ -89,7 +90,7 @@ pub fn show(ui: &mut egui::Ui, easing: &mut Easing, progress: Option<f32>) -> bo
     if hovered.is_some() || held.is_some() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     }
-    response.on_hover_text("Drag a handle to reshape the curve");
+    response.on_hover_text(tr("Drag a handle to reshape the curve"));
     changed
 }
 

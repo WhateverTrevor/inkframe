@@ -1274,8 +1274,8 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) 
         if editor.doc.stack_by_depth && editor.timeline() == TimelineId::Main {
             ui.separator();
             let chip = ui.add(egui::Button::new(tr("Stacked by depth")).small().selected(true)).on_hover_text(
-                "Layers are drawn far to near by their Depth, not in this order. \
-                 Click to go back to the timeline's order.",
+                tr("Layers are drawn far to near by their Depth, not in this order. \
+                 Click to go back to the timeline's order."),
             );
             if chip.clicked() {
                 editor.doc.stack_by_depth = false;

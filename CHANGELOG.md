@@ -8,12 +8,15 @@ notes on GitHub are its section here.
 ### Translation
 
 - The groundwork for translating Inkframe: the menus, the tools, the
-  context bar, the timeline, the window's areas, the first-run tour and
-  What's New can be translated with a plain text file per language in
+  context bar, the timeline, Properties, Find a Command, the Library, the
+  dialogs and panels, the window's areas, the first-run tour and What's
+  New can be translated with a plain text file per language in
   `locales/` (see docs/TRANSLATING.md), chosen from the system's language
   or `INKFRAME_LANGUAGE`. `cargo xtask strings` lists every text to
   translate, and a pseudo-language shows what's been wrapped so far. The
-  area menu now widens to fit longer names.
+  area menu now widens to fit longer names. Find a Command and the
+  Properties search find things by their translated words and their
+  English ones.
 
 ### Speed
 

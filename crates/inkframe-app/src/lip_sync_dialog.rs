@@ -15,6 +15,7 @@ use inkframe_core::{
 
 use crate::audio_engine::AudioEngine;
 use crate::editor::Editor;
+use crate::i18n::{tr, tr_args};
 use inkframe_audio::rhubarb::{self, Event, Job, Recognizer};
 
 /// Timing files the window can read: Rhubarb's tab-separated output, and
@@ -92,7 +93,7 @@ impl LipSyncDialog {
             return;
         }
         let mut open = self.open;
-        egui::Window::new("Lip Sync")
+        egui::Window::new(tr("Lip Sync"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -132,7 +133,7 @@ impl LipSyncDialog {
 
     fn contents(&mut self, ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) {
         let Some(layer) = self.layer.and_then(|id| editor.doc.layer(id)) else {
-            ui.label("Select the mouth layer first, then choose Lip Sync again.");
+            ui.label(tr("Select the mouth layer first, then choose Lip Sync again."));
             return;
         };
         if layer.drawings.len() < 2 {
@@ -144,18 +145,18 @@ impl LipSyncDialog {
             return;
         }
         if editor.doc.audio.is_empty() {
-            ui.label("Import the dialogue first (File › Import Audio), then choose Lip Sync again.");
+            ui.label(tr("Import the dialogue first (File › Import Audio), then choose Lip Sync again."));
             return;
         }
         let drawing_names: Vec<String> = layer.drawings.iter().map(|d| d.name.clone()).collect();
         let layer_name = layer.name.clone();
 
         egui::Grid::new("lip_sync").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-            ui.label("Mouth");
+            ui.label(tr("Mouth"));
             ui.strong(&layer_name);
             ui.end_row();
 
-            ui.label("Dialogue");
+            ui.label(tr("Dialogue"));
             let current = editor.doc.audio.iter().find(|a| Some(a.id) == self.audio).map_or("", |a| &a.name);
             egui::ComboBox::from_id_salt("lip_sync_audio").selected_text(current).width(240.0).show_ui(
                 ui,
@@ -167,14 +168,14 @@ impl LipSyncDialog {
             );
             ui.end_row();
 
-            ui.label("Shapes from");
+            ui.label(tr("Shapes from"));
             ui.vertical(|ui| self.timing_ui(ui, editor.doc.frame_rate.fps()));
             ui.end_row();
         });
 
         ui.add_space(6.0);
-        ui.strong("Drawing for each shape");
-        ui.weak("Guessed from the drawings' names. A shape without one borrows a similar shape's.");
+        ui.strong(tr("Drawing for each shape"));
+        ui.weak(tr("Guessed from the drawings' names. A shape without one borrows a similar shape's."));
         egui::Grid::new("lip_sync_map").num_columns(3).spacing([10.0, 4.0]).striped(true).show(ui, |ui| {
             for shape in MouthShape::ALL {
                 ui.strong(shape.letter());
@@ -188,7 +189,7 @@ impl LipSyncDialog {
                     .selected_text(text)
                     .width(110.0)
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut choice, None, "Borrow");
+                        ui.selectable_value(&mut choice, None, tr("Borrow"));
                         for (index, name) in drawing_names.iter().enumerate() {
                             ui.selectable_value(&mut choice, Some(index), name);
                         }
@@ -201,13 +202,13 @@ impl LipSyncDialog {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             if let Some((job, progress)) = &self.job {
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     job.cancel();
                 }
-                ui.add(egui::ProgressBar::new(*progress).show_percentage().text("Listening…"));
+                ui.add(egui::ProgressBar::new(*progress).show_percentage().text(tr("Listening…")));
                 return;
             }
-            if ui.button("Apply").clicked() {
+            if ui.button(tr("Apply")).clicked() {
                 self.message = Some(match self.apply(editor, audio) {
                     Ok(summary) | Err(summary) => summary,
                 });
@@ -224,31 +225,31 @@ impl LipSyncDialog {
         let rhubarb = ui
             .add_enabled(
                 self.rhubarb.is_some(),
-                egui::RadioButton::new(listening, "Rhubarb: listens for the sounds"),
+                egui::RadioButton::new(listening, tr("Rhubarb: listens for the sounds")),
             )
-            .on_disabled_hover_text("Rhubarb Lip Sync isn't included in this build of Inkframe.");
+            .on_disabled_hover_text(tr("Rhubarb Lip Sync isn't included in this build of Inkframe."));
         if rhubarb.clicked() {
             self.timing = Some(Timing::Rhubarb);
         }
         if listening {
             ui.indent("rhubarb_options", |ui| {
                 ui.horizontal(|ui| {
-                    ui.label("Language");
-                    ui.radio_value(&mut self.recognizer, Recognizer::English, "English");
-                    ui.radio_value(&mut self.recognizer, Recognizer::AnyLanguage, "Other");
+                    ui.label(tr("Language"));
+                    ui.radio_value(&mut self.recognizer, Recognizer::English, tr("English"));
+                    ui.radio_value(&mut self.recognizer, Recognizer::AnyLanguage, tr("Other"));
                 });
                 ui.add(
                     egui::TextEdit::multiline(&mut self.script)
                         .desired_rows(2)
                         .desired_width(240.0)
-                        .hint_text("What's said (optional, helps with unclear words)"),
+                        .hint_text(tr("What's said (optional, helps with unclear words)")),
                 );
             });
         }
         if ui
             .radio(
                 matches!(self.timing, Some(Timing::Loudness)),
-                "Loudness: opens wider as the voice gets louder",
+                tr("Loudness: opens wider as the voice gets louder"),
             )
             .clicked()
         {
@@ -256,17 +257,20 @@ impl LipSyncDialog {
         }
         ui.horizontal(|ui| {
             let label = match &self.timing {
-                Some(Timing::File { path, .. }) => format!("Timing file: {}", file_name(path)),
-                _ => "Timing file from Rhubarb or Papagayo…".to_owned(),
+                Some(Timing::File { path, .. }) => {
+                    tr_args("Timing file: {file}", &[("file", &file_name(path))])
+                }
+                _ => tr("Timing file from Rhubarb or Papagayo…").to_owned(),
             };
-            if ui.radio(from_file, label).clicked() || ui.small_button("Choose…").clicked() {
+            if ui.radio(from_file, label).clicked() || ui.small_button(tr("Choose…")).clicked() {
                 self.choose_file(fps);
             }
         });
     }
 
     fn choose_file(&mut self, fps: f64) {
-        let Some(path) = rfd::FileDialog::new().add_filter("Lip sync timing", &TIMING_EXTENSIONS).pick_file()
+        let Some(path) =
+            rfd::FileDialog::new().add_filter(tr("Lip sync timing"), &TIMING_EXTENSIONS).pick_file()
         else {
             return;
         };
@@ -275,7 +279,12 @@ impl LipSyncDialog {
                 self.message = None;
                 self.timing = Some(Timing::File { path, cues });
             }
-            Err(err) => self.message = Some(format!("Couldn't read {}: {err}", file_name(&path))),
+            Err(err) => {
+                self.message = Some(tr_args(
+                    "Couldn't read {file}: {problem}",
+                    &[("file", &file_name(&path)), ("problem", &err.to_string())],
+                ))
+            }
         }
     }
 
@@ -284,12 +293,12 @@ impl LipSyncDialog {
     /// it listening; `poll_job` writes the shapes when it's done.
     fn apply(&mut self, editor: &mut Editor, audio: &mut AudioEngine) -> Result<String, String> {
         let track =
-            editor.doc.audio.iter().find(|a| Some(a.id) == self.audio).ok_or("Choose the dialogue.")?;
+            editor.doc.audio.iter().find(|a| Some(a.id) == self.audio).ok_or(tr("Choose the dialogue."))?;
         let fps = editor.doc.frame_rate.fps();
         let cues = match &self.timing {
             Some(Timing::File { cues, .. }) => cues.clone(),
             Some(Timing::Rhubarb) => {
-                let rhubarb = self.rhubarb.clone().ok_or("Rhubarb isn't included in this build.")?;
+                let rhubarb = self.rhubarb.clone().ok_or(tr("Rhubarb isn't included in this build."))?;
                 let path = track.resolve(editor.project_dir().as_deref());
                 let script = Some(self.script.clone());
                 self.job = Some((Job::start(rhubarb, path, fps, self.recognizer, script), 0.0));
@@ -297,7 +306,7 @@ impl LipSyncDialog {
             }
             Some(Timing::Loudness) | None => match audio.peaks(track, editor.project_dir().as_deref(), fps) {
                 Some(peaks) => cues_from_loudness(&peaks),
-                None => return Err("The dialogue is still loading; try again in a moment.".into()),
+                None => return Err(tr("The dialogue is still loading; try again in a moment.").into()),
             },
         };
         self.write_cues(editor, audio, &cues)
@@ -311,16 +320,24 @@ impl LipSyncDialog {
         cues: &[MouthCue],
     ) -> Result<String, String> {
         let track =
-            editor.doc.audio.iter().find(|a| Some(a.id) == self.audio).ok_or("Choose the dialogue.")?;
+            editor.doc.audio.iter().find(|a| Some(a.id) == self.audio).ok_or(tr("Choose the dialogue."))?;
         let peaks = audio.peaks(track, editor.project_dir().as_deref(), editor.doc.frame_rate.fps());
         // Across the whole sound, or, if it hasn't loaded, as far as the
         // timing goes.
         let length = peaks.map_or_else(|| cues.last().map_or(0, |c| c.frame + 1), |p| p.len() as u32);
         let start = track.start;
         let end = start + length.max(1) - 1;
-        let layer = self.layer.and_then(|id| editor.doc.layer_mut(id)).ok_or("The mouth layer is gone.")?;
+        let layer =
+            self.layer.and_then(|id| editor.doc.layer_mut(id)).ok_or(tr("The mouth layer is gone."))?;
         layer.apply_lip_sync(cues, &self.map, start, end);
-        Ok(format!("{} mouth changes, frames {}–{}.", cues.len(), start + 1, end + 1))
+        Ok(tr_args(
+            "{count} mouth changes, frames {first}–{last}.",
+            &[
+                ("count", &cues.len().to_string()),
+                ("first", &(start + 1).to_string()),
+                ("last", &(end + 1).to_string()),
+            ],
+        ))
     }
 }
 

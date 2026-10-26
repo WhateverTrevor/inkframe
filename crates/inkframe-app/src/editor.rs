@@ -1592,13 +1592,13 @@ impl Editor {
             .filter(|id| self.doc.layer(*id).is_some_and(|l| !l.folder && !l.camera))
             .collect();
         match ids.as_slice() {
-            [] => Err("Select the layers to make into a symbol.".to_owned()),
+            [] => Err(tr("Select the layers to make into a symbol.").to_owned()),
             [one] => {
                 let id = *one;
                 let symbol = self
                     .doc
                     .convert_layer_to_symbol(id, self.frame)
-                    .ok_or("That layer can't become a symbol.")?;
+                    .ok_or(tr("That layer can't become a symbol."))?;
                 self.select(Some(id));
                 Ok(symbol)
             }

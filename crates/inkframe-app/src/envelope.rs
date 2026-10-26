@@ -9,6 +9,7 @@
 //! forth doesn't wear them down; Enter, Escape, or clicking away from the
 //! handles leaves them as they are.
 
+use crate::i18n::tr;
 use inkframe_core::{Element, Lattice, LayerId, Point, Rect};
 
 use crate::editor::{Editor, Tool};
@@ -75,12 +76,12 @@ impl Editor {
     pub fn start_lattice(&mut self, kind: LatticeKind) -> Result<(), String> {
         let picked = !self.picked_shapes().is_empty();
         let layer =
-            self.inside_layer().or(self.selection).ok_or("Select a layer with shapes in it first.")?;
+            self.inside_layer().or(self.selection).ok_or(tr("Select a layer with shapes in it first."))?;
         let bendable = self.doc.layer(layer).is_some_and(|l| {
             l.draws_vectors() && !l.locked && l.instance.is_none() && !l.drawings.is_empty()
         });
         if !bendable {
-            return Err("Only shapes can be bent: pick a vector layer that isn't locked.".into());
+            return Err(tr("Only shapes can be bent: pick a vector layer that isn't locked.").into());
         }
         let (all, count) = self.layer_shapes(layer);
         let originals: Vec<(ShapeRef, Element)> = if picked {
@@ -88,7 +89,7 @@ impl Editor {
         } else {
             all
         };
-        let bounds = lattice_bounds(&originals).ok_or("There are no shapes here to bend.")?;
+        let bounds = lattice_bounds(&originals).ok_or(tr("There are no shapes here to bend."))?;
         let lattice = match kind {
             LatticeKind::Distort => Lattice::distort(bounds),
             LatticeKind::Envelope => Lattice::envelope(bounds),

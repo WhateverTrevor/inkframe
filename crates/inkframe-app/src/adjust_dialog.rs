@@ -10,6 +10,7 @@ use egui::{Color32, Pos2, Sense, Stroke, pos2, vec2};
 use inkframe_core::{Adjustment, Canvas, CanvasId, Selection, adjust};
 
 use crate::editor::Editor;
+use crate::i18n::tr;
 
 /// Which adjustment to open (a menu item).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,13 +84,13 @@ impl AdjustDialog {
                 controls(ui, open);
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if ui.button("OK").clicked() {
+                    if ui.button(tr("OK")).clicked() {
                         finished = Some(true);
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(tr("Cancel")).clicked() {
                         finished = Some(false);
                     }
-                    if ui.button("Reset").clicked() {
+                    if ui.button(tr("Reset")).clicked() {
                         open.adjustment = neutral(&open.adjustment);
                     }
                 });
@@ -136,40 +137,41 @@ fn controls(ui: &mut egui::Ui, open: &mut Open) {
     egui::Grid::new("adjustment").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
         match &mut open.adjustment {
             Adjustment::BrightnessContrast { brightness, contrast } => {
-                ui.label("Brightness");
+                ui.label(tr("Brightness"));
                 ui.add(percent(brightness));
                 ui.end_row();
-                ui.label("Contrast");
+                ui.label(tr("Contrast"));
                 ui.add(percent(contrast));
                 ui.end_row();
             }
             Adjustment::HueSaturation { hue, saturation, lightness } => {
-                ui.label("Hue");
+                ui.label(tr("Hue"));
                 ui.add(egui::Slider::new(hue, -180.0..=180.0).suffix("°"));
                 ui.end_row();
-                ui.label("Saturation");
+                ui.label(tr("Saturation"));
                 ui.add(percent(saturation));
                 ui.end_row();
-                ui.label("Lightness");
+                ui.label(tr("Lightness"));
                 ui.add(percent(lightness));
                 ui.end_row();
             }
             Adjustment::Levels { black, gamma, white, out_black, out_white } => {
-                ui.label("Input black")
-                    .on_hover_text("Everything this dark or darker becomes the darkest output");
+                ui.label(tr("Input black"))
+                    .on_hover_text(tr("Everything this dark or darker becomes the darkest output"));
                 ui.add(egui::Slider::new(black, 0..=254));
                 ui.end_row();
-                ui.label("Midtones").on_hover_text("Above 1 lightens the middle greys, below 1 darkens them");
+                ui.label(tr("Midtones"))
+                    .on_hover_text(tr("Above 1 lightens the middle greys, below 1 darkens them"));
                 ui.add(egui::Slider::new(gamma, 0.1..=9.99).logarithmic(true));
                 ui.end_row();
-                ui.label("Input white")
-                    .on_hover_text("Everything this light or lighter becomes the lightest output");
+                ui.label(tr("Input white"))
+                    .on_hover_text(tr("Everything this light or lighter becomes the lightest output"));
                 ui.add(egui::Slider::new(white, 1..=255));
                 ui.end_row();
-                ui.label("Output black");
+                ui.label(tr("Output black"));
                 ui.add(egui::Slider::new(out_black, 0..=255));
                 ui.end_row();
-                ui.label("Output white");
+                ui.label(tr("Output white"));
                 ui.add(egui::Slider::new(out_white, 0..=255));
                 ui.end_row();
             }
@@ -178,7 +180,7 @@ fn controls(ui: &mut egui::Ui, open: &mut Open) {
     });
     if matches!(open.adjustment, Adjustment::Curves { .. }) {
         curves_editor(ui, open);
-        ui.weak("Click to add a point, drag to move it, right-click to remove it.");
+        ui.weak(tr("Click to add a point, drag to move it, right-click to remove it."));
     }
 }
 

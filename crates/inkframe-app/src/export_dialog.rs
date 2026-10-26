@@ -4,6 +4,7 @@
 //! ProRes files are large), so it runs on its own thread. The UI polls a
 //! channel for progress each frame and can cancel at any time.
 
+use crate::i18n::{tr, tr_args};
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -91,7 +92,7 @@ impl ExportDialog {
         }
 
         let mut open = self.open;
-        egui::Window::new("Export")
+        egui::Window::new(tr("Export"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -112,7 +113,7 @@ impl ExportDialog {
 
     fn settings_ui(&mut self, ui: &mut egui::Ui, doc: &Document) {
         egui::Grid::new("export_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-            ui.label("Format");
+            ui.label(tr("Format"));
             egui::ComboBox::from_id_salt("format").selected_text(self.format.label()).width(240.0).show_ui(
                 ui,
                 |ui| {
@@ -123,17 +124,17 @@ impl ExportDialog {
             );
             ui.end_row();
 
-            ui.label("Background");
+            ui.label(tr("Background"));
             let alpha = self.format.supports_alpha();
             let mut transparent = self.transparent && alpha;
-            ui.add_enabled(alpha, egui::Checkbox::new(&mut transparent, "Transparent"))
-                .on_disabled_hover_text("This format has no alpha channel; the stage color is used");
+            ui.add_enabled(alpha, egui::Checkbox::new(&mut transparent, tr("Transparent")))
+                .on_disabled_hover_text(tr("This format has no alpha channel; the stage color is used"));
             if alpha {
                 self.transparent = transparent;
             }
             ui.end_row();
 
-            ui.label("Resolution");
+            ui.label(tr("Resolution"));
             ui.horizontal(|ui| {
                 for (label, scale) in [("25%", 0.25), ("50%", 0.5), ("100%", 1.0), ("200%", 2.0)] {
                     ui.selectable_value(&mut self.scale, scale, label);
@@ -143,14 +144,14 @@ impl ExportDialog {
             });
             ui.end_row();
 
-            ui.label("Frames");
+            ui.label(tr("Frames"));
             ui.horizontal(|ui| {
-                ui.radio_value(&mut self.whole_animation, true, "All");
-                ui.radio_value(&mut self.whole_animation, false, "Range");
+                ui.radio_value(&mut self.whole_animation, true, tr("All"));
+                ui.radio_value(&mut self.whole_animation, false, tr("Range"));
                 ui.add_enabled_ui(!self.whole_animation, |ui| {
                     let (start, end) = &mut self.range;
                     ui.add(egui::DragValue::new(start).range(1..=doc.duration));
-                    ui.label("to");
+                    ui.label(tr("to"));
                     ui.add(egui::DragValue::new(end).range(*start..=doc.duration));
                 });
             });
@@ -159,10 +160,8 @@ impl ExportDialog {
 
         ui.weak(format!("{} · {}", doc.frame_rate, describe(self.format)));
         if self.format == ExportFormat::SpriteSheet {
-            ui.weak(
-                "Frames are cropped to what's drawn, with a .json file beside the image. \
-                 Too many for one 8192 × 8192 image go on several, numbered from 0.",
-            );
+            ui.weak(tr("Frames are cropped to what's drawn, with a .json file beside the image. \
+                 Too many for one 8192 × 8192 image go on several, numbered from 0."));
         }
         // The vector formats draw filters and particles as pictures, which
         // in a Lottie file means one per frame.
@@ -174,21 +173,32 @@ impl ExportDialog {
                 })
                 .count();
             if pictures > 0 {
-                let what = if self.format == ExportFormat::Lottie {
-                    "as a picture on every frame, which can make the file large; a smaller size helps"
-                } else {
-                    "as pictures, since SVG can't draw them as shapes"
-                };
-                let plural = if pictures == 1 { " has" } else { "s have" };
-                ui.weak(format!(
-                    "{pictures} layer{plural} filters, colour effects or particles: they go in {what}."
-                ));
+                // Whole sentences, so a translation needn't build them.
+                let lottie = self.format == ExportFormat::Lottie;
+                ui.weak(match (pictures, lottie) {
+                    (1, true) => tr("1 layer has filters, colour effects or particles: they go in as a picture on \
+                                     every frame, which can make the file large; a smaller size helps.")
+                    .to_owned(),
+                    (1, false) => tr("1 layer has filters, colour effects or particles: they go in as pictures, \
+                                      since SVG can't draw them as shapes.")
+                    .to_owned(),
+                    (n, true) => tr_args(
+                        "{count} layers have filters, colour effects or particles: they go in as a picture on \
+                         every frame, which can make the file large; a smaller size helps.",
+                        &[("count", &n.to_string())],
+                    ),
+                    (n, false) => tr_args(
+                        "{count} layers have filters, colour effects or particles: they go in as pictures, \
+                         since SVG can't draw them as shapes.",
+                        &[("count", &n.to_string())],
+                    ),
+                });
             }
         }
         if self.format.needs_ffmpeg() && !self.ffmpeg_found {
             ui.colored_label(
                 ui.visuals().warn_fg_color,
-                "ffmpeg isn't installed. Install it with `brew install ffmpeg`, or export a PNG sequence.",
+                tr("ffmpeg isn't installed. Install it with `brew install ffmpeg`, or export a PNG sequence."),
             );
         }
     }
@@ -196,11 +206,11 @@ impl ExportDialog {
     fn action_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, doc: &Document, name: &str) {
         if let Some(job) = &self.job {
             let progress = job.progress;
-            ui.add(
-                egui::ProgressBar::new(progress.fraction())
-                    .text(format!("Frame {} of {}", progress.frames_done, progress.frames_total)),
-            );
-            if ui.button("Cancel").clicked() {
+            ui.add(egui::ProgressBar::new(progress.fraction()).text(tr_args(
+                "Frame {done} of {total}",
+                &[("done", &progress.frames_done.to_string()), ("total", &progress.frames_total.to_string())],
+            )));
+            if ui.button(tr("Cancel")).clicked() {
                 job.cancel.store(true, Ordering::Relaxed);
             }
             return;
@@ -209,8 +219,8 @@ impl ExportDialog {
         match &self.outcome {
             Some(Outcome::Success(path)) => {
                 ui.horizontal(|ui| {
-                    ui.label(format!("✔ Exported {}", file_label(path)));
-                    if ui.small_button("Show").clicked() {
+                    ui.label(tr_args("✔ Exported {file}", &[("file", &file_label(path))]));
+                    if ui.small_button(tr("Show")).clicked() {
                         reveal_in_file_manager(path);
                     }
                 });
@@ -222,7 +232,7 @@ impl ExportDialog {
         }
 
         let can_export = !self.format.needs_ffmpeg() || self.ffmpeg_found;
-        if ui.add_enabled(can_export, egui::Button::new("Export…")).clicked() {
+        if ui.add_enabled(can_export, egui::Button::new(tr("Export…"))).clicked() {
             if let Some(output) = self.ask_for_output(name) {
                 self.start(ctx, doc, output);
             }
@@ -238,12 +248,12 @@ impl ExportDialog {
         let extension = self.format.extension();
         let (title, filter) = match self.format {
             ExportFormat::PngSequence => {
-                ("Export PNG sequence (frames are numbered automatically)", "PNG image")
+                (tr("Export PNG sequence (frames are numbered automatically)"), tr("PNG image"))
             }
             ExportFormat::SpriteSheet => {
-                ("Export sprite sheet (a .json file is written beside it)", "PNG image")
+                (tr("Export sprite sheet (a .json file is written beside it)"), tr("PNG image"))
             }
-            _ => ("Export video", "Video"),
+            _ => (tr("Export video"), tr("Video")),
         };
         rfd::FileDialog::new()
             .set_title(title)
@@ -315,17 +325,19 @@ impl ExportDialog {
 /// One-line guidance on what each format is for.
 fn describe(format: ExportFormat) -> &'static str {
     match format {
-        ExportFormat::PngSequence => "lossless frames with alpha",
-        ExportFormat::ProRes4444 => "master quality with alpha, for editing and compositing",
-        ExportFormat::ProRes4444Xq => "highest-quality master with alpha",
-        ExportFormat::ProRes422Hq => "high quality, no alpha, smaller files",
-        ExportFormat::H264 => "small files for review and the web, no alpha",
-        ExportFormat::HevcWithAlpha => "small files with alpha for Apple devices and Safari",
-        ExportFormat::SpriteSheet => "every frame packed onto as few images as fit, for game engines",
-        ExportFormat::Gif => "a looping animation to share anywhere, 256 colours",
-        ExportFormat::Svg => "vectors, one file per frame, for the web and drawing programs",
-        ExportFormat::Lottie => "a vector animation for web pages and apps",
-        ExportFormat::Html => "a web page that plays the animation, sharp at any size, nothing else needed",
+        ExportFormat::PngSequence => tr("lossless frames with alpha"),
+        ExportFormat::ProRes4444 => tr("master quality with alpha, for editing and compositing"),
+        ExportFormat::ProRes4444Xq => tr("highest-quality master with alpha"),
+        ExportFormat::ProRes422Hq => tr("high quality, no alpha, smaller files"),
+        ExportFormat::H264 => tr("small files for review and the web, no alpha"),
+        ExportFormat::HevcWithAlpha => tr("small files with alpha for Apple devices and Safari"),
+        ExportFormat::SpriteSheet => tr("every frame packed onto as few images as fit, for game engines"),
+        ExportFormat::Gif => tr("a looping animation to share anywhere, 256 colours"),
+        ExportFormat::Svg => tr("vectors, one file per frame, for the web and drawing programs"),
+        ExportFormat::Lottie => tr("a vector animation for web pages and apps"),
+        ExportFormat::Html => {
+            tr("a web page that plays the animation, sharp at any size, nothing else needed")
+        }
     }
 }
 

@@ -11,6 +11,7 @@ use crate::audio_engine::AudioEngine;
 use crate::convert::color_button;
 use crate::easing_editor;
 use crate::editor::Editor;
+use crate::i18n::{tr, tr_args, tr_later};
 use crate::icons::Icon;
 
 /// The Properties panel's tabs, as Animate's: the current tool, the
@@ -50,7 +51,9 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) -> 
 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
-        for (choice, label) in [(Tab::Tool, "Tool"), (Tab::Layer, "Layer"), (Tab::Document, "Document")] {
+        for (choice, label) in
+            [(Tab::Tool, tr("Tool")), (Tab::Layer, tr("Layer")), (Tab::Document, tr("Document"))]
+        {
             ui.selectable_value(&mut tab, choice, label);
         }
     });
@@ -78,15 +81,18 @@ fn layer_tab(ui: &mut egui::Ui, editor: &mut Editor) {
     // and what's changed here is carried to the rest (see `multi_edit.rs`).
     let count = editor.selected_ids().len();
     if count > 1 {
-        ui.label(egui::RichText::new(format!("{count} layers selected")).strong());
-        ui.weak(
+        ui.label(
+            egui::RichText::new(tr_args("{count} layers selected", &[("count", &count.to_string())]))
+                .strong(),
+        );
+        ui.weak(tr(
             "Showing the last one picked. Changes to the layer and transform settings apply to all of them: \
              position moves them together, other values are set on each. • marks a value that differs.",
-        );
+        ));
         ui.add_space(4.0);
     }
     let Some(id) = editor.selection else {
-        ui.weak("Select a layer on the stage or in the timeline to see its properties.");
+        ui.weak(tr("Select a layer on the stage or in the timeline to see its properties."));
         return;
     };
     search_box(ui, editor);
@@ -94,7 +100,10 @@ fn layer_tab(ui: &mut egui::Ui, editor: &mut Editor) {
     layer_section(ui, editor, id);
     if !editor.properties_search.trim().is_empty() && editor.properties_matches == 0 {
         ui.add_space(8.0);
-        ui.weak(format!("No settings of this layer match “{}”.", editor.properties_search.trim()));
+        ui.weak(tr_args(
+            "No settings of this layer match “{search}”.",
+            &[("search", editor.properties_search.trim())],
+        ));
     }
 }
 
@@ -108,14 +117,14 @@ fn search_box(ui: &mut egui::Ui, editor: &mut Editor) {
         let width = ui.available_width() - if searching { 26.0 } else { 0.0 };
         let field = ui.add(
             egui::TextEdit::singleline(&mut editor.properties_search)
-                .hint_text("Search settings")
+                .hint_text(tr("Search settings"))
                 .desired_width(width),
         );
         // Escape clears it, as in most search boxes.
         if field.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             editor.properties_search.clear();
         }
-        if searching && ui.small_button("×").on_hover_text("Clear the search").clicked() {
+        if searching && ui.small_button("×").on_hover_text(tr("Clear the search")).clicked() {
             editor.properties_search.clear();
         }
     });
@@ -133,19 +142,19 @@ pub fn tool_settings(ui: &mut egui::Ui, editor: &mut Editor) {
     } else if editor.tool == Tool::Pencil {
         ui.heading(editor.tool.label());
         egui::Grid::new("pencil").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-            ui.label("Line");
+            ui.label(tr("Line"));
             color_button(ui, &mut editor.pencil_stroke.color);
             ui.end_row();
-            ui.label("Width");
+            ui.label(tr("Width"));
             ui.add(DragValue::new(&mut editor.pencil_stroke.width).range(0.5..=100.0).speed(0.1));
             ui.end_row();
         });
-        ui.checkbox(&mut editor.pencil_pressure, "Pressure")
-            .on_hover_text("Press harder with a pen for a thicker line, lighter for a thinner one");
-        ui.checkbox(&mut editor.pencil_taper, "Taper ends")
-            .on_hover_text("Lines thin out towards their ends, as inked lines do");
+        ui.checkbox(&mut editor.pencil_pressure, tr("Pressure"))
+            .on_hover_text(tr("Press harder with a pen for a thicker line, lighter for a thinner one"));
+        ui.checkbox(&mut editor.pencil_taper, tr("Taper ends"))
+            .on_hover_text(tr("Lines thin out towards their ends, as inked lines do"));
         if editor.pencil_pressure || editor.pencil_taper {
-            ui.weak("Shape a line's thickness afterwards with the Width tool (Shift+A).");
+            ui.weak(tr("Shape a line's thickness afterwards with the Width tool (Shift+A)."));
         }
         drawing_target(ui, editor);
     } else if matches!(editor.tool, Tool::Rectangle | Tool::Ellipse | Tool::Pen | Tool::Text) {
@@ -164,16 +173,16 @@ pub fn tool_settings(ui: &mut egui::Ui, editor: &mut Editor) {
 /// then into its line art or the colour art beneath.
 fn drawing_target(ui: &mut egui::Ui, editor: &mut Editor) {
     ui.add_space(6.0);
-    ui.checkbox(&mut editor.draw_into_layer, "Draw into the selected layer").on_hover_text(
-        "Strokes and shapes go into the selected layer, so a drawing builds up on one layer. With no layer \
+    ui.checkbox(&mut editor.draw_into_layer, tr("Draw into the selected layer")).on_hover_text(
+        tr("Strokes and shapes go into the selected layer, so a drawing builds up on one layer. With no layer \
          selected (or a locked one, a symbol or a paint layer), they start a new layer. Off, every shape gets \
-         a layer of its own.",
+         a layer of its own."),
     );
     ui.add_enabled_ui(editor.draw_into_layer, |ui| {
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut editor.colour_art, false, "Line Art");
-            ui.selectable_value(&mut editor.colour_art, true, "Colour Art")
-                .on_hover_text("Beneath the lines, where the paint bucket's fills go");
+            ui.selectable_value(&mut editor.colour_art, false, tr("Line Art"));
+            ui.selectable_value(&mut editor.colour_art, true, tr("Colour Art"))
+                .on_hover_text(tr("Beneath the lines, where the paint bucket's fills go"));
         });
     });
 }
@@ -209,14 +218,14 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
     }
     egui::Grid::new("paint_tool").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
         if matches!(tool, Tool::Brush | Tool::PaintBucket | Tool::Gradient | Tool::Eyedropper) {
-            ui.label("Colour");
+            ui.label(tr("Colour"));
             color_button(ui, &mut editor.paint_color);
             ui.end_row();
         }
         match tool {
             Tool::Brush => {
-                ui.label("Preset");
-                egui::ComboBox::from_id_salt("brush_preset").selected_text("Choose…").show_ui(ui, |ui| {
+                ui.label(tr("Preset"));
+                egui::ComboBox::from_id_salt("brush_preset").selected_text(tr("Choose…")).show_ui(ui, |ui| {
                     for (name, preset) in inkframe_core::BrushSettings::presets() {
                         if ui.button(name).clicked() {
                             editor.brush = preset;
@@ -228,24 +237,26 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
             }
             Tool::Eraser => brush_controls(ui, &mut editor.eraser, true),
             Tool::PaintBucket => {
-                ui.label("Tolerance").on_hover_text("How different a colour may be and still be filled");
+                ui.label(tr("Tolerance"))
+                    .on_hover_text(tr("How different a colour may be and still be filled"));
                 ui.add(egui::Slider::new(&mut editor.bucket.tolerance, 0..=255));
                 ui.end_row();
-                ui.label("Contiguous").on_hover_text(
+                ui.label(tr("Contiguous")).on_hover_text(tr(
                     "Fill only the area connected to where you click, or every matching pixel",
-                );
+                ));
                 ui.checkbox(&mut editor.bucket.contiguous, "");
                 ui.end_row();
-                ui.label("Opacity");
+                ui.label(tr("Opacity"));
                 ui.add(percent(&mut editor.bucket.opacity));
                 ui.end_row();
                 // On a vector layer the bucket fills between lines instead.
-                ui.label("Close gaps").on_hover_text(
+                ui.label(tr("Close gaps")).on_hover_text(tr(
                     "On a vector layer: how wide a gap between lines still counts as closed when filling",
-                );
-                let sizes = [(0.0, "None"), (4.0, "Small"), (10.0, "Medium"), (20.0, "Large")];
+                ));
+                let sizes =
+                    [(0.0, tr("None")), (4.0, tr("Small")), (10.0, tr("Medium")), (20.0, tr("Large"))];
                 let current =
-                    sizes.iter().find(|(v, _)| *v == editor.close_gaps).map_or("Custom", |(_, n)| n);
+                    sizes.iter().find(|(v, _)| *v == editor.close_gaps).map_or(tr("Custom"), |(_, n)| n);
                 egui::ComboBox::from_id_salt("close_gaps").selected_text(current).show_ui(ui, |ui| {
                     for (value, name) in sizes {
                         ui.selectable_value(&mut editor.close_gaps, value, name);
@@ -254,38 +265,40 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
                 ui.end_row();
             }
             Tool::Gradient => {
-                ui.label("To");
+                ui.label(tr("To"));
                 ui.horizontal(|ui| {
                     ui.add_enabled_ui(!editor.gradient_to_clear, |ui| {
                         color_button(ui, &mut editor.second_color)
                     });
-                    ui.checkbox(&mut editor.gradient_to_clear, "Transparent");
+                    ui.checkbox(&mut editor.gradient_to_clear, tr("Transparent"));
                 });
                 ui.end_row();
-                ui.label("Shape");
+                ui.label(tr("Shape"));
                 ui.horizontal(|ui| {
                     ui.radio_value(
                         &mut editor.gradient_shape,
                         inkframe_core::GradientShape::Linear,
-                        "Linear",
+                        tr("Linear"),
                     );
                     ui.radio_value(
                         &mut editor.gradient_shape,
                         inkframe_core::GradientShape::Radial,
-                        "Radial",
+                        tr("Radial"),
                     );
                 });
                 ui.end_row();
-                ui.label("Opacity");
+                ui.label(tr("Opacity"));
                 ui.add(percent(&mut editor.gradient_opacity));
                 ui.end_row();
             }
             Tool::Eyedropper => {}
             _ => {
                 let (label, hint) = match tool {
-                    Tool::Dodge | Tool::Burn => ("Exposure", "How much each pass lightens or darkens"),
-                    Tool::CloneStamp => ("Opacity", "How strongly the copy covers what's there"),
-                    _ => ("Strength", "How strongly each pass works"),
+                    Tool::Dodge | Tool::Burn => {
+                        (tr("Exposure"), tr("How much each pass lightens or darkens"))
+                    }
+                    Tool::CloneStamp => (tr("Opacity"), tr("How strongly the copy covers what's there")),
+                    _ => (tr("Strength"), tr("How strongly each pass works")),
                 };
                 if let Some(retouch) = editor.retouch_of(tool) {
                     ui.label(label).on_hover_text(hint);
@@ -293,7 +306,7 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
                     ui.end_row();
                 }
                 if matches!(tool, Tool::Dodge | Tool::Burn) {
-                    ui.label("Range").on_hover_text("Which tones it works on most");
+                    ui.label(tr("Range")).on_hover_text(tr("Which tones it works on most"));
                     egui::ComboBox::from_id_salt("tone_range")
                         .selected_text(editor.tone_range.label())
                         .show_ui(ui, |ui| {
@@ -309,20 +322,25 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
             }
         }
         if tool.uses_brush() {
-            ui.label("Smoothing").on_hover_text("Steadies the line by letting it trail behind the pen");
+            ui.label(tr("Smoothing"))
+                .on_hover_text(tr("Steadies the line by letting it trail behind the pen"));
             ui.add(percent(&mut editor.smoothing));
             ui.end_row();
         }
     });
     let hint = match tool {
         Tool::CloneStamp if editor.clone_source.is_none() => {
-            Some("Option/Alt-click on the paint layer to choose where to copy from.")
+            Some(tr("Option/Alt-click on the paint layer to choose where to copy from."))
         }
-        Tool::CloneStamp => Some("Option/Alt-click to copy from somewhere else."),
-        Tool::Eyedropper => Some("Click the stage to pick up a colour (or Option/Alt-click with the brush)."),
-        Tool::Gradient => Some("Drag across the paint layer, from where the colour starts to where it ends."),
+        Tool::CloneStamp => Some(tr("Option/Alt-click to copy from somewhere else.")),
+        Tool::Eyedropper => {
+            Some(tr("Click the stage to pick up a colour (or Option/Alt-click with the brush)."))
+        }
+        Tool::Gradient => {
+            Some(tr("Drag across the paint layer, from where the colour starts to where it ends."))
+        }
         _ if tool.uses_brush() && tablet_hint_needed() => {
-            Some("Pen pressure is used when drawing with a tablet.")
+            Some(tr("Pen pressure is used when drawing with a tablet."))
         }
         _ => None,
     };
@@ -398,46 +416,51 @@ fn brush_preview(
         egui::Color32::WHITE,
     );
     if shown < settings.size {
-        ui.weak(format!("Shown at {shown:.0} px of {:.0} px", settings.size));
+        ui.weak(tr_args(
+            "Shown at {shown} px of {size} px",
+            &[("shown", &format!("{shown:.0}")), ("size", &format!("{:.0}", settings.size))],
+        ));
     }
     ui.add_space(6.0);
 }
 
 fn brush_controls(ui: &mut egui::Ui, settings: &mut inkframe_core::BrushSettings, paint: bool) {
-    ui.label("Size").on_hover_text("[ and ] make it smaller and bigger");
+    ui.label(tr("Size")).on_hover_text(tr("[ and ] make it smaller and bigger"));
     ui.add(egui::Slider::new(&mut settings.size, 1.0..=500.0).logarithmic(true).suffix(" px"));
     ui.end_row();
-    ui.label("Hardness")
-        .on_hover_text("How crisp the edge is: 100% is a hard disc, 0% fades from the middle");
+    ui.label(tr("Hardness"))
+        .on_hover_text(tr("How crisp the edge is: 100% is a hard disc, 0% fades from the middle"));
     ui.add(percent(&mut settings.hardness));
     ui.end_row();
     if paint {
-        ui.label("Opacity").on_hover_text("The most a single stroke covers, however often it crosses itself");
+        ui.label(tr("Opacity"))
+            .on_hover_text(tr("The most a single stroke covers, however often it crosses itself"));
         ui.add(percent(&mut settings.opacity));
         ui.end_row();
-        ui.label("Flow")
-            .on_hover_text("How much each touch of the brush adds: low flow builds up like an airbrush");
+        ui.label(tr("Flow"))
+            .on_hover_text(tr("How much each touch of the brush adds: low flow builds up like an airbrush"));
         ui.add(percent(&mut settings.flow));
         ui.end_row();
-        ui.label("Grain")
-            .on_hover_text("A paper texture that breaks the paint up, like chalk or a dry brush");
+        ui.label(tr("Grain"))
+            .on_hover_text(tr("A paper texture that breaks the paint up, like chalk or a dry brush"));
         ui.add(percent(&mut settings.grain));
         ui.end_row();
     }
-    ui.label("Spacing").on_hover_text("Distance between dabs, as a share of the brush's size");
+    ui.label(tr("Spacing")).on_hover_text(tr("Distance between dabs, as a share of the brush's size"));
     ui.add(
         egui::Slider::new(&mut settings.spacing, 0.02..=1.0)
             .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
     );
     ui.end_row();
-    ui.label("Pressure").on_hover_text("What pressing harder with a pen does");
+    ui.label(tr("Pressure")).on_hover_text(tr("What pressing harder with a pen does"));
     ui.horizontal(|ui| {
-        ui.checkbox(&mut settings.pressure_size, "Size");
-        ui.checkbox(&mut settings.pressure_flow, if paint { "Flow" } else { "Strength" });
+        ui.checkbox(&mut settings.pressure_size, tr("Size"));
+        ui.checkbox(&mut settings.pressure_flow, if paint { tr("Flow") } else { tr("Strength") });
     });
     ui.end_row();
     if settings.pressure_size {
-        ui.label("Lightest").on_hover_text("The size at the lightest touch, as a share of the full size");
+        ui.label(tr("Lightest"))
+            .on_hover_text(tr("The size at the lightest touch, as a share of the full size"));
         ui.add(percent(&mut settings.min_size));
         ui.end_row();
     }
@@ -449,38 +472,39 @@ fn selection_section(ui: &mut egui::Ui, editor: &mut Editor) {
     ui.heading(editor.tool.label());
     if editor.tool == Tool::MagicWand {
         egui::Grid::new("wand").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-            ui.label("Tolerance").on_hover_text("How different a colour may be and still be selected");
+            ui.label(tr("Tolerance"))
+                .on_hover_text(tr("How different a colour may be and still be selected"));
             ui.add(egui::Slider::new(&mut editor.wand_tolerance, 0..=255));
             ui.end_row();
-            ui.label("Contiguous").on_hover_text("Select only the area connected to where you click");
+            ui.label(tr("Contiguous")).on_hover_text(tr("Select only the area connected to where you click"));
             ui.checkbox(&mut editor.wand_contiguous, "");
             ui.end_row();
         });
     }
     ui.weak(match editor.tool {
         Tool::PolygonLasso => {
-            "Click each corner; click the first again, double-click or press Enter to close."
+            tr("Click each corner; click the first again, double-click or press Enter to close.")
         }
-        Tool::MagicWand => "Click an area of colour to select it.",
-        _ => "Drag to select.",
+        Tool::MagicWand => tr("Click an area of colour to select it."),
+        _ => tr("Drag to select."),
     });
-    ui.weak("Shift adds to the selection, Option/Alt takes away, both keep the overlap.");
+    ui.weak(tr("Shift adds to the selection, Option/Alt takes away, both keep the overlap."));
     let selected = editor.active_selection().is_some();
     ui.horizontal(|ui| {
-        if ui.add_enabled(editor.paint_target().is_some(), egui::Button::new("All")).clicked() {
+        if ui.add_enabled(editor.paint_target().is_some(), egui::Button::new(tr("All"))).clicked() {
             editor.select_all_pixels();
         }
-        if ui.add_enabled(selected, egui::Button::new("Deselect")).clicked() {
+        if ui.add_enabled(selected, egui::Button::new(tr("Deselect"))).clicked() {
             editor.deselect_pixels();
         }
-        if ui.add_enabled(editor.paint_target().is_some(), egui::Button::new("Inverse")).clicked() {
+        if ui.add_enabled(editor.paint_target().is_some(), egui::Button::new(tr("Inverse"))).clicked() {
             editor.invert_pixel_selection();
         }
     });
     if selected {
-        ui.weak(
+        ui.weak(tr(
             "Drag inside the selection with the Selection tool (V) to move those pixels; Delete clears them.",
-        );
+        ));
     }
 }
 
@@ -503,8 +527,11 @@ fn camera_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let Some(camera) = editor.doc.layer(id) else { return };
     let mut pose = editor.doc.pose(camera, frame);
     let mut on = camera.visible;
-    ui.heading("Camera");
-    if ui.checkbox(&mut on, "On").on_hover_text("Off, the stage shows the scene without the camera").changed()
+    ui.heading(tr("Camera"));
+    if ui
+        .checkbox(&mut on, tr("On"))
+        .on_hover_text(tr("Off, the stage shows the scene without the camera"))
+        .changed()
     {
         editor.set_visible(id, on);
     }
@@ -513,22 +540,22 @@ fn camera_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let dolly_before = editor.doc.layer(id).map_or(0.0, |c| c.track.depth_at(frame as f32));
     let mut dolly = dolly_before;
     egui::Grid::new("camera").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-        ui.label("Looks at").on_hover_text("The point of the scene in the middle of the stage");
+        ui.label(tr("Looks at")).on_hover_text(tr("The point of the scene in the middle of the stage"));
         ui.horizontal(|ui| {
             ui.add(DragValue::new(&mut pose.position.x).prefix("x ").speed(1.0));
             ui.add(DragValue::new(&mut pose.position.y).prefix("y ").speed(1.0));
         });
         ui.end_row();
-        ui.label("Zoom");
+        ui.label(tr("Zoom"));
         ui.add(DragValue::new(&mut zoom).range(5.0..=5000.0).suffix("%").speed(1.0));
         ui.end_row();
-        ui.label("Rotation");
+        ui.label(tr("Rotation"));
         ui.add(DragValue::new(&mut pose.rotation).suffix("°").speed(0.5));
         ui.end_row();
-        ui.label("Dolly").on_hover_text(
+        ui.label(tr("Dolly")).on_hover_text(tr(
             "How far the camera has moved in among the layers. Unlike zoom, near layers grow \
              faster than far ones, as with a real multiplane camera; layers it reaches fade away.",
-        );
+        ));
         ui.add(DragValue::new(&mut dolly).suffix(" px").speed(5.0));
         ui.end_row();
     });
@@ -540,43 +567,44 @@ fn camera_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         editor.set_pose(id, pose);
     }
     if ui
-        .button("Reset Camera")
-        .on_hover_text("Back to looking straight at the stage, on this frame")
+        .button(tr("Reset Camera"))
+        .on_hover_text(tr("Back to looking straight at the stage, on this frame"))
         .clicked()
     {
         let centre = editor.doc.stage_rect().center();
         editor.set_pose(id, inkframe_core::Transform::at(centre));
     }
     ui.add_space(4.0);
-    ui.weak("With the Camera tool (C): drag to pan, Shift-drag to turn, Alt-drag to zoom. Set each layer's Depth for parallax.");
+    ui.weak(tr("With the Camera tool (C): drag to pan, Shift-drag to turn, Alt-drag to zoom. Set each layer's Depth for parallax."));
 }
 
 /// A folder: its name, and showing or locking everything in it.
 fn folder_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let Some(folder) = editor.doc.layer_mut(id) else { return };
-    ui.heading("Folder");
+    ui.heading(tr("Folder"));
     ui.text_edit_singleline(&mut folder.name);
     let (mut visible, mut locked) = (folder.visible, folder.locked);
     ui.horizontal_wrapped(|ui| {
-        if ui.checkbox(&mut visible, "Visible").changed() {
+        if ui.checkbox(&mut visible, tr("Visible")).changed() {
             editor.set_visible(id, visible);
         }
-        if ui.checkbox(&mut locked, "Locked").changed() {
+        if ui.checkbox(&mut locked, tr("Locked")).changed() {
             editor.set_locked(id, locked);
         }
     });
     let count = editor.doc.folder_block(id).len() - 1;
     ui.weak(match count {
-        0 => "Empty. Drag layers just under the folder's name in the timeline to put them in it.".to_owned(),
-        1 => "Holds 1 layer.".to_owned(),
-        n => format!("Holds {n} layers."),
+        0 => tr("Empty. Drag layers just under the folder's name in the timeline to put them in it.")
+            .to_owned(),
+        1 => tr("Holds 1 layer.").to_owned(),
+        n => tr_args("Holds {count} layers.", &[("count", &n.to_string())]),
     });
     switch_controls(ui, editor, id);
     // A folder is where a skeleton lives, rigging what's in it.
     if editor.doc.layer(id).is_some_and(|l| l.skeleton.is_none()) {
         ui.add_space(8.0);
-        let add = ui.button("Add Skeleton").on_hover_text(
-            "Bones over everything in the folder, which bend with them, painted layers too. Draw them with the Add Bone tool.",
+        let add = ui.button(tr("Add Skeleton")).on_hover_text(
+            tr("Bones over everything in the folder, which bend with them, painted layers too. Draw them with the Add Bone tool."),
         );
         if add.clicked() {
             if let Some(folder) = editor.doc.layer_mut(id) {
@@ -602,26 +630,26 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     }
     let Some(before) = editor.doc.layer(id).map(crate::multi_edit::LayerSettings::of) else { return };
     // The layer's own settings, at the top, are found by search too.
-    let header = searched_for(editor, "layer", "Layer");
+    let header = searched_for(editor, "layer", tr("Layer"));
     let Some(layer) = editor.doc.layer_mut(id) else { return };
 
     if header {
-        ui.heading("Layer");
+        ui.heading(tr("Layer"));
         ui.text_edit_singleline(&mut layer.name);
         // Wrapped, so a narrow panel shows all four rather than cutting one off.
         ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut layer.visible, "Visible");
-            ui.checkbox(&mut layer.locked, "Locked");
-            ui.checkbox(&mut layer.guide, "Guide").on_hover_text(
+            ui.checkbox(&mut layer.visible, tr("Visible"));
+            ui.checkbox(&mut layer.locked, tr("Locked"));
+            ui.checkbox(&mut layer.guide, tr("Guide")).on_hover_text(tr(
                 "A motion guide: other layers can follow its path. Shown while editing, never exported.",
-            );
-            ui.checkbox(&mut layer.mask, "Mask").on_hover_text(
+            ));
+            ui.checkbox(&mut layer.mask, tr("Mask")).on_hover_text(tr(
                 "A mask: layers masked by it only show where it has something drawn. It isn't drawn itself.",
-            );
+            ));
         });
         span_editor(ui, layer, last_frame);
         ui.horizontal(|ui| {
-            ui.label("Blend").on_hover_text("How the layer mixes with what's beneath it");
+            ui.label(tr("Blend")).on_hover_text(tr("How the layer mixes with what's beneath it"));
             egui::ComboBox::from_id_salt("blend").selected_text(layer.blend.label()).show_ui(ui, |ui| {
                 for mode in inkframe_core::BlendMode::ALL {
                     ui.selectable_value(&mut layer.blend, mode, mode.label());
@@ -632,15 +660,15 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         if layer.draws_vectors() {
             use inkframe_core::{LineTexture, TextureKind};
             ui.horizontal(|ui| {
-                ui.label("Lines").on_hover_text(
+                ui.label(tr("Lines")).on_hover_text(tr(
                     "Ink the layer's pencil lines and strokes with a paper grain, as Harmony's line textures",
-                );
+                ));
                 let current = layer.line_texture.map(|t| t.kind);
                 let mut chosen = current;
                 egui::ComboBox::from_id_salt("line texture")
-                    .selected_text(current.map_or("Flat", TextureKind::label))
+                    .selected_text(current.map_or(tr("Flat"), TextureKind::label))
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut chosen, None, "Flat");
+                        ui.selectable_value(&mut chosen, None, tr("Flat"));
                         for kind in TextureKind::ALL {
                             ui.selectable_value(&mut chosen, Some(kind), kind.label());
                         }
@@ -651,14 +679,14 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 }
                 if let Some(texture) = &mut layer.line_texture {
                     ui.add(egui::Slider::new(&mut texture.amount, 0.0..=1.0).show_value(false))
-                        .on_hover_text("How strongly the grain shows");
+                        .on_hover_text(tr("How strongly the grain shows"));
                 }
             });
         }
         // What the layer does when clicked, in a web page export.
         ui.horizontal(|ui| {
-        ui.label("Web button").on_hover_text(
-            "In a Web Page export, clicking the layer does this, and it lights up under the pointer, as Animate's buttons",
+        ui.label(tr("Web button")).on_hover_text(
+            tr("In a Web Page export, clicking the layer does this, and it lights up under the pointer, as Animate's buttons"),
         );
         web_action_editor(ui, "layer button", &mut layer.button, last_frame);
     });
@@ -687,7 +715,7 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
     let Some(layer) = editor.doc.layer(id) else { return };
     if layer.skeleton.is_some() {
-        if !section(ui, editor, "skeleton", "Skeleton", Icon::Bones) {
+        if !section(ui, editor, "skeleton", tr("Skeleton"), Icon::Bones) {
             return;
         }
         let picked = editor.selected_bone;
@@ -695,9 +723,9 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         let Some(skeleton) = editor.doc.layer_mut(id).and_then(|l| l.skeleton.as_mut()) else { return };
         let count = skeleton.bones.len();
         ui.weak(match count {
-            0 => "No bones yet: draw them with the Add Bone tool (Shift+K).".to_owned(),
-            1 => "1 bone. Pose it with the Bone tool (K).".to_owned(),
-            n => format!("{n} bones. Pose them with the Bone tool (K)."),
+            0 => tr("No bones yet: draw them with the Add Bone tool (Shift+K).").to_owned(),
+            1 => tr("1 bone. Pose it with the Bone tool (K).").to_owned(),
+            n => tr_args("{count} bones. Pose them with the Bone tool (K).", &[("count", &n.to_string())]),
         });
         // The bones the picked one could reach for: any but those it
         // carries (or itself).
@@ -713,21 +741,21 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         };
         if let Some(bone) = picked.and_then(|b| skeleton.bones.get_mut(b)) {
             egui::Grid::new("bone").num_columns(2).spacing([6.0, 4.0]).show(ui, |ui| {
-                ui.label("Bone");
+                ui.label(tr("Bone"));
                 ui.text_edit_singleline(&mut bone.name);
                 ui.end_row();
-                ui.label("Strength").on_hover_text(
-                    "How far it reaches into the drawings around it: points about this far away follow it about as much as the next bone",
+                ui.label(tr("Strength")).on_hover_text(
+                    tr("How far it reaches into the drawings around it: points about this far away follow it about as much as the next bone"),
                 );
                 ui.add(DragValue::new(&mut bone.strength).range(1.0..=2000.0).speed(1.0).suffix(" px"));
                 ui.end_row();
-                ui.label("Turn");
+                ui.label(tr("Turn"));
                 let mut turn = bone.turn.sample(frame as f32).unwrap_or(0.0);
                 if ui.add(DragValue::new(&mut turn).speed(1.0).suffix("°")).changed() {
                     bone.turn.set(frame, turn);
                 }
                 ui.end_row();
-                ui.label("Stretch").on_hover_text("How long it is against how it was drawn; Shift-drag it with the Bone tool");
+                ui.label(tr("Stretch")).on_hover_text(tr("How long it is against how it was drawn; Shift-drag it with the Bone tool"));
                 let mut stretch = bone.stretch.as_ref().and_then(|c| c.sample(frame as f32)).unwrap_or(1.0) * 100.0;
                 if ui.add(DragValue::new(&mut stretch).range(5.0..=2000.0).speed(1.0).suffix("%")).changed() {
                     let channel = bone.stretch.get_or_insert_with(|| inkframe_core::Channel::new(0, 1.0));
@@ -735,11 +763,11 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 }
                 ui.end_row();
                 ui.label("");
-                ui.checkbox(&mut bone.squash, "Keep area").on_hover_text(
-                    "Stretching it longer makes it thinner, and squashing it fatter, as a bouncing ball does",
+                ui.checkbox(&mut bone.squash, tr("Keep area")).on_hover_text(
+                    tr("Stretching it longer makes it thinner, and squashing it fatter, as a bouncing ball does"),
                 );
                 ui.end_row();
-                ui.label("Limits").on_hover_text("How far it may turn from rest, in degrees");
+                ui.label(tr("Limits")).on_hover_text(tr("How far it may turn from rest, in degrees"));
                 ui.horizontal(|ui| {
                     let mut limited = bone.limits.is_some();
                     if ui.checkbox(&mut limited, "").changed() {
@@ -747,22 +775,22 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                     }
                     if let Some(limits) = &mut bone.limits {
                         ui.add(DragValue::new(&mut limits.min).range(-360.0..=360.0).speed(1.0).suffix("°"));
-                        ui.label("to");
+                        ui.label(tr("to"));
                         ui.add(DragValue::new(&mut limits.max).range(-360.0..=360.0).speed(1.0).suffix("°"));
                     }
                 });
                 ui.end_row();
-                ui.label("Target").on_hover_text(
-                    "A bone its end reaches for, the bones above it bending to get it there: plant a foot on one",
+                ui.label(tr("Target")).on_hover_text(
+                    tr("A bone its end reaches for, the bones above it bending to get it there: plant a foot on one"),
                 );
                 let names_and_ok = &target_choices;
                 let current = bone.target;
                 let label = |t: Option<usize>| {
-                    t.and_then(|t| names_and_ok.iter().find(|(i, _, _)| *i == t)).map_or("None".to_owned(), |(_, n, _)| n.clone())
+                    t.and_then(|t| names_and_ok.iter().find(|(i, _, _)| *i == t)).map_or(tr("None").to_owned(), |(_, n, _)| n.clone())
                 };
                 let mut chosen = current;
                 egui::ComboBox::from_id_salt("bone target").selected_text(label(current)).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut chosen, None, "None");
+                    ui.selectable_value(&mut chosen, None, tr("None"));
                     for (i, name, ok) in names_and_ok {
                         ui.add_enabled_ui(*ok, |ui| {
                             ui.selectable_value(&mut chosen, Some(*i), name);
@@ -773,8 +801,8 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                     bone.target = chosen;
                 }
                 ui.end_row();
-                ui.label("Dynamics").on_hover_text(
-                    "It swings after the bones it hangs from, overshoots and settles, as hair or a tail does",
+                ui.label(tr("Dynamics")).on_hover_text(
+                    tr("It swings after the bones it hangs from, overshoots and settles, as hair or a tail does"),
                 );
                 let mut swings = bone.dynamics.is_some();
                 if ui.checkbox(&mut swings, "").changed() {
@@ -782,18 +810,18 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 }
                 ui.end_row();
                 if let Some(dynamics) = &mut bone.dynamics {
-                    ui.label("  Spring").on_hover_text("How hard it's pulled back to its pose: low is floppy");
+                    ui.label(tr("  Spring")).on_hover_text(tr("How hard it's pulled back to its pose: low is floppy"));
                     ui.add(egui::Slider::new(&mut dynamics.spring, 0.01..=1.0));
                     ui.end_row();
-                    ui.label("  Damping").on_hover_text("How quickly its swing dies away");
+                    ui.label(tr("  Damping")).on_hover_text(tr("How quickly its swing dies away"));
                     ui.add(egui::Slider::new(&mut dynamics.damping, 0.0..=1.0));
                     ui.end_row();
-                    ui.label("  Swing").on_hover_text("The furthest it may swing from its pose");
+                    ui.label(tr("  Swing")).on_hover_text(tr("The furthest it may swing from its pose"));
                     ui.add(egui::Slider::new(&mut dynamics.limit, 0.0..=180.0).suffix("°"));
                     ui.end_row();
                 }
             });
-            delete = ui.small_button("Delete Bone").clicked();
+            delete = ui.small_button(tr("Delete Bone")).clicked();
         }
         if delete {
             editor.delete_bone();
@@ -803,7 +831,9 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         ui.add_space(8.0);
         return;
     }
-    if editor.doc.skeleton_layer_of(layer).is_none() || !section(ui, editor, "bones", "Bones", Icon::Bones) {
+    if editor.doc.skeleton_layer_of(layer).is_none()
+        || !section(ui, editor, "bones", tr("Bones"), Icon::Bones)
+    {
         return;
     }
     let Some(layer) = editor.doc.layer(id) else { return };
@@ -819,8 +849,8 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         .collect();
     let mut chosen = current;
     ui.horizontal(|ui| {
-        ui.label("Follows").on_hover_text(
-            "Nearby bones bends the drawing round its joints; a limb bends it with one bone and those below it only (for legs drawn over each other); one bone moves it whole, as a hand or a hat should",
+        ui.label(tr("Follows")).on_hover_text(
+            tr("Nearby bones bends the drawing round its joints; a limb bends it with one bone and those below it only (for legs drawn over each other); one bone moves it whole, as a hand or a hat should"),
         );
         chosen = binding_menu(ui, "bone binding", current, &names, &limbs);
     });
@@ -839,8 +869,8 @@ fn switch_controls(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let mut switch = folder.switch;
     ui.add_space(4.0);
     let toggled = ui
-        .checkbox(&mut switch, "Switch")
-        .on_hover_text("Show one of the folder's layers at a time: hand poses, mouth shapes")
+        .checkbox(&mut switch, tr("Switch"))
+        .on_hover_text(tr("Show one of the folder's layers at a time: hand poses, mouth shapes"))
         .changed();
     if toggled && let Some(folder) = editor.doc.layer_mut(id) {
         folder.switch = switch;
@@ -853,10 +883,10 @@ fn switch_controls(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let mut chosen = showing;
     let label = |id: Option<LayerId>| {
         id.and_then(|id| children.iter().find(|(c, _)| *c == id))
-            .map_or("(empty)".to_owned(), |(_, n)| n.clone())
+            .map_or(tr("(empty)").to_owned(), |(_, n)| n.clone())
     };
     ui.horizontal(|ui| {
-        ui.label("Showing").on_hover_text("Keyed on this frame; it holds until the next key");
+        ui.label(tr("Showing")).on_hover_text(tr("Keyed on this frame; it holds until the next key"));
         egui::ComboBox::from_id_salt("switch showing").selected_text(label(showing)).show_ui(ui, |ui| {
             for (child, _) in &children {
                 ui.selectable_value(&mut chosen, Some(*child), label(Some(*child)));
@@ -864,7 +894,7 @@ fn switch_controls(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         });
     });
     if smart {
-        ui.weak("A smart bone is choosing for now.");
+        ui.weak(tr("A smart bone is choosing for now."));
     }
     if chosen != showing
         && let Some(child) = chosen
@@ -882,13 +912,13 @@ fn pin_controls(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, names: &[St
     let shapes = if editor.inside_layer() == Some(id) { editor.picked_shapes().len() } else { 0 };
     let point = editor.picked_anchor.filter(|(layer, _, _)| *layer == id);
     if shapes == 0 && point.is_none() {
-        ui.weak("To pin shapes or points to one bone, pick them: double-click the layer, or use the Subselection tool (A).");
+        ui.weak(tr("To pin shapes or points to one bone, pick them: double-click the layer, or use the Subselection tool (A)."));
         return;
     }
     let what = match (point, shapes) {
-        (Some(_), _) => "Pin point to".to_owned(),
-        (None, 1) => "Pin shape to".to_owned(),
-        (None, n) => format!("Pin {n} shapes to"),
+        (Some(_), _) => tr("Pin point to").to_owned(),
+        (None, 1) => tr("Pin shape to").to_owned(),
+        (None, n) => tr_args("Pin {count} shapes to", &[("count", &n.to_string())]),
     };
     let pinned = match point {
         Some((layer, element, anchor)) => editor.pinned_bone(layer, element, anchor),
@@ -896,10 +926,11 @@ fn pin_controls(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, names: &[St
     };
     let mut chosen = pinned;
     let label = |bone: Option<usize>| {
-        bone.and_then(|b| names.get(b).cloned()).unwrap_or_else(|| "(not pinned)".into())
+        bone.and_then(|b| names.get(b).cloned()).unwrap_or_else(|| tr("(not pinned)").into())
     };
     ui.horizontal(|ui| {
-        ui.label(what).on_hover_text("They follow that bone alone, whatever the rest of the drawing does");
+        ui.label(what)
+            .on_hover_text(tr("They follow that bone alone, whatever the rest of the drawing does"));
         egui::ComboBox::from_id_salt("pin bone").selected_text(label(chosen)).show_ui(ui, |ui| {
             ui.selectable_value(&mut chosen, None, label(None));
             for i in 0..names.len() {
@@ -923,12 +954,11 @@ pub(crate) fn binding_label(binding: inkframe_core::BoneBinding, names: &[String
     use inkframe_core::BoneBinding;
     let name = |i: usize| names.get(i).cloned();
     match binding {
-        BoneBinding::Region => "Nearby bones".to_owned(),
-        BoneBinding::Limb(i) => {
-            name(i).map_or_else(|| "Nearby bones".to_owned(), |n| format!("{n} and below"))
-        }
-        BoneBinding::Bone(i) => name(i).unwrap_or_else(|| "Nearby bones".to_owned()),
-        BoneBinding::Unbound => "None".to_owned(),
+        BoneBinding::Region => tr("Nearby bones").to_owned(),
+        BoneBinding::Limb(i) => name(i)
+            .map_or_else(|| tr("Nearby bones").to_owned(), |n| tr_args("{bone} and below", &[("bone", &n)])),
+        BoneBinding::Bone(i) => name(i).unwrap_or_else(|| tr("Nearby bones").to_owned()),
+        BoneBinding::Unbound => tr("None").to_owned(),
     }
 }
 
@@ -950,12 +980,12 @@ pub(crate) fn binding_menu(
         };
         option(ui, BoneBinding::Region);
         if limbs.iter().any(|&l| l) {
-            ui.label(section_text("Bend with a limb"));
+            ui.label(section_text(tr("Bend with a limb")));
             for i in (0..names.len()).filter(|&i| limbs.get(i).copied().unwrap_or(false)) {
                 option(ui, BoneBinding::Limb(i));
             }
         }
-        ui.label(section_text("Move with one bone"));
+        ui.label(section_text(tr("Move with one bone")));
         for i in 0..names.len() {
             option(ui, BoneBinding::Bone(i));
         }
@@ -974,13 +1004,13 @@ type SwitchChoices = (LayerId, String, Vec<(LayerId, String)>);
 fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone: usize) {
     use inkframe_core::SmartAction;
     let frame = editor.frame;
-    if !section(ui, editor, "smart bone", "Smart bone", Icon::Dial) {
+    if !section(ui, editor, "smart bone", tr("Smart bone"), Icon::Dial) {
         return;
     }
     // First, as it may preview the bone at another turn, or retime actions.
     action_timeline(ui, editor, id, bone);
     let members = editor.skeleton_members(id);
-    let name = |id: LayerId| editor.doc.layer(id).map_or_else(|| "(gone)".to_owned(), |l| l.name.clone());
+    let name = |id: LayerId| editor.doc.layer(id).map_or_else(|| tr("(gone)").to_owned(), |l| l.name.clone());
     // Layers that can be reshaped (they have another drawing to morph
     // toward), and switches (with their layers).
     let morphable: Vec<(LayerId, String, Vec<String>)> = members
@@ -1014,16 +1044,15 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
     let mut actions = the_bone.actions.clone();
     // A correction being drawn on this bone: say so, and how to finish.
     if let Some(c) = editor.correcting.as_ref().filter(|c| c.skeleton == id && c.bone == bone) {
-        let what = format!(
-            "Drawing the correction of {} at {:.0}°: reshape it with any tool.",
-            name(c.layer),
-            c.turn
+        let what = tr_args(
+            "Drawing the correction of {layer} at {turn}°: reshape it with any tool.",
+            &[("layer", &name(c.layer)), ("turn", &format!("{:.0}", c.turn))],
         );
         ui.label(egui::RichText::new(what).strong());
         let (mut finish, mut cancel) = (false, false);
         ui.horizontal(|ui| {
-            finish = ui.button("Finish").on_hover_text("Key the shapes at this turn").clicked();
-            cancel = ui.button("Cancel").clicked();
+            finish = ui.button(tr("Finish")).on_hover_text(tr("Key the shapes at this turn")).clicked();
+            cancel = ui.button(tr("Cancel")).clicked();
         });
         if finish {
             editor.finish_correction();
@@ -1043,7 +1072,7 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
     for (i, action) in actions.iter_mut().enumerate() {
         ui.horizontal_wrapped(|ui| match action {
             SmartAction::Morph { layer, drawing, turn } => {
-                ui.label("Reshape");
+                ui.label(tr("Reshape"));
                 egui::ComboBox::from_id_salt(("smart layer", i)).selected_text(name(*layer)).show_ui(
                     ui,
                     |ui| {
@@ -1058,18 +1087,18 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
                     .map(|(_, _, d)| d.clone())
                     .unwrap_or_default();
                 let shown = drawings.get(*drawing).cloned().unwrap_or_else(|| "?".into());
-                ui.label("to");
+                ui.label(tr("to"));
                 egui::ComboBox::from_id_salt(("smart drawing", i)).selected_text(shown).show_ui(ui, |ui| {
                     for (d, n) in drawings.iter().enumerate() {
                         ui.selectable_value(drawing, d, n);
                     }
                 });
-                ui.label("at");
+                ui.label(tr("at"));
                 ui.add(DragValue::new(turn).speed(1.0).suffix("°"));
                 remove = remove.or(ui.small_button("×").clicked().then_some(i));
             }
             SmartAction::Switch { folder, layer, turn } => {
-                ui.label("Switch");
+                ui.label(tr("Switch"));
                 egui::ComboBox::from_id_salt(("smart switch", i)).selected_text(name(*folder)).show_ui(
                     ui,
                     |ui| {
@@ -1083,7 +1112,7 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
                     .find(|(m, _, _)| m == folder)
                     .map(|(_, _, c)| c.clone())
                     .unwrap_or_default();
-                ui.label("to");
+                ui.label(tr("to"));
                 egui::ComboBox::from_id_salt(("smart child", i)).selected_text(name(*layer)).show_ui(
                     ui,
                     |ui| {
@@ -1092,28 +1121,32 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
                         }
                     },
                 );
-                ui.label("past");
+                ui.label(tr("past"));
                 ui.add(DragValue::new(turn).speed(1.0).suffix("°"));
                 remove = remove.or(ui.small_button("×").clicked().then_some(i));
             }
             SmartAction::Correct { layer, keys, .. } => {
-                ui.label(format!("Correct {}", name(*layer)));
+                ui.label(tr_args("Correct {layer}", &[("layer", &name(*layer))]));
                 // The keys themselves are on the action timeline above.
                 ui.weak(match keys.len() {
-                    0 => "(no keys yet)".to_owned(),
-                    1 => "1 key".to_owned(),
-                    n => format!("{n} keys"),
+                    0 => tr("(no keys yet)").to_owned(),
+                    1 => tr("1 key").to_owned(),
+                    n => tr_args("{count} keys", &[("count", &n.to_string())]),
                 });
                 let edit = ui
-                    .add_enabled(now.abs() >= 1.0, egui::Button::new(format!("Edit at {now:.0}°")).small())
-                    .on_hover_text(
-                        "Reshape the layer as it should be at the bone's turn now, keying it there",
+                    .add_enabled(
+                        now.abs() >= 1.0,
+                        egui::Button::new(tr_args("Edit at {turn}°", &[("turn", &format!("{now:.0}"))]))
+                            .small(),
                     )
-                    .on_disabled_hover_text("Turn the bone first: a correction is keyed at a turn");
+                    .on_hover_text(tr(
+                        "Reshape the layer as it should be at the bone's turn now, keying it there",
+                    ))
+                    .on_disabled_hover_text(tr("Turn the bone first: a correction is keyed at a turn"));
                 if edit.clicked() {
                     request = Some(Request::Edit(i));
                 }
-                remove = remove.or(ui.small_button("Remove").clicked().then_some(i));
+                remove = remove.or(ui.small_button(tr("Remove")).clicked().then_some(i));
             }
         });
     }
@@ -1123,17 +1156,17 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
     ui.horizontal(|ui| {
         if let Some((layer, _)) = correctable.iter().find(|(l, _)| Some(*l) == editor.selection).or(correctable.first())
             && ui
-                .add_enabled(now.abs() >= 1.0, egui::Button::new("+ Correction").small())
-                .on_hover_text("Reshape a layer by hand at this turn of the bone, as Moho's smart bone actions; key more turns as you go")
-                .on_disabled_hover_text("Turn the bone first: a correction is keyed at a turn")
+                .add_enabled(now.abs() >= 1.0, egui::Button::new(tr("+ Correction")).small())
+                .on_hover_text(tr("Reshape a layer by hand at this turn of the bone, as Moho's smart bone actions; key more turns as you go"))
+                .on_disabled_hover_text(tr("Turn the bone first: a correction is keyed at a turn"))
                 .clicked()
         {
             request = Some(Request::Add(*layer));
         }
         if let Some((layer, _, _)) = morphable.first()
             && ui
-                .small_button("+ Reshape")
-                .on_hover_text("Morph a layer toward another of its drawings as the bone turns")
+                .small_button(tr("+ Reshape"))
+                .on_hover_text(tr("Morph a layer toward another of its drawings as the bone turns"))
                 .clicked()
         {
             actions.push(SmartAction::Morph { layer: *layer, drawing: 1, turn: at });
@@ -1141,15 +1174,15 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
         if let Some((folder, _, children)) = switches.first()
             && let Some((child, _)) = children.last()
             && ui
-                .small_button("+ Switch")
-                .on_hover_text("Have a switch show another of its layers once the bone's turned far enough")
+                .small_button(tr("+ Switch"))
+                .on_hover_text(tr("Have a switch show another of its layers once the bone's turned far enough"))
                 .clicked()
         {
             actions.push(SmartAction::Switch { folder: *folder, layer: *child, turn: at });
         }
     });
     if morphable.is_empty() && switches.is_empty() {
-        ui.weak("To make it smart, give a layer in the skeleton a second drawing to reshape toward, or add a switch (Modify › New Switch).");
+        ui.weak(tr("To make it smart, give a layer in the skeleton a second drawing to reshape toward, or add a switch (Modify › New Switch)."));
     }
     if let Some(i) = remove {
         actions.remove(i);
@@ -1167,7 +1200,7 @@ fn smart_bone_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone:
         None => Ok(()),
     };
     if let Err(problem) = started {
-        crate::app::show_error("Couldn't draw the correction", &problem);
+        crate::app::show_error(tr("Couldn't draw the correction"), &problem);
     }
 }
 
@@ -1183,13 +1216,13 @@ fn action_timeline(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone: us
         return;
     }
     let mut actions = the_bone.actions.clone();
-    let name = |id: LayerId| editor.doc.layer(id).map_or_else(|| "(gone)".to_owned(), |l| l.name.clone());
+    let name = |id: LayerId| editor.doc.layer(id).map_or_else(|| tr("(gone)").to_owned(), |l| l.name.clone());
     let names: Vec<String> = actions
         .iter()
         .map(|action| match action {
-            SmartAction::Morph { layer, .. } => format!("Reshape {}", name(*layer)),
-            SmartAction::Switch { folder, .. } => format!("Switch {}", name(*folder)),
-            SmartAction::Correct { layer, .. } => format!("Correct {}", name(*layer)),
+            SmartAction::Morph { layer, .. } => tr_args("Reshape {layer}", &[("layer", &name(*layer))]),
+            SmartAction::Switch { folder, .. } => tr_args("Switch {folder}", &[("folder", &name(*folder))]),
+            SmartAction::Correct { layer, .. } => tr_args("Correct {layer}", &[("layer", &name(*layer))]),
         })
         .collect();
     let span = action_timeline::span(&actions, the_bone.limits, now);
@@ -1207,7 +1240,7 @@ fn action_timeline(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone: us
         Some(Asked::Edit { action, turn }) => {
             editor.preview_turn(id, bone, turn);
             if let Err(problem) = editor.start_correction(id, bone, action) {
-                crate::app::show_error("Couldn't draw the correction", &problem);
+                crate::app::show_error(tr("Couldn't draw the correction"), &problem);
             }
         }
         None => {}
@@ -1219,7 +1252,7 @@ fn action_timeline(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, bone: us
 fn particles_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     use inkframe_core::{Emitter, EmitterShape, Preset, Sprite};
     if editor.doc.layer(id).is_none_or(|l| l.particles.is_none())
-        || !section(ui, editor, "particles", "Particles", Icon::Sparkle)
+        || !section(ui, editor, "particles", tr("Particles"), Icon::Sparkle)
     {
         return;
     }
@@ -1239,33 +1272,33 @@ fn particles_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 
     ui.scope(|ui| {
         ui.horizontal_wrapped(|ui| {
-            ui.weak("Start from");
+            ui.weak(tr("Start from"));
             for preset in Preset::ALL {
-                if ui.small_button(preset.name()).on_hover_text("Replace these settings with the preset's").clicked() {
+                if ui.small_button(preset.name()).on_hover_text(tr("Replace these settings with the preset's")).clicked() {
                     *emitter = Emitter { seed: emitter.seed, ..Emitter::preset(preset) };
                 }
             }
         });
         ui.add_space(4.0);
         egui::Grid::new("particles").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-            ui.label("Rate");
+            ui.label(tr("Rate"));
             number(ui, &mut emitter.rate, 0.0..=2000.0, " /s");
             ui.end_row();
             ui.label("");
-            ui.checkbox(&mut emitter.start_full, "Start full")
-                .on_hover_text("Already flowing on the first frame, rather than starting from nothing");
+            ui.checkbox(&mut emitter.start_full, tr("Start full"))
+                .on_hover_text(tr("Already flowing on the first frame, rather than starting from nothing"));
             ui.end_row();
-            ui.label("Variation");
+            ui.label(tr("Variation"));
             ui.horizontal(|ui| {
-                ui.add(DragValue::new(&mut emitter.seed).prefix("seed "));
-                if ui.small_button("New").on_hover_text("Another spray just like this one").clicked() {
+                ui.add(DragValue::new(&mut emitter.seed).prefix(format!("{} ", tr("seed"))));
+                if ui.small_button(tr("New")).on_hover_text(tr("Another spray just like this one")).clicked() {
                     emitter.seed = emitter.seed.wrapping_mul(2_654_435_761).wrapping_add(1);
                 }
             });
             ui.end_row();
 
-            ui.label("Emitter");
-            let names = ["Point", "Line", "Rectangle", "Circle"];
+            ui.label(tr("Emitter"));
+            let names = [tr("Point"), tr("Line"), tr("Rectangle"), tr("Circle")];
             let current = match emitter.shape {
                 EmitterShape::Point => 0,
                 EmitterShape::Line { .. } => 1,
@@ -1288,12 +1321,12 @@ fn particles_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
             match &mut emitter.shape {
                 EmitterShape::Point => {}
                 EmitterShape::Line { length } => {
-                    ui.label("Length");
+                    ui.label(tr("Length"));
                     number(ui, length, 0.0..=20_000.0, " px");
                     ui.end_row();
                 }
                 EmitterShape::Rect { width, height } => {
-                    ui.label("Size");
+                    ui.label(tr("Size"));
                     ui.horizontal(|ui| {
                         number(ui, width, 0.0..=20_000.0, " w");
                         number(ui, height, 0.0..=20_000.0, " h");
@@ -1301,47 +1334,47 @@ fn particles_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                     ui.end_row();
                 }
                 EmitterShape::Circle { radius } => {
-                    ui.label("Radius");
+                    ui.label(tr("Radius"));
                     number(ui, radius, 0.0..=10_000.0, " px");
                     ui.end_row();
                 }
             }
 
-            ui.label("Direction").on_hover_text("0° is right, -90° straight up");
+            ui.label(tr("Direction")).on_hover_text(tr("0° is right, -90° straight up"));
             ui.horizontal(|ui| {
                 number(ui, &mut emitter.direction, -360.0..=360.0, "°");
                 ui.add(DragValue::new(&mut emitter.spread).range(0.0..=180.0).prefix("± ").suffix("°"));
             });
             ui.end_row();
-            ui.label("Speed");
+            ui.label(tr("Speed"));
             ui.horizontal(|ui| {
                 number(ui, &mut emitter.speed, 0.0..=10_000.0, " px/s");
                 fraction(ui, &mut emitter.speed_variance);
             });
             ui.end_row();
-            ui.label("Gravity").on_hover_text("Pulls down; negative pulls up (rising heat)");
+            ui.label(tr("Gravity")).on_hover_text(tr("Pulls down; negative pulls up (rising heat)"));
             number(ui, &mut emitter.gravity, -10_000.0..=10_000.0, "");
             ui.end_row();
-            ui.label("Wind");
+            ui.label(tr("Wind"));
             number(ui, &mut emitter.wind, -10_000.0..=10_000.0, "");
             ui.end_row();
-            ui.label("Drag").on_hover_text("How quickly the air slows them");
+            ui.label(tr("Drag")).on_hover_text(tr("How quickly the air slows them"));
             ui.add(DragValue::new(&mut emitter.drag).range(0.0..=20.0).speed(0.01));
             ui.end_row();
-            ui.label("Wander");
+            ui.label(tr("Wander"));
             ui.horizontal(|ui| {
                 number(ui, &mut emitter.turbulence, 0.0..=2000.0, " px");
                 ui.add(DragValue::new(&mut emitter.turbulence_frequency).range(0.0..=20.0).speed(0.01).suffix(" Hz"));
             });
             ui.end_row();
 
-            ui.label("Lifetime");
+            ui.label(tr("Lifetime"));
             ui.horizontal(|ui| {
                 ui.add(DragValue::new(&mut emitter.lifetime).range(0.01..=600.0).speed(0.05).suffix(" s"));
                 fraction(ui, &mut emitter.lifetime_variance);
             });
             ui.end_row();
-            ui.label("Size").on_hover_text("At birth → at death, in pixels across");
+            ui.label(tr("Size")).on_hover_text(tr("At birth → at death, in pixels across"));
             ui.horizontal(|ui| {
                 number(ui, &mut emitter.size_start, 0.0..=5000.0, "");
                 ui.label("→");
@@ -1349,45 +1382,45 @@ fn particles_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 fraction(ui, &mut emitter.size_variance);
             });
             ui.end_row();
-            ui.label("Opacity");
+            ui.label(tr("Opacity"));
             ui.horizontal(|ui| {
                 ui.add(egui::Slider::new(&mut emitter.opacity_start, 0.0..=1.0).show_value(false));
                 ui.label("→");
                 ui.add(egui::Slider::new(&mut emitter.opacity_end, 0.0..=1.0).show_value(false));
             });
             ui.end_row();
-            ui.label("Colour");
+            ui.label(tr("Colour"));
             ui.horizontal(|ui| {
                 color_button(ui, &mut emitter.color_start);
                 ui.label("→");
                 color_button(ui, &mut emitter.color_end);
             });
             ui.end_row();
-            ui.label("Spin");
+            ui.label(tr("Spin"));
             ui.horizontal(|ui| {
                 number(ui, &mut emitter.spin, -3600.0..=3600.0, "°/s");
                 ui.add(DragValue::new(&mut emitter.spin_variance).range(0.0..=3600.0).prefix("± "));
             });
             ui.end_row();
 
-            ui.label("Look");
+            ui.label(tr("Look"));
             let mut drawing = emitter.sprite == Sprite::Drawing;
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut drawing, false, "Dot");
-                ui.selectable_value(&mut drawing, true, "This layer's drawing");
+                ui.selectable_value(&mut drawing, false, tr("Dot"));
+                ui.selectable_value(&mut drawing, true, tr("This layer's drawing"));
             });
             if drawing != (emitter.sprite == Sprite::Drawing) {
                 emitter.sprite = if drawing { Sprite::Drawing } else { Sprite::Dot { softness: 0.5 } };
             }
             ui.end_row();
             if let Sprite::Dot { softness } = &mut emitter.sprite {
-                ui.label("Softness");
+                ui.label(tr("Softness"));
                 ui.add(egui::Slider::new(softness, 0.0..=1.0));
                 ui.end_row();
             }
         });
         if emitter.sprite == Sprite::Drawing {
-            ui.weak("Each particle is a copy of what's drawn in this layer (draw into it with \"Draw into the selected layer\"), fitted to the particle's size. Colour doesn't apply.");
+            ui.weak(tr("Each particle is a copy of what's drawn in this layer (draw into it with \"Draw into the selected layer\"), fitted to the particle's size. Colour doesn't apply."));
         }
     });
     ui.add_space(8.0);
@@ -1404,19 +1437,19 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let keyed = layer.track.effects.key_at(frame).is_some();
     let animated = layer.track.effects.keys().len() > 1;
     let mut fx = before.clone();
-    if !section(ui, editor, "effects", "Effects", Icon::Effects) {
+    if !section(ui, editor, "effects", tr("Effects"), Icon::Effects) {
         return;
     }
     ui.horizontal(|ui| {
         if key_toggle(ui, Property::Effects, keyed).clicked() {
             editor.toggle_property_key(id, Property::Effects);
         }
-        ui.weak(if animated { "Animated" } else { "Change them on another frame to animate them" });
+        ui.weak(if animated { tr("Animated") } else { tr("Change them on another frame to animate them") });
     });
 
     // Searching opens them, so what was searched for is in view.
     let searching = (!editor.properties_search.trim().is_empty()).then_some(true);
-    egui::CollapsingHeader::new("Colour Effect")
+    egui::CollapsingHeader::new(tr("Colour Effect"))
         .id_salt("color_effect")
         .default_open(!fx.color.is_none())
         .open(searching)
@@ -1459,7 +1492,9 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 }
                 ColorEffect::Advanced { multiply, add } => {
                     egui::Grid::new("advanced_effect").num_columns(3).spacing([6.0, 4.0]).show(ui, |ui| {
-                        for (i, name) in ["Red", "Green", "Blue", "Alpha"].into_iter().enumerate() {
+                        for (i, name) in
+                            [tr("Red"), tr("Green"), tr("Blue"), tr("Alpha")].into_iter().enumerate()
+                        {
                             ui.label(name);
                             let mut percent = multiply[i] * 100.0;
                             if ui
@@ -1476,7 +1511,7 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
             }
         });
 
-    egui::CollapsingHeader::new(format!("Filters ({})", fx.filters.len()))
+    egui::CollapsingHeader::new(tr_args("Filters ({count})", &[("count", &fx.filters.len().to_string())]))
         .id_salt("filters")
         .default_open(!fx.filters.is_empty())
         .open(searching)
@@ -1492,7 +1527,7 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                             if ui
                                 .add(crate::icons::IconButton::new(
                                     crate::icons::Icon::Trash,
-                                    "Remove this filter",
+                                    tr("Remove this filter"),
                                 ))
                                 .clicked()
                             {
@@ -1502,7 +1537,7 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                                 && ui
                                     .add(crate::icons::IconButton::new(
                                         crate::icons::Icon::Up,
-                                        "Apply this one earlier",
+                                        tr("Apply this one earlier"),
                                     ))
                                     .clicked()
                             {
@@ -1519,7 +1554,7 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
             if let Some(i) = raise {
                 fx.filters.swap(i, i - 1);
             }
-            ui.menu_button("Add Filter", |ui| {
+            ui.menu_button(tr("Add Filter"), |ui| {
                 for kind in FilterKind::ALL {
                     if ui.button(kind.label()).clicked() {
                         fx.filters.push(Filter { enabled: true, kind });
@@ -1533,7 +1568,9 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     {
         layer.track.set_effects(frame, fx);
     }
-    apply_to_selected_button(ui, editor, id, "these effects", |editor| editor.copy_effects_to_selected(id));
+    apply_to_selected_button(ui, editor, id, tr("these effects"), |editor| {
+        editor.copy_effects_to_selected(id)
+    });
 }
 
 /// With several layers selected, a button that gives the rest what this
@@ -1550,10 +1587,14 @@ fn apply_to_selected_button(
     if others == 0 {
         return;
     }
-    let plural = if others == 1 { "" } else { "s" };
+    let label = if others == 1 {
+        tr("Apply to the other selected layer").to_owned()
+    } else {
+        tr_args("Apply to the other {count} selected layers", &[("count", &others.to_string())])
+    };
     if ui
-        .button(format!("Apply to the other {others} selected layer{plural}"))
-        .on_hover_text(format!("Gives them {what}, replacing their own on this frame"))
+        .button(label)
+        .on_hover_text(tr_args("Gives them {what}, replacing their own on this frame", &[("what", what)]))
         .clicked()
     {
         apply(editor);
@@ -1574,24 +1615,24 @@ fn filter_controls(ui: &mut egui::Ui, kind: &mut inkframe_core::FilterKind) {
     }
     egui::Grid::new("filter").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| match kind {
         FilterKind::DropShadow { distance, angle, blur, color, strength } => {
-            ui.label("Colour");
+            ui.label(tr("Colour"));
             color_button(ui, color);
             ui.end_row();
-            ui.label("Distance");
+            ui.label(tr("Distance"));
             ui.add(DragValue::new(distance).range(-255.0..=255.0).speed(0.2).suffix(" px"));
             ui.end_row();
-            ui.label("Angle");
+            ui.label(tr("Angle"));
             ui.add(DragValue::new(angle).speed(1.0).suffix("°"));
             ui.end_row();
-            ui.label("Blur");
+            ui.label(tr("Blur"));
             ui.add(pixels(blur));
             ui.end_row();
-            ui.label("Strength");
+            ui.label(tr("Strength"));
             ui.add(percent(strength, 10.0));
             ui.end_row();
         }
         FilterKind::Blur { x, y } => {
-            ui.label("Blur");
+            ui.label(tr("Blur"));
             ui.horizontal(|ui| {
                 ui.add(pixels(x).prefix("x "));
                 ui.add(pixels(y).prefix("y "));
@@ -1599,42 +1640,42 @@ fn filter_controls(ui: &mut egui::Ui, kind: &mut inkframe_core::FilterKind) {
             ui.end_row();
         }
         FilterKind::Glow { blur, color, strength, inner } => {
-            ui.label("Colour");
+            ui.label(tr("Colour"));
             color_button(ui, color);
             ui.end_row();
-            ui.label("Blur");
+            ui.label(tr("Blur"));
             ui.add(pixels(blur));
             ui.end_row();
-            ui.label("Strength");
+            ui.label(tr("Strength"));
             ui.add(percent(strength, 10.0));
             ui.end_row();
             ui.label("");
-            ui.checkbox(inner, "Inner glow");
+            ui.checkbox(inner, tr("Inner glow"));
             ui.end_row();
         }
         FilterKind::MotionBlur { shutter, samples } => {
-            ui.label("Shutter").on_hover_text(
-                "How much of each frame the blur covers: 180° is the usual film look, 360° the whole frame",
+            ui.label(tr("Shutter")).on_hover_text(
+                tr("How much of each frame the blur covers: 180° is the usual film look, 360° the whole frame"),
             );
             ui.add(egui::Slider::new(shutter, 0.0..=360.0).suffix("°"));
             ui.end_row();
-            ui.label("Quality").on_hover_text(
-                "The fewest moments drawn and blended. Fast movement gets more automatically, so the smear stays smooth",
+            ui.label(tr("Quality")).on_hover_text(
+                tr("The fewest moments drawn and blended. Fast movement gets more automatically, so the smear stays smooth"),
             );
             ui.add(egui::Slider::new(samples, 2..=32));
             ui.end_row();
         }
         FilterKind::AdjustColor { brightness, contrast, saturation, hue } => {
-            ui.label("Brightness");
+            ui.label(tr("Brightness"));
             ui.add(signed(brightness));
             ui.end_row();
-            ui.label("Contrast");
+            ui.label(tr("Contrast"));
             ui.add(signed(contrast));
             ui.end_row();
-            ui.label("Saturation");
+            ui.label(tr("Saturation"));
             ui.add(signed(saturation));
             ui.end_row();
-            ui.label("Hue");
+            ui.label(tr("Hue"));
             ui.add(egui::Slider::new(hue, -180.0..=180.0).suffix("°"));
             ui.end_row();
         }
@@ -1648,25 +1689,28 @@ fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let symbols: Vec<(SymbolId, String)> =
         editor.doc.symbols.iter().map(|s| (s.id, s.name.clone())).collect();
     let Some(duration) = editor.doc.symbol(instance.symbol).map(|s| s.duration) else {
-        ui.colored_label(ui.visuals().error_fg_color, "This instance's symbol is missing.");
+        ui.colored_label(ui.visuals().error_fg_color, tr("This instance's symbol is missing."));
         return;
     };
 
-    if !section(ui, editor, "instance", "Symbol instance", Icon::Symbol) {
+    if !section(ui, editor, "instance", tr("Symbol instance"), Icon::Symbol) {
         return;
     }
-    ui.weak("Double-click it on the stage (or Modify › Edit Symbol) to work on the layers inside.");
+    ui.weak(tr("Double-click it on the stage (or Modify › Edit Symbol) to work on the layers inside."));
     let frame = editor.frame;
     let (showing, swaps) = editor.doc.layer(id).map_or((instance.symbol, 0), |l| {
         (l.symbol_at(frame).unwrap_or(instance.symbol), l.symbol_swaps.len())
     });
     egui::Grid::new("instance").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-        ui.label("Symbol");
+        ui.label(tr("Symbol"));
         ui.horizontal(|ui| {
             let name = symbols.iter().find(|(s, _)| *s == showing).map_or("", |(_, n)| n.as_str());
             ui.strong(name);
             // Modify › Swap Symbol, from the panel.
-            if ui.button("Swap…").on_hover_text("Show another symbol here, keeping the animation").clicked()
+            if ui
+                .button(tr("Swap…"))
+                .on_hover_text(tr("Show another symbol here, keeping the animation"))
+                .clicked()
             {
                 crate::swap_dialog::request(ui.ctx());
             }
@@ -1674,12 +1718,18 @@ fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         ui.end_row();
         if swaps > 0 {
             ui.label("");
-            let plural = if swaps == 1 { "" } else { "s" };
-            ui.weak(format!("Swapped {swaps} time{plural} along the way: see the timeline"));
+            ui.weak(if swaps == 1 {
+                tr("Swapped once along the way: see the timeline").to_owned()
+            } else {
+                tr_args(
+                    "Swapped {count} times along the way: see the timeline",
+                    &[("count", &swaps.to_string())],
+                )
+            });
             ui.end_row();
         }
 
-        ui.label("Playback");
+        ui.label(tr("Playback"));
         egui::ComboBox::from_id_salt("instance_playback").selected_text(instance.playback.label()).show_ui(
             ui,
             |ui| {
@@ -1691,7 +1741,7 @@ fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         ui.end_row();
 
         // Shown 1-based, like every other frame number in the interface.
-        ui.label("First frame");
+        ui.label(tr("First frame"));
         let mut shown = instance.first_frame + 1;
         if ui.add(DragValue::new(&mut shown).range(1..=duration)).changed() {
             instance.first_frame = shown - 1;
@@ -1705,11 +1755,11 @@ fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     // The symbol showing on this frame, which may be one swapped in.
     if let Some(symbol) = editor.doc.symbol_mut(showing) {
         ui.horizontal(|ui| {
-            ui.label("Symbol length");
-            ui.add(DragValue::new(&mut symbol.duration).range(1..=100_000).suffix(" frames")).on_hover_text(
-                "How long the symbol's own timeline is. Playing on Loop, the instance repeats every this many \
+            ui.label(tr("Symbol length"));
+            ui.add(DragValue::new(&mut symbol.duration).range(1..=100_000).suffix(format!(" {}", tr("frames")))).on_hover_text(
+                tr("How long the symbol's own timeline is. Playing on Loop, the instance repeats every this many \
                  frames: a 12-frame walk cycle loops for as long as the layer lasts. Changes the symbol everywhere \
-                 it's used.",
+                 it's used."),
             );
         });
     }
@@ -1720,12 +1770,12 @@ fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 /// can be a fixed frame or "end", which follows the animation's length.
 fn span_editor(ui: &mut egui::Ui, layer: &mut Layer, last_frame: u32) {
     ui.horizontal(|ui| {
-        ui.label("Frames");
+        ui.label(tr("Frames"));
         let mut start = layer.start + 1;
         if ui.add(DragValue::new(&mut start).range(1..=last_frame + 1)).changed() {
             layer.set_start(start - 1);
         }
-        ui.label("to");
+        ui.label(tr("to"));
 
         let mut open_ended = layer.end.is_none();
         if let Some(end) = layer.end {
@@ -1735,8 +1785,8 @@ fn span_editor(ui: &mut egui::Ui, layer: &mut Layer, last_frame: u32) {
             }
         }
         if ui
-            .checkbox(&mut open_ended, "end")
-            .on_hover_text("Stay until the animation ends, even if it gets longer")
+            .checkbox(&mut open_ended, tr("end"))
+            .on_hover_text(tr("Stay until the animation ends, even if it gets longer"))
             .changed()
         {
             layer.set_end(if open_ended { None } else { Some(last_frame) });
@@ -1771,7 +1821,13 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
     let mut depth = layer.track.depth_at(frame as f32);
     let mut depth_changed = false;
 
-    if !section(ui, editor, "transform", format!("Transform at frame {}", frame + 1), Icon::Transform) {
+    if !section(
+        ui,
+        editor,
+        "transform",
+        tr_args("Transform at frame {frame}", &[("frame", &(frame + 1).to_string())]),
+        Icon::Transform,
+    ) {
         return;
     }
 
@@ -1796,19 +1852,19 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
                 toggled = Some(property);
             }
             let label = if mixed.contains(&property) {
-                ui.label(format!("{} •", property.name())).on_hover_text(
+                ui.label(format!("{} •", property.name())).on_hover_text(tr(
                     "Differs between the selected layers. Changing it sets them all (position moves them all \
                      by the same amount).",
-                )
+                ))
             } else {
                 ui.label(property.name())
             };
             if property == Property::Depth {
-                label.on_hover_text(
+                label.on_hover_text(tr(
                     "How far behind the stage the layer sits, for the camera: deeper layers look smaller \
                      and move less as it pans. Negative comes forward. For the camera, how far it has \
                      moved in.",
-                );
+                ));
             }
             ui.horizontal(|ui| match property {
                 Property::Position => {
@@ -1866,7 +1922,7 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
 /// How the layer hangs in a character rig: the layer it's attached to, and
 /// the pivot it turns around.
 fn rig_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) {
-    if !section(ui, editor, "parent and pivot", "Parent and pivot", Icon::Nodes) {
+    if !section(ui, editor, "parent and pivot", tr("Parent and pivot"), Icon::Nodes) {
         return;
     }
     let Some(layer) = editor.doc.layer(id) else { return };
@@ -1883,30 +1939,29 @@ fn rig_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) 
     let bounds = editor.doc.layer_bounds(layer, frame);
 
     egui::Grid::new("rig").num_columns(2).spacing([6.0, 4.0]).show(ui, |ui| {
-        ui.label("Parent").on_hover_text(
+        ui.label(tr("Parent")).on_hover_text(tr(
             "The layer this one is attached to. It moves, turns and scales with its parent, \
              and its own position is measured from the parent.",
-        );
-        let current = parents.iter().find(|(p, _)| Some(*p) == parent).map_or("None", |(_, name)| name);
+        ));
+        let current = parents.iter().find(|(p, _)| Some(*p) == parent).map_or(tr("None"), |(_, name)| name);
         egui::ComboBox::from_id_salt("parent").selected_text(current).show_ui(ui, |ui| {
-            ui.selectable_value(&mut parent, None, "None");
+            ui.selectable_value(&mut parent, None, tr("None"));
             for (other, name) in &parents {
                 ui.selectable_value(&mut parent, Some(*other), name);
             }
         });
         ui.end_row();
 
-        ui.label("Pivot").on_hover_text(
-            "The point the layer turns and scales around, in its own coordinates. \
-             Option-drag (Alt-drag) the ring on the stage to move it.",
-        );
+        ui.label(tr("Pivot"))
+            .on_hover_text(tr("The point the layer turns and scales around, in its own coordinates. \
+             Option-drag (Alt-drag) the ring on the stage to move it."));
         ui.horizontal(|ui| {
             ui.add(DragValue::new(&mut pivot.x).prefix("x ").speed(1.0));
             ui.add(DragValue::new(&mut pivot.y).prefix("y ").speed(1.0));
             if let Some(bounds) = bounds
                 && ui
-                    .small_button("Center")
-                    .on_hover_text("Put the pivot in the middle of the layer")
+                    .small_button(tr("Center"))
+                    .on_hover_text(tr("Put the pivot in the middle of the layer"))
                     .clicked()
             {
                 pivot = bounds.center();
@@ -1916,10 +1971,10 @@ fn rig_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) 
 
         // Only joints bend, so only attached layers have limits.
         if parent.is_some() {
-            ui.label("Bends").on_hover_text(
+            ui.label(tr("Bends")).on_hover_text(tr(
                 "How far the Bone tool may turn this joint, as the lowest and highest rotation, \
                  so an elbow or knee only bends one way.",
-            );
+            ));
             ui.horizontal(|ui| {
                 let mut limited = limits.is_some();
                 if ui.checkbox(&mut limited, "").changed() {
@@ -1929,11 +1984,11 @@ fn rig_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) 
                 match &mut limits {
                     Some(range) => {
                         ui.add(DragValue::new(&mut range.min).suffix("°").speed(1.0));
-                        ui.label("to");
+                        ui.label(tr("to"));
                         ui.add(DragValue::new(&mut range.max).suffix("°").speed(1.0));
                     }
                     None => {
-                        ui.weak("freely");
+                        ui.weak(tr("freely"));
                     }
                 }
             });
@@ -1961,7 +2016,7 @@ fn rig_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u32) 
 fn deformer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
     if editor.doc.layer(id).is_none_or(|l| l.instance.is_some())
-        || !section(ui, editor, "deformer", "Deformer", Icon::Envelope)
+        || !section(ui, editor, "deformer", tr("Deformer"), Icon::Envelope)
     {
         return;
     }
@@ -1971,8 +2026,8 @@ fn deformer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 
     let Some(deformer) = &mut layer.deformer else {
         let add = ui
-            .add_enabled(rest_bounds.is_some(), egui::Button::new("Add Bend Deformer"))
-            .on_hover_text("Bones through the drawing that bend it smoothly, for rubber-hose limbs and tails. Pose them with the Bone tool.");
+            .add_enabled(rest_bounds.is_some(), egui::Button::new(tr("Add Bend Deformer")))
+            .on_hover_text(tr("Bones through the drawing that bend it smoothly, for rubber-hose limbs and tails. Pose them with the Bone tool."));
         if add.clicked()
             && let Some(bounds) = rest_bounds
         {
@@ -1985,14 +2040,15 @@ fn deformer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let mut remove = false;
     let mut bones = deformer.bone_count();
     egui::Grid::new("deformer").num_columns(2).spacing([6.0, 4.0]).show(ui, |ui| {
-        ui.label("Bones").on_hover_text("Changing the count lays the bones out straight again");
+        ui.label(tr("Bones")).on_hover_text(tr("Changing the count lays the bones out straight again"));
         ui.add(DragValue::new(&mut bones).range(1..=8));
         ui.end_row();
-        ui.label("Smoothness").on_hover_text("How soft each bend is: 0 bends like a hinge, 1 like a hose");
+        ui.label(tr("Smoothness"))
+            .on_hover_text(tr("How soft each bend is: 0 bends like a hinge, 1 like a hose"));
         ui.add(egui::Slider::new(&mut deformer.smoothness, 0.0..=1.0));
         ui.end_row();
         for (i, mut bend) in deformer.bends_at(frame).into_iter().enumerate() {
-            ui.label(format!("Bend {}", i + 1));
+            ui.label(tr_args("Bend {number}", &[("number", &(i + 1).to_string())]));
             if ui.add(DragValue::new(&mut bend).suffix("°").speed(1.0)).changed() {
                 deformer.bends[i].set(frame, bend);
             }
@@ -2000,8 +2056,8 @@ fn deformer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         }
     });
     ui.horizontal(|ui| {
-        ui.weak("Drag its joints with the Bone tool (K).");
-        remove = ui.small_button("Remove").clicked();
+        ui.weak(tr("Drag its joints with the Bone tool (K)."));
+        remove = ui.small_button(tr("Remove")).clicked();
     });
     if bones != deformer.bone_count()
         && let Some(bounds) = rest_bounds
@@ -2019,7 +2075,7 @@ fn deformer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 fn warp_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
     if editor.doc.layer(id).is_none_or(|l| l.instance.is_some())
-        || !section(ui, editor, "free-form deformer", "Free-Form Deformer", Icon::Distort)
+        || !section(ui, editor, "free-form deformer", tr("Free-Form Deformer"), Icon::Distort)
     {
         return;
     }
@@ -2030,8 +2086,8 @@ fn warp_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         ui.horizontal(|ui| {
             for size in [3, 4] {
                 let add = ui
-                    .add_enabled(rest_bounds.is_some(), egui::Button::new(format!("Add {size}×{size} Grid")))
-                    .on_hover_text("A grid of points over the drawing: drag them with the Bone tool to squash, bulge and sway it.");
+                    .add_enabled(rest_bounds.is_some(), egui::Button::new(tr_args("Add {size}×{size} Grid", &[("size", &size.to_string())])))
+                    .on_hover_text(tr("A grid of points over the drawing: drag them with the Bone tool to squash, bulge and sway it."));
                 if add.clicked()
                     && let Some(bounds) = rest_bounds
                 {
@@ -2044,8 +2100,12 @@ fn warp_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     };
     let mut remove = false;
     ui.horizontal(|ui| {
-        ui.weak(format!("{}×{} grid. Drag its points with the Bone tool (K).", warp.columns, warp.rows));
-        if ui.small_button("Straighten").on_hover_text("Put every point back on this frame").clicked() {
+        ui.weak(tr_args(
+            "{columns}×{rows} grid. Drag its points with the Bone tool (K).",
+            &[("columns", &warp.columns.to_string()), ("rows", &warp.rows.to_string())],
+        ));
+        if ui.small_button(tr("Straighten")).on_hover_text(tr("Put every point back on this frame")).clicked()
+        {
             for channel in &mut warp.offsets {
                 if channel.sample(frame as f32).is_some_and(|o| o != inkframe_core::Point::ZERO)
                     || channel.key_at(frame).is_some()
@@ -2054,7 +2114,7 @@ fn warp_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 }
             }
         }
-        remove = ui.small_button("Remove").clicked();
+        remove = ui.small_button(tr("Remove")).clicked();
     });
     if remove {
         layer.warp = None;
@@ -2067,7 +2127,7 @@ fn warp_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 fn drawings_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
     if editor.doc.layer(id).is_none_or(|l| l.instance.is_some())
-        || !section(ui, editor, "drawings", "Drawings", Icon::ExposureSheet)
+        || !section(ui, editor, "drawings", tr("Drawings"), Icon::ExposureSheet)
     {
         return;
     }
@@ -2076,9 +2136,9 @@ fn drawings_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let names: Vec<String> = layer.drawings.iter().map(|d| d.name.clone()).collect();
 
     if names.len() == 1 {
-        ui.weak("Add drawings to swap between, like mouth shapes or hand poses.");
+        ui.weak(tr("Add drawings to swap between, like mouth shapes or hand poses."));
     } else {
-        ui.weak("[ and ] flip through them.");
+        ui.weak(tr("[ and ] flip through them."));
     }
     let mut picked = None;
     ui.horizontal_wrapped(|ui| {
@@ -2091,22 +2151,22 @@ fn drawings_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let (mut add, mut copy, mut delete) = (false, false, false);
     ui.horizontal(|ui| {
         add = ui
-            .button("New")
-            .on_hover_text("A blank drawing, shown from this frame. Draw into it on the stage.")
+            .button(tr("New"))
+            .on_hover_text(tr("A blank drawing, shown from this frame. Draw into it on the stage."))
             .clicked();
         copy = ui
-            .button("Duplicate")
-            .on_hover_text("A copy of the drawing showing now, to change a little")
+            .button(tr("Duplicate"))
+            .on_hover_text(tr("A copy of the drawing showing now, to change a little"))
             .clicked();
         let can_delete = names.len() > 1;
         delete = ui
-            .add_enabled(can_delete, egui::Button::new("Delete"))
-            .on_hover_text("Remove the drawing showing now")
+            .add_enabled(can_delete, egui::Button::new(tr("Delete")))
+            .on_hover_text(tr("Remove the drawing showing now"))
             .clicked();
     });
     if let Some(drawing) = editor.doc.layer_mut(id).and_then(|l| l.drawings.get_mut(showing)) {
         ui.horizontal(|ui| {
-            ui.label("Name");
+            ui.label(tr("Name"));
             ui.text_edit_singleline(&mut drawing.name);
         });
     }
@@ -2130,8 +2190,10 @@ fn shape_tween_controls(ui: &mut egui::Ui, editor: &mut Editor) {
     let Some(mut on) = editor.shape_tween_here() else { return };
     ui.add_space(4.0);
     if ui
-        .checkbox(&mut on, "Shape tween into the next drawing")
-        .on_hover_text("Morph from the drawing showing here into the next one, instead of swapping at once")
+        .checkbox(&mut on, tr("Shape tween into the next drawing"))
+        .on_hover_text(tr(
+            "Morph from the drawing showing here into the next one, instead of swapping at once",
+        ))
         .changed()
     {
         editor.set_shape_tween(on);
@@ -2139,7 +2201,7 @@ fn shape_tween_controls(ui: &mut egui::Ui, editor: &mut Editor) {
     let frame = editor.frame;
     let Some(tween) = editor.selected_layer_mut().and_then(|l| l.shape_tween_mut(frame)) else { return };
     ui.horizontal(|ui| {
-        ui.label("Easing");
+        ui.label(tr("Easing"));
         egui::ComboBox::from_id_salt("shape_tween_easing").selected_text(tween.easing.label()).show_ui(
             ui,
             |ui| {
@@ -2154,13 +2216,13 @@ fn shape_tween_controls(ui: &mut egui::Ui, editor: &mut Editor) {
         .map_or(0, |(from, _)| editor.selected_layer().map_or(0, |l| l.drawings[from].hints.len()));
     ui.horizontal(|ui| {
         if ui
-            .button("Add Shape Hint")
-            .on_hover_text("⌘⇧H. Drag the lettered marks onto matching points of the two drawings")
+            .button(tr("Add Shape Hint"))
+            .on_hover_text(tr("⌘⇧H. Drag the lettered marks onto matching points of the two drawings"))
             .clicked()
         {
             editor.add_shape_hint();
         }
-        if ui.add_enabled(hints > 0, egui::Button::new("Remove Hints")).clicked() {
+        if ui.add_enabled(hints > 0, egui::Button::new(tr("Remove Hints"))).clicked() {
             editor.clear_shape_hints();
         }
     });
@@ -2175,11 +2237,11 @@ fn mask_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         return;
     }
     ui.horizontal(|ui| {
-        ui.label("Masked by");
+        ui.label(tr("Masked by"));
         let current =
-            masks.iter().find(|(m, _)| Some(*m) == layer.masked_by).map_or("None", |(_, name)| name);
+            masks.iter().find(|(m, _)| Some(*m) == layer.masked_by).map_or(tr("None"), |(_, name)| name);
         egui::ComboBox::from_id_salt("masked_by").selected_text(current).show_ui(ui, |ui| {
-            ui.selectable_value(&mut layer.masked_by, None, "None");
+            ui.selectable_value(&mut layer.masked_by, None, tr("None"));
             for (mask, name) in &masks {
                 ui.selectable_value(&mut layer.masked_by, Some(*mask), name);
             }
@@ -2199,20 +2261,20 @@ fn motion_path_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
 
     if !guides.is_empty() || layer.follow.is_some() {
         ui.horizontal(|ui| {
-            ui.label("Follow guide");
+            ui.label(tr("Follow guide"));
             let current =
-                guides.iter().find(|(g, _)| Some(*g) == layer.follow).map_or("None", |(_, name)| name);
+                guides.iter().find(|(g, _)| Some(*g) == layer.follow).map_or(tr("None"), |(_, name)| name);
             egui::ComboBox::from_id_salt("follow").selected_text(current).show_ui(ui, |ui| {
-                ui.selectable_value(&mut layer.follow, None, "None");
+                ui.selectable_value(&mut layer.follow, None, tr("None"));
                 for (guide, name) in &guides {
                     ui.selectable_value(&mut layer.follow, Some(*guide), name);
                 }
             });
         });
         if layer.follow.is_some() && layer.track.position.keys().len() < 2 {
-            ui.weak(
+            ui.weak(tr(
                 "Add a second position keyframe: the layer travels the guide between its first and last.",
-            );
+            ));
         }
     }
 
@@ -2222,13 +2284,15 @@ fn motion_path_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     }
     let following = layer.follow.is_some();
     ui.horizontal(|ui| {
-        ui.checkbox(&mut track.orient_to_path, "Orient to path")
-            .on_hover_text("Turn the layer to face the way it's moving");
+        ui.checkbox(&mut track.orient_to_path, tr("Orient to path"))
+            .on_hover_text(tr("Turn the layer to face the way it's moving"));
         // A layer on a guide takes its path from the guide.
         let curved = !following && track.position.keys().iter().any(|k| k.bend.is_some());
         if ui
-            .add_enabled(curved, egui::Button::new("Straighten path").small())
-            .on_hover_text("Make every tween a straight line again. Drag the path on the stage to curve it.")
+            .add_enabled(curved, egui::Button::new(tr("Straighten path")).small())
+            .on_hover_text(tr(
+                "Make every tween a straight line again. Drag the path on the stage to curve it.",
+            ))
             .clicked()
         {
             track.position.straighten();
@@ -2248,9 +2312,12 @@ fn key_toggle(ui: &mut egui::Ui, property: Property, is_key: bool) -> egui::Resp
     ui.painter().add(egui::Shape::convex_polygon(points, fill, EguiStroke::new(1.2, color)));
 
     let tip = if is_key {
-        format!("Remove the {} keyframe on this frame", property.name().to_lowercase())
+        tr_args(
+            "Remove the {property} keyframe on this frame",
+            &[("property", &property.name().to_lowercase())],
+        )
     } else {
-        format!("Add a {} keyframe on this frame", property.name().to_lowercase())
+        tr_args("Add a {property} keyframe on this frame", &[("property", &property.name().to_lowercase())])
     };
     response.on_hover_text(tip)
 }
@@ -2262,7 +2329,7 @@ fn easing_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u3
         .filter_map(|p| layer.track.channel(p).tween_at(frame).map(|t| (p, t)))
         .collect();
     if tweens.is_empty() {
-        ui.weak("No tweens here. Move to a later frame and change a property to create one.");
+        ui.weak(tr("No tweens here. Move to a later frame and change a property to create one."));
         return;
     }
     // Keep the graph on a property that's actually tweening here.
@@ -2270,14 +2337,17 @@ fn easing_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u3
         editor.focused_property = tweens[0].0;
     }
 
-    if !section(ui, editor, "easing", "Easing", Icon::Graph) {
+    if !section(ui, editor, "easing", tr("Easing"), Icon::Graph) {
         return;
     }
     let mut changes = Vec::new();
     egui::Grid::new("easing").num_columns(3).spacing([8.0, 4.0]).show(ui, |ui| {
         for (property, tween) in &tweens {
             let focused = editor.focused_property == *property;
-            if ui.selectable_label(focused, property.name()).on_hover_text("Show this curve below").clicked()
+            if ui
+                .selectable_label(focused, property.name())
+                .on_hover_text(tr("Show this curve below"))
+                .clicked()
             {
                 editor.focused_property = *property;
             }
@@ -2318,7 +2388,7 @@ fn easing_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u3
             }
         }
     }
-    apply_to_selected_button(ui, editor, id, "this easing, for each property tweening here", |editor| {
+    apply_to_selected_button(ui, editor, id, tr("this easing, for each property tweening here"), |editor| {
         editor.copy_easing_to_selected(id)
     });
 }
@@ -2332,7 +2402,7 @@ fn easing_combo(ui: &mut egui::Ui, id_salt: Property, easing: &mut Easing) -> bo
         }
         // "Custom" starts from the current curve so it's a tweak, not a reset.
         let is_custom = matches!(easing, Easing::CubicBezier { .. });
-        if ui.selectable_label(is_custom, "Custom").clicked() && !is_custom {
+        if ui.selectable_label(is_custom, tr("Custom")).clicked() && !is_custom {
             let [x1, y1, x2, y2] = easing.control_points().unwrap_or([0.0, 0.0, 1.0, 1.0]);
             *easing = Easing::CubicBezier { x1, y1, x2, y2 };
         }
@@ -2343,7 +2413,7 @@ fn easing_combo(ui: &mut egui::Ui, id_salt: Property, easing: &mut Easing) -> bo
 fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     let frame = editor.frame;
     if editor.doc.layer(id).is_none_or(|l| l.elements_at(frame).is_empty())
-        || !section(ui, editor, "shapes", "Shapes", Icon::Shapes)
+        || !section(ui, editor, "shapes", tr("Shapes"), Icon::Shapes)
     {
         return;
     }
@@ -2377,19 +2447,22 @@ fn shapes_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     for (i, element) in elements.iter_mut().enumerate() {
         ui.push_id(i, |ui| {
             let title = match &element.shape {
-                Shape::Rect { .. } => "Rectangle",
-                Shape::Ellipse { .. } => "Oval",
-                Shape::Path(_) => "Stroke",
-                Shape::Line { .. } => "Pencil Line",
-                Shape::Image { .. } => "Image",
-                Shape::Text(_) => "Text",
-                Shape::Paint { .. } => "Painting",
+                Shape::Rect { .. } => tr("Rectangle"),
+                Shape::Ellipse { .. } => tr("Oval"),
+                Shape::Path(_) => tr("Stroke"),
+                Shape::Line { .. } => tr("Pencil Line"),
+                Shape::Image { .. } => tr("Image"),
+                Shape::Text(_) => tr("Text"),
+                Shape::Paint { .. } => tr("Painting"),
             };
             ui.strong(if count > 1 { format!("{title} {}", i + 1) } else { title.to_owned() });
             if let Shape::Paint { width, height, .. } = element.shape {
                 // Painted with the brush tools, so nothing to set here
                 // beyond saying how big the canvas is.
-                ui.weak(format!("{width} × {height} px canvas. Paint with the Brush (B) and Eraser (E)."));
+                ui.weak(tr_args(
+                    "{width} × {height} px canvas. Paint with the Brush (B) and Eraser (E).",
+                    &[("width", &width.to_string()), ("height", &height.to_string())],
+                ));
             } else if let Shape::Image { image, width, height } = &mut element.shape {
                 // An image paints its own pixels, so it has no fill or stroke.
                 if let Some(info) = images.iter().find(|info| info.id == *image) {
@@ -2418,13 +2491,13 @@ struct ImageInfo {
 
 fn image_editor(ui: &mut egui::Ui, info: &ImageInfo, width: &mut f32, height: &mut f32) {
     egui::Grid::new("image").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-        ui.label("File");
+        ui.label(tr("File"));
         match &info.problem {
             Some(problem) => ui.colored_label(ui.visuals().error_fg_color, problem),
             None => ui.label(&info.name),
         };
         ui.end_row();
-        ui.label("Size");
+        ui.label(tr("Size"));
         ui.horizontal(|ui| {
             ui.add(DragValue::new(width).range(0.0..=f32::MAX).prefix("w "));
             ui.add(DragValue::new(height).range(0.0..=f32::MAX).prefix("h "));
@@ -2433,8 +2506,11 @@ fn image_editor(ui: &mut egui::Ui, info: &ImageInfo, width: &mut f32, height: &m
         ui.label("");
         let (w, h) = info.size;
         if ui
-            .button("Actual size")
-            .on_hover_text(format!("{w} × {h}, one stage pixel per image pixel"))
+            .button(tr("Actual size"))
+            .on_hover_text(tr_args(
+                "{width} × {height}, one stage pixel per image pixel",
+                &[("width", &w.to_string()), ("height", &h.to_string())],
+            ))
             .clicked()
         {
             (*width, *height) = (w as f32, h as f32);
@@ -2450,7 +2526,7 @@ fn text_editor(ui: &mut egui::Ui, text: &mut Text, font_problem: Option<&str>) {
     egui::TextEdit::multiline(&mut text.content).desired_rows(2).desired_width(f32::INFINITY).show(ui);
 
     egui::Grid::new("text").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-        ui.label("Font");
+        ui.label(tr("Font"));
         ui.horizontal(|ui| {
             let families = inkframe_render::font_families();
             egui::ComboBox::from_id_salt("font").selected_text(&text.font.family).width(160.0).show_ui(
@@ -2459,12 +2535,12 @@ fn text_editor(ui: &mut egui::Ui, text: &mut Text, font_problem: Option<&str>) {
                     // The project's own fonts first, where they're easy to find
                     // among hundreds of installed ones.
                     if !families.project.is_empty() {
-                        ui.weak("This project");
+                        ui.weak(tr("This project"));
                         for family in &families.project {
                             ui.selectable_value(&mut text.font.family, family.clone(), family);
                         }
                         ui.separator();
-                        ui.weak("Installed");
+                        ui.weak(tr("Installed"));
                     }
                     for family in &families.installed {
                         ui.selectable_value(&mut text.font.family, family.clone(), family);
@@ -2472,8 +2548,8 @@ fn text_editor(ui: &mut egui::Ui, text: &mut Text, font_problem: Option<&str>) {
                 },
             );
             if ui
-                .small_button("Refresh")
-                .on_hover_text("Look again for fonts installed since Inkframe started")
+                .small_button(tr("Refresh"))
+                .on_hover_text(tr("Look again for fonts installed since Inkframe started"))
                 .clicked()
             {
                 inkframe_render::refresh_installed_fonts();
@@ -2484,29 +2560,32 @@ fn text_editor(ui: &mut egui::Ui, text: &mut Text, font_problem: Option<&str>) {
         // from someone else's computer, say), and why, if it's known.
         let used = inkframe_render::layout_text(text).family.clone();
         if used != text.font.family {
-            let reason = font_problem.unwrap_or("Not installed");
+            let reason = font_problem.unwrap_or(tr("Not installed"));
             ui.label("");
-            ui.colored_label(ui.visuals().warn_fg_color, format!("{reason}; showing {used}"));
+            ui.colored_label(
+                ui.visuals().warn_fg_color,
+                tr_args("{reason}; showing {font}", &[("reason", reason), ("font", &used)]),
+            );
             ui.end_row();
         }
 
-        ui.label("Style");
+        ui.label(tr("Style"));
         ui.horizontal(|ui| {
-            ui.toggle_value(&mut text.font.bold, "Bold");
-            ui.toggle_value(&mut text.font.italic, "Italic");
+            ui.toggle_value(&mut text.font.bold, tr("Bold"));
+            ui.toggle_value(&mut text.font.italic, tr("Italic"));
         });
         ui.end_row();
-        ui.label("Size");
+        ui.label(tr("Size"));
         ui.add(DragValue::new(&mut text.size).range(1.0..=2000.0).suffix(" px"));
         ui.end_row();
-        ui.label("Align");
+        ui.label(tr("Align"));
         ui.horizontal(|ui| {
             for align in TextAlign::ALL {
                 ui.selectable_value(&mut text.align, align, align.label());
             }
         });
         ui.end_row();
-        ui.label("Line spacing");
+        ui.label(tr("Line spacing"));
         ui.add(DragValue::new(&mut text.line_spacing).range(0.5..=5.0).speed(0.01).suffix("×"));
         ui.end_row();
     });
@@ -2515,18 +2594,18 @@ fn text_editor(ui: &mut egui::Ui, text: &mut Text, font_problem: Option<&str>) {
 fn shape_size_editor(ui: &mut egui::Ui, shape: &mut Shape) {
     egui::Grid::new("shape").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| match shape {
         Shape::Rect { width, height, corner_radius } => {
-            ui.label("Size");
+            ui.label(tr("Size"));
             ui.horizontal(|ui| {
                 ui.add(DragValue::new(width).range(0.0..=f32::MAX).prefix("w "));
                 ui.add(DragValue::new(height).range(0.0..=f32::MAX).prefix("h "));
             });
             ui.end_row();
-            ui.label("Corners");
+            ui.label(tr("Corners"));
             ui.add(DragValue::new(corner_radius).range(0.0..=f32::MAX).suffix(" px"));
             ui.end_row();
         }
         Shape::Ellipse { radius_x, radius_y } => {
-            ui.label("Radius");
+            ui.label(tr("Radius"));
             ui.horizontal(|ui| {
                 ui.add(DragValue::new(radius_x).range(0.0..=f32::MAX).prefix("x "));
                 ui.add(DragValue::new(radius_y).range(0.0..=f32::MAX).prefix("y "));
@@ -2538,8 +2617,9 @@ fn shape_size_editor(ui: &mut egui::Ui, shape: &mut Shape) {
         // A pencil line's widths are set with the Width tool, on the stage;
         // here, all of them at once.
         Shape::Line { widths, .. } => {
-            ui.label("Width")
-                .on_hover_text("Scales the whole line; the Width tool (Shift+A) shapes it point by point");
+            ui.label(tr("Width")).on_hover_text(tr(
+                "Scales the whole line; the Width tool (Shift+A) shapes it point by point",
+            ));
             let widest = widths.iter().copied().fold(0.0f32, f32::max).max(0.01);
             let mut shown = widest;
             if ui.add(DragValue::new(&mut shown).range(0.1..=200.0).speed(0.1).suffix(" px")).changed() {
@@ -2558,7 +2638,7 @@ pub fn style_editor(ui: &mut egui::Ui, style: &mut Style, symbols: &[(inkframe_c
     use inkframe_core::{Dash, GradientShape, LineCap, LineJoin, ShapeGradient};
     egui::Grid::new("style").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
         // Fill: none, a colour, or a gradient (see `ShapeGradient`).
-        ui.label("Fill");
+        ui.label(tr("Fill"));
         ui.horizontal(|ui| {
             let mut on = style.fill.is_some() || style.gradient.is_some();
             if ui.checkbox(&mut on, "").changed() {
@@ -2572,16 +2652,16 @@ pub fn style_editor(ui: &mut egui::Ui, style: &mut Style, symbols: &[(inkframe_c
             }
             let kind = style.gradient.as_ref().map(|g| g.shape);
             let label = match kind {
-                None => "Solid",
-                Some(GradientShape::Linear) => "Linear",
-                Some(GradientShape::Radial) => "Radial",
+                None => tr("Solid"),
+                Some(GradientShape::Linear) => tr("Linear"),
+                Some(GradientShape::Radial) => tr("Radial"),
             };
             let base = style.fill.unwrap_or(Color::BLACK);
             egui::ComboBox::from_id_salt("fill_kind").selected_text(label).width(80.0).show_ui(ui, |ui| {
-                if ui.selectable_label(kind.is_none(), "Solid").clicked() {
+                if ui.selectable_label(kind.is_none(), tr("Solid")).clicked() {
                     style.gradient = None;
                 }
-                for (shape, name) in [(GradientShape::Linear, "Linear"), (GradientShape::Radial, "Radial")] {
+                for (shape, name) in [(GradientShape::Linear, tr("Linear")), (GradientShape::Radial, tr("Radial"))] {
                     if ui.selectable_label(kind == Some(shape), name).clicked() && kind != Some(shape) {
                         // Switching between the two keeps the colours; from
                         // solid it fades the fill colour out to white.
@@ -2608,14 +2688,14 @@ pub fn style_editor(ui: &mut egui::Ui, style: &mut Style, symbols: &[(inkframe_c
             ui.label("");
             ui.vertical(|ui| {
                 gradient_stops(ui, gradient);
-                ui.weak("To move its ends, double-click the shape on the stage, then click it.");
+                ui.weak(tr("To move its ends, double-click the shape on the stage, then click it."));
             });
             ui.end_row();
             // What wants one colour (the bucket, palettes) goes by the first.
             style.fill = gradient.stops.first().map(|s| s.color);
         }
 
-        ui.label("Stroke");
+        ui.label(tr("Stroke"));
         ui.horizontal(|ui| {
             let mut on = style.stroke.is_some();
             if ui.checkbox(&mut on, "").changed() {
@@ -2629,16 +2709,16 @@ pub fn style_editor(ui: &mut egui::Ui, style: &mut Style, symbols: &[(inkframe_c
         ui.end_row();
         let Some(stroke) = &mut style.stroke else { return };
 
-        ui.label("Ends");
-        let caps = [(LineCap::Round, "Round"), (LineCap::Butt, "Flat"), (LineCap::Square, "Square")];
+        ui.label(tr("Ends"));
+        let caps = [(LineCap::Round, tr("Round")), (LineCap::Butt, tr("Flat")), (LineCap::Square, tr("Square"))];
         choice(ui, "stroke_cap", &mut stroke.cap, &caps);
         ui.end_row();
-        ui.label("Corners");
-        let joins = [(LineJoin::Round, "Round"), (LineJoin::Miter, "Sharp"), (LineJoin::Bevel, "Bevelled")];
+        ui.label(tr("Corners"));
+        let joins = [(LineJoin::Round, tr("Round")), (LineJoin::Miter, tr("Sharp")), (LineJoin::Bevel, tr("Bevelled"))];
         choice(ui, "stroke_join", &mut stroke.join, &joins);
         ui.end_row();
 
-        ui.label("Line");
+        ui.label(tr("Line"));
         ui.horizontal(|ui| {
             #[derive(Clone, Copy, PartialEq)]
             enum Kind {
@@ -2656,7 +2736,7 @@ pub fn style_editor(ui: &mut egui::Ui, style: &mut Style, symbols: &[(inkframe_c
                 ui,
                 "stroke_dash",
                 &mut chosen,
-                &[(Kind::Solid, "Solid"), (Kind::Dashed, "Dashed"), (Kind::Dotted, "Dotted")],
+                &[(Kind::Solid, tr("Solid")), (Kind::Dashed, tr("Dashed")), (Kind::Dotted, tr("Dotted"))],
             );
             if chosen != kind {
                 stroke.dash = match chosen {
@@ -2671,16 +2751,16 @@ pub fn style_editor(ui: &mut egui::Ui, style: &mut Style, symbols: &[(inkframe_c
             }
             if let Some(dash) = &mut stroke.dash {
                 if !dash.is_dotted() {
-                    ui.add(DragValue::new(&mut dash.length).range(0.5..=500.0).speed(0.2).prefix("dash "));
+                    ui.add(DragValue::new(&mut dash.length).range(0.5..=500.0).speed(0.2).prefix(format!("{} ", tr("dash"))));
                 }
-                ui.add(DragValue::new(&mut dash.gap).range(0.5..=500.0).speed(0.2).prefix("gap "));
+                ui.add(DragValue::new(&mut dash.gap).range(0.5..=500.0).speed(0.2).prefix(format!("{} ", tr("gap"))));
             }
         });
         ui.end_row();
 
         // Drawn as a symbol's picture laid along it (see `art_brush.rs`).
-        ui.label("Brush").on_hover_text(
-            "Draw the line as a symbol's picture: stretched along it (Art) or repeated (Pattern), as Animate's Paint Brush does",
+        ui.label(tr("Brush")).on_hover_text(
+            tr("Draw the line as a symbol's picture: stretched along it (Art) or repeated (Pattern), as Animate's Paint Brush does"),
         );
         ui.horizontal(|ui| {
             use inkframe_core::{BrushKind, StrokeBrush};
@@ -2697,7 +2777,7 @@ pub fn style_editor(ui: &mut egui::Ui, style: &mut Style, symbols: &[(inkframe_c
             };
             let mut chosen = kind;
             ui.add_enabled_ui(!symbols.is_empty(), |ui| {
-                choice(ui, "stroke_brush", &mut chosen, &[(Kind::Plain, "Plain"), (Kind::Art, "Art"), (Kind::Pattern, "Pattern")]);
+                choice(ui, "stroke_brush", &mut chosen, &[(Kind::Plain, tr("Plain")), (Kind::Art, tr("Art")), (Kind::Pattern, tr("Pattern"))]);
             });
             if chosen != kind {
                 let symbol = stroke.brush.map(|b| b.symbol).or(symbols.first().map(|(id, _)| *id));
@@ -2708,14 +2788,14 @@ pub fn style_editor(ui: &mut egui::Ui, style: &mut Style, symbols: &[(inkframe_c
                 };
             }
             if let Some(brush) = &mut stroke.brush {
-                let name = symbols.iter().find(|(id, _)| *id == brush.symbol).map_or("(gone)", |(_, n)| n.as_str());
+                let name = symbols.iter().find(|(id, _)| *id == brush.symbol).map_or(tr("(gone)"), |(_, n)| n.as_str());
                 egui::ComboBox::from_id_salt("stroke_brush_symbol").selected_text(name).width(110.0).show_ui(ui, |ui| {
                     for (id, name) in symbols {
                         ui.selectable_value(&mut brush.symbol, *id, name);
                     }
                 });
             } else if symbols.is_empty() {
-                ui.weak("Make a symbol to brush with first.");
+                ui.weak(tr("Make a symbol to brush with first."));
             }
         });
         ui.end_row();
@@ -2746,7 +2826,7 @@ fn gradient_stops(ui: &mut egui::Ui, gradient: &mut inkframe_core::ShapeGradient
                     stop.at = percent / 100.0;
                 }
                 // A gradient needs two colours to be one.
-                if count > 2 && ui.small_button("×").on_hover_text("Remove this colour").clicked() {
+                if count > 2 && ui.small_button("×").on_hover_text(tr("Remove this colour")).clicked() {
                     remove = Some(i);
                 }
             });
@@ -2756,8 +2836,8 @@ fn gradient_stops(ui: &mut egui::Ui, gradient: &mut inkframe_core::ShapeGradient
         }
         ui.horizontal(|ui| {
             if ui
-                .small_button("+ Colour")
-                .on_hover_text("Add a colour halfway along the widest gap")
+                .small_button(tr("+ Colour"))
+                .on_hover_text(tr("Add a colour halfway along the widest gap"))
                 .clicked()
             {
                 let widest = gradient
@@ -2771,7 +2851,7 @@ fn gradient_stops(ui: &mut egui::Ui, gradient: &mut inkframe_core::ShapeGradient
                     gradient.stops.insert(i + 1, inkframe_core::GradientStop { at, color });
                 }
             }
-            if ui.small_button("Reverse").on_hover_text("Swap the start and end colours").clicked() {
+            if ui.small_button(tr("Reverse")).on_hover_text(tr("Swap the start and end colours")).clicked() {
                 for stop in &mut gradient.stops {
                     stop.at = 1.0 - stop.at;
                 }
@@ -2784,14 +2864,14 @@ fn gradient_stops(ui: &mut egui::Ui, gradient: &mut inkframe_core::ShapeGradient
 fn document_section(ui: &mut egui::Ui, editor: &mut Editor) {
     let doc = &mut editor.doc;
     egui::Grid::new("document").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-        ui.label("Stage size");
+        ui.label(tr("Stage size"));
         ui.horizontal(|ui| {
             ui.add(DragValue::new(&mut doc.width).range(1..=16384).suffix(" w"));
             ui.add(DragValue::new(&mut doc.height).range(1..=16384).suffix(" h"));
         });
         ui.end_row();
 
-        ui.label("Frame rate");
+        ui.label(tr("Frame rate"));
         egui::ComboBox::from_id_salt("frame_rate").selected_text(doc.frame_rate.to_string()).show_ui(
             ui,
             |ui| {
@@ -2802,19 +2882,19 @@ fn document_section(ui: &mut egui::Ui, editor: &mut Editor) {
         );
         ui.end_row();
 
-        ui.label("Duration");
+        ui.label(tr("Duration"));
         ui.horizontal(|ui| {
-            ui.add(DragValue::new(&mut doc.duration).range(1..=100_000).suffix(" frames"));
+            ui.add(DragValue::new(&mut doc.duration).range(1..=100_000).suffix(format!(" {}", tr("frames"))));
             ui.weak(format!("{:.2}s", doc.duration as f64 / doc.frame_rate.fps()));
         });
         ui.end_row();
 
-        ui.label("Background");
+        ui.label(tr("Background"));
         color_button(ui, &mut doc.background);
         ui.end_row();
 
-        ui.label("Stacking");
-        ui.checkbox(&mut doc.stack_by_depth, "By depth").on_hover_text(STACK_BY_DEPTH);
+        ui.label(tr("Stacking"));
+        ui.checkbox(&mut doc.stack_by_depth, tr("By depth")).on_hover_text(STACK_BY_DEPTH);
         ui.end_row();
     });
     // Shortening the animation can strand the playhead past the end.
@@ -2830,15 +2910,18 @@ pub const STACK_BY_DEPTH: &str = "Draw layers far to near by their Depth on each
 /// whether it plays at all. Sound files are added with File › Import Audio.
 pub fn audio_section(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) -> Option<AudioAction> {
     let mut action = None;
-    let header = format!("Audio ({})", editor.doc.audio.len());
+    let header = tr_args("Audio ({count})", &[("count", &editor.doc.audio.len().to_string())]);
     egui::CollapsingHeader::new(header).id_salt("audio").default_open(!editor.doc.audio.is_empty()).show(
         ui,
         |ui| {
             if let Some(error) = audio.output_error() {
-                ui.colored_label(ui.visuals().warn_fg_color, format!("No sound output: {error}"));
+                ui.colored_label(
+                    ui.visuals().warn_fg_color,
+                    tr_args("No sound output: {error}", &[("error", error)]),
+                );
             }
-            ui.checkbox(&mut audio.scrub, "Scrub audio")
-                .on_hover_text("Play each frame's sound as you move the playhead, for lip sync");
+            ui.checkbox(&mut audio.scrub, tr("Scrub audio"))
+                .on_hover_text(tr("Play each frame's sound as you move the playhead, for lip sync"));
 
             let last_frame = editor.doc.last_frame();
             let mut remove = None;
@@ -2850,7 +2933,7 @@ pub fn audio_section(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEn
                         if ui
                             .add(crate::icons::IconButton::new(
                                 crate::icons::Icon::Trash,
-                                "Remove this audio",
+                                tr("Remove this audio"),
                             ))
                             .clicked()
                         {
@@ -2858,17 +2941,21 @@ pub fn audio_section(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEn
                         }
                     });
                     egui::Grid::new("audio_track").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-                        ui.label("Starts at");
+                        ui.label(tr("Starts at"));
                         let mut shown = track.start + 1;
                         if ui
-                            .add(DragValue::new(&mut shown).range(1..=last_frame + 1).prefix("frame "))
+                            .add(
+                                DragValue::new(&mut shown)
+                                    .range(1..=last_frame + 1)
+                                    .prefix(format!("{} ", tr("frame"))),
+                            )
                             .changed()
                         {
                             track.start = shown - 1;
                         }
                         ui.end_row();
 
-                        ui.label("Volume");
+                        ui.label(tr("Volume"));
                         let mut percent = track.volume * 100.0;
                         if ui.add(egui::Slider::new(&mut percent, 0.0..=200.0).suffix("%")).changed() {
                             track.volume = percent / 100.0;
@@ -2876,7 +2963,7 @@ pub fn audio_section(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEn
                         ui.end_row();
 
                         ui.label("");
-                        ui.checkbox(&mut track.muted, "Mute");
+                        ui.checkbox(&mut track.muted, tr("Mute"));
                         ui.end_row();
                     });
                     ui.weak(track.path.display().to_string());
@@ -2887,7 +2974,7 @@ pub fn audio_section(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEn
             }
 
             ui.add_space(4.0);
-            if ui.button("Import Audio…").clicked() {
+            if ui.button(tr("Import Audio…")).clicked() {
                 action = Some(AudioAction::Import);
             }
         },
@@ -2964,9 +3051,9 @@ fn section(ui: &mut egui::Ui, editor: &mut Editor, key: &str, title: impl Into<S
         );
     }
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(if open {
-        "Fold this section away"
+        tr("Fold this section away")
     } else {
-        "Show this section"
+        tr("Show this section")
     });
     if response.clicked() {
         if open {
@@ -2984,41 +3071,58 @@ fn section(ui: &mut egui::Ui, editor: &mut Editor, key: &str, title: impl Into<S
 const SECTION_WORDS: &[(&str, &str)] = &[
     (
         "layer",
-        "name visible hidden show hide locked lock guide mask frames start end span blend mode multiply screen overlay lines texture pencil charcoal chalk grain web button click link",
+        tr_later(
+            "name visible hidden show hide locked lock guide mask frames start end span blend mode multiply screen overlay lines texture pencil charcoal chalk grain web button click link",
+        ),
     ),
     (
         "transform",
-        "position move x y rotation rotate turn angle scale size skew slant opacity alpha fade transparency depth z distance orient path straighten motion masked follow guide",
+        tr_later(
+            "position move x y rotation rotate turn angle scale size skew slant opacity alpha fade transparency depth z distance orient path straighten motion masked follow guide",
+        ),
     ),
     (
         "parent and pivot",
-        "parent attach rig child pivot centre center origin bends bend limits joint elbow knee",
+        tr_later("parent attach rig child pivot centre center origin bends bend limits joint elbow knee"),
     ),
-    ("easing", "easing ease in out linear hold curve timing tween speed slow overshoot anticipate"),
+    ("easing", tr_later("easing ease in out linear hold curve timing tween speed slow overshoot anticipate")),
     (
         "skeleton",
-        "bone bones strength turn stretch keep area squash limits target ik dynamics spring damping swing delete",
+        tr_later(
+            "bone bones strength turn stretch keep area squash limits target ik dynamics spring damping swing delete",
+        ),
     ),
-    ("bones", "follows follow bind binding limb nearby region pin pins pinned"),
-    ("smart bone", "smart action actions timeline reshape switch correction correct morph preview keys"),
-    ("instance", "symbol instance loop play once single frame first length swap duplicate"),
+    ("bones", tr_later("follows follow bind binding limb nearby region pin pins pinned")),
+    (
+        "smart bone",
+        tr_later("smart action actions timeline reshape switch correction correct morph preview keys"),
+    ),
+    ("instance", tr_later("symbol instance loop play once single frame first length swap duplicate")),
     (
         "particles",
-        "particles particle emitter rate gravity wind drag wander turbulence speed spread direction lifetime size colour color spin seed preset sparks snow smoke fire",
+        tr_later(
+            "particles particle emitter rate gravity wind drag wander turbulence speed spread direction lifetime size colour color spin seed preset sparks snow smoke fire",
+        ),
     ),
     (
         "effects",
-        "effects effect colour color brightness tint advanced filters filter drop shadow blur glow adjust hue saturation contrast motion shutter",
+        tr_later(
+            "effects effect colour color brightness tint advanced filters filter drop shadow blur glow adjust hue saturation contrast motion shutter",
+        ),
     ),
-    ("deformer", "deformer bend bends bones softness soft rubber hose"),
-    ("free-form deformer", "free form freeform deformer grid warp points straighten bulge"),
+    ("deformer", tr_later("deformer bend bends bones softness soft rubber hose")),
+    ("free-form deformer", tr_later("free form freeform deformer grid warp points straighten bulge")),
     (
         "drawings",
-        "drawings drawing new duplicate delete swap substitution shape tween hints mouth lip sync flip",
+        tr_later(
+            "drawings drawing new duplicate delete swap substitution shape tween hints mouth lip sync flip",
+        ),
     ),
     (
         "shapes",
-        "shapes shape fill stroke outline gradient linear radial colour color line width dash dashed dotted ends corners cap join brush art pattern text font size align spacing image picture actual size",
+        tr_later(
+            "shapes shape fill stroke outline gradient linear radial colour color line width dash dashed dotted ends corners cap join brush art pattern text font size align spacing image picture actual size",
+        ),
     ),
 ];
 
@@ -3032,7 +3136,8 @@ fn searched_for(editor: &mut Editor, key: &str, title: &str) -> bool {
         return true;
     }
     let words = SECTION_WORDS.iter().find(|(k, _)| *k == key).map_or("", |(_, w)| *w);
-    let haystack = format!("{} {key} {words}", title.to_lowercase());
+    // The words in English as well as translated, so either finds it.
+    let haystack = format!("{} {key} {words} {}", title.to_lowercase(), tr(words).to_lowercase());
     let found = query.split_whitespace().all(|term| haystack.contains(term));
     if found {
         editor.properties_matches += 1;
@@ -3080,12 +3185,12 @@ pub fn web_action_editor(
         id,
         &mut chosen,
         &[
-            (Kind::None, "Nothing"),
-            (Kind::Play, "Play"),
-            (Kind::Stop, "Stop"),
-            (Kind::GotoAndPlay, "Go to & play"),
-            (Kind::GotoAndStop, "Go to & stop"),
-            (Kind::Link, "Open link"),
+            (Kind::None, tr("Nothing")),
+            (Kind::Play, tr("Play")),
+            (Kind::Stop, tr("Stop")),
+            (Kind::GotoAndPlay, tr("Go to & play")),
+            (Kind::GotoAndStop, tr("Go to & stop")),
+            (Kind::Link, tr("Open link")),
         ],
     );
     if chosen != kind {
@@ -3105,7 +3210,10 @@ pub fn web_action_editor(
     match action {
         Some(WebAction::GotoAndPlay(f) | WebAction::GotoAndStop(f)) => {
             let mut shown = *f + 1;
-            if ui.add(DragValue::new(&mut shown).range(1..=last_frame + 1).prefix("frame ")).changed() {
+            if ui
+                .add(DragValue::new(&mut shown).range(1..=last_frame + 1).prefix(format!("{} ", tr("frame"))))
+                .changed()
+            {
                 *f = shown - 1;
             }
         }

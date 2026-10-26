@@ -12,6 +12,7 @@ use egui::{Align2, Key, KeyboardShortcut, RichText, Sense, vec2};
 use crate::app::Command;
 use crate::editor::{Editor, Tool};
 use crate::envelope::LatticeKind;
+use crate::i18n::{tr, tr_args, tr_later};
 use crate::icons::{self, Icon};
 use crate::shortcuts;
 
@@ -56,14 +57,23 @@ impl Entry {
         if query.is_empty() {
             return Some(0);
         }
-        let label = self.label.to_lowercase();
-        let haystack = format!("{label} {} {}", self.place.to_lowercase(), self.also);
+        // Found by the words shown, and by the English ones too, which
+        // people often know from tutorials.
+        let label = tr(self.label).to_lowercase();
+        let english = self.label.to_lowercase();
+        let haystack = format!(
+            "{label} {english} {} {} {} {}",
+            tr(self.place).to_lowercase(),
+            self.place.to_lowercase(),
+            tr(self.also).to_lowercase(),
+            self.also.to_lowercase()
+        );
         if !query.split_whitespace().all(|word| haystack.contains(word)) {
             return None;
         }
-        Some(if label.starts_with(&query) {
+        Some(if label.starts_with(&query) || english.starts_with(&query) {
             3
-        } else if label.contains(&query) {
+        } else if label.contains(&query) || english.contains(&query) {
             2
         } else {
             1
@@ -75,132 +85,183 @@ impl Entry {
 pub(crate) fn entries() -> Vec<Entry> {
     use inkframe_core::{PerspectiveKind, ShapeOp};
     vec![
-        entry("New", "File", Command::New).keys(shortcuts::NEW).also("document project"),
-        entry("Open…", "File", Command::Open).keys(shortcuts::OPEN),
-        entry("Open Example…", "File", Command::OpenExample).also("sample tutorial"),
-        entry("Import to Stage…", "File", Command::ImportImage)
+        entry(tr_later("New"), tr_later("File"), Command::New)
+            .keys(shortcuts::NEW)
+            .also(tr_later("document project")),
+        entry(tr_later("Open…"), tr_later("File"), Command::Open).keys(shortcuts::OPEN),
+        entry(tr_later("Open Example…"), tr_later("File"), Command::OpenExample)
+            .also(tr_later("sample tutorial")),
+        entry(tr_later("Import to Stage…"), tr_later("File"), Command::ImportImage)
             .keys(shortcuts::IMPORT)
-            .also("picture image photo psd"),
-        entry("Import Audio…", "File", Command::ImportAudio).icon(Icon::Speaker).also("sound music voice"),
-        entry("Save", "File", Command::Save).keys(shortcuts::SAVE),
-        entry("Save As…", "File", Command::SaveAs).keys(shortcuts::SAVE_AS),
-        entry("Export…", "File", Command::Export)
+            .also(tr_later("picture image photo psd")),
+        entry(tr_later("Import Audio…"), tr_later("File"), Command::ImportAudio)
+            .icon(Icon::Speaker)
+            .also(tr_later("sound music voice")),
+        entry(tr_later("Save"), tr_later("File"), Command::Save).keys(shortcuts::SAVE),
+        entry(tr_later("Save As…"), tr_later("File"), Command::SaveAs).keys(shortcuts::SAVE_AS),
+        entry(tr_later("Export…"), tr_later("File"), Command::Export)
             .keys(shortcuts::EXPORT)
-            .also("video mp4 gif svg lottie html web page render"),
-        entry("Batch Export…", "File", Command::BatchExport).also("render several"),
-        entry("Undo", "Edit", Command::Undo).keys(shortcuts::UNDO),
-        entry("Redo", "Edit", Command::Redo).keys(shortcuts::REDO),
-        entry("Cut", "Edit", Command::Cut).keys(shortcuts::CUT),
-        entry("Copy", "Edit", Command::Copy).keys(shortcuts::COPY),
-        entry("Paste in Center", "Edit", Command::Paste).keys(shortcuts::PASTE),
-        entry("Paste in Place", "Edit", Command::PasteInPlace).keys(shortcuts::PASTE_IN_PLACE),
-        entry("Duplicate Layer", "Edit", Command::DuplicateLayer)
+            .also(tr_later("video mp4 gif svg lottie html web page render")),
+        entry(tr_later("Batch Export…"), tr_later("File"), Command::BatchExport)
+            .also(tr_later("render several")),
+        entry(tr_later("Undo"), tr_later("Edit"), Command::Undo).keys(shortcuts::UNDO),
+        entry(tr_later("Redo"), tr_later("Edit"), Command::Redo).keys(shortcuts::REDO),
+        entry(tr_later("Cut"), tr_later("Edit"), Command::Cut).keys(shortcuts::CUT),
+        entry(tr_later("Copy"), tr_later("Edit"), Command::Copy).keys(shortcuts::COPY),
+        entry(tr_later("Paste in Center"), tr_later("Edit"), Command::Paste).keys(shortcuts::PASTE),
+        entry(tr_later("Paste in Place"), tr_later("Edit"), Command::PasteInPlace)
+            .keys(shortcuts::PASTE_IN_PLACE),
+        entry(tr_later("Duplicate Layer"), tr_later("Edit"), Command::DuplicateLayer)
             .icon(Icon::Duplicate)
             .keys(shortcuts::DUPLICATE),
-        entry("Delete Layer", "Edit", Command::DeleteLayer).icon(Icon::Trash),
-        entry("Select All", "Edit", Command::SelectAll).keys(shortcuts::SELECT_ALL),
-        entry("Convert to Symbol", "Modify", Command::ConvertToSymbol)
+        entry(tr_later("Delete Layer"), tr_later("Edit"), Command::DeleteLayer).icon(Icon::Trash),
+        entry(tr_later("Select All"), tr_later("Edit"), Command::SelectAll).keys(shortcuts::SELECT_ALL),
+        entry(tr_later("Convert to Symbol"), tr_later("Modify"), Command::ConvertToSymbol)
             .icon(Icon::Symbol)
             .keys(shortcuts::CONVERT_TO_SYMBOL)
-            .also("reuse library instance"),
-        entry("Union", "Modify › Combine Shapes", Command::CombineShapes(ShapeOp::Union))
+            .also(tr_later("reuse library instance")),
+        entry(tr_later("Union"), tr_later("Modify › Combine Shapes"), Command::CombineShapes(ShapeOp::Union))
             .icon(Icon::Combine)
-            .also("merge join"),
-        entry("Intersect", "Modify › Combine Shapes", Command::CombineShapes(ShapeOp::Intersect))
+            .also(tr_later("merge join")),
+        entry(
+            tr_later("Intersect"),
+            tr_later("Modify › Combine Shapes"),
+            Command::CombineShapes(ShapeOp::Intersect),
+        )
+        .icon(Icon::Combine),
+        entry(tr_later("Punch"), tr_later("Modify › Combine Shapes"), Command::CombineShapes(ShapeOp::Punch))
+            .icon(Icon::Combine)
+            .also(tr_later("subtract cut hole")),
+        entry(tr_later("Crop"), tr_later("Modify › Combine Shapes"), Command::CombineShapes(ShapeOp::Crop))
             .icon(Icon::Combine),
-        entry("Punch", "Modify › Combine Shapes", Command::CombineShapes(ShapeOp::Punch))
-            .icon(Icon::Combine)
-            .also("subtract cut hole"),
-        entry("Crop", "Modify › Combine Shapes", Command::CombineShapes(ShapeOp::Crop)).icon(Icon::Combine),
-        entry("Break Apart", "Modify", Command::BreakApart)
+        entry(tr_later("Break Apart"), tr_later("Modify"), Command::BreakApart)
             .icon(Icon::BreakApart)
             .keys(shortcuts::BREAK_APART)
-            .also("text letters outline"),
-        entry("Distort", "Modify › Transform", Command::StartLattice(LatticeKind::Distort))
-            .icon(Icon::Distort)
-            .also("perspective corners skew lattice"),
-        entry("Envelope", "Modify › Transform", Command::StartLattice(LatticeKind::Envelope))
-            .icon(Icon::Envelope)
-            .also("warp bend bulge lattice"),
-        entry("Edit Symbol", "Modify", Command::EditSymbol).icon(Icon::Symbol),
-        entry("Swap Symbol…", "Modify", Command::SwapSymbol).icon(Icon::Symbol).also("replace"),
-        entry("Exit Symbol", "Modify", Command::ExitSymbol).icon(Icon::StepOut),
-        entry("Mask", "Modify", Command::MaskLayerBelow).also("clip window"),
-        entry("Vectorise…", "Modify", Command::Vectorise).also("trace bitmap paint to shapes"),
-        entry("New Layer", "Modify", Command::NewLayer).icon(Icon::Plus).keys(shortcuts::NEW_LAYER),
-        entry("New Paint Layer", "Modify", Command::NewPaintLayer).also("raster brush canvas"),
-        entry("New Folder", "Modify", Command::NewFolder).icon(Icon::Folder).also("group"),
-        entry("New Skeleton", "Modify", Command::NewSkeleton)
+            .also(tr_later("text letters outline")),
+        entry(
+            tr_later("Distort"),
+            tr_later("Modify › Transform"),
+            Command::StartLattice(LatticeKind::Distort),
+        )
+        .icon(Icon::Distort)
+        .also(tr_later("perspective corners skew lattice")),
+        entry(
+            tr_later("Envelope"),
+            tr_later("Modify › Transform"),
+            Command::StartLattice(LatticeKind::Envelope),
+        )
+        .icon(Icon::Envelope)
+        .also(tr_later("warp bend bulge lattice")),
+        entry(tr_later("Edit Symbol"), tr_later("Modify"), Command::EditSymbol).icon(Icon::Symbol),
+        entry(tr_later("Swap Symbol…"), tr_later("Modify"), Command::SwapSymbol)
+            .icon(Icon::Symbol)
+            .also(tr_later("replace")),
+        entry(tr_later("Exit Symbol"), tr_later("Modify"), Command::ExitSymbol).icon(Icon::StepOut),
+        entry(tr_later("Mask"), tr_later("Modify"), Command::MaskLayerBelow).also(tr_later("clip window")),
+        entry(tr_later("Vectorise…"), tr_later("Modify"), Command::Vectorise)
+            .also(tr_later("trace bitmap paint to shapes")),
+        entry(tr_later("New Layer"), tr_later("Modify"), Command::NewLayer)
+            .icon(Icon::Plus)
+            .keys(shortcuts::NEW_LAYER),
+        entry(tr_later("New Paint Layer"), tr_later("Modify"), Command::NewPaintLayer)
+            .also(tr_later("raster brush canvas")),
+        entry(tr_later("New Folder"), tr_later("Modify"), Command::NewFolder)
+            .icon(Icon::Folder)
+            .also(tr_later("group")),
+        entry(tr_later("New Skeleton"), tr_later("Modify"), Command::NewSkeleton)
             .icon(Icon::Bones)
-            .also("rig bones moho character"),
-        entry("New Switch", "Modify", Command::NewSwitch).icon(Icon::Folder).also("mouth hand poses swap"),
-        entry("Add Shape Hint", "Modify", Command::AddShapeHint)
+            .also(tr_later("rig bones moho character")),
+        entry(tr_later("New Switch"), tr_later("Modify"), Command::NewSwitch)
+            .icon(Icon::Folder)
+            .also(tr_later("mouth hand poses swap")),
+        entry(tr_later("Add Shape Hint"), tr_later("Modify"), Command::AddShapeHint)
             .keys(shortcuts::ADD_SHAPE_HINT)
-            .also("morph tween"),
-        entry("Merge Down", "Modify", Command::MergeDown).also("paint layers flatten"),
-        entry("New Drawing", "Modify", Command::NewDrawing).also("substitution frame by frame"),
-        entry("Duplicate Drawing", "Modify", Command::DuplicateDrawing),
-        entry("Next Drawing", "Modify", Command::NextDrawing).keys(shortcuts::NEXT_DRAWING),
-        entry("Previous Drawing", "Modify", Command::PreviousDrawing).keys(shortcuts::PREVIOUS_DRAWING),
-        entry("Lip Sync…", "Modify", Command::LipSync).also("mouth audio phonemes"),
-        entry("Insert Keyframe", "Timeline", Command::InsertKeyframe)
+            .also(tr_later("morph tween")),
+        entry(tr_later("Merge Down"), tr_later("Modify"), Command::MergeDown)
+            .also(tr_later("paint layers flatten")),
+        entry(tr_later("New Drawing"), tr_later("Modify"), Command::NewDrawing)
+            .also(tr_later("substitution frame by frame")),
+        entry(tr_later("Duplicate Drawing"), tr_later("Modify"), Command::DuplicateDrawing),
+        entry(tr_later("Next Drawing"), tr_later("Modify"), Command::NextDrawing)
+            .keys(shortcuts::NEXT_DRAWING),
+        entry(tr_later("Previous Drawing"), tr_later("Modify"), Command::PreviousDrawing)
+            .keys(shortcuts::PREVIOUS_DRAWING),
+        entry(tr_later("Lip Sync…"), tr_later("Modify"), Command::LipSync)
+            .also(tr_later("mouth audio phonemes")),
+        entry(tr_later("Insert Keyframe"), tr_later("Timeline"), Command::InsertKeyframe)
             .keys(shortcuts::INSERT_KEYFRAME)
-            .also("key f6"),
-        entry("Clear Keyframe", "Timeline", Command::RemoveKeyframe).keys(shortcuts::REMOVE_KEYFRAME),
-        entry("Insert Frames", "Timeline", Command::InsertFrames)
+            .also(tr_later("key f6")),
+        entry(tr_later("Clear Keyframe"), tr_later("Timeline"), Command::RemoveKeyframe)
+            .keys(shortcuts::REMOVE_KEYFRAME),
+        entry(tr_later("Insert Frames"), tr_later("Timeline"), Command::InsertFrames)
             .keys(shortcuts::INSERT_FRAMES)
-            .also("f5 hold"),
-        entry("Remove Frames", "Timeline", Command::RemoveFrames).keys(shortcuts::REMOVE_FRAMES),
-        entry("Insert Blank Keyframe", "Timeline", Command::InsertBlankKeyframe)
+            .also(tr_later("f5 hold")),
+        entry(tr_later("Remove Frames"), tr_later("Timeline"), Command::RemoveFrames)
+            .keys(shortcuts::REMOVE_FRAMES),
+        entry(tr_later("Insert Blank Keyframe"), tr_later("Timeline"), Command::InsertBlankKeyframe)
             .keys(shortcuts::INSERT_BLANK_KEYFRAME),
-        entry("Reverse Frames", "Timeline", Command::ReverseFrames),
-        entry("Cut Frames", "Timeline", Command::CutFrames).also("keyframes keys move"),
-        entry("Copy Frames", "Timeline", Command::CopyFrames).also("keyframes keys duplicate"),
-        entry("Paste Frames", "Timeline", Command::PasteFrames).also("keyframes keys"),
-        entry("Create Shape Tween", "Timeline", Command::CreateShapeTween).also("morph"),
-        entry("Draw Inbetweens", "Timeline", Command::MakeInbetweens)
+        entry(tr_later("Reverse Frames"), tr_later("Timeline"), Command::ReverseFrames),
+        entry(tr_later("Cut Frames"), tr_later("Timeline"), Command::CutFrames)
+            .also(tr_later("keyframes keys move")),
+        entry(tr_later("Copy Frames"), tr_later("Timeline"), Command::CopyFrames)
+            .also(tr_later("keyframes keys duplicate")),
+        entry(tr_later("Paste Frames"), tr_later("Timeline"), Command::PasteFrames)
+            .also(tr_later("keyframes keys")),
+        entry(tr_later("Create Shape Tween"), tr_later("Timeline"), Command::CreateShapeTween)
+            .also(tr_later("morph")),
+        entry(tr_later("Draw Inbetweens"), tr_later("Timeline"), Command::MakeInbetweens)
             .icon(Icon::Inbetween)
-            .also("tween frames assistant"),
-        entry("Add Camera", "Timeline", Command::AddCamera).icon(Icon::Camera),
-        entry("Play / Pause", "Timeline", Command::PlayPause).icon(Icon::Play).keys(shortcuts::PLAY),
-        entry("Zoom In", "View", Command::ZoomIn).keys(shortcuts::ZOOM_IN),
-        entry("Zoom Out", "View", Command::ZoomOut).keys(shortcuts::ZOOM_OUT),
-        entry("Fit Stage", "View", Command::ZoomFit).keys(shortcuts::ZOOM_FIT),
-        entry("Rulers", "View", Command::ToggleRulers)
+            .also(tr_later("tween frames assistant")),
+        entry(tr_later("Add Camera"), tr_later("Timeline"), Command::AddCamera).icon(Icon::Camera),
+        entry(tr_later("Play / Pause"), tr_later("Timeline"), Command::PlayPause)
+            .icon(Icon::Play)
+            .keys(shortcuts::PLAY),
+        entry(tr_later("Zoom In"), tr_later("View"), Command::ZoomIn).keys(shortcuts::ZOOM_IN),
+        entry(tr_later("Zoom Out"), tr_later("View"), Command::ZoomOut).keys(shortcuts::ZOOM_OUT),
+        entry(tr_later("Fit Stage"), tr_later("View"), Command::ZoomFit).keys(shortcuts::ZOOM_FIT),
+        entry(tr_later("Rulers"), tr_later("View"), Command::ToggleRulers)
             .icon(Icon::Ruler)
             .keys(shortcuts::RULERS)
-            .also("guides"),
-        entry("Rig Setup (Skeletons at Rest)", "View", Command::ToggleRigSetup)
+            .also(tr_later("guides")),
+        entry(tr_later("Rig Setup (Skeletons at Rest)"), tr_later("View"), Command::ToggleRigSetup)
             .icon(Icon::RigSetup)
             .keys(shortcuts::RIG_SETUP)
-            .also("bones pose"),
+            .also(tr_later("bones pose")),
         entry(
-            "One-Point Perspective",
-            "View › Perspective Guide",
+            tr_later("One-Point Perspective"),
+            tr_later("View › Perspective Guide"),
             Command::SetPerspective(Some(PerspectiveKind::OnePoint)),
         )
         .icon(Icon::Perspective)
-        .also("vanishing"),
+        .also(tr_later("vanishing")),
         entry(
-            "Two-Point Perspective",
-            "View › Perspective Guide",
+            tr_later("Two-Point Perspective"),
+            tr_later("View › Perspective Guide"),
             Command::SetPerspective(Some(PerspectiveKind::TwoPoint)),
         )
         .icon(Icon::Perspective)
-        .also("vanishing"),
+        .also(tr_later("vanishing")),
         entry(
-            "Three-Point Perspective",
-            "View › Perspective Guide",
+            tr_later("Three-Point Perspective"),
+            tr_later("View › Perspective Guide"),
             Command::SetPerspective(Some(PerspectiveKind::ThreePoint)),
         )
         .icon(Icon::Perspective)
-        .also("vanishing"),
-        entry("No Perspective Guide", "View › Perspective Guide", Command::SetPerspective(None))
-            .icon(Icon::Perspective),
-        entry("Show Guides", "View › Guides", Command::ToggleGuides).keys(shortcuts::SHOW_GUIDES),
-        entry("Snap to Guides", "View › Guides", Command::ToggleSnapToGuides).keys(shortcuts::SNAP_TO_GUIDES),
-        entry("What's New", "Help", Command::WhatsNew).also("changes release notes update version"),
-        entry("Take the Tour", "Help", Command::StartTour).also("welcome introduction tutorial walkthrough"),
+        .also(tr_later("vanishing")),
+        entry(
+            tr_later("No Perspective Guide"),
+            tr_later("View › Perspective Guide"),
+            Command::SetPerspective(None),
+        )
+        .icon(Icon::Perspective),
+        entry(tr_later("Show Guides"), tr_later("View › Guides"), Command::ToggleGuides)
+            .keys(shortcuts::SHOW_GUIDES),
+        entry(tr_later("Snap to Guides"), tr_later("View › Guides"), Command::ToggleSnapToGuides)
+            .keys(shortcuts::SNAP_TO_GUIDES),
+        entry(tr_later("What's New"), tr_later("Help"), Command::WhatsNew)
+            .also(tr_later("changes release notes update version")),
+        entry(tr_later("Take the Tour"), tr_later("Help"), Command::StartTour)
+            .also(tr_later("welcome introduction tutorial walkthrough")),
         // Tools, by the slot they're in.
         tool_entry(Tool::Select),
         tool_entry(Tool::Subselect),
@@ -220,7 +281,7 @@ pub(crate) fn entries() -> Vec<Entry> {
 fn tool_entry(tool: Tool) -> Entry {
     Entry {
         label: tool.name(),
-        place: "Tools",
+        place: tr_later("Tools"),
         command: Command::UseTool(tool),
         icon: None,
         keys: None,
@@ -289,7 +350,7 @@ impl CommandFinder {
         let mut picked = enter.then(|| matches.get(self.highlighted).map(|&(_, i)| all[i].command)).flatten();
 
         let mut open = true;
-        egui::Window::new("Find a Command")
+        egui::Window::new(tr("Find a Command"))
             .collapsible(false)
             .resizable(false)
             .title_bar(false)
@@ -302,7 +363,7 @@ impl CommandFinder {
                     icons::paint(ui.painter(), Icon::Search, rect, ui.visuals().weak_text_color());
                     let field = ui.add(
                         egui::TextEdit::singleline(&mut self.query)
-                            .hint_text("Find a command or tool: envelope, skeleton, inbetween…")
+                            .hint_text(tr("Find a command or tool: envelope, skeleton, inbetween…"))
                             .desired_width(f32::INFINITY)
                             .frame(egui::Frame::NONE)
                             .font(egui::TextStyle::Heading),
@@ -318,7 +379,7 @@ impl CommandFinder {
                 ui.separator();
                 egui::ScrollArea::vertical().max_height(380.0).show(ui, |ui| {
                     if matches.is_empty() {
-                        ui.weak("Nothing matches. Try another word.");
+                        ui.weak(tr("Nothing matches. Try another word."));
                     }
                     for (row, &(_, i)) in matches.iter().enumerate() {
                         let e = &all[i];
@@ -336,7 +397,7 @@ impl CommandFinder {
                     }
                 });
                 ui.add_space(2.0);
-                ui.weak("↑↓ to choose · Enter to run · Esc to close");
+                ui.weak(tr("↑↓ to choose · Enter to run · Esc to close"));
             });
         if !open || picked.is_some() {
             self.open = false;
@@ -363,7 +424,11 @@ fn entry_row(ui: &mut egui::Ui, e: &Entry, highlighted: bool, current: bool) -> 
             painter.circle_filled(icon_rect.center(), 2.5, weak);
         }
     }
-    let label = if current { format!("{}  (current tool)", e.label) } else { e.label.to_owned() };
+    let label = if current {
+        tr_args("{tool}  (current tool)", &[("tool", tr(e.label))])
+    } else {
+        tr(e.label).to_owned()
+    };
     painter.text(
         rect.left_center() + vec2(34.0, 0.0),
         Align2::LEFT_CENTER,
@@ -382,11 +447,13 @@ fn entry_row(ui: &mut egui::Ui, e: &Entry, highlighted: bool, current: bool) -> 
     painter.text(
         egui::pos2(right, rect.center().y),
         Align2::RIGHT_CENTER,
-        e.place,
+        tr(e.place),
         egui::FontId::proportional(12.0),
         weak,
     );
-    response.on_hover_text(RichText::new(e.also).weak())
+    // Not every entry has other words (and tr("") isn't "" in the
+    // pseudo-language).
+    if e.also.is_empty() { response } else { response.on_hover_text(RichText::new(tr(e.also)).weak()) }
 }
 
 #[cfg(test)]

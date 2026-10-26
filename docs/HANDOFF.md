@@ -1082,6 +1082,20 @@ after the Harmony features (palettes to master controllers).
     mostly with a regex helper (widget calls; skips test modules), then by
     hand for format!s (tr_args) and tables. Next: Properties (inspector.rs,
     ~370 text lines), Find a Command, dialogs, panels.
+136. Translation rounds 3 and 4: Properties (inspector.rs; section
+    titles; `SECTION_WORDS` marked tr_later and searched in English and
+    translated), Find a Command (entries' label/place/also marked
+    tr_later; scored on translated and English words), app messages and
+    file dialogs, panels, Library, lip sync, export, batch, scripts,
+    presets, templates, vectorise, swap, Node View, action timeline,
+    depth view, editing errors (skeleton, envelope, inside, shape ops),
+    autosave ages, example notes. Plurals are separate whole texts (one /
+    {count}), never pieced together. Template: 1113 texts. Left: names
+    from enums (workspaces, adjustments, particle presets, perspective
+    kinds, easings, blend modes, filters, texture kinds, safe areas),
+    default layer names, undo step names, and the screenshot hooks and
+    CLI (English on purpose). Helpers in the scratchpad: wrap.py
+    (widget calls, continued literals) and wrap_list.py (given texts).
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

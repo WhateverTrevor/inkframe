@@ -16,6 +16,7 @@ use inkframe_core::{
 use inkframe_render::{RenderOptions, render_frame};
 
 use crate::editor::Editor;
+use crate::i18n::{tr, tr_args};
 
 /// The preview's longest side, in pixels.
 const PREVIEW: f32 = 360.0;
@@ -91,7 +92,7 @@ impl VectoriseDialog {
         let options = &mut self.options;
         let mut window_open = true;
         let mut finished = None;
-        egui::Window::new("Vectorise").open(&mut window_open).collapsible(false).resizable(false).show(
+        egui::Window::new(tr("Vectorise")).open(&mut window_open).collapsible(false).resizable(false).show(
             ctx,
             |ui| {
                 controls(ui, options);
@@ -99,8 +100,13 @@ impl VectoriseDialog {
                 match &open.preview {
                     Some((texture, shapes)) => {
                         ui.add(egui::Image::new(texture).fit_to_exact_size(texture.size_vec2()));
-                        let working = if open.working.is_some() { " · updating…" } else { "" };
-                        ui.weak(format!("{shapes} shapes{working}"));
+                        let shapes = shapes.to_string();
+                        let count = [("count", shapes.as_str())];
+                        ui.weak(if open.working.is_some() {
+                            tr_args("{count} shapes · updating…", &count)
+                        } else {
+                            tr_args("{count} shapes", &count)
+                        });
                     }
                     None => {
                         ui.spinner();
@@ -108,10 +114,10 @@ impl VectoriseDialog {
                 }
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    if ui.button("Vectorise").clicked() {
+                    if ui.button(tr("Vectorise")).clicked() {
                         finished = Some(true);
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(tr("Cancel")).clicked() {
                         finished = Some(false);
                     }
                 });
@@ -153,12 +159,18 @@ fn vectorise(editor: &mut Editor, layer: LayerId, options: &TraceOptions) {
 fn controls(ui: &mut egui::Ui, options: &mut TraceOptions) {
     let ink = matches!(options.mode, TraceMode::Ink { .. });
     ui.horizontal(|ui| {
-        if ui.selectable_label(ink, "Line art").on_hover_text("Dark lines on paper, as from a scan").clicked()
+        if ui
+            .selectable_label(ink, tr("Line art"))
+            .on_hover_text(tr("Dark lines on paper, as from a scan"))
+            .clicked()
             && !ink
         {
             options.mode = TraceMode::Ink { threshold: 128 };
         }
-        if ui.selectable_label(!ink, "Colours").on_hover_text("Every colour, each its own shapes").clicked()
+        if ui
+            .selectable_label(!ink, tr("Colours"))
+            .on_hover_text(tr("Every colour, each its own shapes"))
+            .clicked()
             && ink
         {
             options.mode = TraceMode::Colours { colours: 8, skip_white: true };
@@ -167,27 +179,28 @@ fn controls(ui: &mut egui::Ui, options: &mut TraceOptions) {
     egui::Grid::new("vectorise").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
         match &mut options.mode {
             TraceMode::Ink { threshold } => {
-                ui.label("Threshold");
+                ui.label(tr("Threshold"));
                 ui.add(egui::Slider::new(threshold, 1..=254))
-                    .on_hover_text("Pixels darker than this are ink. Raise it to pick up faint pencil.");
+                    .on_hover_text(tr("Pixels darker than this are ink. Raise it to pick up faint pencil."));
                 ui.end_row();
             }
             TraceMode::Colours { colours, skip_white } => {
-                ui.label("Colours");
+                ui.label(tr("Colours"));
                 ui.add(egui::Slider::new(colours, 2..=32));
                 ui.end_row();
                 ui.label("");
-                ui.checkbox(skip_white, "Leave out white paper");
+                ui.checkbox(skip_white, tr("Leave out white paper"));
                 ui.end_row();
             }
         }
-        ui.label("Minimum area");
+        ui.label(tr("Minimum area"));
         ui.add(egui::Slider::new(&mut options.min_area, 1..=400).logarithmic(true).suffix(" px"))
-            .on_hover_text("Specks smaller than this are dropped, and holes this small filled");
+            .on_hover_text(tr("Specks smaller than this are dropped, and holes this small filled"));
         ui.end_row();
-        ui.label("Smoothing");
-        ui.add(egui::Slider::new(&mut options.smoothing, 0.25..=4.0).fixed_decimals(2))
-            .on_hover_text("Higher follows the pixels less closely, for smoother curves and fewer points");
+        ui.label(tr("Smoothing"));
+        ui.add(egui::Slider::new(&mut options.smoothing, 0.25..=4.0).fixed_decimals(2)).on_hover_text(tr(
+            tr("Higher follows the pixels less closely, for smoother curves and fewer points"),
+        ));
         ui.end_row();
     });
 }
@@ -239,7 +252,7 @@ fn render_preview(bitmap: &Bitmap, options: &TraceOptions) -> Option<Preview> {
             style: Style { fill: Some(t.color), stroke: None, gradient: None },
         })
         .collect();
-    doc.add_layer("Traced", elements, 0, Transform::default());
+    doc.add_layer(tr("Traced"), elements, 0, Transform::default());
     let scale = PREVIEW / bitmap.width.max(bitmap.height).max(1) as f32;
     let pixmap = render_frame(&doc, 0, &RenderOptions { scale, ..RenderOptions::default() })?;
     let size = [pixmap.width() as usize, pixmap.height() as usize];

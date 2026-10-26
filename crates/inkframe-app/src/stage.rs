@@ -12,6 +12,7 @@ mod lattice;
 mod perspective;
 mod rulers;
 
+use crate::i18n::{tr, tr_args};
 use std::collections::HashMap;
 
 use egui::{Align2, Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
@@ -647,12 +648,18 @@ fn draw_camera_frame(painter: &egui::Painter, editor: &Editor, view: View) {
     let corners = editor.doc.stage_rect().corners().map(|c| view.to_screen(c));
     painter.add(egui::Shape::closed_line(corners.to_vec(), (2.0, CAMERA)));
     let label = match editor.doc.camera_layer() {
-        Some(camera) if !camera.visible => "Camera off: show its layer to use it".to_owned(),
+        Some(camera) if !camera.visible => tr("Camera off: show its layer to use it").to_owned(),
         Some(camera) => {
             let pose = editor.doc.pose(camera, editor.frame);
-            format!("Camera  {:.0}%  {:.0}°", pose.scale.x * 100.0, pose.rotation)
+            tr_args(
+                "Camera  {zoom}%  {turn}°",
+                &[
+                    ("zoom", &format!("{:.0}", pose.scale.x * 100.0)),
+                    ("turn", &format!("{:.0}", pose.rotation)),
+                ],
+            )
         }
-        None => "Drag to add a camera and pan it; Shift turns, Alt zooms".to_owned(),
+        None => tr("Drag to add a camera and pan it; Shift turns, Alt zooms").to_owned(),
     };
     let at = corners[0] + vec2(6.0, 6.0);
     let galley = painter.layout_no_wrap(label, egui::FontId::proportional(12.0), Color32::BLACK);
@@ -3937,14 +3944,14 @@ fn draw_empty_stage_hint(painter: &egui::Painter, corners: &[Pos2; 4], backgroun
     painter.text(
         center - vec2(0.0, 12.0),
         Align2::CENTER_CENTER,
-        "Pick a drawing tool and draw to start",
+        tr("Pick a drawing tool and draw to start"),
         egui::FontId::proportional(16.0),
         color,
     );
     painter.text(
         center + vec2(0.0, 14.0),
         Align2::CENTER_CENTER,
-        "Or press + in the timeline for an empty layer, or try File › Open Example…",
+        tr("Or press + in the timeline for an empty layer, or try File › Open Example…"),
         egui::FontId::proportional(12.0),
         color,
     );

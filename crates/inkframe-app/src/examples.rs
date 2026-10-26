@@ -9,6 +9,7 @@
 //! put it. Saving into the app itself would change the installed files
 //! (and on macOS break the app's signature).
 
+use crate::i18n::{tr, tr_later};
 use std::path::{Path, PathBuf};
 
 use egui::TextureOptions;
@@ -21,11 +22,17 @@ const PICTURE_WIDTH: f32 = 220.0;
 /// What each example shows, by file name, in the order they're listed.
 /// Examples not named here are listed after these, without a note.
 const ABOUT: [(&str, &str); 5] = [
-    ("bouncing-ball", "Keyframes, easing and squash and stretch: the getting-started tutorial, finished."),
-    ("rig", "A character built from parented parts, with lip sync. Pose it with the Bone tool."),
-    ("ink-and-paint", "Line art coloured with the paint bucket from palette swatches, Harmony-style."),
-    ("multiplane", "Scenery at different depths with the camera dollying in. Try the Depth View."),
-    ("particles", "A campfire of fire, smoke and spark particles, with snow falling."),
+    (
+        "bouncing-ball",
+        tr_later("Keyframes, easing and squash and stretch: the getting-started tutorial, finished."),
+    ),
+    ("rig", tr_later("A character built from parented parts, with lip sync. Pose it with the Bone tool.")),
+    (
+        "ink-and-paint",
+        tr_later("Line art coloured with the paint bucket from palette swatches, Harmony-style."),
+    ),
+    ("multiplane", tr_later("Scenery at different depths with the camera dollying in. Try the Depth View.")),
+    ("particles", tr_later("A campfire of fire, smoke and spark particles, with snow falling.")),
 ];
 
 /// The folder the examples are in, if there is one.
@@ -115,17 +122,17 @@ impl ExamplesWindow {
         let mut chosen = None;
         let mut open = self.open;
         let tall = ctx.content_rect().height() * 0.6;
-        egui::Window::new("Open Example")
+        egui::Window::new(tr("Open Example"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
                 if self.shown.is_empty() {
-                    ui.weak("The examples aren't installed with this copy of Inkframe.");
+                    ui.weak(tr("The examples aren't installed with this copy of Inkframe."));
                     return;
                 }
-                ui.weak("Each opens as a new project; save it wherever you like.");
+                ui.weak(tr("Each opens as a new project; save it wherever you like."));
                 ui.add_space(6.0);
                 egui::ScrollArea::vertical().max_height(tall).show(ui, |ui| {
                     egui::Grid::new("examples").num_columns(2).spacing([12.0, 12.0]).show(ui, |ui| {
@@ -140,7 +147,7 @@ impl ExamplesWindow {
                                         .clicked()
                                 }
                                 None => {
-                                    ui.weak("Couldn't open");
+                                    ui.weak(tr("Couldn't open"));
                                     false
                                 }
                             };
@@ -148,9 +155,9 @@ impl ExamplesWindow {
                                 ui.set_max_width(280.0);
                                 ui.strong(&example.title);
                                 if let Some(about) = example.about {
-                                    ui.label(about);
+                                    ui.label(tr(about));
                                 }
-                                if ui.button("Open").clicked() || clicked {
+                                if ui.button(tr("Open")).clicked() || clicked {
                                     chosen = Some(example.path.clone());
                                 }
                             });

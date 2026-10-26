@@ -6,6 +6,7 @@ use inkframe_core::{Align, Axis, Color};
 
 use crate::convert::to_color32;
 use crate::editor::Editor;
+use crate::i18n::{tr, tr_args};
 use crate::icons::{Icon, IconButton};
 use crate::theme;
 
@@ -56,11 +57,11 @@ pub fn swatches(ui: &mut egui::Ui, editor: &mut Editor, state: &mut PanelState) 
     // Which colour a click sets, shown as Animate's pair of fill and stroke
     // chips; the paint tools have one colour, so no choice there.
     if editor.tool.paints() {
-        ui.weak("Click a swatch to paint with it.");
+        ui.weak(tr("Click a swatch to paint with it."));
     } else {
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut state.stroke, false, "Fill");
-            ui.selectable_value(&mut state.stroke, true, "Stroke");
+            ui.selectable_value(&mut state.stroke, false, tr("Fill"));
+            ui.selectable_value(&mut state.stroke, true, tr("Stroke"));
         });
     }
     ui.add_space(4.0);
@@ -68,7 +69,7 @@ pub fn swatches(ui: &mut egui::Ui, editor: &mut Editor, state: &mut PanelState) 
     palette_section(ui, editor, state, &mut picked);
 
     ui.add_space(8.0);
-    egui::CollapsingHeader::new(egui::RichText::new("BASIC COLOURS").small().color(theme::TEXT_WEAK))
+    egui::CollapsingHeader::new(egui::RichText::new(tr("BASIC COLOURS")).small().color(theme::TEXT_WEAK))
         .id_salt("basic_colours")
         .default_open(editor.doc.palette.swatches.is_empty())
         .show(ui, |ui| chip_grid(ui, &palette(), &mut picked, |_, _| {}));
@@ -87,7 +88,7 @@ fn palette_section(
     picked: &mut Option<Color>,
 ) {
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("PALETTE").small().color(theme::TEXT_WEAK));
+        ui.label(egui::RichText::new(tr("PALETTE")).small().color(theme::TEXT_WEAK));
         let palette = &editor.doc.palette;
         let showing = palette.versions[palette.active].clone();
         let mut switch = None;
@@ -103,34 +104,40 @@ fn palette_section(
                 }
                 ui.separator();
                 new_version = ui
-                    .button("New Version")
-                    .on_hover_text("A copy of this version, to recolour: a night palette, say")
+                    .button(tr("New Version"))
+                    .on_hover_text(tr("A copy of this version, to recolour: a night palette, say"))
                     .clicked();
             })
             .response
-            .on_hover_text("Switching versions recolours everything painted from the palette");
+            .on_hover_text(tr("Switching versions recolours everything painted from the palette"));
         if let Some(version) = switch {
             editor.doc.use_palette_version(version);
         }
         if new_version {
-            let name = format!("Version {}", editor.doc.palette.versions.len() + 1);
+            let name = tr_args(
+                "Version {number}",
+                &[("number", &(editor.doc.palette.versions.len() + 1).to_string())],
+            );
             let version = editor.doc.add_palette_version(name);
             editor.doc.use_palette_version(version);
         }
         let current = current_color(editor, state.stroke);
-        if ui.add(IconButton::new(Icon::Plus, "Add the current colour to the palette")).clicked()
+        if ui.add(IconButton::new(Icon::Plus, tr("Add the current colour to the palette"))).clicked()
             && let Some(color) = current
         {
-            let name = format!("Colour {}", editor.doc.palette.swatches.len() + 1);
+            let name = tr_args(
+                "Colour {number}",
+                &[("number", &(editor.doc.palette.swatches.len() + 1).to_string())],
+            );
             editor.doc.add_swatch(name, color);
         }
     });
 
     let count = editor.doc.palette.swatches.len();
     if count == 0 {
-        ui.weak(
+        ui.weak(tr(
             "Add colours here to paint with. Change one later and everything painted with it changes too.",
-        );
+        ));
     }
     let mut remove = None;
     for i in 0..count {
@@ -151,8 +158,9 @@ fn palette_section(
                     *picked = Some(color);
                 }
                 let uses = editor.doc.swatch_uses(i);
-                chip.on_hover_text(format!(
-                    "Use this colour. Right-click to change it ({uses} shapes use it)"
+                chip.on_hover_text(tr_args(
+                    "Use this colour. Right-click to change it ({count} shapes use it)",
+                    &[("count", &uses.to_string())],
                 ))
                 .context_menu(|ui| {
                     // Recolours live as the picker moves.
@@ -166,7 +174,8 @@ fn palette_section(
                         editor.doc.set_swatch_color(i, Color::rgba(r, g, b, a));
                     }
                     ui.separator();
-                    if ui.button("Remove Swatch").on_hover_text("Shapes keep their colour").clicked() {
+                    if ui.button(tr("Remove Swatch")).on_hover_text(tr("Shapes keep their colour")).clicked()
+                    {
                         remove = Some(i);
                         ui.close();
                     }
@@ -228,12 +237,12 @@ fn chip_grid(
 
 pub fn align(ui: &mut egui::Ui, editor: &mut Editor, state: &mut PanelState) {
     let count = editor.selected_ids().len();
-    ui.checkbox(&mut state.to_stage, "Align to stage")
-        .on_hover_text("Line layers up with the stage rather than with each other");
+    ui.checkbox(&mut state.to_stage, tr("Align to stage"))
+        .on_hover_text(tr("Line layers up with the stage rather than with each other"));
     let to_stage = state.to_stage;
     ui.add_enabled_ui(count > 0, |ui| {
         let row = |ui: &mut egui::Ui, title: &str, buttons: &[(Icon, &str)]| -> Option<usize> {
-            ui.label(egui::RichText::new(title).small().color(theme::TEXT_WEAK));
+            ui.label(egui::RichText::new(title.to_uppercase()).small().color(theme::TEXT_WEAK));
             let mut clicked = None;
             ui.horizontal(|ui| {
                 for (i, (icon, hover)) in buttons.iter().enumerate() {
@@ -245,35 +254,35 @@ pub fn align(ui: &mut egui::Ui, editor: &mut Editor, state: &mut PanelState) {
             clicked
         };
         let aligns = [
-            (Icon::AlignLeft, "Align left edges"),
-            (Icon::AlignCenterX, "Align centres across"),
-            (Icon::AlignRight, "Align right edges"),
-            (Icon::AlignTop, "Align top edges"),
-            (Icon::AlignCenterY, "Align centres down"),
-            (Icon::AlignBottom, "Align bottom edges"),
+            (Icon::AlignLeft, tr("Align left edges")),
+            (Icon::AlignCenterX, tr("Align centres across")),
+            (Icon::AlignRight, tr("Align right edges")),
+            (Icon::AlignTop, tr("Align top edges")),
+            (Icon::AlignCenterY, tr("Align centres down")),
+            (Icon::AlignBottom, tr("Align bottom edges")),
         ];
-        if let Some(i) = row(ui, "ALIGN", &aligns) {
+        if let Some(i) = row(ui, tr("Align"), &aligns) {
             let how =
                 [Align::Left, Align::CenterX, Align::Right, Align::Top, Align::CenterY, Align::Bottom][i];
             editor.align(how, to_stage);
         }
         let spread = [
-            (Icon::DistributeX, "Space centres evenly across"),
-            (Icon::DistributeY, "Space centres evenly down"),
+            (Icon::DistributeX, tr("Space centres evenly across")),
+            (Icon::DistributeY, tr("Space centres evenly down")),
         ];
-        if let Some(i) = row(ui, "DISTRIBUTE", &spread) {
+        if let Some(i) = row(ui, tr("Distribute"), &spread) {
             editor.distribute([Axis::Horizontal, Axis::Vertical][i], to_stage);
         }
         let sizes = [
-            (Icon::MatchWidth, "Make them as wide as the widest"),
-            (Icon::MatchHeight, "Make them as tall as the tallest"),
+            (Icon::MatchWidth, tr("Make them as wide as the widest")),
+            (Icon::MatchHeight, tr("Make them as tall as the tallest")),
         ];
-        if let Some(i) = row(ui, "MATCH SIZE", &sizes) {
+        if let Some(i) = row(ui, tr("Match size"), &sizes) {
             editor.match_size([Axis::Horizontal, Axis::Vertical][i], to_stage);
         }
     });
     if count == 0 {
-        ui.weak("Select layers to line them up. One layer lines up with the stage.");
+        ui.weak(tr("Select layers to line them up. One layer lines up with the stage."));
     }
 }
 
@@ -288,7 +297,7 @@ pub fn controllers(ui: &mut egui::Ui, editor: &mut Editor) {
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut editor.doc.controllers[i].name).desired_width(140.0));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(IconButton::new(Icon::Trash, "Remove this controller")).clicked() {
+                    if ui.add(IconButton::new(Icon::Trash, tr("Remove this controller"))).clicked() {
                         remove = Some(i);
                     }
                 });
@@ -307,12 +316,12 @@ pub fn controllers(ui: &mut egui::Ui, editor: &mut Editor) {
             let mut forget = None;
             ui.horizontal_wrapped(|ui| {
                 for (j, (name, at)) in poses.iter().enumerate() {
-                    let chip = ui.small_button(name).on_hover_text(format!("At {:.0}%. Right-click to forget it", at * 100.0));
+                    let chip = ui.small_button(name).on_hover_text(tr_args("At {percent}%. Right-click to forget it", &[("percent", &format!("{:.0}", at * 100.0))]));
                     if chip.clicked() {
                         editor.doc.set_controller(i, *at, frame);
                     }
                     chip.context_menu(|ui| {
-                        if ui.button("Forget Pose").clicked() {
+                        if ui.button(tr("Forget Pose")).clicked() {
                             forget = Some(j);
                             ui.close();
                         }
@@ -324,12 +333,12 @@ pub fn controllers(ui: &mut egui::Ui, editor: &mut Editor) {
             }
             ui.horizontal(|ui| {
                 let at = editor.doc.controllers[i].value;
-                let hint = "Pose the layers on the stage, then record how they look as a pose at this point on the slider";
-                if ui.button(format!("Record Pose at {:.0}%", at * 100.0)).on_hover_text(hint).clicked() {
-                    let name = format!("Pose {}", editor.doc.controllers[i].poses.len() + 1);
+                let hint = tr("Pose the layers on the stage, then record how they look as a pose at this point on the slider");
+                if ui.button(tr_args("Record Pose at {percent}%", &[("percent", &format!("{:.0}", at * 100.0))])).on_hover_text(hint).clicked() {
+                    let name = tr_args("Pose {number}", &[("number", &(editor.doc.controllers[i].poses.len() + 1).to_string())]);
                     editor.doc.record_pose(i, name, at, frame);
                 }
-                ui.weak(format!("{driven} layers"));
+                ui.weak(tr_args("{count} layers", &[("count", &driven.to_string())]));
             });
         });
     }
@@ -339,15 +348,16 @@ pub fn controllers(ui: &mut egui::Ui, editor: &mut Editor) {
     ui.separator();
     let selected = editor.selected_ids();
     let new = ui
-        .add_enabled(!selected.is_empty(), egui::Button::new("New Controller from Selected Layers"))
-        .on_hover_text("A slider that poses these layers between poses you record along it");
+        .add_enabled(!selected.is_empty(), egui::Button::new(tr("New Controller from Selected Layers")))
+        .on_hover_text(tr("A slider that poses these layers between poses you record along it"));
     if new.clicked() {
-        let name = format!("Controller {}", editor.doc.controllers.len() + 1);
+        let name =
+            tr_args("Controller {number}", &[("number", &(editor.doc.controllers.len() + 1).to_string())]);
         let i = editor.doc.add_controller(name, &selected);
-        editor.doc.record_pose(i, "Start", 0.0, frame);
+        editor.doc.record_pose(i, tr("Start"), 0.0, frame);
     }
     if editor.doc.controllers.is_empty() {
-        ui.weak("Select the layers of a pose (a face, a hand) and make a controller. Record a pose at one end of its slider, move the slider, pose the layers differently and record again; then the slider moves between them.");
+        ui.weak(tr("Select the layers of a pose (a face, a hand) and make a controller. Record a pose at one end of its slider, move the slider, pose the layers differently and record again; then the slider moves between them."));
     }
 }
 
@@ -356,14 +366,14 @@ pub fn history(ui: &mut egui::Ui, editor: &mut Editor) {
         let (done, undone) = editor.history.labels();
         (done.into_iter().map(str::to_owned).collect(), undone.into_iter().map(str::to_owned).collect())
     };
-    ui.weak("Click a step to go back to it.");
+    ui.weak(tr("Click a step to go back to it."));
     ui.add_space(4.0);
     let mut jump = None;
     ui.spacing_mut().item_spacing.y = 1.0;
     // The start, every step done (the last is where things stand), then the
     // steps undone, greyed, which can still be redone.
     let current = done.len();
-    let start = std::iter::once("Start".to_owned());
+    let start = std::iter::once(tr("Start").to_owned());
     for (i, label) in start.chain(done).enumerate() {
         if step(ui, &label, i == current, false).clicked() {
             jump = Some(i as isize - current as isize);

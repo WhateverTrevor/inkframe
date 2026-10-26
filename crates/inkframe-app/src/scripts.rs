@@ -22,6 +22,7 @@ use inkframe_script::{Outcome, Script, ScriptError};
 
 use crate::editor::Editor;
 use crate::export_dialog::reveal_in_file_manager;
+use crate::i18n::{tr, tr_args};
 use crate::layout::settings_dir;
 
 /// The folder scripts are listed from.
@@ -131,7 +132,7 @@ impl Scripts {
     pub fn menu(&mut self, ui: &mut egui::Ui, editor: &Editor) {
         let scripts = list();
         if scripts.is_empty() {
-            ui.weak("No scripts yet: put .js files in\nthe Scripts folder to list them here.");
+            ui.weak(tr("No scripts yet: put .js files in\nthe Scripts folder to list them here."));
         }
         for path in scripts {
             let name = name_of(&path);
@@ -141,20 +142,20 @@ impl Scripts {
             }
         }
         ui.separator();
-        if ui.add_enabled(!self.is_running(), egui::Button::new("Run Script…")).clicked() {
-            if let Some(path) = rfd::FileDialog::new().add_filter("JavaScript", &["js"]).pick_file() {
+        if ui.add_enabled(!self.is_running(), egui::Button::new(tr("Run Script…"))).clicked() {
+            if let Some(path) = rfd::FileDialog::new().add_filter(tr("JavaScript"), &["js"]).pick_file() {
                 self.run_file(&path, editor);
             }
             ui.close();
         }
-        if ui.button("Open Scripts Folder").clicked() {
+        if ui.button(tr("Open Scripts Folder")).clicked() {
             if let Some(dir) = folder() {
                 let _ = std::fs::create_dir_all(&dir);
                 reveal_in_file_manager(&dir);
             }
             ui.close();
         }
-        if ui.button("Scripting Guide").clicked() {
+        if ui.button(tr("Scripting Guide")).clicked() {
             crate::app::open_in_browser(crate::app::SCRIPTING_URL);
             ui.close();
         }
@@ -224,7 +225,7 @@ impl Scripts {
             // Only to keep the seconds counting: the result itself wakes
             // the window as it arrives.
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
-            egui::Window::new("Running Script")
+            egui::Window::new(tr("Running Script"))
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
@@ -237,14 +238,14 @@ impl Scripts {
                             running.started.elapsed().as_secs_f32()
                         ));
                     });
-                    if ui.button("Stop").clicked() {
+                    if ui.button(tr("Stop")).clicked() {
                         running.stop.store(true, Ordering::Relaxed);
                     }
                 });
         }
         let mut open = true;
         if let Some(report) = &self.report {
-            let title = if report.problem.is_some() { "Script Failed" } else { "Script Output" };
+            let title = if report.problem.is_some() { tr("Script Failed") } else { tr("Script Output") };
             egui::Window::new(title)
                 .id(egui::Id::new("script-report"))
                 .open(&mut open)
@@ -280,7 +281,7 @@ impl Scripts {
                 name,
                 log: outcome.log,
                 problem: Some(
-                    "The project was edited while the script ran, so the script's changes weren't applied. Run it again to apply them."
+                    tr("The project was edited while the script ran, so the script's changes weren't applied. Run it again to apply them.")
                         .to_owned(),
                 ),
             }),
@@ -289,7 +290,12 @@ impl Scripts {
                 // named after the script.
                 editor.commit_history();
                 editor.doc = outcome.document;
-                let label = if name == "Script Console" { name.clone() } else { format!("Run Script “{name}”") };
+                // The console's runs are named "Script Console" inside, for this.
+                let label = if name == "Script Console" {
+                    tr("Script Console").to_owned()
+                } else {
+                    tr_args("Run Script “{name}”", &[("name", &name)])
+                };
                 editor.history.commit_as(&editor.doc, label);
                 editor.path = outcome.path;
                 if let Some(selection) = outcome.selection {
@@ -319,21 +325,21 @@ impl Scripts {
         ui.horizontal(|ui| {
             match running {
                 Some(running) => {
-                    if ui.button("Stop").clicked() {
+                    if ui.button(tr("Stop")).clicked() {
                         running.stop.store(true, Ordering::Relaxed);
                     }
                     ui.spinner();
                 }
                 None => {
                     run |= ui
-                        .add_enabled(self.running.is_none(), egui::Button::new("Run"))
-                        .on_hover_text(
+                        .add_enabled(self.running.is_none(), egui::Button::new(tr("Run")))
+                        .on_hover_text(tr(tr(
                             "Run the script on the open project (Cmd+Enter). Edit › Undo takes it back.",
-                        )
+                        )))
                         .clicked();
                 }
             }
-            if ui.button("Clear").on_hover_text("Clear the output").clicked() {
+            if ui.button(tr("Clear")).on_hover_text(tr("Clear the output")).clicked() {
                 self.console_lines.clear();
             }
         });
@@ -363,7 +369,7 @@ impl Scripts {
             ui,
             |ui| {
                 if self.console_lines.is_empty() {
-                    ui.weak("What the script prints with console.log appears here.");
+                    ui.weak(tr("What the script prints with console.log appears here."));
                 }
                 for line in &self.console_lines {
                     match line {

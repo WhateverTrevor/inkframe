@@ -18,6 +18,7 @@
 //! behind, so one Inkframe never offers to recover another's work while
 //! it's still open.
 
+use crate::i18n::{tr, tr_args};
 use std::path::{Path, PathBuf};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -76,12 +77,12 @@ impl Recovery {
     /// "3 minutes ago", for the recovery window.
     pub fn when(&self) -> String {
         match self.age {
-            0..60 => "just now".to_owned(),
-            60..120 => "a minute ago".to_owned(),
-            120..3600 => format!("{} minutes ago", self.age / 60),
-            3600..7200 => "an hour ago".to_owned(),
-            7200..86_400 => format!("{} hours ago", self.age / 3600),
-            _ => format!("{} days ago", self.age / 86_400),
+            0..60 => tr("just now").to_owned(),
+            60..120 => tr("a minute ago").to_owned(),
+            120..3600 => tr_args("{count} minutes ago", &[("count", &(self.age / 60).to_string())]),
+            3600..7200 => tr("an hour ago").to_owned(),
+            7200..86_400 => tr_args("{count} hours ago", &[("count", &(self.age / 3600).to_string())]),
+            _ => tr_args("{count} days ago", &[("count", &(self.age / 86_400).to_string())]),
         }
     }
 }

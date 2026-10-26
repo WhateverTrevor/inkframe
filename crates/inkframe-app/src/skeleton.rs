@@ -17,6 +17,7 @@
 //! of its drawings (a corrected elbow, a smile), or has a switch folder
 //! show another of its layers (a fist once the wrist's turned far enough).
 
+use crate::i18n::tr;
 use inkframe_core::{
     BoneBinding, BonePoints, CorrectionKey, Document, Element, LayerId, Point, RestPart, Skeleton,
     SmartAction, corrected,
@@ -305,25 +306,25 @@ impl Editor {
     pub fn start_correction(&mut self, id: LayerId, bone: usize, action: usize) -> Result<(), String> {
         self.finish_correction();
         let frame = self.frame;
-        let skeleton = self.skeleton(id).ok_or("The skeleton has gone.")?;
-        let b = skeleton.bones.get(bone).ok_or("The bone has gone.")?;
+        let skeleton = self.skeleton(id).ok_or(tr("The skeleton has gone."))?;
+        let b = skeleton.bones.get(bone).ok_or(tr("The bone has gone."))?;
         // As shown: previewed on the action timeline, or as animated.
         let turn = b.shown_turn(frame as f32);
         if turn.abs() < 1.0 {
-            return Err("Turn the bone first: a correction is keyed at the turn it's drawn at.".into());
+            return Err(tr("Turn the bone first: a correction is keyed at the turn it's drawn at.").into());
         }
         let Some(SmartAction::Correct { layer, drawing, keys }) = b.actions.get(action).cloned() else {
-            return Err("That isn't a correction.".into());
+            return Err(tr("That isn't a correction.").into());
         };
-        let found = self.doc.layer(layer).ok_or("The layer it corrects has gone.")?;
+        let found = self.doc.layer(layer).ok_or(tr("The layer it corrects has gone."))?;
         if found.drawing_index_at(frame) != drawing {
-            return Err("The drawing it corrects isn't showing on this frame.".into());
+            return Err(tr("The drawing it corrects isn't showing on this frame.").into());
         }
-        let rest_drawing = found.drawings.get(drawing).ok_or("The drawing it corrects has gone.")?;
+        let rest_drawing = found.drawings.get(drawing).ok_or(tr("The drawing it corrects has gone."))?;
         let rest = (rest_drawing.colour_art.clone(), rest_drawing.elements.clone());
         let (colour, line) = corrected((&rest.0, &rest.1), &keys, turn);
         let taken = self.skeleton_mut(id).map(|s| s.bones[bone].actions.remove(action));
-        let Some(taken) = taken else { return Err("The skeleton has gone.".into()) };
+        let Some(taken) = taken else { return Err(tr("The skeleton has gone.").into()) };
         if let Some(d) = self.doc.layer_mut(layer).and_then(|l| l.drawings.get_mut(drawing)) {
             d.colour_art = colour;
             d.elements = line;
@@ -420,11 +421,11 @@ impl Editor {
     /// Adds a correction of `layer`'s drawing showing now to bone `bone`,
     /// and starts drawing it at the bone's turn. Returns the action's place.
     pub fn add_correction(&mut self, id: LayerId, bone: usize, layer: LayerId) -> Result<usize, String> {
-        let drawing = self.doc.layer(layer).ok_or("The layer has gone.")?.drawing_index_at(self.frame);
+        let drawing = self.doc.layer(layer).ok_or(tr("The layer has gone."))?.drawing_index_at(self.frame);
         let actions = &mut self
             .skeleton_mut(id)
             .and_then(|s| s.bones.get_mut(bone))
-            .ok_or("The bone has gone.")?
+            .ok_or(tr("The bone has gone."))?
             .actions;
         actions.push(SmartAction::Correct { layer, drawing, keys: Vec::new() });
         let index = actions.len() - 1;

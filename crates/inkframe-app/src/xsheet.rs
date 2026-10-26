@@ -17,6 +17,7 @@ use inkframe_core::{Drawing, Layer, LayerId};
 
 use crate::audio_engine::AudioEngine;
 use crate::editor::Editor;
+use crate::i18n::tr;
 
 const ROW: f32 = 18.0;
 const FRAME_COLUMN: f32 = 44.0;
@@ -110,7 +111,7 @@ impl ExposureSheet {
             return;
         }
         let mut open = self.open;
-        egui::Window::new("Exposure Sheet")
+        egui::Window::new(tr("Exposure Sheet"))
             .open(&mut open)
             .default_size([380.0, 520.0])
             .resizable(true)
@@ -127,10 +128,10 @@ impl ExposureSheet {
             Vec::new()
         };
         if layers.is_empty() {
-            ui.label(
+            ui.label(tr(
                 "No layers swap drawings yet. Give a layer more drawings (Drawings, in the properties \
                  panel), and its column appears here.",
-            );
+            ));
             return;
         }
         let frames = editor.duration();
@@ -157,7 +158,7 @@ impl ExposureSheet {
         painter.text(
             pos2(header.left() + 4.0, header.center().y),
             Align2::LEFT_CENTER,
-            "Frame",
+            tr("Frame"),
             font.clone(),
             faint,
         );
@@ -270,7 +271,8 @@ impl ExposureSheet {
                         }
                         ui.separator();
                         let has_swap = layer.exposure.iter().any(|k| k.frame == frame);
-                        if ui.add_enabled(has_swap, egui::Button::new("Hold the drawing above")).clicked() {
+                        if ui.add_enabled(has_swap, egui::Button::new(tr("Hold the drawing above"))).clicked()
+                        {
                             menu_choice = Some((id, frame, None));
                         }
                     });

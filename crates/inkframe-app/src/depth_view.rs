@@ -13,6 +13,7 @@ use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use inkframe_core::{FOCAL_LENGTH, LayerId, Point, TimelineId};
 
 use crate::editor::Editor;
+use crate::i18n::{tr, tr_args};
 use crate::theme;
 
 const CAMERA: Color32 = Color32::from_rgb(0xff, 0xa0, 0x3c);
@@ -181,7 +182,11 @@ impl DepthView {
             painter.text(
                 eye_at + vec2(14.0, 0.0),
                 Align2::LEFT_CENTER,
-                if on { format!("Camera  dolly {dolly:.0}") } else { "Camera off".to_owned() },
+                if on {
+                    tr_args("Camera  dolly {dolly}", &[("dolly", &format!("{dolly:.0}"))])
+                } else {
+                    tr("Camera off").to_owned()
+                },
                 FontId::proportional(11.0),
                 color,
             );
@@ -190,7 +195,7 @@ impl DepthView {
             painter.text(
                 rect.center_bottom() + vec2(0.0, -10.0),
                 Align2::CENTER_BOTTOM,
-                "No camera: add one with the Camera tool (C) for depth to show",
+                tr("No camera: add one with the Camera tool (C) for depth to show"),
                 FontId::proportional(12.0),
                 theme::TEXT_WEAK,
             );
@@ -199,12 +204,12 @@ impl DepthView {
         // Stacking, top left.
         let stack = Rect::from_min_size(rect.left_top() + vec2(6.0, 6.0), vec2(130.0, 20.0));
         painter.rect_filled(stack.expand(3.0), 4.0, theme::PANEL);
-        ui.put(stack, egui::Checkbox::new(&mut editor.doc.stack_by_depth, "Stack by depth"))
+        ui.put(stack, egui::Checkbox::new(&mut editor.doc.stack_by_depth, tr("Stack by depth")))
             .on_hover_text(crate::inspector::STACK_BY_DEPTH);
 
         // Fit, top right.
         let fit = Rect::from_min_size(rect.right_top() + vec2(-44.0, 6.0), vec2(38.0, 20.0));
-        let fit_response = ui.put(fit, egui::Button::new("Fit").small());
+        let fit_response = ui.put(fit, egui::Button::new(tr("Fit")).small());
         if fit_response.clicked() {
             self.view = None;
         }

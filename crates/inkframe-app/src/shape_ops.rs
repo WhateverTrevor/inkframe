@@ -3,6 +3,7 @@
 //! geometry is in the core (`boolean.rs`); this is which shapes, and where
 //! the results go.
 
+use crate::i18n::tr;
 use inkframe_core::{Element, Point, Shape, ShapeOp, area_of, break_apart, combine};
 
 use crate::editor::Editor;
@@ -15,13 +16,14 @@ impl Editor {
     pub fn combine_shapes(&mut self, how: ShapeOp) -> Result<(), String> {
         let picked = self.picked_originals();
         if picked.len() < 2 {
-            return Err(
-                "Pick two or more shapes first: double-click a layer, then click or drag over them.".into()
-            );
+            return Err(tr(
+                "Pick two or more shapes first: double-click a layer, then click or drag over them.",
+            )
+            .into());
         }
         let colour_art = picked[0].0.colour_art;
         if picked.iter().any(|(r, _)| r.colour_art != colour_art) {
-            return Err("Pick lines or fills, not both: they're separate parts of the drawing.".into());
+            return Err(tr("Pick lines or fills, not both: they're separate parts of the drawing.").into());
         }
         let shapes: Vec<Element> = picked.iter().map(|(_, e)| e.clone()).collect();
         let results = combine(how, &shapes).map_err(|e| e.to_string())?;

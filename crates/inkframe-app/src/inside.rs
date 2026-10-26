@@ -11,6 +11,7 @@
 //! they were picked on. Changing frame, undoing, or anything else that
 //! could shuffle them clears the picked shapes (see [`Editor::check_inside`]).
 
+use crate::i18n::tr;
 use inkframe_core::{
     Affine, CopiedShapes, Element, Layer, LayerId, Point, Rect, SymbolId, TimelineId, Transform,
 };
@@ -373,14 +374,14 @@ impl Editor {
     /// symbol's instance, so nothing moves on the stage. Steps out of the
     /// layer and selects the instance.
     pub fn shapes_to_symbol(&mut self) -> Result<SymbolId, String> {
-        let id = self.inside_layer().ok_or("Not inside a layer")?;
+        let id = self.inside_layer().ok_or(tr("Not inside a layer"))?;
         let picked = self.picked_originals();
         if picked.is_empty() {
-            return Err("Pick some shapes first: click them, or drag a box around them.".to_owned());
+            return Err(tr("Pick some shapes first: click them, or drag a box around them.").to_owned());
         }
         let frame = self.frame;
         let timeline = self.timeline();
-        let source = self.doc.layer(id).ok_or("The layer has gone")?.clone();
+        let source = self.doc.layer(id).ok_or(tr("The layer has gone"))?.clone();
         let name = self.doc.next_layer_name_in(timeline, &format!("{} part", source.name));
         let lines: Vec<Element> =
             picked.iter().filter(|(s, _)| !s.colour_art).map(|(_, e)| e.clone()).collect();
@@ -389,7 +390,7 @@ impl Editor {
         let new = self
             .doc
             .add_layer_to(timeline, name, lines, frame, Transform::default())
-            .ok_or("Couldn't add a layer")?;
+            .ok_or(tr("Couldn't add a layer"))?;
         if let Some(layer) = self.doc.layer_mut(new) {
             layer.drawings[0].colour_art = colour;
             layer.track = source.track.clone();
@@ -404,7 +405,7 @@ impl Editor {
         }
         self.delete_shapes();
         self.exit_layer();
-        let symbol = self.doc.convert_layer_to_symbol(new, frame).ok_or("Couldn't make a symbol")?;
+        let symbol = self.doc.convert_layer_to_symbol(new, frame).ok_or(tr("Couldn't make a symbol"))?;
         self.select(Some(new));
         Ok(symbol)
     }

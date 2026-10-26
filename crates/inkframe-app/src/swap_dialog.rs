@@ -13,6 +13,7 @@ use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, StrokeKind, Vec2, pos2,
 use inkframe_core::{LayerId, Symbol, SymbolId};
 
 use crate::editor::Editor;
+use crate::i18n::{tr, tr_args};
 
 const CARD: f32 = 84.0;
 
@@ -87,17 +88,21 @@ impl SwapDialog {
         let mut duplicate = false;
         let symbols: Vec<SymbolId> = editor.doc.symbols.iter().map(|s| s.id).collect();
         let timeline = editor.timeline();
-        egui::Window::new("Swap Symbol")
+        egui::Window::new(tr("Swap Symbol"))
             .open(&mut keep_open)
             .collapsible(false)
             .resizable(false)
             .default_width(420.0)
             .show(ctx, |ui| {
                 let count = open.layers.len();
-                let plural = if count == 1 { "" } else { "s" };
-                ui.weak(format!(
-                    "Pick a symbol for the {count} selected instance{plural}. They keep their animation."
-                ));
+                ui.weak(if count == 1 {
+                    tr("Pick a symbol for the selected instance. It keeps its animation.").to_owned()
+                } else {
+                    tr_args(
+                        "Pick a symbol for the {count} selected instances. They keep their animation.",
+                        &[("count", &count.to_string())],
+                    )
+                });
                 ui.add_space(4.0);
                 egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
                     ui.horizontal_wrapped(|ui| {
@@ -121,24 +126,28 @@ impl SwapDialog {
                 });
                 ui.separator();
                 ui.horizontal(|ui| {
-                    ui.radio_value(&mut open.from_here, false, "Whole layer");
+                    ui.radio_value(&mut open.from_here, false, tr("Whole layer"));
                     ui.add_enabled_ui(can_from_here, |ui| {
-                        ui.radio_value(&mut open.from_here, true, format!("From frame {} on", frame + 1))
-                            .on_disabled_hover_text("Move to a frame after the layer starts");
+                        ui.radio_value(
+                            &mut open.from_here,
+                            true,
+                            tr_args("From frame {frame} on", &[("frame", &(frame + 1).to_string())]),
+                        )
+                        .on_disabled_hover_text(tr("Move to a frame after the layer starts"));
                     });
                 });
                 ui.horizontal(|ui| {
                     if ui
-                        .button("Duplicate Symbol")
-                        .on_hover_text(
+                        .button(tr("Duplicate Symbol"))
+                        .on_hover_text(tr(
                             "Copy the chosen symbol, to swap to and change without changing the original",
-                        )
+                        ))
                         .clicked()
                     {
                         duplicate = true;
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Swap").clicked() {
+                        if ui.button(tr("Swap")).clicked() {
                             swap = true;
                         }
                     });
