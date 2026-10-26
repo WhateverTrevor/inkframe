@@ -131,7 +131,7 @@ pub fn tool_settings(ui: &mut egui::Ui, editor: &mut Editor) {
     } else if editor.tool.selects() {
         selection_section(ui, editor);
     } else if editor.tool == Tool::Pencil {
-        ui.heading(editor.tool.name());
+        ui.heading(editor.tool.label());
         egui::Grid::new("pencil").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
             ui.label("Line");
             color_button(ui, &mut editor.pencil_stroke.color);
@@ -149,13 +149,13 @@ pub fn tool_settings(ui: &mut egui::Ui, editor: &mut Editor) {
         }
         drawing_target(ui, editor);
     } else if matches!(editor.tool, Tool::Rectangle | Tool::Ellipse | Tool::Pen | Tool::Text) {
-        ui.heading(editor.tool.name());
+        ui.heading(editor.tool.label());
         shape_style(ui, editor);
         if editor.tool != Tool::Text {
             drawing_target(ui, editor);
         }
     } else {
-        ui.weak(format!("The {} tool has no settings.", editor.tool.name()));
+        ui.weak(crate::i18n::tr_args("The {tool} tool has no settings.", &[("tool", editor.tool.label())]));
     }
 }
 
@@ -199,7 +199,7 @@ pub fn document(ui: &mut egui::Ui, editor: &mut Editor) {
 fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
     use crate::editor::Tool;
     let tool = editor.tool;
-    ui.heading(tool.name());
+    ui.heading(tool.label());
     // What a stroke looks like with these settings, first, so it's in view
     // while adjusting them.
     match tool {
@@ -446,7 +446,7 @@ fn brush_controls(ui: &mut egui::Ui, settings: &mut inkframe_core::BrushSettings
 /// The selection tools' options, and what to do with a selection.
 fn selection_section(ui: &mut egui::Ui, editor: &mut Editor) {
     use crate::editor::Tool;
-    ui.heading(editor.tool.name());
+    ui.heading(editor.tool.label());
     if editor.tool == Tool::MagicWand {
         egui::Grid::new("wand").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
             ui.label("Tolerance").on_hover_text("How different a colour may be and still be selected");

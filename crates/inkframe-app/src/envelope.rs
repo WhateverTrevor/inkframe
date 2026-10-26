@@ -24,8 +24,8 @@ pub enum LatticeKind {
 impl LatticeKind {
     pub fn name(self) -> &'static str {
         match self {
-            LatticeKind::Distort => "Distort",
-            LatticeKind::Envelope => "Envelope",
+            LatticeKind::Distort => crate::i18n::tr_later("Distort"),
+            LatticeKind::Envelope => crate::i18n::tr_later("Envelope"),
         }
     }
 }

@@ -19,6 +19,7 @@ use crate::app::Command;
 use crate::audio_engine::AudioEngine;
 use crate::convert::to_color32;
 use crate::editor::Editor;
+use crate::i18n::tr;
 use crate::icons::{self, Icon, IconButton};
 use crate::layer_thumbnails::LayerThumbnails;
 use crate::library;
@@ -426,7 +427,7 @@ impl TimelineView {
 
         let corner = Rect::from_min_max(rect.min, pos2(layout.names.right(), layout.ruler.bottom()));
         painter.rect_filled(corner, 0.0, ui.visuals().panel_fill);
-        let title = editor.selected_layer().map_or_else(|| "Graph".to_owned(), |l| l.name.clone());
+        let title = editor.selected_layer().map_or_else(|| tr("Graph").to_owned(), |l| l.name.clone());
         painter.text(
             pos2(corner.left() + 8.0, corner.center().y),
             Align2::LEFT_CENTER,
@@ -571,7 +572,7 @@ impl TimelineView {
         painter.text(
             pos2(corner.left() + 8.0, corner.center().y),
             Align2::LEFT_CENTER,
-            "Layers",
+            tr("Layers"),
             FontId::proportional(11.0),
             ui.visuals().weak_text_color(),
         );
@@ -1088,7 +1089,7 @@ impl TimelineView {
         }
 
         if rows.is_empty() {
-            let hint = "Draw on the stage, or press + for an empty layer";
+            let hint = tr("Draw on the stage, or press + for an empty layer");
             painter.text(
                 layout.names.left_top() + vec2(10.0, 8.0),
                 Align2::LEFT_TOP,
@@ -1142,13 +1143,13 @@ fn layer_buttons(ui: &mut egui::Ui, editor: &mut Editor, right_to_left: bool) {
         Delete,
     }
     let mut buttons = [
-        (Icon::Plus, "New layer: an empty one above the selected layer, to draw into", Action::NewLayer),
-        (Icon::Camera, "Add a camera, or select the one there is", Action::Camera),
-        (Icon::Folder, "New folder: put the selected layers in a folder", Action::Folder),
-        (Icon::Duplicate, "Duplicate layer", Action::Duplicate),
-        (Icon::Up, "Move layer up", Action::Up),
-        (Icon::Down, "Move layer down", Action::Down),
-        (Icon::Trash, "Delete layer", Action::Delete),
+        (Icon::Plus, tr("New layer: an empty one above the selected layer, to draw into"), Action::NewLayer),
+        (Icon::Camera, tr("Add a camera, or select the one there is"), Action::Camera),
+        (Icon::Folder, tr("New folder: put the selected layers in a folder"), Action::Folder),
+        (Icon::Duplicate, tr("Duplicate layer"), Action::Duplicate),
+        (Icon::Up, tr("Move layer up"), Action::Up),
+        (Icon::Down, tr("Move layer down"), Action::Down),
+        (Icon::Trash, tr("Delete layer"), Action::Delete),
     ];
     if right_to_left {
         buttons.reverse();
@@ -1176,24 +1177,24 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) 
     ui.horizontal(|ui| {
         let last = editor.last_frame();
         ui.spacing_mut().item_spacing.x = 2.0;
-        if ui.add(IconButton::new(Icon::First, "First frame (Home)")).clicked() {
+        if ui.add(IconButton::new(Icon::First, tr("First frame (Home)"))).clicked() {
             editor.set_frame(0);
         }
-        if ui.add(IconButton::new(Icon::Previous, "Previous frame (,)")).clicked() {
+        if ui.add(IconButton::new(Icon::Previous, tr("Previous frame (,)"))).clicked() {
             editor.step(-1);
         }
         let play = if editor.playback.playing { Icon::Pause } else { Icon::Play };
-        if ui.add(IconButton::new(play, "Play / pause (Enter)")).clicked() {
+        if ui.add(IconButton::new(play, tr("Play / pause (Enter)"))).clicked() {
             editor.toggle_playback();
         }
-        if ui.add(IconButton::new(Icon::Next, "Next frame (.)")).clicked() {
+        if ui.add(IconButton::new(Icon::Next, tr("Next frame (.)"))).clicked() {
             editor.step(1);
         }
-        if ui.add(IconButton::new(Icon::Last, "Last frame (End)")).clicked() {
+        if ui.add(IconButton::new(Icon::Last, tr("Last frame (End)"))).clicked() {
             editor.set_frame(last);
         }
         let looping = editor.playback.looping;
-        if ui.add(IconButton::new(Icon::Loop, "Loop playback").selected(looping)).clicked() {
+        if ui.add(IconButton::new(Icon::Loop, tr("Loop playback")).selected(looping)).clicked() {
             editor.playback.looping = !looping;
         }
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -1202,12 +1203,15 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) 
 
         // Frames are 1-based in the interface and 0-based in the document.
         let mut shown = editor.frame + 1;
-        ui.label("Frame");
+        ui.label(tr("Frame"));
         if ui.add(egui::DragValue::new(&mut shown).range(1..=last + 1)).changed() {
             editor.set_frame(shown - 1);
         }
         let seconds = editor.frame as f64 / editor.doc.frame_rate.fps();
-        ui.label(format!("of {}   {seconds:.2}s", editor.duration()));
+        ui.label(crate::i18n::tr_args(
+            "of {frames}   {seconds}s",
+            &[("frames", &editor.duration().to_string()), ("seconds", &format!("{seconds:.2}"))],
+        ));
 
         ui.separator();
 
@@ -1215,7 +1219,7 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) 
             .add(
                 IconButton::new(
                     Icon::Graph,
-                    "Show the selected layer's animation as a graph of values over time",
+                    tr("Show the selected layer's animation as a graph of values over time"),
                 )
                 .selected(*graph_mode),
             )
@@ -1228,7 +1232,7 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) 
         let lit = editor.light_table;
         if ui
             .add(
-                IconButton::new(Icon::LightTable, "Light table: fade every layer but the selected one")
+                IconButton::new(Icon::LightTable, tr("Light table: fade every layer but the selected one"))
                     .selected(lit),
             )
             .clicked()
@@ -1251,7 +1255,7 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) 
         let onion = editor.onion.enabled;
         if ui
             .add(
-                IconButton::new(Icon::Onion, "Onion skin: show faint copies of nearby frames")
+                IconButton::new(Icon::Onion, tr("Onion skin: show faint copies of nearby frames"))
                     .selected(onion),
             )
             .clicked()
@@ -1260,16 +1264,16 @@ fn transport_bar(ui: &mut egui::Ui, editor: &mut Editor, graph_mode: &mut bool) 
         }
         if editor.onion.enabled {
             ui.add(egui::DragValue::new(&mut editor.onion.before).range(0..=10).prefix("◀ "))
-                .on_hover_text("Frames shown before the current one");
+                .on_hover_text(tr("Frames shown before the current one"));
             ui.add(egui::DragValue::new(&mut editor.onion.after).range(0..=10).suffix(" ▶"))
-                .on_hover_text("Frames shown after the current one");
+                .on_hover_text(tr("Frames shown after the current one"));
         }
 
         // With the layers drawn by depth, their order here no longer says
         // what's in front, so say what does. (Symbols keep their order.)
         if editor.doc.stack_by_depth && editor.timeline() == TimelineId::Main {
             ui.separator();
-            let chip = ui.add(egui::Button::new("Stacked by depth").small().selected(true)).on_hover_text(
+            let chip = ui.add(egui::Button::new(tr("Stacked by depth")).small().selected(true)).on_hover_text(
                 "Layers are drawn far to near by their Depth, not in this order. \
                  Click to go back to the timeline's order.",
             );
@@ -1305,12 +1309,12 @@ fn context_menu(
         if let Some(id) = audio {
             let Some(track) = editor.doc.audio_track_mut(id) else { return };
             ui.weak(&track.name);
-            let mute = if track.muted { "Unmute" } else { "Mute" };
+            let mute = if track.muted { tr("Unmute") } else { tr("Mute") };
             if ui.button(mute).clicked() {
                 track.muted = !track.muted;
                 ui.close();
             }
-            if ui.button("Remove Audio").clicked() {
+            if ui.button(tr("Remove Audio")).clicked() {
                 editor.doc.remove_audio(id);
                 ui.close();
             }
@@ -1318,7 +1322,7 @@ fn context_menu(
         }
         let frame = editor.frame;
         let Some((row, layer)) = row.and_then(|r| Some((r, editor.doc.layer(r.layer)?))) else {
-            ui.label("Right-click a layer row to edit its keyframes");
+            ui.label(tr("Right-click a layer row to edit its keyframes"));
             return;
         };
 
@@ -1338,14 +1342,14 @@ fn context_menu(
         if let Some(property) = row.property {
             ui.weak(property.name());
         }
-        let insert_label = if row.property.is_some() { "Insert Key" } else { "Insert Keyframe" };
+        let insert_label = if row.property.is_some() { tr("Insert Key") } else { tr("Insert Keyframe") };
         if ui.add_enabled(can_insert, egui::Button::new(insert_label).shortcut_text("F6")).clicked() {
             for_each_channel(editor, row, |c| {
                 c.insert_key(frame);
             });
             ui.close();
         }
-        let remove_label = if row.property.is_some() { "Remove Key" } else { "Remove Keyframe" };
+        let remove_label = if row.property.is_some() { tr("Remove Key") } else { tr("Remove Keyframe") };
         if ui.add_enabled(can_remove, egui::Button::new(remove_label).shortcut_text("⇧F6")).clicked() {
             for_each_channel(editor, row, |c| {
                 c.remove_key(frame);
@@ -1353,7 +1357,7 @@ fn context_menu(
             ui.close();
         }
         ui.add_enabled_ui(!easings.is_empty(), |ui| {
-            ui.menu_button("Easing", |ui| {
+            ui.menu_button(tr("Easing"), |ui| {
                 for preset in Easing::PRESETS {
                     if ui.selectable_label(shared_easing == Some(preset), preset.label()).clicked() {
                         for_each_channel(editor, row, |c| {
@@ -1367,51 +1371,52 @@ fn context_menu(
             });
         });
         ui.separator();
-        if ui.add(egui::Button::new("Start Layer Here").shortcut_text("⌥[")).clicked() {
+        if ui.add(egui::Button::new(tr("Start Layer Here")).shortcut_text("⌥[")).clicked() {
             editor.set_layer_start_here();
             ui.close();
         }
-        if ui.add(egui::Button::new("End Layer Here").shortcut_text("⌥]")).clicked() {
+        if ui.add(egui::Button::new(tr("End Layer Here")).shortcut_text("⌥]")).clicked() {
             editor.set_layer_end_here();
             ui.close();
         }
         // Shape tweens morph into the layer's next drawing swap.
         match editor.shape_tween_here() {
-            Some(false) if ui.button("Create Shape Tween").clicked() => {
+            Some(false) if ui.button(tr("Create Shape Tween")).clicked() => {
                 editor.set_shape_tween(true);
                 ui.close();
             }
-            Some(true) if ui.button("Remove Shape Tween").clicked() => {
+            Some(true) if ui.button(tr("Remove Shape Tween")).clicked() => {
                 editor.set_shape_tween(false);
                 ui.close();
             }
             _ => {}
         }
         ui.separator();
-        if ui.button("New Folder").on_hover_text("Put the selected layers in a new folder").clicked() {
+        if ui.button(tr("New Folder")).on_hover_text(tr("Put the selected layers in a new folder")).clicked()
+        {
             editor.new_folder();
             ui.close();
         }
-        if in_folder && ui.button("Remove from Folder").clicked() {
+        if in_folder && ui.button(tr("Remove from Folder")).clicked() {
             editor.doc.set_folder(row.layer, None);
             ui.close();
         }
-        ui.menu_button("Layer Colour", |ui| color_choices(ui, editor, row.layer));
+        ui.menu_button(tr("Layer Colour"), |ui| color_choices(ui, editor, row.layer));
         ui.separator();
         // The picked frames, as the Timeline menu and ⌘X, ⌘C and ⌘V have them.
         let picked = editor.frame_range.is_some();
         for (label, keys, command, enabled) in [
-            ("Cut Frames", "⌘X", Command::CutFrames, picked),
-            ("Copy Frames", "⌘C", Command::CopyFrames, picked),
-            ("Paste Frames", "⌘V", Command::PasteFrames, frames_copied),
+            (tr("Cut Frames"), "⌘X", Command::CutFrames, picked),
+            (tr("Copy Frames"), "⌘C", Command::CopyFrames, picked),
+            (tr("Paste Frames"), "⌘V", Command::PasteFrames, frames_copied),
         ] {
             let button = egui::Button::new(label).shortcut_text(keys);
             if ui
                 .add_enabled(enabled, button)
-                .on_disabled_hover_text(if enabled || label == "Paste Frames" {
-                    "Copy some frames first"
+                .on_disabled_hover_text(if command == Command::PasteFrames {
+                    tr("Copy some frames first")
                 } else {
-                    "Shift-drag along a row to pick frames first"
+                    tr("Shift-drag along a row to pick frames first")
                 })
                 .clicked()
             {
@@ -1420,11 +1425,11 @@ fn context_menu(
             }
         }
         ui.separator();
-        if ui.button("Duplicate Layer").clicked() {
+        if ui.button(tr("Duplicate Layer")).clicked() {
             editor.duplicate_selected_layer();
             ui.close();
         }
-        if ui.button("Delete Layer").clicked() {
+        if ui.button(tr("Delete Layer")).clicked() {
             editor.delete_selected_layer();
             ui.close();
         }
@@ -1457,7 +1462,7 @@ fn color_choices(ui: &mut egui::Ui, editor: &mut Editor, layer: LayerId) {
             }
         }
     });
-    if ui.selectable_label(current.is_none(), "Automatic").clicked() {
+    if ui.selectable_label(current.is_none(), tr("Automatic")).clicked() {
         if let Some(l) = editor.doc.layer_mut(layer) {
             l.color = None;
         }
@@ -1923,7 +1928,7 @@ fn paint_audio_rows(
             frames.text(
                 at,
                 Align2::LEFT_CENTER,
-                format!("Can't play: {problem}"),
+                crate::i18n::tr_args("Can't play: {problem}", &[("problem", problem)]),
                 FontId::proportional(11.0),
                 ui.visuals().error_fg_color,
             );
@@ -1945,7 +1950,7 @@ fn paint_audio_rows(
             }
         } else if audio.is_loading(track, project_dir.as_deref()) {
             let at = pos2(layout.frame_x(track.start) + 4.0, row.center().y);
-            frames.text(at, Align2::LEFT_CENTER, "Loading…", FontId::proportional(11.0), faint);
+            frames.text(at, Align2::LEFT_CENTER, tr("Loading…"), FontId::proportional(11.0), faint);
         }
         frames.hline(row.x_range(), row.bottom(), (1.0, Color32::from_black_alpha(60)));
     }

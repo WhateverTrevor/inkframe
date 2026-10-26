@@ -1,6 +1,7 @@
 # Translating Inkframe
 
-Inkframe's interface can be translated: the menus, the first-run tour and
+Inkframe's interface can be translated: the menus, the tools and toolbar,
+the context bar, the timeline, the window's areas, the first-run tour and
 What's New so far, and more of it as each part of the app is converted.
 A translation is one plain text file; no programming is needed.
 
@@ -69,11 +70,20 @@ a cramped layout shows where longer translations won't fit.
 ### What's wrapped so far
 
 - The menu bar, its menus and their tips
+- The tools' names and tips, and the toolbar
+- The context bar above the stage
+- The timeline: its buttons, tips and right-click menus
+- The window's areas: their names, the area menu and its groups
 - The first-run tour
 - What's New's window (its notes come from the changelog, which isn't
   translated)
 
-Still to do, a part at a time: the toolbar and its tips, Properties, the
-timeline, the context bar, Find a Command, the dialogs, the Library and
-the other panels, and the names that come from elsewhere in the code
-(tools, workspaces, adjustments, perspective kinds).
+Still to do, a part at a time: Properties, Find a Command, the dialogs,
+the Library and the other panels, and the names that come from elsewhere
+in the code (workspaces, adjustments, perspective kinds, easings, blend
+modes).
+
+Names that are also data (a tool's or an area's, which the screenshot
+hooks and the guidebook's appendix use in English) keep an English
+`name()` marked with `tr_later`, and a `label()` that translates it for
+showing.

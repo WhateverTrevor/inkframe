@@ -8,6 +8,7 @@ use egui::{Color32, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2, pos2, 
 
 use crate::convert::color_button;
 use crate::editor::{Editor, Tool};
+use crate::i18n::tr;
 use crate::icons::{Icon, IconButton};
 use crate::shortcuts;
 
@@ -46,14 +47,14 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
         // Colors for new shapes. Pencil strokes have their own color, since a
         // filled pencil line rarely makes sense.
         if editor.tool == Tool::Pencil {
-            ui.weak("Line");
+            ui.weak(tr("Line"));
             color_button(ui, &mut editor.pencil_stroke.color);
             ui.add(egui::DragValue::new(&mut editor.pencil_stroke.width).range(0.5..=100.0).speed(0.1))
-                .on_hover_text("Line width");
+                .on_hover_text(tr("Line width"));
         } else {
-            ui.weak("Fill");
+            ui.weak(tr("Fill"));
             swatch(ui, &mut editor.draw_style.fill);
-            ui.weak("Stroke");
+            ui.weak(tr("Stroke"));
             let mut stroke_color = editor.draw_style.stroke.map(|s| s.color);
             if swatch(ui, &mut stroke_color) {
                 // A new colour keeps the line's width, ends and dashes.
@@ -74,12 +75,18 @@ fn group_button(ui: &mut egui::Ui, editor: &mut Editor, group: &'static [Tool]) 
     let key = shortcuts::tool_key(shown).name();
     // Its name and key, what it does, and how to reach the others in the slot.
     let others = if group.len() > 1 {
-        let names: Vec<&str> = group.iter().filter(|&&t| t != shown).map(|t| t.name()).collect();
-        format!("\n\nAlso here: {} (Shift+{key}, or right-click)", names.join(", "))
+        let names: Vec<&str> = group.iter().filter(|&&t| t != shown).map(|t| t.label()).collect();
+        format!(
+            "\n\n{}",
+            crate::i18n::tr_args(
+                "Also here: {tools} (Shift+{key}, or right-click)",
+                &[("tools", &names.join(", ")), ("key", key)]
+            )
+        )
     } else {
         String::new()
     };
-    let hint = format!("{}   {key}\n{}{others}", shown.name(), shown.description());
+    let hint = format!("{}   {key}\n{}{others}", shown.label(), shown.tip());
     let response = tool_button(ui, shown, group.contains(&editor.tool), group.len() > 1).on_hover_text(hint);
     if response.clicked() {
         editor.use_tool(shown);
@@ -87,7 +94,7 @@ fn group_button(ui: &mut egui::Ui, editor: &mut Editor, group: &'static [Tool]) 
     if group.len() > 1 {
         response.context_menu(|ui| {
             for &tool in group {
-                if ui.selectable_label(editor.tool == tool, tool.name()).clicked() {
+                if ui.selectable_label(editor.tool == tool, tool.label()).clicked() {
                     editor.use_tool(tool);
                     ui.close();
                 }
@@ -115,13 +122,13 @@ fn swatch(ui: &mut egui::Ui, color: &mut Option<inkframe_core::Color>) -> bool {
                     [rect.left_bottom(), rect.right_top()],
                     Stroke::new(2.0, Color32::from_rgb(0xe0, 0x30, 0x30)),
                 );
-                if response.on_hover_text("No colour. Click to use one").clicked() {
+                if response.on_hover_text(tr("No colour. Click to use one")).clicked() {
                     *color = Some(inkframe_core::Color::BLACK);
                     changed = true;
                 }
             }
         }
-        let none = IconButton::new(Icon::NoColor, "No colour").selected(color.is_none());
+        let none = IconButton::new(Icon::NoColor, tr("No colour")).selected(color.is_none());
         if ui.add(none).clicked() && color.is_some() {
             *color = None;
             changed = true;

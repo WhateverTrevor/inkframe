@@ -53,6 +53,9 @@ pub fn collect(dir: &Path) -> Result<Vec<String>, String> {
     for file in files {
         let source =
             std::fs::read_to_string(&file).map_err(|e| format!("couldn't read {}: {e}", file.display()))?;
+        // Windows checkouts may have \r\n line endings, which Rust reads as
+        // \n (a backslash before one continues a string, as before \n).
+        let source = source.replace("\r\n", "\n");
         for text in texts_in(&source) {
             if !texts.contains(&text) {
                 texts.push(text);
@@ -164,6 +167,12 @@ mod tests {
         "#;
         assert_eq!(texts_in(source), ["Save As…", "Undo {what}", "Long line", "Two\nlines with \"quotes\""]);
         assert!(template(&["Two\nlines".into()]).ends_with("Two\\nlines = \n"));
+        // As a Windows checkout has it.
+        let dir = std::env::temp_dir().join(format!("inkframe-strings-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.rs"), "tr_later(\"Long \\\r\n        line\")\r\n").unwrap();
+        assert_eq!(collect(&dir).unwrap(), ["Long line"]);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     /// The template lists exactly what the code wraps: run `cargo xtask
