@@ -9,7 +9,9 @@
 //! strings`, lists every text there is to translate.
 //!
 //! The language is chosen once, at start-up: `INKFRAME_LANGUAGE`, or else
-//! the system's (`LANG`), if Inkframe has it. `pseudo` is a made-up one for
+//! the one picked in View › Language, or else the system's (`LANG`), if
+//! Inkframe has it. Texts are kept for good once translated, so changing
+//! language takes a restart. `pseudo` is a made-up one for
 //! checking the interface: every translated text accented and longer, so
 //! text not yet wrapped in `tr` stands out, and so does a layout with no
 //! room for longer words.
@@ -32,11 +34,18 @@ enum Language {
     Pseudo(RwLock<HashMap<&'static str, &'static str>>),
 }
 
-/// Chooses the language from `INKFRAME_LANGUAGE` or `LANG`. Call once,
-/// before anything is shown; later calls do nothing.
-pub fn choose_language() {
-    let wanted = std::env::var("INKFRAME_LANGUAGE").or_else(|_| std::env::var("LANG")).unwrap_or_default();
+/// Chooses the language: `INKFRAME_LANGUAGE`, else `picked` (from View ›
+/// Language), else `LANG`. Call once, before anything is shown; later
+/// calls do nothing.
+pub fn choose_language(picked: Option<&str>) {
+    let wanted = std::env::var("INKFRAME_LANGUAGE")
+        .ok()
+        .or_else(|| picked.map(str::to_owned))
+        .or_else(|| std::env::var("LANG").ok())
+        .unwrap_or_default();
     let _ = LANGUAGE.set(language_for(&wanted));
+    // The core names undo steps; it translates them with this.
+    inkframe_core::i18n::set_translator(tr);
 }
 
 fn language_for(wanted: &str) -> Language {
@@ -51,6 +60,23 @@ fn language_for(wanted: &str) -> Language {
         .find(|(c, _)| *c == code)
         .or_else(|| BUILT_IN.iter().find(|(c, _)| *c == short))
         .map_or(Language::English, |(_, file)| Language::Translated(parse(file)))
+}
+
+/// The languages there are to pick, by code and by name in their own
+/// language (a translation file's first line, `# Deutsch`, names it).
+/// English, then the translations, then the pseudo-language for checking
+/// layouts.
+pub fn languages() -> Vec<(&'static str, &'static str)> {
+    let built_in = BUILT_IN.iter().map(|(code, file)| (*code, name_of(code, file)));
+    std::iter::once(("en", "English"))
+        .chain(built_in)
+        .chain(std::iter::once(("pseudo", "Pseudo-language (for checking layouts)")))
+        .collect()
+}
+
+/// A translation file's name for its language: its first comment line.
+fn name_of(code: &'static str, file: &'static str) -> &'static str {
+    file.lines().next().and_then(|line| line.strip_prefix('#')).map_or(code, str::trim)
 }
 
 /// Reads a translation file: `English = translation` a line, with `#`
@@ -161,6 +187,15 @@ mod tests {
         assert_eq!(tr_args("Undo {what}", &[("what", "Add “Ball”")]), "Undo Add “Ball”");
         let made = pseudo("Undo {what} on {frame}");
         assert!(made.starts_with("[Ündö {what} ön {frame}") && made.ends_with(']'), "{made}");
+    }
+
+    #[test]
+    fn languages_are_named_by_their_files_first_line() {
+        assert_eq!(name_of("de", "# Deutsch\nSave = Speichern\n"), "Deutsch");
+        assert_eq!(name_of("xx", "Save = x\n"), "xx");
+        let codes: Vec<&str> = languages().iter().map(|(code, _)| *code).collect();
+        assert_eq!(codes.first(), Some(&"en"));
+        assert_eq!(codes.last(), Some(&"pseudo"));
     }
 
     #[test]

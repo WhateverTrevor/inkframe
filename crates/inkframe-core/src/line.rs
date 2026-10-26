@@ -150,9 +150,9 @@ impl TextureKind {
 
     pub fn label(self) -> &'static str {
         match self {
-            TextureKind::Pencil => "Pencil",
-            TextureKind::Charcoal => "Charcoal",
-            TextureKind::Chalk => "Chalk",
+            TextureKind::Pencil => crate::i18n::tr_later("Pencil"),
+            TextureKind::Charcoal => crate::i18n::tr_later("Charcoal"),
+            TextureKind::Chalk => crate::i18n::tr_later("Chalk"),
         }
     }
 }

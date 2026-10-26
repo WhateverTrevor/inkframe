@@ -119,10 +119,10 @@ impl Preset {
 
     pub fn name(self) -> &'static str {
         match self {
-            Preset::Sparks => "Sparks",
-            Preset::Snow => "Snow",
-            Preset::Smoke => "Smoke",
-            Preset::Fire => "Fire",
+            Preset::Sparks => crate::i18n::tr_later("Sparks"),
+            Preset::Snow => crate::i18n::tr_later("Snow"),
+            Preset::Smoke => crate::i18n::tr_later("Smoke"),
+            Preset::Fire => crate::i18n::tr_later("Fire"),
         }
     }
 }

@@ -382,7 +382,9 @@ impl Editor {
         let frame = self.frame;
         let timeline = self.timeline();
         let source = self.doc.layer(id).ok_or(tr("The layer has gone"))?.clone();
-        let name = self.doc.next_layer_name_in(timeline, &format!("{} part", source.name));
+        let name = self
+            .doc
+            .next_layer_name_in(timeline, &crate::i18n::tr_args("{layer} part", &[("layer", &source.name)]));
         let lines: Vec<Element> =
             picked.iter().filter(|(s, _)| !s.colour_art).map(|(_, e)| e.clone()).collect();
         let colour: Vec<Element> =

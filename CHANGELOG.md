@@ -16,7 +16,9 @@ notes on GitHub are its section here.
   translate, and a pseudo-language shows what's been wrapped so far. The
   area menu now widens to fit longer names. Find a Command and the
   Properties search find things by their translated words and their
-  English ones.
+  English ones. View › Language picks the language Inkframe starts in,
+  or follows the system's. The names of undo steps and new layers are
+  translated too.
 
 ### Speed
 

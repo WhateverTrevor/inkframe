@@ -26,9 +26,9 @@ impl PerspectiveKind {
 
     pub fn label(self) -> &'static str {
         match self {
-            PerspectiveKind::OnePoint => "One-Point",
-            PerspectiveKind::TwoPoint => "Two-Point",
-            PerspectiveKind::ThreePoint => "Three-Point",
+            PerspectiveKind::OnePoint => crate::i18n::tr_later("One-Point"),
+            PerspectiveKind::TwoPoint => crate::i18n::tr_later("Two-Point"),
+            PerspectiveKind::ThreePoint => crate::i18n::tr_later("Three-Point"),
         }
     }
 

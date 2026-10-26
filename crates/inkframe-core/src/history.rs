@@ -1,4 +1,5 @@
 use crate::document::{Document, Layer};
+use crate::i18n::{tr, tr_args};
 use crate::shape::Shape;
 
 /// Undo/redo by snapshots.
@@ -126,18 +127,21 @@ impl History {
 /// "Paint on “Sky”", "Restack layers". Found by comparing the two, so
 /// every edit gets a name without each feature having to give one.
 pub fn describe(before: &Document, after: &Document) -> String {
-    let named = |layer: &Layer| format!("“{}”", layer.name);
+    // Whole phrases with the layer's name filled in, so a translation
+    // can put the name where its language does.
+    let named = |text: &'static str, layer: &Layer| tr_args(text, &[("layer", &layer.name)]);
+    let counted = |text: &'static str, count: usize| tr_args(text, &[("count", &count.to_string())]);
     let old: Vec<&Layer> = before.all_layers().collect();
     let new: Vec<&Layer> = after.all_layers().collect();
     let added: Vec<&&Layer> = new.iter().filter(|l| !old.iter().any(|o| o.id == l.id)).collect();
     let removed: Vec<&&Layer> = old.iter().filter(|l| !new.iter().any(|n| n.id == l.id)).collect();
     match (added.as_slice(), removed.as_slice()) {
-        ([layer], []) if layer.folder => return "New folder".to_owned(),
-        ([layer], []) => return format!("Add {}", named(layer)),
-        ([], [layer]) => return format!("Delete {}", named(layer)),
-        ([_, ..], []) => return format!("Add {} layers", added.len()),
-        ([], [_, ..]) => return format!("Delete {} layers", removed.len()),
-        ([_, ..], [_, ..]) => return "Change layers".to_owned(),
+        ([layer], []) if layer.folder => return tr("New folder").to_owned(),
+        ([layer], []) => return named("Add “{layer}”", layer),
+        ([], [layer]) => return named("Delete “{layer}”", layer),
+        ([_, ..], []) => return counted("Add {count} layers", added.len()),
+        ([], [_, ..]) => return counted("Delete {count} layers", removed.len()),
+        ([_, ..], [_, ..]) => return tr("Change layers").to_owned(),
         ([], []) => {}
     }
 
@@ -150,36 +154,33 @@ pub fn describe(before: &Document, after: &Document) -> String {
     match changed.as_slice() {
         [(o, n)] => {
             let what = if o.name != n.name {
-                "Rename"
+                "Rename “{layer}”"
             } else if o.visible != n.visible {
-                if n.visible { "Show" } else { "Hide" }
+                if n.visible { "Show “{layer}”" } else { "Hide “{layer}”" }
             } else if o.locked != n.locked {
-                if n.locked { "Lock" } else { "Unlock" }
+                if n.locked { "Lock “{layer}”" } else { "Unlock “{layer}”" }
             } else if o.in_folder != n.in_folder {
-                "Move into folder"
+                "Move “{layer}” into folder"
             } else if o.drawings != n.drawings || o.exposure != n.exposure {
-                "Draw on"
+                "Draw on “{layer}”"
             } else if o.track != n.track {
-                "Animate"
+                "Animate “{layer}”"
             } else if (o.start, o.end) != (n.start, n.end) {
-                "Change frames of"
+                "Change frames of “{layer}”"
             } else if o.color != n.color {
-                "Recolour"
+                "Recolour “{layer}”"
             } else if (o.parent, o.pivot, o.rotation_limits) != (n.parent, n.pivot, n.rotation_limits) {
-                "Rig"
+                "Rig “{layer}”"
             } else {
-                "Edit"
+                "Edit “{layer}”"
             };
-            if what == "Move into folder" {
-                return format!("Move {} into folder", named(n));
-            }
-            return format!("{what} {}", named(n));
+            return named(what, n);
         }
-        [_, _, ..] => return format!("Edit {} layers", changed.len()),
+        [_, _, ..] => return counted("Edit {count} layers", changed.len()),
         [] => {}
     }
     if order(before) != order(after) {
-        return "Restack layers".to_owned();
+        return tr("Restack layers").to_owned();
     }
     if before.canvases != after.canvases {
         // Name the layer painted on, if one shows the changed canvas.
@@ -191,21 +192,21 @@ pub fn describe(before: &Document, after: &Document) -> String {
                 .flat_map(|d| &d.elements)
                 .any(|e| matches!(e.shape, Shape::Paint { canvas, .. } if Some(canvas) == painted))
         });
-        return layer.map_or_else(|| "Paint".to_owned(), |l| format!("Paint on {}", named(l)));
+        return layer.map_or_else(|| tr("Paint").to_owned(), |l| named("Paint on “{layer}”", l));
     }
     if before.symbols != after.symbols {
-        return "Edit symbol".to_owned();
+        return tr("Edit symbol").to_owned();
     }
     if before.audio != after.audio {
-        return "Change audio".to_owned();
+        return tr("Change audio").to_owned();
     }
     if before.images != after.images || before.fonts != after.fonts {
-        return "Import".to_owned();
+        return tr("Import").to_owned();
     }
     if before.palette != after.palette {
-        return "Change palette".to_owned();
+        return tr("Change palette").to_owned();
     }
-    "Document settings".to_owned()
+    tr("Document settings").to_owned()
 }
 
 #[cfg(test)]

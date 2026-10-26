@@ -407,7 +407,7 @@ impl TimelineView {
             names.text(
                 pos2(cell.left() + 10.0, cell.center().y),
                 Align2::LEFT_CENTER,
-                property.name(),
+                tr(property.name()),
                 font.clone(),
                 ui.visuals().text_color(),
             );
@@ -1079,7 +1079,7 @@ impl TimelineView {
                     painter.text(
                         name_pos,
                         Align2::LEFT_CENTER,
-                        property.name(),
+                        tr(property.name()),
                         FontId::proportional(12.0),
                         text,
                     );
@@ -1340,7 +1340,7 @@ fn context_menu(
         let in_folder = layer.in_folder.is_some();
 
         if let Some(property) = row.property {
-            ui.weak(property.name());
+            ui.weak(tr(property.name()));
         }
         let insert_label = if row.property.is_some() { tr("Insert Key") } else { tr("Insert Keyframe") };
         if ui.add_enabled(can_insert, egui::Button::new(insert_label).shortcut_text("F6")).clicked() {
@@ -1359,7 +1359,7 @@ fn context_menu(
         ui.add_enabled_ui(!easings.is_empty(), |ui| {
             ui.menu_button(tr("Easing"), |ui| {
                 for preset in Easing::PRESETS {
-                    if ui.selectable_label(shared_easing == Some(preset), preset.label()).clicked() {
+                    if ui.selectable_label(shared_easing == Some(preset), tr(preset.label())).clicked() {
                         for_each_channel(editor, row, |c| {
                             if let Some(e) = c.tween_easing_mut(frame) {
                                 *e = preset;

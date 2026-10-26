@@ -89,17 +89,17 @@ impl ExportFormat {
 
     pub fn label(self) -> &'static str {
         match self {
-            ExportFormat::PngSequence => "PNG Sequence",
-            ExportFormat::ProRes4444 => "Apple ProRes 4444 (.mov)",
-            ExportFormat::ProRes4444Xq => "Apple ProRes 4444 XQ (.mov)",
-            ExportFormat::ProRes422Hq => "Apple ProRes 422 HQ (.mov)",
-            ExportFormat::H264 => "H.264 (.mp4)",
-            ExportFormat::HevcWithAlpha => "HEVC with Alpha (.mov)",
-            ExportFormat::SpriteSheet => "Sprite Sheet (.png + .json)",
-            ExportFormat::Gif => "Animated GIF (.gif)",
-            ExportFormat::Svg => "SVG (.svg)",
-            ExportFormat::Lottie => "Lottie (.json)",
-            ExportFormat::Html => "Web Page (.html)",
+            ExportFormat::PngSequence => inkframe_core::i18n::tr_later("PNG Sequence"),
+            ExportFormat::ProRes4444 => inkframe_core::i18n::tr_later("Apple ProRes 4444 (.mov)"),
+            ExportFormat::ProRes4444Xq => inkframe_core::i18n::tr_later("Apple ProRes 4444 XQ (.mov)"),
+            ExportFormat::ProRes422Hq => inkframe_core::i18n::tr_later("Apple ProRes 422 HQ (.mov)"),
+            ExportFormat::H264 => inkframe_core::i18n::tr_later("H.264 (.mp4)"),
+            ExportFormat::HevcWithAlpha => inkframe_core::i18n::tr_later("HEVC with Alpha (.mov)"),
+            ExportFormat::SpriteSheet => inkframe_core::i18n::tr_later("Sprite Sheet (.png + .json)"),
+            ExportFormat::Gif => inkframe_core::i18n::tr_later("Animated GIF (.gif)"),
+            ExportFormat::Svg => inkframe_core::i18n::tr_later("SVG (.svg)"),
+            ExportFormat::Lottie => inkframe_core::i18n::tr_later("Lottie (.json)"),
+            ExportFormat::Html => inkframe_core::i18n::tr_later("Web Page (.html)"),
         }
     }
 

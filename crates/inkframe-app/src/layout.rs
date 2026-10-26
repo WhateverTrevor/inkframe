@@ -276,10 +276,10 @@ impl Workspace {
 
     pub fn name(self) -> &'static str {
         match self {
-            Workspace::Essentials => "Essentials",
-            Workspace::Animator => "Animator",
-            Workspace::Designer => "Designer",
-            Workspace::Painter => "Painter",
+            Workspace::Essentials => tr_later("Essentials"),
+            Workspace::Animator => tr_later("Animator"),
+            Workspace::Designer => tr_later("Designer"),
+            Workspace::Painter => tr_later("Painter"),
         }
     }
 }

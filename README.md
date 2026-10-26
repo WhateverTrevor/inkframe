@@ -119,7 +119,7 @@ planned (the code is already cross-platform and CI builds it on Windows).
 - **Undo/redo** for every change. Project files (`.inkf`) are zip files
   holding the document as readable JSON and painted pixels as PNG images.
 
-Inkframe can be translated, a part at a time: see [docs/TRANSLATING.md](docs/TRANSLATING.md).
+Inkframe can be translated with a plain text file per language, and View › Language picks which one it uses: see [docs/TRANSLATING.md](docs/TRANSLATING.md).
 
 New to Inkframe? *Inkframe for Artists*, a beginner's guidebook with a
 chapter for each group of tools, three projects and screenshots of every

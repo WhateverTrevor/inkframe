@@ -257,7 +257,10 @@ impl Document {
 
     fn next_folder_name(&self, timeline: TimelineId) -> String {
         let taken = |name: &str| self.layers_of(timeline).iter().any(|l| l.name == name);
-        (1..).map(|n| format!("Folder {n}")).find(|name| !taken(name)).expect("some number is free")
+        (1..)
+            .map(|n| crate::i18n::tr_args("Folder {number}", &[("number", &n.to_string())]))
+            .find(|name| !taken(name))
+            .expect("some number is free")
     }
 }
 

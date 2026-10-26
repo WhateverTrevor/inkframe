@@ -945,7 +945,7 @@ impl StageView {
                 gradient: None,
             }
         };
-        add_path_layer(editor, "Path", path, style);
+        add_path_layer(editor, tr("Path"), path, style);
     }
 
     /// Backspace while drawing: take back the most recent anchor.
@@ -3198,12 +3198,13 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
                 return;
             }
             let (shape, name) = match tool {
-                Tool::Ellipse => {
-                    (Shape::Ellipse { radius_x: rect.width() / 2.0, radius_y: rect.height() / 2.0 }, "Oval")
-                }
+                Tool::Ellipse => (
+                    Shape::Ellipse { radius_x: rect.width() / 2.0, radius_y: rect.height() / 2.0 },
+                    tr("Oval"),
+                ),
                 _ => (
                     Shape::Rect { width: rect.width(), height: rect.height(), corner_radius: 0.0 },
-                    "Rectangle",
+                    tr("Rectangle"),
                 ),
             };
             let element = Element { shape, style: editor.draw_style.clone() };
@@ -3225,7 +3226,7 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
                 add_line_layer(editor, path, widths);
             } else {
                 let style = Style { fill: None, stroke: Some(editor.pencil_stroke), gradient: None };
-                add_path_layer(editor, "Stroke", path, style);
+                add_path_layer(editor, tr("Stroke"), path, style);
             }
         }
         Gesture::Marquee { start, current, adding } => {
@@ -3725,7 +3726,7 @@ fn add_line_layer(editor: &mut Editor, mut path: Path, widths: Vec<f32>) {
     let center = bounds.center();
     path.translate(-center);
     let style = Style { fill: Some(editor.pencil_stroke.color), stroke: None, gradient: None };
-    editor.add_drawn_shape("Line", Element { shape: Shape::Line { path, widths }, style }, center);
+    editor.add_drawn_shape(tr("Line"), Element { shape: Shape::Line { path, widths }, style }, center);
 }
 
 fn add_path_layer(editor: &mut Editor, prefix: &str, mut path: Path, style: Style) {

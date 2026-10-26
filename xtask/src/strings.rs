@@ -28,7 +28,7 @@ pub fn write_template() -> Result<(), String> {
     let path = template_path(&root);
     std::fs::create_dir_all(path.parent().expect("in a folder"))
         .map_err(|e| format!("couldn't create {}: {e}", path.display()))?;
-    let texts = collect(&root.join("crates/inkframe-app/src"))?;
+    let texts = all_texts(&root)?;
     crate::util::write(&path, template(&texts).as_bytes())?;
     println!("Wrote {} texts to {}", texts.len(), path.display());
     Ok(())
@@ -41,6 +41,24 @@ pub fn template(texts: &[String]) -> String {
         out.push_str(" = \n");
     }
     out
+}
+
+/// The crates with texts to translate: the app's own, and the names the
+/// core and the exporter mark for the app to translate where it shows them.
+const SOURCES: [&str; 3] =
+    ["crates/inkframe-app/src", "crates/inkframe-core/src", "crates/inkframe-export/src"];
+
+/// Every translatable text in Inkframe, each once.
+pub fn all_texts(root: &Path) -> Result<Vec<String>, String> {
+    let mut texts: Vec<String> = Vec::new();
+    for dir in SOURCES {
+        for text in collect(&root.join(dir))? {
+            if !texts.contains(&text) {
+                texts.push(text);
+            }
+        }
+    }
+    Ok(texts)
 }
 
 /// Every translatable text in the Rust files under `dir`, in file order,
@@ -180,7 +198,7 @@ mod tests {
     #[test]
     fn the_template_is_up_to_date() {
         let root = crate::workspace_root();
-        let texts = collect(&root.join("crates/inkframe-app/src")).unwrap();
+        let texts = all_texts(&root).unwrap();
         // Windows checkouts may turn its line endings into \r\n.
         let on_disk = std::fs::read_to_string(template_path(&root)).unwrap_or_default().replace("\r\n", "\n");
         assert!(
@@ -193,8 +211,7 @@ mod tests {
     #[test]
     fn translations_are_of_texts_the_app_has() {
         let root = crate::workspace_root();
-        let texts: Vec<String> =
-            collect(&root.join("crates/inkframe-app/src")).unwrap().iter().map(|t| escape(t)).collect();
+        let texts: Vec<String> = all_texts(&root).unwrap().iter().map(|t| escape(t)).collect();
         for entry in std::fs::read_dir(root.join("locales")).unwrap().flatten() {
             let path = entry.path();
             if path.file_name().is_some_and(|n| n == "template.txt") {

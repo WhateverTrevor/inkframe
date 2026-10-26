@@ -273,6 +273,9 @@ pub struct InkframeApp {
     /// The newest version whose What's New has been seen, kept with the
     /// settings: `None` before this one first ran.
     seen_version: Option<String>,
+    /// The language picked in View › Language (none: the system's). It's
+    /// used from the next start; see `i18n.rs`.
+    language: Option<String>,
 }
 
 impl InkframeApp {
@@ -329,6 +332,7 @@ impl InkframeApp {
             toured: false,
             whats_new: Default::default(),
             seen_version: None,
+            language: None,
         };
         // Screenshots always use the usual layout, so they look the same
         // on every machine.
@@ -352,6 +356,7 @@ impl InkframeApp {
             app.batch.restore(prefs.batch_jobs(), prefs.batch_folder.clone());
             app.toured = prefs.toured;
             app.seen_version = prefs.seen_version.clone();
+            app.language = prefs.language.clone();
             app.editor.folded_sections = prefs.folded_sections.iter().cloned().collect();
         }
         // The tour shows the first time Inkframe opens, and never in a
@@ -1434,7 +1439,7 @@ impl InkframeApp {
                 item(ui, tr("New Paint Layer"), None, Command::NewPaintLayer, true);
                 ui.menu_button(tr("New Particle Layer"), |ui| {
                     for preset in inkframe_core::Preset::ALL {
-                        item(ui, preset.name(), None, Command::NewParticleLayer(preset), true);
+                        item(ui, tr(preset.name()), None, Command::NewParticleLayer(preset), true);
                     }
                 });
                 item(ui, tr("New Folder"), None, Command::NewFolder, true);
@@ -1455,7 +1460,7 @@ impl InkframeApp {
                 let paint = self.editor.paint_target().is_some();
                 ui.menu_button(tr("Adjustments"), |ui| {
                     for kind in AdjustmentKind::ALL {
-                        let label = format!("{}…", kind.neutral().name());
+                        let label = format!("{}…", tr(kind.neutral().name()));
                         item(ui, &label, None, Command::Adjust(kind), paint);
                     }
                 });
@@ -1622,7 +1627,7 @@ impl InkframeApp {
                 ui.separator();
                 ui.menu_button(tr("Safe Areas"), |ui| {
                     for kind in SafeAreas::ALL {
-                        ui.radio_value(&mut self.editor.guides.safe_areas, kind, kind.label());
+                        ui.radio_value(&mut self.editor.guides.safe_areas, kind, tr(kind.label()));
                     }
                     ui.weak(tr("Keep action inside the outer line\nand text inside the inner one."));
                 });
@@ -1648,7 +1653,7 @@ impl InkframeApp {
                 ui.menu_button(tr("Perspective Guide"), |ui| {
                     let current = self.editor.doc.perspective.as_ref().map(|g| g.kind);
                     let mut options = vec![(None, tr("None"))];
-                    options.extend(inkframe_core::PerspectiveKind::ALL.map(|k| (Some(k), k.label())));
+                    options.extend(inkframe_core::PerspectiveKind::ALL.map(|k| (Some(k), tr(k.label()))));
                     for (kind, label) in options {
                         if ui.add(egui::Button::new(label).selected(current == kind)).clicked() {
                             toggled = Some(Command::SetPerspective(kind));
@@ -1691,11 +1696,13 @@ impl InkframeApp {
                 ui.separator();
                 ui.menu_button(tr("Workspace"), |ui| {
                     for workspace in Workspace::ALL {
-                        item(ui, workspace.name(), None, Command::Workspace(workspace), true);
+                        item(ui, tr(workspace.name()), None, Command::Workspace(workspace), true);
                     }
                 });
                 item(ui, tr("Reset Workspace"), None, Command::ResetLayout, true);
                 ui.weak(tr("Drag an area's corner to split or join it,\nCtrl+Space to fill the window with it."));
+                ui.separator();
+                self.language_menu(ui);
             });
             ui.menu_button(tr("Scripts"), |ui| self.scripts.menu(ui, &self.editor));
             let help = ui.menu_button(tr("Help"), |ui| {
@@ -1722,16 +1729,16 @@ impl InkframeApp {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // The workspace switcher, at the top right as in Animate.
                 let current = self.layout.workspace_name();
-                egui::ComboBox::from_id_salt("workspace").selected_text(current.name()).width(110.0).show_ui(
+                egui::ComboBox::from_id_salt("workspace").selected_text(tr(current.name())).width(110.0).show_ui(
                     ui,
                     |ui| {
                         for workspace in Workspace::ALL {
-                            if ui.selectable_label(workspace == current, workspace.name()).clicked() {
+                            if ui.selectable_label(workspace == current, tr(workspace.name())).clicked() {
                                 chosen = Some(Command::Workspace(workspace));
                             }
                         }
                         ui.separator();
-                        if ui.button(tr_args("Reset {workspace}", &[("workspace", current.name())])).clicked() {
+                        if ui.button(tr_args("Reset {workspace}", &[("workspace", tr(current.name()))])).clicked() {
                             chosen = Some(Command::ResetLayout);
                         }
                     },
@@ -1768,6 +1775,22 @@ impl InkframeApp {
     }
 
     /// The settings to keep for next time, as they are now.
+    /// View › Language: the system's, or one picked. Inkframe starts in it
+    /// next time, as texts already shown can't change language.
+    fn language_menu(&mut self, ui: &mut egui::Ui) {
+        ui.menu_button(tr("Language"), |ui| {
+            if ui.radio(self.language.is_none(), tr("Same as the System")).clicked() {
+                self.language = None;
+            }
+            for (code, name) in crate::i18n::languages() {
+                if ui.radio(self.language.as_deref() == Some(code), name).clicked() {
+                    self.language = Some(code.to_owned());
+                }
+            }
+            ui.weak(tr("Inkframe starts in the language picked\nthe next time it opens."));
+        });
+    }
+
     fn current_prefs(&self) -> Prefs {
         Prefs {
             shape_per_layer: !self.editor.draw_into_layer,
@@ -1777,6 +1800,7 @@ impl InkframeApp {
             no_guide_snapping: !self.editor.snap_to_guides,
             toured: self.toured,
             seen_version: self.seen_version.clone(),
+            language: self.language.clone(),
             folded_sections: self.editor.folded_sections.iter().cloned().collect(),
             ..Prefs::gather(self.editor.guides, self.batch.jobs(), self.batch.chosen_folder())
         }
