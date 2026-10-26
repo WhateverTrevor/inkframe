@@ -3,7 +3,11 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
-## Unreleased
+## [0.5.1]
+
+What's new after an update, scripted Rhubarb lip sync, faster particles,
+and a guidebook chapter on scripting. Projects open in 0.5.0 and 0.4.0
+too.
 
 ### What's New
 
