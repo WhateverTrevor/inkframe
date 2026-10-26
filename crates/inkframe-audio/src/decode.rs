@@ -24,8 +24,24 @@ use crate::{AudioError, CHANNELS, Clip, SAMPLE_RATE};
 ///
 /// A minute of audio is about 23 MB this way, which is fine for the
 /// dialogue and music animators work with and keeps playback and scrubbing
-/// simple: every sample is already at hand.
+/// simple: every sample is already at hand. For a long file under a short
+/// animation, [`decode_first`] stops once it has what can be heard.
 pub fn decode(path: &Path) -> Result<Clip, AudioError> {
+    decode_first(path, f64::INFINITY).map(|decoded| decoded.clip)
+}
+
+/// The start of a file, decoded, and what's known of the rest.
+pub struct Decoded {
+    pub clip: Clip,
+    /// The whole file's length in seconds, if it says.
+    pub seconds: Option<f64>,
+    /// Whether all of the file was decoded.
+    pub complete: bool,
+}
+
+/// Decodes the first `seconds` of an audio file (a little more, to the end
+/// of a packet), or all of it if it's shorter.
+pub fn decode_first(path: &Path, seconds: f64) -> Result<Decoded, AudioError> {
     let source = MediaSourceStream::new(Box::new(File::open(path)?), Default::default());
     let mut hint = Hint::new();
     if let Some(extension) = path.extension().and_then(|e| e.to_str()) {
@@ -51,8 +67,14 @@ pub fn decode(path: &Path) -> Result<Clip, AudioError> {
     let mut samples = Vec::new();
     let mut rate = track.codec_params.sample_rate.unwrap_or(SAMPLE_RATE);
     let mut channels = track.codec_params.channels.map_or(1, |c| c.count());
+    let length = track.codec_params.n_frames.map(|frames| frames as f64 / rate as f64);
+    let mut complete = true;
 
     loop {
+        if samples.len() as f64 >= seconds * rate as f64 * channels as f64 {
+            complete = false;
+            break;
+        }
         let packet = match format.next_packet() {
             Ok(packet) => packet,
             // Running out of data is how symphonia signals the end of a file.
@@ -79,8 +101,9 @@ pub fn decode(path: &Path) -> Result<Clip, AudioError> {
     }
 
     let stereo = to_stereo(&samples, channels);
+    drop(samples);
     let resampled = if rate == SAMPLE_RATE { stereo } else { resample(&stereo, rate)? };
-    Ok(Clip { samples: resampled })
+    Ok(Decoded { clip: Clip { samples: resampled }, seconds: length, complete })
 }
 
 /// Converts interleaved audio with any channel count to stereo. Mono is
@@ -127,6 +150,19 @@ fn resample(stereo: &[f32], from_rate: u32) -> Result<Vec<f32>, AudioError> {
 mod tests {
     use super::*;
     use crate::test_util::{scratch, write_tone};
+
+    #[test]
+    fn only_the_start_of_a_long_file_is_decoded_when_asked() {
+        let path = scratch("first").join("ten-seconds.wav");
+        write_tone(&path, SAMPLE_RATE, 2, 10.0, 0.5);
+        let start = decode_first(&path, 2.0).unwrap();
+        assert!(!start.complete);
+        let seconds = start.clip.seconds();
+        assert!((2.0..2.5).contains(&seconds), "about two seconds: {seconds}");
+        assert_eq!(start.seconds, Some(10.0), "the whole file's length is still known");
+        let all = decode_first(&path, 60.0).unwrap();
+        assert!(all.complete && (all.clip.seconds() - 10.0).abs() < 0.01);
+    }
 
     #[test]
     fn mono_44k_becomes_stereo_48k() {

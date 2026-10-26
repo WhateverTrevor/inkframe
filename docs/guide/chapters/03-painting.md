@@ -52,11 +52,16 @@ The **Brushes** panel lists the brushes, each by a sample stroke. Besides round 
 | **Dual Brush** | A second tip along the same path: the paint shows only where the two meet, for broken, bristly edges. |
 | **Color Dynamics** | The colour wanders, per dab or per stroke: towards the second colour, or in hue, saturation and brightness. |
 | **Transfer** | Each dab's opacity and flow, by chance or by pressure. |
+| **Brush Pose** | A pen's tilt, turn and pressure, for painting with a mouse as if with a pen held so; **Override** uses them even with a pen. |
 | **Noise**, **Wet Edges**, **Build-up** | Grit in soft edges; paint pooling at the rim like watercolour; paint that keeps flowing while the pen rests, like an airbrush. |
 
 A stroke along the foot of the panel shows the brush as it stands.
 
 ![The Brushes panel above Brush Settings at Shape Dynamics, for the Foliage brush](brush-settings){crop=0.76,0.035,1.0,0.82}
+
+**Symmetry**, in the bar above the stage while the Brush, Eraser or Pattern Stamp is picked, repeats every stroke as you paint: mirrored across the canvas's middle (**Vertical**, **Horizontal** or both), or turned round it (**Radial**, or **Mandala**, mirrored within each segment, with the number of **Segments** to choose). Its lines show faintly on the stage.
+
+![A mandala painted with symmetry, mirrored foliage, and a band of Pattern Stamp](symmetry){crop=0.095,0.14,0.76,0.70}
 
 For a quick change without leaving the canvas, right-click the stage with a painting tool: a small panel opens with the size and hardness over the brushes. Or hold [[⌃⌥]] and drag on the canvas (Alt and the right button on Windows): left and right resize the brush, up and down soften and harden it.
 
@@ -77,6 +82,7 @@ The rest of the painting tools work as they do in Photoshop:
 | **Blur** and **Sharpen** | [[⇧U]] | Soften or crisp up the paint under the brush. |
 | **Dodge** and **Burn** | [[D]], [[⇧D]] | Lighten or darken it. **Range** picks the shadows, midtones or highlights. |
 | **Clone Stamp** | [[S]] | [[⌥]]-click where to copy from, then paint a copy elsewhere. |
+| **Pattern Stamp** | [[⇧S]] | Paints a pattern with the whole brush: its dark parts in the paint colour, its light parts in the **Light colour**. Pick the pattern, or **Import…** a picture, in the Tool tab. |
 
 ![The same strokes over a gradient sky, smudged, blurred, dodged and burned, with a filled circle](paint-tools){crop=0.095,0.14,0.664,0.558}
 

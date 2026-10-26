@@ -1,7 +1,8 @@
 //! Playing the document's audio in the editor.
 //!
 //! Sound files are decoded on background threads (an MP3 can take a moment)
-//! and cached. When anything that affects the sound changes, the tracks are
+//! and cached: as much of each as the animation can play, and a minute
+//! more, decoded further if the animation grows. When anything that affects the sound changes, the tracks are
 //! re-mixed into one timeline-length clip, which is then played from
 //! whatever frame playback starts on.
 //!
@@ -23,12 +24,23 @@ use crate::editor::Editor;
 /// A decoded file, or why it couldn't be decoded.
 enum Decoded {
     Loading,
-    Ready(Arc<Clip>),
+    Ready {
+        clip: Arc<Clip>,
+        /// The whole file's length in seconds, if it says.
+        seconds: Option<f64>,
+        /// Whether all of it is decoded, or only the start.
+        complete: bool,
+    },
     Failed(String),
 }
 
 /// A file's path and what decoding it produced, sent back from a decoder thread.
-type DecodeResult = (PathBuf, Result<Clip, String>);
+type DecodeResult = (PathBuf, Result<inkframe_audio::Decoded, String>);
+
+/// How much more of a file than the animation can play is decoded, in
+/// seconds: room to lengthen the animation a little, and for the Library's
+/// preview.
+const MARGIN: f64 = 60.0;
 
 /// Everything the mix depends on. If none of it changed, the last mix is reused.
 #[derive(PartialEq)]
@@ -37,7 +49,7 @@ struct MixKey {
     fps: f64,
     duration: u32,
     /// Bumped when a file finishes decoding, since that changes the mix too.
-    ready: usize,
+    decodes: usize,
 }
 
 pub struct AudioEngine {
@@ -46,10 +58,15 @@ pub struct AudioEngine {
     output_error: Option<String>,
     sink: Option<rodio::Sink>,
     clips: HashMap<PathBuf, Decoded>,
+    /// Files being decoded further, still playable meanwhile.
+    extending: Vec<PathBuf>,
+    /// Bumped whenever a decode finishes, since that changes the mix.
+    decodes: usize,
     /// Background decoders report back on this channel.
     finished: (Sender<DecodeResult>, Receiver<DecodeResult>),
     mix: Option<(MixKey, Arc<Clip>)>,
-    peaks: HashMap<(PathBuf, u64), Arc<Vec<f32>>>,
+    /// Waveforms, by file, frame rate and how much of the file was decoded.
+    peaks: HashMap<(PathBuf, u64, usize), Arc<Vec<f32>>>,
     /// Where the current playback started, and whether it's a real
     /// playback (as opposed to a short scrub snippet).
     started_at: Option<u32>,
@@ -84,6 +101,8 @@ impl AudioEngine {
             output_error: None,
             sink: None,
             clips: HashMap::new(),
+            extending: Vec::new(),
+            decodes: 0,
             finished: mpsc::channel(),
             mix: None,
             peaks: HashMap::new(),
@@ -126,8 +145,8 @@ impl AudioEngine {
         fps: f64,
     ) -> Option<Arc<Vec<f32>>> {
         let path = track.resolve(project_dir);
-        let Some(Decoded::Ready(clip)) = self.clips.get(&path) else { return None };
-        let key = (path, fps.to_bits());
+        let Some(Decoded::Ready { clip, .. }) = self.clips.get(&path) else { return None };
+        let key = (path, fps.to_bits(), clip.samples.len());
         Some(self.peaks.entry(key).or_insert_with(|| Arc::new(clip.peaks_per_frame(fps))).clone())
     }
 
@@ -136,7 +155,7 @@ impl AudioEngine {
     /// (or couldn't be). Timeline playback or scrubbing replaces it.
     pub fn preview(&mut self, track: &AudioTrack, project_dir: Option<&Path>) -> bool {
         let path = track.resolve(project_dir);
-        let Some(Decoded::Ready(clip)) = self.clips.get(&path) else { return false };
+        let Some(Decoded::Ready { clip, .. }) = self.clips.get(&path) else { return false };
         let samples: Vec<f32> = clip.samples.iter().map(|s| s * track.volume).collect();
         self.started_at = None;
         self.play(&samples);
@@ -160,10 +179,13 @@ impl AudioEngine {
         Some(sink.get_pos().as_secs_f64())
     }
 
-    /// A sound file's length in seconds, once decoded.
+    /// A sound file's length in seconds, once decoded (the whole file's,
+    /// even if only its start is).
     pub fn duration(&self, track: &AudioTrack, project_dir: Option<&Path>) -> Option<f64> {
-        let Some(Decoded::Ready(clip)) = self.clips.get(&track.resolve(project_dir)) else { return None };
-        Some(clip.samples.len() as f64 / (CHANNELS as f64 * SAMPLE_RATE as f64))
+        let Some(Decoded::Ready { clip, seconds, .. }) = self.clips.get(&track.resolve(project_dir)) else {
+            return None;
+        };
+        Some(seconds.unwrap_or(clip.samples.len() as f64 / (CHANNELS as f64 * SAMPLE_RATE as f64)))
     }
 
     /// Advances playback and keeps sound and picture together. Call once
@@ -252,17 +274,27 @@ impl AudioEngine {
     }
 
     /// Kicks off decoding for any file we haven't seen yet.
+    /// Starts decoding each track's file that isn't, and decoding further
+    /// any whose decoded start no longer covers what the animation plays.
     fn start_decoding(&mut self, ctx: &egui::Context, doc: &Document, project_dir: Option<&Path>) {
         for track in &doc.audio {
             let path = track.resolve(project_dir);
-            if self.clips.contains_key(&path) {
-                continue;
+            let wanted = inkframe_audio::audible_seconds(doc, &path, project_dir) + MARGIN;
+            match self.clips.get(&path) {
+                None => {
+                    self.clips.insert(path.clone(), Decoded::Loading);
+                }
+                Some(Decoded::Ready { clip, complete: false, .. })
+                    if clip.seconds() < wanted - MARGIN / 2.0 && !self.extending.contains(&path) =>
+                {
+                    self.extending.push(path.clone());
+                }
+                _ => continue,
             }
-            self.clips.insert(path.clone(), Decoded::Loading);
             let sender = self.finished.0.clone();
             let ctx = ctx.clone();
             std::thread::spawn(move || {
-                let result = inkframe_audio::decode(&path).map_err(|e| e.to_string());
+                let result = inkframe_audio::decode_first(&path, wanted).map_err(|e| e.to_string());
                 let _ = sender.send((path, result));
                 ctx.request_repaint();
             });
@@ -272,10 +304,16 @@ impl AudioEngine {
     fn collect_decoded(&mut self) {
         while let Ok((path, result)) = self.finished.1.try_recv() {
             let state = match result {
-                Ok(clip) => Decoded::Ready(Arc::new(clip)),
+                Ok(decoded) => Decoded::Ready {
+                    clip: Arc::new(decoded.clip),
+                    seconds: decoded.seconds,
+                    complete: decoded.complete,
+                },
                 Err(message) => Decoded::Failed(message),
             };
+            self.extending.retain(|p| *p != path);
             self.clips.insert(path, state);
+            self.decodes += 1;
         }
     }
 
@@ -286,7 +324,7 @@ impl AudioEngine {
             tracks: audible.iter().map(|t| (t.resolve(project_dir), t.start, t.volume)).collect(),
             fps: doc.frame_rate.fps(),
             duration: doc.duration,
-            ready: self.clips.values().filter(|c| matches!(c, Decoded::Ready(_))).count(),
+            decodes: self.decodes,
         };
         if let Some((cached, mix)) = &self.mix
             && *cached == key
@@ -297,7 +335,9 @@ impl AudioEngine {
         let tracks: Vec<MixTrack> = audible
             .iter()
             .filter_map(|t| match self.clips.get(&t.resolve(project_dir)) {
-                Some(Decoded::Ready(clip)) => Some(MixTrack { clip, start_frame: t.start, volume: t.volume }),
+                Some(Decoded::Ready { clip, .. }) => {
+                    Some(MixTrack { clip, start_frame: t.start, volume: t.volume })
+                }
                 _ => None,
             })
             .collect();

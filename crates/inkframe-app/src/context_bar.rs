@@ -74,7 +74,7 @@ fn act(ui: &mut egui::Ui, command: &mut Option<Command>, icon: Icon, label: &str
 fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>) {
     // Something under way comes first: it wants finishing.
     if let Some(c) = &editor.correcting {
-        let layer = editor.doc.layer(c.layer).map_or("the layer".to_owned(), |l| l.name.clone());
+        let layer = editor.doc.layer(c.layer).map_or(tr("the layer").to_owned(), |l| l.name.clone());
         ui.label(crate::i18n::tr_args(
             "Correcting {layer} at {turn}°: reshape it with any tool",
             &[("layer", &layer), ("turn", &format!("{:.0}", c.turn))],
@@ -213,7 +213,7 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                 command,
                 Icon::Plus,
                 tr("New layer"),
-                "An empty layer to draw on (⌘⇧N)",
+                tr("An empty layer to draw on (⌘⇧N)"),
                 Command::NewLayer,
             );
             if editor.tool == Tool::Pen && editor.doc.perspective.is_some() {
@@ -260,7 +260,7 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                     command,
                     Icon::Camera,
                     tr("Add camera"),
-                    "A camera to pan, zoom and turn the whole scene",
+                    tr("A camera to pan, zoom and turn the whole scene"),
                     Command::AddCamera,
                 );
             }
@@ -272,14 +272,52 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                     command,
                     Icon::Plus,
                     tr("New paint layer"),
-                    "A layer to paint on",
+                    tr("A layer to paint on"),
                     Command::NewPaintLayer,
                 );
+            }
+            if matches!(tool, Tool::Brush | Tool::Eraser | Tool::PatternStamp) {
+                symmetry_menu(ui, &mut editor.symmetry);
             }
             ui.weak(tr("Brush size and the like: Properties › Tool"));
         }
         _ => {}
     }
+}
+
+/// Symmetry painting, as a little menu: the kinds, and how many ways round
+/// a radial one goes.
+fn symmetry_menu(ui: &mut egui::Ui, symmetry: &mut inkframe_core::Symmetry) {
+    use inkframe_core::Symmetry;
+    let label = if *symmetry == Symmetry::Off { tr("Symmetry") } else { tr(symmetry.label()) };
+    let response = ui
+        .add(LabelledButton::new(Icon::AlignCenterX, label))
+        .on_hover_text(tr("Paint mirrored across the canvas's middle, or repeated round it"));
+    egui::Popup::menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+        let ways = symmetry.segments().unwrap_or(6);
+        for kind in Symmetry::ALL {
+            let kind = match kind {
+                Symmetry::Radial(_) => Symmetry::Radial(ways),
+                Symmetry::Mandala(_) => Symmetry::Mandala(ways),
+                other => other,
+            };
+            let picked = std::mem::discriminant(symmetry) == std::mem::discriminant(&kind);
+            if ui.radio(picked, tr(kind.label())).clicked() {
+                *symmetry = kind;
+            }
+        }
+        if let Some(mut n) = symmetry.segments() {
+            ui.horizontal(|ui| {
+                ui.label(tr("Segments"));
+                if ui.add(egui::DragValue::new(&mut n).range(2..=24)).changed() {
+                    *symmetry = match symmetry {
+                        Symmetry::Mandala(_) => Symmetry::Mandala(n),
+                        _ => Symmetry::Radial(n),
+                    };
+                }
+            });
+        }
+    });
 }
 
 /// Combine Shapes, as a little menu.

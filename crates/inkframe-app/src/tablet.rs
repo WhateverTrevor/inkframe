@@ -50,6 +50,8 @@ pub struct Sample {
     pub pressure: f32,
     /// The pen's lean (see [`Pen::tilt`]); upright for a mouse.
     pub tilt: (f32, f32),
+    /// Whether a pen made it, rather than a mouse.
+    pub stylus: bool,
 }
 
 impl Sample {
@@ -57,7 +59,12 @@ impl Sample {
     /// with a mouse).
     pub fn now(pos: Pos2) -> Self {
         let pen = current();
-        Self { pos, pressure: pen.map_or(1.0, |p| p.pressure), tilt: pen.map_or((0.0, 0.0), |p| p.tilt) }
+        Self {
+            pos,
+            pressure: pen.map_or(1.0, |p| p.pressure),
+            tilt: pen.map_or((0.0, 0.0), |p| p.tilt),
+            stylus: pen.is_some(),
+        }
     }
 }
 
@@ -74,7 +81,7 @@ pub fn samples(input: &egui::InputState) -> Vec<Sample> {
         .iter()
         .filter_map(|event| match event {
             egui::Event::Touch { pos, force: Some(force), .. } => {
-                Some(Sample { pos: *pos, pressure: *force, tilt: (0.0, 0.0) })
+                Some(Sample { pos: *pos, pressure: *force, tilt: (0.0, 0.0), stylus: true })
             }
             _ => None,
         })
@@ -84,11 +91,12 @@ pub fn samples(input: &egui::InputState) -> Vec<Sample> {
     }
     let pressure = current().map_or(1.0, |pen| pen.pressure);
     let tilt = current().map_or((0.0, 0.0), |pen| pen.tilt);
+    let stylus = current().is_some();
     input
         .events
         .iter()
         .filter_map(|event| match event {
-            egui::Event::PointerMoved(pos) => Some(Sample { pos: *pos, pressure, tilt }),
+            egui::Event::PointerMoved(pos) => Some(Sample { pos: *pos, pressure, tilt, stylus }),
             _ => None,
         })
         .collect()

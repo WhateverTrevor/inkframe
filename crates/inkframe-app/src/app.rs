@@ -366,6 +366,7 @@ impl InkframeApp {
                 app.editor.eraser = eraser;
             }
             app.editor.brushes.picked = prefs.brush_name.clone();
+            app.editor.symmetry = prefs.symmetry;
             app.editor.guides = prefs.guides();
             app.editor.draw_into_layer = !prefs.shape_per_layer;
             app.editor.show_rulers = prefs.show_rulers;
@@ -1852,6 +1853,7 @@ impl InkframeApp {
             brush: Some(self.editor.brush.clone()),
             eraser: Some(self.editor.eraser.clone()),
             brush_name: self.editor.brushes.picked.clone(),
+            symmetry: self.editor.symmetry,
             folded_sections: self.editor.folded_sections.iter().cloned().collect(),
             ..Prefs::gather(self.editor.guides, self.batch.jobs(), self.batch.chosen_folder())
         }
@@ -1992,10 +1994,7 @@ impl InkframeApp {
     /// What the brush panels asked for: file dialogs, a new tip, a panel.
     fn brush_requests(&mut self) {
         use crate::brush_panel::Asked;
-        if std::mem::take(&mut self.editor.show_brush_settings) {
-            self.layout.reveal(Kind::BrushSettings);
-        }
-        match self.brush_panels.asked.take() {
+        match self.brush_panels.asked.take().or(self.editor.brush_request.take()) {
             Some(Asked::ShowBrushSettings) => self.layout.reveal(Kind::BrushSettings),
             Some(Asked::ShowBrushes) => self.layout.reveal(Kind::Brushes),
             Some(Asked::DefineBrush) => {

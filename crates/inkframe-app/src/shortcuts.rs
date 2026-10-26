@@ -106,7 +106,7 @@ pub fn tool_key(tool: Tool) -> Key {
         Tool::Smudge | Tool::Blur | Tool::Sharpen => Key::U,
         // O, Photoshop's, is the Oval here.
         Tool::Dodge | Tool::Burn => Key::D,
-        Tool::CloneStamp => Key::S,
+        Tool::CloneStamp | Tool::PatternStamp => Key::S,
         Tool::RectMarquee | Tool::EllipseMarquee => Key::M,
         Tool::Lasso | Tool::PolygonLasso => Key::L,
         Tool::MagicWand => Key::W,
