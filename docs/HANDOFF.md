@@ -1050,6 +1050,19 @@ after the Harmony features (palettes to master controllers).
     the app: console runs requested no repaint (result appeared on the
     next input), menu runs waited for a 100 ms timer. `Scripts::ctx`
     (taken in `show`) is woken by the worker thread on finishing.
+133. Profiling pass 2 (heavy scene, 18 cores): render workers re-posed every
+    skeleton and re-bent every bound layer per band. Core `draw_cache.rs`
+    (`DrawCache`: poses and posed shapes keyed by address+frame, one
+    `OnceLock` per key so racing workers wait rather than duplicate;
+    `with_draw_cache(&Arc<DrawCache>, f)` per thread, `with_pose_cache`
+    kept as a fresh-cache wrapper) replaces the thread-local pose map;
+    `Document::posed_shapes` -> `Posed` (borrowed or shared Arc). Render
+    3.8 -> 3.1 ms half size, frames byte-identical. Stage texture upload
+    now `bytemuck::cast_slice` into `ColorImage::new` (new direct dep,
+    already in the lock): editor plain 7.7 -> 7.2 ms. Tried painting onion
+    ghosts through a tiny-skia `Mask` + fill_rect: slower (21 -> 25.5 ms,
+    no zero-skipping), reverted. Onion (~21 ms) is now mostly the three
+    renders a step needs; thumbnails (~10%) are already budgeted.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

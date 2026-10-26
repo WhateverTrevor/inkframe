@@ -24,6 +24,7 @@ mod container;
 mod controller;
 mod deform;
 mod document;
+mod draw_cache;
 mod drawing;
 mod easing;
 mod effects;
@@ -85,6 +86,7 @@ pub use color::{Color, ParseColorError};
 pub use controller::{Controller, ControllerPose};
 pub use deform::Deformer;
 pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, Layer, LayerId, TimelineId};
+pub use draw_cache::{DrawCache, Posed, with_draw_cache, with_pose_cache};
 pub use drawing::{Drawing, Exposure};
 pub use easing::Easing;
 pub use effects::{
@@ -119,7 +121,7 @@ pub use selection::{Combine, Selection};
 pub use shape::{Dash, GradientStop, LineCap, LineJoin, Path, Segment, Shape, ShapeGradient, Stroke, Style};
 pub use skeleton::{
     Bone, BoneBinding, BonePoints, CorrectionKey, Dynamics, LayerBend, MESH_CELL, Pose, RestPart,
-    RestPoseView, ShapeBones, Skeleton, SmartAction, TurnPreview, corrected, mesh_lines, with_pose_cache,
+    RestPoseView, ShapeBones, Skeleton, SmartAction, TurnPreview, corrected, mesh_lines,
 };
 pub use switch::SwitchKey;
 pub use symbol::{ConvertError, Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId, SymbolSwap};
