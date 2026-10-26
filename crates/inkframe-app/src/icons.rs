@@ -115,6 +115,10 @@ pub enum Icon {
     Effects,
     /// A square and a circle: a drawing's shapes.
     Shapes,
+    /// Three brush marks: a soft dab, a hard one and a scatter.
+    Brushes,
+    /// A brush's settings: sliders.
+    BrushSettings,
 }
 
 /// Draws `icon` filling `rect` (best square) in `color`.
@@ -371,6 +375,27 @@ pub fn paint(painter: &Painter, icon: Icon, rect: Rect, color: Color32) {
                     color.gamma_multiply(0.25),
                     stroke,
                 ));
+            }
+        }
+        Icon::Brushes => {
+            painter.circle_filled(at(0.27, 0.3), r.width() * 0.2, color.gamma_multiply(0.45));
+            painter.circle_filled(at(0.27, 0.3), r.width() * 0.12, color);
+            painter.circle_filled(at(0.72, 0.3), r.width() * 0.18, color);
+            for (x, y, s) in [
+                (0.2, 0.72, 0.07),
+                (0.38, 0.82, 0.05),
+                (0.62, 0.7, 0.08),
+                (0.8, 0.86, 0.05),
+                (0.5, 0.6, 0.04),
+            ] {
+                painter.circle_filled(at(x, y), r.width() * s, color);
+            }
+        }
+        Icon::BrushSettings => {
+            // Three sliders at different settings.
+            for (y, knob) in [(0.22, 0.7), (0.5, 0.3), (0.78, 0.55)] {
+                line(&[(0.08, y), (0.92, y)]);
+                painter.circle_filled(at(knob, y), r.width() * 0.1, color);
             }
         }
         Icon::Swatches => {
@@ -869,6 +894,8 @@ mod tests {
             Sparkle,
             Effects,
             Shapes,
+            Brushes,
+            BrushSettings,
         ];
         let ctx = egui::Context::default();
         let rect = Rect::from_min_size(pos2(100.0, 100.0), Vec2::splat(16.0));

@@ -48,6 +48,17 @@ pub fn install() {
 pub struct Sample {
     pub pos: Pos2,
     pub pressure: f32,
+    /// The pen's lean (see [`Pen::tilt`]); upright for a mouse.
+    pub tilt: (f32, f32),
+}
+
+impl Sample {
+    /// A sample at `pos` with the pen's state now (full pressure, upright,
+    /// with a mouse).
+    pub fn now(pos: Pos2) -> Self {
+        let pen = current();
+        Self { pos, pressure: pen.map_or(1.0, |p| p.pressure), tilt: pen.map_or((0.0, 0.0), |p| p.tilt) }
+    }
 }
 
 /// Every point the pointer passed through this frame, in order, with its
@@ -63,7 +74,7 @@ pub fn samples(input: &egui::InputState) -> Vec<Sample> {
         .iter()
         .filter_map(|event| match event {
             egui::Event::Touch { pos, force: Some(force), .. } => {
-                Some(Sample { pos: *pos, pressure: *force })
+                Some(Sample { pos: *pos, pressure: *force, tilt: (0.0, 0.0) })
             }
             _ => None,
         })
@@ -72,11 +83,12 @@ pub fn samples(input: &egui::InputState) -> Vec<Sample> {
         return touches;
     }
     let pressure = current().map_or(1.0, |pen| pen.pressure);
+    let tilt = current().map_or((0.0, 0.0), |pen| pen.tilt);
     input
         .events
         .iter()
         .filter_map(|event| match event {
-            egui::Event::PointerMoved(pos) => Some(Sample { pos: *pos, pressure }),
+            egui::Event::PointerMoved(pos) => Some(Sample { pos: *pos, pressure, tilt }),
             _ => None,
         })
         .collect()

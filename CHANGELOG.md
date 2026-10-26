@@ -5,6 +5,29 @@ notes on GitHub are its section here.
 
 ## Unreleased
 
+### Brushes
+
+- Photoshop's brush engine, setting for setting. Brush Settings edits a
+  brush a section at a time: Brush Tip Shape (round or sampled tips, angle,
+  roundness, flips, hardness, spacing), Shape Dynamics, Scattering,
+  Texture, Dual Brush, Color Dynamics and Transfer, each with jitters and
+  controls (pen pressure, pen tilt, fade, direction), plus Noise, Wet Edges
+  and Build-up, with a live sample stroke.
+- A Brushes panel of ready-made brushes for painting scenes and
+  backgrounds (pencil, chalk, charcoal, bristle and flat brushes,
+  watercolour, foliage, grass, clouds, rocks, spatter, stars) and your own:
+  save the brush as a preset, rename, update and delete them, export them
+  as a brush set and import brush sets or Photoshop `.abr` files.
+- Define Brush Preset (Edit menu, or the Brushes panel) makes a tip from
+  the selected pixels of a paint layer.
+- A brush quick menu: right-click the stage with a painting tool for the
+  size, hardness, opacity, flow and the brushes. Ctrl+Option-drag
+  (Alt+right-drag on Windows) on the canvas resizes and softens the brush,
+  and Shift+[ and Shift+] soften and harden it, as in Photoshop.
+- The Tool tab's pressure switches, as in Photoshop's options bar:
+  pressure for size and for opacity. The brush and eraser are remembered
+  between sessions. The Painter workspace has the new panels.
+
 ### Translation
 
 - The groundwork for translating Inkframe: the menus, the tools, the

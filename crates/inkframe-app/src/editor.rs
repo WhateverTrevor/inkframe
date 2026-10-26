@@ -216,7 +216,7 @@ impl Tool {
 }
 
 /// A retouching tool's brush and how strongly it works (0 to 1).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RetouchBrush {
     pub brush: BrushSettings,
     pub strength: f32,
@@ -225,7 +225,12 @@ pub struct RetouchBrush {
 impl RetouchBrush {
     fn new(size: f32, strength: f32) -> Self {
         Self {
-            brush: BrushSettings { size, hardness: 0.3, pressure_size: false, ..BrushSettings::default() },
+            brush: BrushSettings {
+                size,
+                hardness: 0.3,
+                shape: Default::default(),
+                ..BrushSettings::default()
+            },
             strength,
         }
     }
@@ -313,6 +318,16 @@ pub struct Editor {
     pub smoothing: f32,
     /// The gradient's other colour (Photoshop's background colour).
     pub second_color: Color,
+    /// Strokes painted so far, which seeds each one's chance (scatter,
+    /// jitter), so no two strokes scatter alike.
+    strokes_painted: u64,
+    /// Saved brushes and the ready-made ones (see `brushes.rs`).
+    pub brushes: crate::brushes::BrushLibrary,
+    /// Where the brush quick menu is open, in screen points, if it is:
+    /// right-clicking the stage with a painting tool opens it.
+    pub brush_quick_menu: Option<(f32, f32)>,
+    /// Asked for from the Tool Settings: show the Brush Settings panel.
+    pub show_brush_settings: bool,
     pub smudge: RetouchBrush,
     pub blur: RetouchBrush,
     pub sharpen: RetouchBrush,
@@ -467,11 +482,15 @@ impl Editor {
             eraser: BrushSettings {
                 size: 40.0,
                 hardness: 0.6,
-                pressure_size: false,
+                shape: Default::default(),
                 ..BrushSettings::default()
             },
             smoothing: 0.3,
             second_color: Color::WHITE,
+            strokes_painted: 0,
+            brushes: crate::brushes::BrushLibrary::default(),
+            brush_quick_menu: None,
+            show_brush_settings: false,
             smudge: RetouchBrush::new(40.0, 0.6),
             blur: RetouchBrush::new(40.0, 0.5),
             sharpen: RetouchBrush::new(40.0, 0.5),
@@ -1150,25 +1169,85 @@ impl Editor {
     }
 
     /// Makes the current tool's brush `factor` times bigger.
+    /// Makes a brush tip from the selected pixels of the paint layer (or
+    /// all of it, with nothing selected), as Photoshop's Define Brush
+    /// Preset does: dark, opaque pixels are paint. The new brush is saved
+    /// and becomes the Brush tool's. Returns its name.
+    pub fn define_brush(&mut self) -> Result<String, String> {
+        let (_, canvas_id, _, _) =
+            self.paint_target().ok_or(tr("Select a paint layer to make a brush tip from."))?;
+        let canvas = self.doc.canvas(canvas_id).ok_or(tr("The paint layer has gone."))?;
+        let picked = match self.selection_on(canvas_id) {
+            Some(selection) => selection.keep(canvas),
+            None => canvas.clone(),
+        };
+        let bounds = picked.painted_bounds().ok_or(tr("There's no paint there to make a tip from."))?;
+        let (x, y) = (bounds.min.x as i64, bounds.min.y as i64);
+        let (width, height) = (bounds.width() as u32, bounds.height() as u32);
+        if width.max(height) > 2500 {
+            return Err(
+                tr("A brush tip can be at most 2500 pixels across: select a smaller part.").to_owned()
+            );
+        }
+        let straight: Vec<u8> = picked
+            .read_region(x, y, width, height)
+            .chunks_exact(4)
+            .flat_map(inkframe_core::unpremultiply)
+            .collect();
+        let name = tr("Custom Tip");
+        let tip = inkframe_core::TipImage::from_picture(name, width, height, &straight)
+            .ok_or(tr("There's nothing dark there to make a tip from: dark is paint, light isn't."))?;
+        let size = tip.width.max(tip.height) as f32;
+        let settings = BrushSettings {
+            tip: inkframe_core::Tip::Sampled(std::sync::Arc::new(tip)),
+            size,
+            spacing: 0.25,
+            shape: Default::default(),
+            ..BrushSettings::default()
+        };
+        let name = self.brushes.add(name, settings.clone());
+        self.brush = settings;
+        self.brushes.picked = Some(name.clone());
+        self.tool = Tool::Brush;
+        Ok(name)
+    }
+
+    /// A fresh seed for a stroke's chance.
+    pub fn next_stroke_seed(&mut self) -> u64 {
+        self.strokes_painted += 1;
+        self.strokes_painted
+    }
+
+    /// Makes the brush's edge harder (or softer, with a negative `step`),
+    /// as Shift+] and Shift+[ do in Photoshop.
+    pub fn harden_brush(&mut self, step: f32) {
+        if let Some(settings) = self.brush_of(self.tool) {
+            settings.hardness = (settings.hardness + step).clamp(0.0, 1.0);
+        }
+    }
+
     pub fn resize_brush(&mut self, factor: f32) {
         if let Some(settings) = self.brush_of(self.tool) {
-            settings.size = (settings.size * factor).clamp(1.0, 500.0);
+            settings.size = (settings.size * factor).clamp(1.0, 2500.0);
         }
     }
 
     /// A copy of the brush a tool paints with, if it paints with one.
     pub fn brush_for(&self, tool: Tool) -> Option<BrushSettings> {
-        Some(match tool {
-            Tool::Brush => self.brush,
-            Tool::Eraser => self.eraser,
-            Tool::Smudge => self.smudge.brush,
-            Tool::Blur => self.blur.brush,
-            Tool::Sharpen => self.sharpen.brush,
-            Tool::Dodge => self.dodge.brush,
-            Tool::Burn => self.burn.brush,
-            Tool::CloneStamp => self.clone.brush,
-            _ => return None,
-        })
+        Some(
+            match tool {
+                Tool::Brush => &self.brush,
+                Tool::Eraser => &self.eraser,
+                Tool::Smudge => &self.smudge.brush,
+                Tool::Blur => &self.blur.brush,
+                Tool::Sharpen => &self.sharpen.brush,
+                Tool::Dodge => &self.dodge.brush,
+                Tool::Burn => &self.burn.brush,
+                Tool::CloneStamp => &self.clone.brush,
+                _ => return None,
+            }
+            .clone(),
+        )
     }
 
     /// The brush a tool paints with, if it paints with one.

@@ -15,6 +15,8 @@ mod audio_engine;
 mod autosave;
 mod batch_dialog;
 mod bones_panel;
+mod brush_panel;
+mod brushes;
 mod cli;
 mod cli_script;
 mod command_finder;

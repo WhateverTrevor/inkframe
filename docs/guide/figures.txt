@@ -32,6 +32,9 @@ perspective      | -                           | PERSPECTIVE=1
 paint            | -                           | PAINT=1
 paint-tools      | -                           | PAINT=tools
 paint-select     | -                           | PAINT=select
+brush-sheet      | -                           | BRUSH_SHEET=1
+brush-settings   | -                           | BRUSH_PANEL=shape BRUSH=Foliage
+quick-brush      | -                           | PAINT=1 QUICK_BRUSH=1
 ink              | -                           | INK=1
 palette          | examples/rig.inkf           | PALETTE=1 WORKSPACE=Designer
 vectorise        | -                           | PAINT=1 VECTORISE=ink

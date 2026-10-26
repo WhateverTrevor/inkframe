@@ -1096,6 +1096,30 @@ after the Harmony features (palettes to master controllers).
     default layer names, undo step names, and the screenshot hooks and
     CLI (English on purpose). Helpers in the scratchpad: wrap.py
     (widget calls, continued literals) and wrap_list.py (given texts).
+138. Photoshop-style brush engine (branch brush-engine; the translation
+    round 5 work waits, uncommitted, in the ../Inkframe-translate
+    worktree on translate-names). Core `brush/`: mod.rs (BrushSettings
+    with Photoshop's sections, Stamp per dab: tip, size, angle, roundness,
+    flips; stroke layer of premultiplied colour + coverage with a per-dab
+    opacity ceiling (`deposit`); texture and dual brush applied at redraw
+    (or per tip); wet edges on the stroke's coverage; Build-up via
+    `BrushStroke::rest`; seeds), tip.rs (Round / Sampled TipImage with
+    halved copies, PNG-in-JSON serde), dynamics.rs (Control, DabInput,
+    ShapeDynamics, Scattering, ColorDynamics, Transfer, Random),
+    texture.rs (Texture, Pattern made/picture, Blend modes shared with
+    Dual Brush), presets.rs (18 ready-made, tips drawn in code). abr.rs
+    reads .abr v1/2 (computed + sampled) and v6–10 (samp tips + desc
+    action descriptor mapped to the sections; key names from memory of the
+    format, untested on real files; patterns not read). App: brushes.rs
+    (library in settings/brushes.json, import/export .inkbrushes and .abr),
+    brush_panel.rs (Brush Settings panel, Brushes panel, quick menu,
+    compass widget, stroke previews), Kind::Brushes/BrushSettings (new
+    "Paint" group; Painter workspace), Edit menu items, Shift+[ ] hardness,
+    Ctrl+Option drag / Alt+right drag sizing, right-click quick menu, pen
+    tilt into strokes, Prefs keep brush/eraser/picked name. Screenshot
+    hooks BRUSH_SHEET, BRUSH_PANEL=section (+BRUSH=name), QUICK_BRUSH. When
+    the translation work merges, mark the core's Control/Blend/Pattern
+    labels with `inkframe_core::i18n::tr_later`.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

@@ -41,6 +41,11 @@ pub struct Prefs {
     pub folded_sections: Vec<String>,
     /// The newest version whose What's New has been seen.
     pub seen_version: Option<String>,
+    /// The Brush and Eraser tools' brushes as last left, and the name of
+    /// the brush last picked.
+    pub brush: Option<inkframe_core::BrushSettings>,
+    pub eraser: Option<inkframe_core::BrushSettings>,
+    pub brush_name: Option<String>,
 }
 
 /// A Batch Export job as saved: the format by its short name, the same
@@ -78,6 +83,9 @@ impl Prefs {
             toured: false,
             folded_sections: Vec::new(),
             seen_version: None,
+            brush: None,
+            eraser: None,
+            brush_name: None,
         }
     }
 
