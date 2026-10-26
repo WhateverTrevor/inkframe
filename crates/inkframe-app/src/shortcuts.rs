@@ -86,6 +86,14 @@ pub const ADD_SHAPE_HINT: KeyboardShortcut =
 // current frame on: plain [ and ], as in Toon Boom Harmony's drawing
 // substitution.
 pub const PREVIOUS_DRAWING: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::OpenBracket);
+/// Softer and harder brush edges, as in Photoshop. Shift+[ types `{` on
+/// most keyboards, which arrives as its own key, so both are listed.
+pub const SOFTER_BRUSH: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::OpenBracket);
+pub const HARDER_BRUSH: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::CloseBracket);
+pub const SOFTER_BRUSH_CURLY: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::SHIFT, Key::OpenCurlyBracket);
+pub const HARDER_BRUSH_CURLY: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::SHIFT, Key::CloseCurlyBracket);
 pub const NEXT_DRAWING: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::CloseBracket);
 
 /// Single-key tool shortcuts, matching Animate (and, for painting,

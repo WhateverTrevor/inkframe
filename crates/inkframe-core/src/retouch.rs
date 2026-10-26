@@ -131,9 +131,9 @@ impl RetouchStroke {
     }
 
     fn dab(&mut self, canvas: &mut Canvas, at: Point, pressure: f32) {
-        let s = self.settings;
+        let s = &self.settings;
         let radius = s.radius(pressure);
-        let flow = s.flow * if s.pressure_flow { pressure } else { 1.0 };
+        let flow = s.flow_at(pressure);
         // Blur and Sharpen look a few pixels past the dab's edge.
         let blur = blur_radius(radius);
         let margin = match self.kind {
@@ -300,7 +300,7 @@ mod tests {
     use super::*;
 
     fn settings(size: f32) -> BrushSettings {
-        BrushSettings { size, hardness: 1.0, pressure_size: false, ..BrushSettings::default() }
+        BrushSettings { size, hardness: 1.0, shape: Default::default(), ..BrushSettings::default() }
     }
 
     /// A canvas with its left half solid `left` and right half solid

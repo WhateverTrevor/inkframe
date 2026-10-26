@@ -67,11 +67,15 @@ pub enum Kind {
     MotionPresets,
     /// The skeletons and what they rig (see `bones_panel.rs`).
     Bones,
+    /// The brushes to paint with (see `brush_panel.rs`).
+    Brushes,
+    /// Every setting of the brush, Photoshop's way (see `brush_panel.rs`).
+    BrushSettings,
 }
 
 impl Kind {
     /// Every kind, grouped as the area menu lists them, Blender-style.
-    pub const GROUPS: [(&'static str, &'static [Kind]); 4] = [
+    pub const GROUPS: [(&'static str, &'static [Kind]); 5] = [
         (
             tr_later("General"),
             &[Kind::Stage, Kind::Tools, Kind::ToolSettings, Kind::Properties, Kind::NodeView],
@@ -89,6 +93,7 @@ impl Kind {
             ],
         ),
         (tr_later("Design"), &[Kind::Swatches, Kind::Align]),
+        (tr_later("Paint"), &[Kind::Brushes, Kind::BrushSettings]),
         (
             tr_later("Project"),
             &[
@@ -124,6 +129,8 @@ impl Kind {
             Kind::Bones => tr_later("Bones"),
             Kind::DepthView => tr_later("Depth View"),
             Kind::ScriptConsole => tr_later("Script Console"),
+            Kind::Brushes => tr_later("Brushes"),
+            Kind::BrushSettings => tr_later("Brush Settings"),
         }
     }
 
@@ -154,6 +161,8 @@ impl Kind {
             Kind::Bones => Icon::Bones,
             Kind::DepthView => Icon::Camera,
             Kind::ScriptConsole => Icon::Console,
+            Kind::Brushes => Icon::Brushes,
+            Kind::BrushSettings => Icon::BrushSettings,
         }
     }
 
@@ -174,6 +183,8 @@ impl Kind {
                 | Kind::Templates
                 | Kind::MotionPresets
                 | Kind::Bones
+                | Kind::Brushes
+                | Kind::BrushSettings
         )
     }
 
@@ -346,8 +357,8 @@ impl Layout {
             }
             Workspace::Painter => {
                 let (tools, stage) = (b.single(Kind::Tools), b.single(Kind::Stage));
-                let upper = b.area(&[Kind::ToolSettings, Kind::Swatches]);
-                let lower = b.area(&[Kind::Properties, Kind::History, Kind::Library]);
+                let upper = b.area(&[Kind::Brushes, Kind::ToolSettings, Kind::Swatches]);
+                let lower = b.area(&[Kind::BrushSettings, Kind::Properties, Kind::History, Kind::Library]);
                 let timeline = b.single(Kind::Timeline);
                 down(0.82, across(TOOLS, tools, across(0.74, stage, down(0.5, upper, lower))), timeline)
             }
@@ -394,6 +405,21 @@ impl Layout {
     pub fn add_tab_beside(&mut self, beside: Kind, new: Kind) {
         if let Some((area, _)) = self.all_tabs().into_iter().find(|(_, kind)| *kind == beside) {
             self.add_tab(area, new);
+        }
+    }
+
+    /// Brings a `kind` tab to the front where it is, or, if none is open,
+    /// adds one beside the Properties (or the first panel there is).
+    pub fn reveal(&mut self, kind: Kind) {
+        let tabs = self.all_tabs();
+        if let Some((area, _)) = tabs.iter().find(|(_, k)| *k == kind) {
+            self.show_tab(*area, kind);
+        } else if let Some((area, _)) = tabs
+            .iter()
+            .find(|(_, k)| *k == Kind::Properties)
+            .or_else(|| tabs.iter().find(|(_, k)| k.is_panel()))
+        {
+            self.add_tab(*area, kind);
         }
     }
 
@@ -1273,7 +1299,7 @@ mod tests {
         let listed: Vec<Kind> = Kind::GROUPS.iter().flat_map(|(_, kinds)| kinds.iter().copied()).collect();
         let unique: std::collections::HashSet<Kind> = listed.iter().copied().collect();
         assert_eq!(listed.len(), unique.len());
-        assert_eq!(listed.len(), 20);
+        assert_eq!(listed.len(), 22);
     }
 
     #[test]

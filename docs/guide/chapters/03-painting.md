@@ -5,6 +5,7 @@ Alongside its vector tools, Inkframe paints with pixels, much as Photoshop does:
 In this chapter, we're going to cover the following main topics:
 
 - Paint layers and the Brush
+- Brushes and Brush Settings
 - Filling and retouching
 - Selections, adjustments and blend modes
 - Ink and paint: colouring line art
@@ -21,16 +22,47 @@ Pixels live on *paint layers*. Pick the **Brush** ([[B]]) and paint on the stage
 
 While a painting tool is in use, its settings show in the **Tool** tab of Properties, under a preview stroke:
 
+- **Brush** picks a brush, ready-made or your own, from a hard round to foliage and clouds.
 - **Size**, **Hardness**, **Opacity** and **Flow** set the brush's tip.
-- **Spacing**, **Smoothing** and **Paper grain** shape how strokes are laid down.
-- **Presets** set them all at once, from an inking pen to chalk and an airbrush.
-- **Pressure** decides what pressing harder does with a tablet: a thicker line, or a denser one.
+- **Spacing** and **Smoothing** shape how strokes are laid down.
+- **Pressure** decides what pressing harder does with a tablet: a bigger mark, a more solid one, or both.
 
-[[[]] and [[]]] shrink and grow the brush as you paint. The **Eraser** ([[E]]) rubs paint away, and the **Eyedropper** ([[I]]), or [[⌥]]-click with the brush, picks up a colour from the stage.
+[[[]] and [[]]] shrink and grow the brush as you paint, and [[⇧[]] and [[⇧]]] make it softer and harder. The **Eraser** ([[E]]) rubs paint away, and the **Eyedropper** ([[I]]), or [[⌥]]-click with the brush, picks up a colour from the stage.
 
 ![Strokes painted with a few brush presets, each pressed harder through its middle](paint){crop=0.095,0.14,0.664,0.558}
 
 > Tip: For frame-by-frame painting, give the paint layer a new drawing on each frame (**Modify › New Drawing**). *Chapter 5* covers drawings in detail.
+
+## Brushes and Brush Settings
+
+Inkframe's brushes work as Photoshop's do, setting for setting, so a brush you know from there behaves the same here. Each stroke is a row of *dabs*, stamps of the brush's *tip*, and every dab can vary: bigger or smaller, turned, scattered, recoloured.
+
+The **Brushes** panel lists the brushes, each by a sample stroke. Besides round brushes, the ready-made ones are a painter's set for scenes and backgrounds: pencil, chalk and charcoal; dry, bristle and flat brushes; watercolour; and stamping brushes for foliage, grass, clouds, rocks, spatter and stars. Click one to paint with it. The panel's buttons save the brush as it is now as a new preset, **Import** brushes (a brush set, or a Photoshop *.abr* file), **Export** yours as a brush set to share, and **Define from Selection**: a new tip from the selected pixels of a paint layer, dark being paint, as Photoshop's **Edit › Define Brush Preset** does. Right-click a saved brush to rename, update or delete it.
+
+![Every ready-made brush, one stroke each](brush-sheet)
+
+**Brush Settings** (**Edit › Brush Settings**, or the button in the Tool tab) holds every setting, a section at a time, picked from the list down its left. The checkbox beside a section turns it on and off, keeping its settings.
+
+| Section | What it does |
+|---|---|
+| **Brush Tip Shape** | The tip, round or sampled; its size, angle, roundness and flips; the hardness of a round tip; and the spacing between dabs. Drag the arrow in the circle to turn the tip, or a dot to squash it. |
+| **Shape Dynamics** | How each dab's size, angle and roundness vary: a *jitter* (at random) and a *control* (pen pressure, pen tilt, a fade over some dabs, or, for the angle, the stroke's direction). |
+| **Scattering** | Throws dabs off the path, across it or both ways, several at a time. |
+| **Texture** | Presses a pattern (paper, canvas, grain…) into the paint. **Height** catches paint on the pattern's peaks, like chalk on paper; **Multiply** and the others darken paint into its hollows. |
+| **Dual Brush** | A second tip along the same path: the paint shows only where the two meet, for broken, bristly edges. |
+| **Color Dynamics** | The colour wanders, per dab or per stroke: towards the second colour, or in hue, saturation and brightness. |
+| **Transfer** | Each dab's opacity and flow, by chance or by pressure. |
+| **Noise**, **Wet Edges**, **Build-up** | Grit in soft edges; paint pooling at the rim like watercolour; paint that keeps flowing while the pen rests, like an airbrush. |
+
+A stroke along the foot of the panel shows the brush as it stands.
+
+![Brush Settings at Shape Dynamics, for the Foliage brush](brush-settings)
+
+For a quick change without leaving the canvas, right-click the stage with a painting tool: a small panel opens with the size and hardness over the brushes. Or hold [[⌃⌥]] and drag on the canvas (Alt and the right button on Windows): left and right resize the brush, up and down soften and harden it.
+
+![The brush quick menu, opened by right-clicking the stage](quick-brush)
+
+> Tip: Painting scenery, start with big, soft shapes in the Soft Round, then break them up with the stamping brushes: Clouds for the sky, Foliage and Sponge for trees, Grass and Rocks for the ground. Color Dynamics varies their greens and browns, so a few strokes look like many leaves.
 
 ## Filling and retouching
 
@@ -98,6 +130,6 @@ A palette can also have *versions*. **New Version** in the palette menu copies t
 
 ## Summary
 
-In this chapter, we painted on paint layers with the Brush and its presets, filled and retouched with the bucket, gradient, smudge and dodge tools, and limited them with selections. We adjusted colours and blended layers, coloured line art Harmony-style with the Paint Bucket, managed colour with palettes and their versions, and traced paintings into vectors.
+In this chapter, we painted on paint layers with the Brush and its presets, built brushes of our own in Brush Settings, filled and retouched with the bucket, gradient, smudge and dodge tools, and limited them with selections. We adjusted colours and blended layers, coloured line art Harmony-style with the Paint Bucket, managed colour with palettes and their versions, and traced paintings into vectors.
 
 In the next chapter, we'll make something move.

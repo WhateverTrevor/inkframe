@@ -8,6 +8,7 @@
 //!
 //! The main entry point is [`Document`].
 
+pub mod abr;
 mod adjust;
 mod align;
 mod anchor;
@@ -79,7 +80,10 @@ pub use art_brush::{BrushKind, StrokeBrush};
 pub use audio::{AudioId, AudioTrack};
 pub use blend::BlendMode;
 pub use boolean::{Area, CombineError, ShapeOp, area_of, break_apart, combine};
-pub use brush::{BrushMode, BrushSettings, BrushStroke, DabPath};
+pub use brush::{
+    Blend, BrushMode, BrushPreset, BrushSettings, BrushStroke, ColorDynamics, Control, DabInput, DabPath,
+    DualBrush, Pattern, Pen, Scattering, ShapeDynamics, Texture, Tip, TipImage, Transfer,
+};
 pub use camera::FOCAL_LENGTH;
 pub use channel::{Animatable, AnyChannel, Bend, Channel, Key, MotionCurve, Tween};
 pub use clipboard::{Clipboard, CopiedFrames, CopiedKeyframe, CopiedLayers, CopiedRow, CopiedShapes};

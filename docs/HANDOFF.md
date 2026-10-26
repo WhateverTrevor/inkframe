@@ -1111,6 +1111,28 @@ after the Harmony features (palettes to master controllers).
     `Prefs::language`, used from the next start (main loads prefs before
     `choose_language`; screenshot runs ignore it). Not clicked through in
     a running app: there's no app-level test harness.
+138. Photoshop-style brush engine. Core `brush/`: mod.rs (BrushSettings
+    with Photoshop's sections, Stamp per dab: tip, size, angle, roundness,
+    flips; stroke layer of premultiplied colour + coverage with a per-dab
+    opacity ceiling (`deposit`); texture and dual brush applied at redraw
+    (or per tip); wet edges on the stroke's coverage; Build-up via
+    `BrushStroke::rest`; seeds), tip.rs (Round / Sampled TipImage with
+    halved copies, PNG-in-JSON serde), dynamics.rs (Control, DabInput,
+    ShapeDynamics, Scattering, ColorDynamics, Transfer, Random),
+    texture.rs (Texture, Pattern made/picture, Blend modes shared with
+    Dual Brush), presets.rs (18 ready-made, tips drawn in code). abr.rs
+    reads .abr v1/2 (computed + sampled) and v6–10 (samp tips + desc
+    action descriptor mapped to the sections; key names from memory of the
+    format, untested on real files; patterns not read). App: brushes.rs
+    (library in settings/brushes.json, import/export .inkbrushes and .abr),
+    brush_panel.rs (Brush Settings panel, Brushes panel, quick menu,
+    compass widget, stroke previews), Kind::Brushes/BrushSettings (new
+    "Paint" group; Painter workspace), Edit menu items, Shift+[ ] hardness,
+    Ctrl+Option drag / Alt+right drag sizing, right-click quick menu, pen
+    tilt into strokes, Prefs keep brush/eraser/picked name. Screenshot
+    hooks BRUSH_SHEET, BRUSH_PANEL=section (+BRUSH=name), QUICK_BRUSH. The
+    core's Control/Blend/Pattern labels are marked with
+    `inkframe_core::i18n::tr_later`.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

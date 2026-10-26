@@ -44,6 +44,11 @@ pub struct Prefs {
     /// The language picked in View › Language, by its code (`de`,
     /// `pt_BR`); none follows the system's.
     pub language: Option<String>,
+    /// The Brush and Eraser tools' brushes as last left, and the name of
+    /// the brush last picked.
+    pub brush: Option<inkframe_core::BrushSettings>,
+    pub eraser: Option<inkframe_core::BrushSettings>,
+    pub brush_name: Option<String>,
 }
 
 /// A Batch Export job as saved: the format by its short name, the same
@@ -82,6 +87,9 @@ impl Prefs {
             folded_sections: Vec::new(),
             seen_version: None,
             language: None,
+            brush: None,
+            eraser: None,
+            brush_name: None,
         }
     }
 

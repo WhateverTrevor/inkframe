@@ -18,8 +18,9 @@ use std::collections::HashMap;
 use egui::{Align2, Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{
     Affine, Anchor, Bend, BrushMode, BrushStroke, Canvas, CanvasId, Color, Combine, Document, Element,
-    LayerId, MotionCurve, Path, Point, Rect as StageRect, Retouch, RetouchStroke, Selection, Shape, Style,
-    Text, TimelineId, Transform, fit_freehand_path, insert_anchor, nearest_on_anchors, path_from_anchors,
+    LayerId, MotionCurve, Path, Pen, Point, Rect as StageRect, Retouch, RetouchStroke, Selection, Shape,
+    Style, Text, TimelineId, Tip, Transform, fit_freehand_path, insert_anchor, nearest_on_anchors,
+    path_from_anchors,
 };
 use inkframe_render::{RenderOptions, output_size, render_timeline_into};
 
@@ -853,6 +854,10 @@ pub struct StageView {
     text_editing: Option<TextEditing>,
     /// A brush or eraser stroke in progress.
     painting: Option<Painting>,
+    /// Ctrl+Option-dragging (Alt+right-dragging on Windows) the brush's
+    /// size and hardness on the canvas, as in Photoshop: where it began, and
+    /// the size and hardness then.
+    sizing_brush: Option<(Pos2, f32, f32)>,
     /// A selection being drawn with the marquee or lasso.
     selecting: Option<Selecting>,
     /// The selection's outline (marching ants), worked out once per
@@ -897,6 +902,7 @@ impl Default for StageView {
             anchor_selection: None,
             text_editing: None,
             painting: None,
+            sizing_brush: None,
             selecting: None,
             ants: None,
             texture: None,
@@ -1115,8 +1121,9 @@ impl StageView {
         }
         self.draw_text_editing(ui, &overlay, editor, view);
         self.draw_pen_preview(&overlay, view, response.hover_pos());
+        // While sizing, the outline stays where the drag began.
         if editor.tool.uses_brush()
-            && let Some(pointer) = response.hover_pos()
+            && let Some(pointer) = self.sizing_brush.map(|(origin, ..)| origin).or(response.hover_pos())
         {
             draw_brush_outline(&overlay, editor, view, pointer);
         }
@@ -2345,6 +2352,10 @@ impl StageView {
     /// tap leaves a dot, and paints through every pointer event, not just
     /// one per frame, so quick strokes stay smooth.
     fn handle_painting(&mut self, ui: &egui::Ui, response: &egui::Response, editor: &mut Editor, view: View) {
+        if editor.tool.uses_brush() && self.painting.is_none() && self.size_brush(ui, response, editor, view)
+        {
+            return;
+        }
         let (pressed, down, alt, space_held) = ui.input(|i| {
             (
                 i.pointer.primary_pressed(),
@@ -2370,32 +2381,92 @@ impl StageView {
             }
             self.painting = start_painting(editor, view, press);
             if let Some(painting) = &mut self.painting {
-                let pressure = tablet::current().map_or(1.0, |pen| pen.pressure);
+                let pen = tablet::Sample::now(press);
                 painting.smoothed = press;
-                painting.pen = tablet::Sample { pos: press, pressure };
-                paint_to(painting, editor, view, press, pressure);
+                painting.pen = pen;
+                paint_to(painting, editor, view, pen);
             }
         }
         let Some(painting) = &mut self.painting else { return };
         if down {
             let samples = ui.input(tablet::samples);
+            if samples.is_empty() {
+                // Resting: Build-up keeps the paint flowing.
+                let dt = ui.input(|i| i.stable_dt).min(0.1);
+                if let (PaintWork::Brush(stroke), Some(canvas)) =
+                    (&mut painting.work, editor.doc.canvas_mut(painting.canvas))
+                {
+                    stroke.rest(canvas, dt);
+                }
+                if editor.brush_for(editor.tool).is_some_and(|b| b.build_up) {
+                    ui.ctx().request_repaint();
+                }
+            }
             for sample in samples {
                 // Smoothing: each point moves the stroke only part of the
                 // way toward the pen.
                 let follow = 1.0 - editor.smoothing.clamp(0.0, 0.95);
                 painting.smoothed += (sample.pos - painting.smoothed) * follow;
                 painting.pen = sample;
-                paint_to(painting, editor, view, painting.smoothed, sample.pressure);
+                paint_to(painting, editor, view, tablet::Sample { pos: painting.smoothed, ..sample });
             }
         } else {
             // Lifted: finish where the pen actually is.
             let pen = painting.pen;
-            paint_to(painting, editor, view, pen.pos, pen.pressure);
+            paint_to(painting, editor, view, pen);
             if let PaintWork::Gradient { from } = painting.work {
                 lay_gradient(painting, editor, view, from, pen.pos);
             }
             self.painting = None;
         }
+    }
+
+    /// The brush's quick menu and its on-canvas sizing, as in Photoshop:
+    /// right-click for the quick menu; Ctrl+Option-drag (Alt+right-drag on
+    /// Windows) left and right for the size, up and down for the hardness.
+    /// Returns whether it's sizing, so nothing paints meanwhile.
+    fn size_brush(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        editor: &mut Editor,
+        view: View,
+    ) -> bool {
+        let (primary, secondary, modifiers, down, pointer) = ui.input(|i| {
+            (
+                i.pointer.primary_pressed(),
+                i.pointer.secondary_pressed(),
+                i.modifiers,
+                i.pointer.any_down(),
+                i.pointer.interact_pos(),
+            )
+        });
+        if let Some((origin, size, hardness)) = self.sizing_brush {
+            if !down {
+                self.sizing_brush = None;
+                return true;
+            }
+            if let (Some(p), Some(brush)) = (pointer, editor.brush_of(editor.tool)) {
+                let moved = p - origin;
+                brush.size = (size + moved.x * 2.0 / view.zoom).clamp(1.0, 2500.0);
+                brush.hardness = (hardness - moved.y / 200.0).clamp(0.0, 1.0);
+            }
+            return true;
+        }
+        let starts = response.is_pointer_button_down_on()
+            && ((primary && modifiers.ctrl && modifiers.alt) || (secondary && modifiers.alt));
+        if starts && let (Some(origin), Some(brush)) = (pointer, editor.brush_for(editor.tool)) {
+            self.sizing_brush = Some((origin, brush.size, brush.hardness));
+            editor.brush_quick_menu = None;
+            return true;
+        }
+        if response.secondary_clicked()
+            && !modifiers.alt
+            && let Some(p) = response.interact_pointer_pos()
+        {
+            editor.brush_quick_menu = Some((p.x, p.y));
+        }
+        false
     }
 
     /// The selection tools. Each press's modifiers say how the new
@@ -3321,14 +3392,38 @@ fn draw_brush_outline(painter: &egui::Painter, editor: &Editor, view: View, poin
         .and_then(|(layer, ..)| editor.doc.layer(layer))
         .map_or(1.0, |layer| editor.doc.layer_matrix(layer, editor.frame).average_scale());
     let radius = settings.size / 2.0 * canvas_scale * view.zoom;
-    // Dark and light rings, so it shows on any colour.
-    painter.circle_stroke(pointer, radius, (2.0, Color32::from_black_alpha(140)));
-    painter.circle_stroke(pointer, radius, (1.0, Color32::WHITE));
+    // The tip's outline: an oval turned to the angle and squashed to the
+    // roundness (a sampled tip's, its frame), in dark and light so it
+    // shows on any colour.
+    let aspect = settings.tip.aspect();
+    let (rx, ry) = if aspect >= 1.0 { (radius, radius / aspect) } else { (radius * aspect, radius) };
+    let ry = ry * settings.roundness.clamp(0.01, 1.0);
+    let turn = settings.angle.to_radians();
+    let (along, across) = (vec2(turn.cos(), -turn.sin()), vec2(turn.sin(), turn.cos()));
+    let outline: Vec<Pos2> = match settings.tip {
+        Tip::Round => (0..64)
+            .map(|i| {
+                let a = i as f32 / 64.0 * std::f32::consts::TAU;
+                pointer + along * a.cos() * rx + across * a.sin() * ry
+            })
+            .collect(),
+        Tip::Sampled(_) => [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+            .map(|(x, y)| pointer + along * x * rx + across * y * ry)
+            .to_vec(),
+    };
+    painter.add(egui::Shape::closed_line(outline.clone(), (2.0, Color32::from_black_alpha(140))));
+    painter.add(egui::Shape::closed_line(outline, (1.0, Color32::WHITE)));
     // A soft brush's full-strength core, faintly: inside it the paint goes
     // on at full strength, and it fades out between the two rings.
-    if settings.hardness < 0.95 && radius > 6.0 {
-        let core = radius * settings.hardness.max(0.05);
-        painter.circle_stroke(pointer, core, (1.0, Color32::from_white_alpha(110)));
+    if settings.tip == Tip::Round && settings.hardness < 0.95 && rx.min(ry) > 6.0 {
+        let core = settings.hardness.max(0.05);
+        let inner: Vec<Pos2> = (0..64)
+            .map(|i| {
+                let a = i as f32 / 64.0 * std::f32::consts::TAU;
+                pointer + along * a.cos() * rx * core + across * a.sin() * ry * core
+            })
+            .collect();
+        painter.add(egui::Shape::closed_line(inner, (1.0, Color32::from_white_alpha(110))));
     }
 }
 
@@ -3344,15 +3439,20 @@ fn start_painting(editor: &mut Editor, view: View, press: Pos2) -> Option<Painti
     let selection = editor.selection_on(canvas).cloned();
     let work = match editor.tool {
         Tool::Brush => PaintWork::Brush(
-            BrushStroke::new(editor.brush, BrushMode::Paint(editor.paint_color)).within(selection.clone()),
+            BrushStroke::new(editor.brush.clone(), BrushMode::Paint(editor.paint_color))
+                .with_background(editor.second_color)
+                .with_seed(editor.next_stroke_seed())
+                .within(selection.clone()),
         ),
-        Tool::Eraser => {
-            PaintWork::Brush(BrushStroke::new(editor.eraser, BrushMode::Erase).within(selection.clone()))
-        }
+        Tool::Eraser => PaintWork::Brush(
+            BrushStroke::new(editor.eraser.clone(), BrushMode::Erase)
+                .with_seed(editor.next_stroke_seed())
+                .within(selection.clone()),
+        ),
         Tool::Gradient => PaintWork::Gradient { from: press },
         tool => {
             let kind = retouch_kind(editor, tool, view, layer, size, press)?;
-            let brush = editor.retouch_of(tool)?.brush;
+            let brush = editor.retouch_of(tool)?.brush.clone();
             PaintWork::Retouch(RetouchStroke::new(brush, kind, editor.doc.canvas(canvas)?).within(selection))
         }
     };
@@ -3362,7 +3462,7 @@ fn start_painting(editor: &mut Editor, view: View, press: Pos2) -> Option<Painti
         size,
         work,
         smoothed: Pos2::ZERO,
-        pen: tablet::Sample { pos: Pos2::ZERO, pressure: 1.0 },
+        pen: tablet::Sample { pos: Pos2::ZERO, pressure: 1.0, tilt: (0.0, 0.0) },
     })
 }
 
@@ -3436,12 +3536,14 @@ fn canvas_to_screen(editor: &Editor, view: View, layer: LayerId, at: Point) -> O
 }
 
 /// Carries the stroke (or the gradient's drag) on to `screen`.
-fn paint_to(painting: &mut Painting, editor: &mut Editor, view: View, screen: Pos2, pressure: f32) {
-    let Some(at) = canvas_point(editor, view, painting.layer, painting.size, screen) else { return };
+fn paint_to(painting: &mut Painting, editor: &mut Editor, view: View, pen: tablet::Sample) {
+    let Some(at) = canvas_point(editor, view, painting.layer, painting.size, pen.pos) else { return };
     let Some(canvas) = editor.doc.canvas_mut(painting.canvas) else { return };
     match &mut painting.work {
-        PaintWork::Brush(stroke) => stroke.add_point(canvas, at, pressure),
-        PaintWork::Retouch(stroke) => stroke.add_point(canvas, at, pressure),
+        PaintWork::Brush(stroke) => {
+            stroke.add_pen(canvas, at, Pen { pressure: pen.pressure, tilt: pen.tilt })
+        }
+        PaintWork::Retouch(stroke) => stroke.add_point(canvas, at, pen.pressure),
         PaintWork::Gradient { .. } => {}
     }
 }

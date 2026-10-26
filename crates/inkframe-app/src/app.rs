@@ -111,6 +111,13 @@ pub(crate) enum Command {
     DeleteDrawing,
     PreviousDrawing,
     NextDrawing,
+    /// Softer or harder brush edges (Shift+[ and Shift+]).
+    SofterBrush,
+    HarderBrush,
+    /// Edit › Define Brush Preset: a brush tip from the selected pixels.
+    DefineBrush,
+    ShowBrushSettings,
+    ShowBrushes,
     /// Opens the Lip Sync window for the selected layer.
     LipSync,
     NewLayer,
@@ -245,6 +252,7 @@ pub struct InkframeApp {
     adjust: AdjustDialog,
     library: LibraryView,
     panels: panels::PanelState,
+    brush_panels: crate::brush_panel::BrushPanels,
     templates: crate::templates::TemplateLibrary,
     presets: crate::motion_presets::PresetLibrary,
     audio: AudioEngine,
@@ -317,6 +325,7 @@ impl InkframeApp {
             adjust: AdjustDialog::default(),
             library: LibraryView::default(),
             panels: panels::PanelState::default(),
+            brush_panels: Default::default(),
             templates: crate::templates::TemplateLibrary::default(),
             presets: crate::motion_presets::PresetLibrary::default(),
             audio: AudioEngine::default(),
@@ -347,6 +356,14 @@ impl InkframeApp {
         // person's settings.
         if app.screenshot.is_none() || AutoScreenshot::load_prefs() {
             let prefs = Prefs::load();
+            app.editor.brushes = crate::brushes::BrushLibrary::load();
+            if let Some(brush) = prefs.brush.clone() {
+                app.editor.brush = brush;
+            }
+            if let Some(eraser) = prefs.eraser.clone() {
+                app.editor.eraser = eraser;
+            }
+            app.editor.brushes.picked = prefs.brush_name.clone();
             app.editor.guides = prefs.guides();
             app.editor.draw_into_layer = !prefs.shape_per_layer;
             app.editor.show_rulers = prefs.show_rulers;
@@ -674,6 +691,11 @@ impl InkframeApp {
             if let Some(degrees) = AutoScreenshot::view_rotation() {
                 app.views.stage().rotate_view(degrees);
             }
+            if let Some(section) = AutoScreenshot::brush_panel() {
+                app.layout = crate::layout::Layout::workspace(crate::layout::Workspace::Painter);
+                app.layout.reveal(Kind::BrushSettings);
+                app.brush_panels.show_section(&section);
+            }
             if let Some(script) = AutoScreenshot::console() {
                 app.layout.replace_kind(Kind::Properties, Kind::ScriptConsole);
                 let source = std::fs::read_to_string(script).unwrap_or_default();
@@ -972,6 +994,14 @@ impl InkframeApp {
             // Photoshop.
             Command::PreviousDrawing if editor.tool.uses_brush() => editor.resize_brush(1.0 / BRUSH_STEP),
             Command::NextDrawing if editor.tool.uses_brush() => editor.resize_brush(BRUSH_STEP),
+            Command::SofterBrush => editor.harden_brush(-0.25),
+            Command::HarderBrush => editor.harden_brush(0.25),
+            Command::DefineBrush => match editor.define_brush() {
+                Ok(_) => self.layout.reveal(Kind::Brushes),
+                Err(problem) => show_error(tr("Couldn't define a brush"), &problem),
+            },
+            Command::ShowBrushSettings => self.layout.reveal(Kind::BrushSettings),
+            Command::ShowBrushes => self.layout.reveal(Kind::Brushes),
             Command::PreviousDrawing => editor.cycle_drawing(-1),
             Command::NextDrawing => editor.cycle_drawing(1),
             Command::CombineShapes(how) => {
@@ -1141,7 +1171,12 @@ impl InkframeApp {
             (INSERT_BLANK_KEYFRAME, Command::InsertBlankKeyframe),
             (LAYER_START_HERE, Command::LayerStartHere),
             (LAYER_END_HERE, Command::LayerEndHere),
-            // After the ⌥ versions above, so those don't also swap.
+            // After the ⌥ versions above, so those don't also swap; the
+            // Shift ones first, since shortcuts ignore extra Shift.
+            (SOFTER_BRUSH, Command::SofterBrush),
+            (HARDER_BRUSH, Command::HarderBrush),
+            (SOFTER_BRUSH_CURLY, Command::SofterBrush),
+            (HARDER_BRUSH_CURLY, Command::HarderBrush),
             (PREVIOUS_DRAWING, Command::PreviousDrawing),
             (NEXT_DRAWING, Command::NextDrawing),
             (INSERT_KEYFRAME, Command::InsertKeyframe),
@@ -1385,6 +1420,11 @@ impl InkframeApp {
                 ui.separator();
                 item(ui, tr("Copy Pose"), Some(shortcuts::COPY_POSE), Command::CopyPose, has_selection);
                 item(ui, tr("Paste Pose"), Some(shortcuts::PASTE_POSE), Command::PastePose, keyframe && has_selection);
+                ui.separator();
+                let painting = self.editor.paint_target().is_some();
+                item(ui, tr("Define Brush Preset…"), None, Command::DefineBrush, painting);
+                item(ui, tr("Brushes"), None, Command::ShowBrushes, true);
+                item(ui, tr("Brush Settings"), None, Command::ShowBrushSettings, true);
             });
             ui.menu_button(tr("Modify"), |ui| {
                 item(
@@ -1801,6 +1841,9 @@ impl InkframeApp {
             toured: self.toured,
             seen_version: self.seen_version.clone(),
             language: self.language.clone(),
+            brush: Some(self.editor.brush.clone()),
+            eraser: Some(self.editor.eraser.clone()),
+            brush_name: self.editor.brushes.picked.clone(),
             folded_sections: self.editor.folded_sections.iter().cloned().collect(),
             ..Prefs::gather(self.editor.guides, self.batch.jobs(), self.batch.chosen_folder())
         }
@@ -1935,6 +1978,57 @@ impl InkframeApp {
     fn import_font(&mut self, path: &Path) {
         if let Err(message) = self.editor.import_font(path) {
             show_error(tr("Couldn't import the font"), &message);
+        }
+    }
+
+    /// What the brush panels asked for: file dialogs, a new tip, a panel.
+    fn brush_requests(&mut self) {
+        use crate::brush_panel::Asked;
+        if std::mem::take(&mut self.editor.show_brush_settings) {
+            self.layout.reveal(Kind::BrushSettings);
+        }
+        match self.brush_panels.asked.take() {
+            Some(Asked::ShowBrushSettings) => self.layout.reveal(Kind::BrushSettings),
+            Some(Asked::ShowBrushes) => self.layout.reveal(Kind::Brushes),
+            Some(Asked::DefineBrush) => {
+                if let Err(problem) = self.editor.define_brush() {
+                    show_error(tr("Couldn't define a brush"), &problem);
+                }
+            }
+            Some(Asked::ImportBrushes) => {
+                let Some(paths) = rfd::FileDialog::new()
+                    .set_title(tr("Import brushes"))
+                    .add_filter(tr("Brushes"), &[crate::brushes::BRUSH_SET_EXTENSION, "abr"])
+                    .pick_files()
+                else {
+                    return;
+                };
+                for path in paths {
+                    if let Err(problem) = self.editor.brushes.import(&path) {
+                        show_error(
+                            &tr_args("Couldn't import {file}", &[("file", &file_name(&path))]),
+                            &problem,
+                        );
+                    }
+                }
+            }
+            Some(Asked::ExportBrushes(only)) => {
+                let name = only
+                    .and_then(|i| self.editor.brushes.saved.get(i))
+                    .map_or_else(|| tr("My Brushes").to_owned(), |p| p.name.clone());
+                let Some(path) = rfd::FileDialog::new()
+                    .set_title(tr("Export brushes"))
+                    .add_filter(tr("Brush set"), &[crate::brushes::BRUSH_SET_EXTENSION])
+                    .set_file_name(format!("{name}.{}", crate::brushes::BRUSH_SET_EXTENSION))
+                    .save_file()
+                else {
+                    return;
+                };
+                if let Err(problem) = self.editor.brushes.export(&path, only) {
+                    show_error(tr("Couldn't export the brushes"), &problem);
+                }
+            }
+            None => {}
         }
     }
 
@@ -2236,6 +2330,16 @@ impl InkframeApp {
                     .id_salt(("controllers", area))
                     .show(ui, |ui| panels::controllers(ui, &mut self.editor));
             }
+            Kind::Brushes => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("brushes", area))
+                    .show(ui, |ui| crate::brush_panel::brushes(ui, &mut self.editor, &mut self.brush_panels));
+            }
+            Kind::BrushSettings => {
+                egui::ScrollArea::both().id_salt(("brush_settings", area)).show(ui, |ui| {
+                    crate::brush_panel::brush_settings(ui, &mut self.editor, &mut self.brush_panels)
+                });
+            }
             Kind::History => {
                 egui::ScrollArea::vertical()
                     .id_salt(("history", area))
@@ -2366,6 +2470,8 @@ impl InkframeApp {
         self.adjust.show(&ctx, &mut self.editor);
         self.vectorise.show(&ctx, &mut self.editor);
         self.swap.show(&ctx, &mut self.editor);
+        crate::brush_panel::quick_menu(&ctx, &mut self.editor, &mut self.brush_panels);
+        self.brush_requests();
         self.scripts.show(&ctx, &mut self.editor);
         if let Some(path) = self.examples.show(&ctx) {
             self.open_example(&path);

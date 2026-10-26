@@ -114,6 +114,12 @@
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
 //!   beside the timeline, to show the layout's areas.
+//! * `INKFRAME_SCREENSHOT_BRUSH_SHEET=1` paints a stroke with every ready-made brush, in rows,
+//!   on a new paint layer: a sheet to judge the brushes by.
+//! * `INKFRAME_SCREENSHOT_BRUSH_PANEL=texture` picks the Brush tool with a brush (`_BRUSH=Name`,
+//!   Foliage if not given) and shows the Brush Settings at that section (`tip`, `shape`,
+//!   `scattering`, `texture`, `dual`, `color` or `transfer`).
+//! * `INKFRAME_SCREENSHOT_QUICK_BRUSH=1` opens the brush quick menu over the stage.
 //! * `INKFRAME_SCREENSHOT_PAINT=1` paints a few strokes on a new paint layer, as a pen
 //!   would (pressing harder through the middle of each), to show the brushes; `=tools`
 //!   also uses the bucket, gradient and retouching tools on them; `=select` then selects
@@ -234,6 +240,22 @@ impl AutoScreenshot {
         if var("INKFRAME_SCREENSHOT_BANNER").is_some() {
             banner_demo(editor);
         }
+        if var("INKFRAME_SCREENSHOT_BRUSH_SHEET").is_some() {
+            brush_sheet_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_BRUSH_PANEL").is_some()
+            || var("INKFRAME_SCREENSHOT_QUICK_BRUSH").is_some()
+        {
+            let wanted = var("INKFRAME_SCREENSHOT_BRUSH").unwrap_or_else(|| "Foliage".into());
+            if let Some(preset) = crate::brushes::BrushLibrary::built_in().iter().find(|p| p.name == wanted) {
+                editor.brush = preset.settings.clone();
+                editor.brushes.picked = Some(preset.name.clone());
+            }
+            editor.tool = Tool::Brush;
+            if var("INKFRAME_SCREENSHOT_QUICK_BRUSH").is_some() {
+                editor.brush_quick_menu = Some((560.0, 260.0));
+            }
+        }
         if var("INKFRAME_SCREENSHOT_BRUSHES").is_some() {
             brushes_demo(editor);
         }
@@ -321,6 +343,11 @@ impl AutoScreenshot {
     /// A script to type into the Script Console and run.
     pub fn console() -> Option<std::path::PathBuf> {
         std::env::var_os("INKFRAME_SCREENSHOT_CONSOLE").map(Into::into)
+    }
+
+    /// The Brush Settings section to show.
+    pub fn brush_panel() -> Option<String> {
+        std::env::var("INKFRAME_SCREENSHOT_BRUSH_PANEL").ok()
     }
 
     /// A script to run, as from the Scripts menu.
@@ -557,6 +584,44 @@ fn save_png(path: &std::path::Path, image: &egui::ColorImage) -> Result<(), Stri
     pixmap.save_png(path).map_err(|e| e.to_string())
 }
 
+/// Paints a stroke with each ready-made brush on a new paint layer, in
+/// three columns, each in a colour that suits it, over a pale wash so the
+/// light ones show.
+fn brush_sheet_demo(editor: &mut Editor) {
+    use inkframe_core::{BrushMode, BrushStroke, Color, Point};
+    let Some(layer) = editor.add_paint_layer() else { return };
+    let Some((_, canvas, ..)) = editor.paint_target().filter(|(id, ..)| *id == layer) else { return };
+    editor.doc.background = Color::rgb(0xe9, 0xe4, 0xd8);
+    let colour = |name: &str| match name {
+        "Foliage" | "Grass" | "Sponge" => Color::rgb(0x3d, 0x7a, 0x3a),
+        "Clouds" | "Stars and Snow" => Color::rgb(0x6a, 0x8c, 0xc8),
+        "Watercolour" | "Airbrush" => Color::rgb(0x2f, 0x6d, 0xb6),
+        "Rocks" => Color::rgb(0x7a, 0x6a, 0x58),
+        "Oil Bristle" | "Flat Brush" | "Dry Brush" => Color::rgb(0xb0, 0x4a, 0x2a),
+        "Spatter" => Color::rgb(0xc0, 0x30, 0x50),
+        _ => Color::rgb(0x22, 0x22, 0x28),
+    };
+    let presets = crate::brushes::BrushLibrary::built_in();
+    let rows = presets.len().div_ceil(3);
+    for (i, preset) in presets.iter().enumerate() {
+        let (column, row) = ((i / rows) as f32, (i % rows) as f32);
+        let (left, y) = (90.0 + column * 600.0, 80.0 + row * (920.0 / rows as f32));
+        let mut settings = preset.settings.clone();
+        settings.size = settings.size.min(70.0);
+        let mut stroke = BrushStroke::new(settings, BrushMode::Paint(colour(&preset.name)))
+            .with_background(Color::rgb(0xd8, 0xc0, 0x40))
+            .with_seed(i as u64 + 1);
+        for step in 0..=80 {
+            let t = step as f32 / 80.0;
+            let at = Point::new(left + t * 460.0, y + (t * 6.0).sin() * 18.0);
+            let pressure = 0.2 + 0.8 * (t * std::f32::consts::PI).sin();
+            if let Some(canvas) = editor.doc.canvas_mut(canvas) {
+                stroke.add_point(canvas, at, pressure);
+            }
+        }
+    }
+}
+
 /// Paints sample strokes on a new paint layer: wavy lines in a few colours
 /// and sizes whose pressure rises and falls along them, so their ends
 /// taper as a pen's do; a soft, low-flow stroke; and an eraser pass.
@@ -583,7 +648,7 @@ fn paint_demo(editor: &mut Editor) {
             }
         }
     }
-    let mut eraser = BrushStroke::new(editor.eraser, BrushMode::Erase);
+    let mut eraser = BrushStroke::new(editor.eraser.clone(), BrushMode::Erase);
     for i in 0..=40 {
         let at = Point::new(1250.0, 220.0 + i as f32 * 15.0);
         if let Some(canvas) = editor.doc.canvas_mut(canvas) {
@@ -622,7 +687,8 @@ fn retouch_demo(editor: &mut Editor) {
 
     let Some(c) = editor.doc.canvas_mut(canvas) else { return };
     // A ring drawn with the brush, then filled with the bucket.
-    let ring = BrushSettings { size: 10.0, hardness: 1.0, pressure_size: false, ..BrushSettings::default() };
+    let ring =
+        BrushSettings { size: 10.0, hardness: 1.0, shape: Default::default(), ..BrushSettings::default() };
     let mut stroke =
         inkframe_core::BrushStroke::new(ring, inkframe_core::BrushMode::Paint(Color::rgb(30, 30, 30)));
     for i in 0..=90 {
@@ -632,8 +698,12 @@ fn retouch_demo(editor: &mut Editor) {
     inkframe_core::bucket_fill(c, 1700, 880, Color::rgb(0x6c, 0xc0, 0x6c), BucketSettings::default(), None);
 
     // Each retouching tool once, on the strokes.
-    let soft =
-        |size: f32| BrushSettings { size, hardness: 0.3, pressure_size: false, ..BrushSettings::default() };
+    let soft = |size: f32| BrushSettings {
+        size,
+        hardness: 0.3,
+        shape: Default::default(),
+        ..BrushSettings::default()
+    };
     // Each pass: what it does, its brush size, and the points it passes.
     type Pass<'a> = (Retouch, f32, &'a [(f32, f32)]);
     let passes: [Pass; 5] = [

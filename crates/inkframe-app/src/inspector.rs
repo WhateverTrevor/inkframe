@@ -212,8 +212,13 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
     // What a stroke looks like with these settings, first, so it's in view
     // while adjusting them.
     match tool {
-        Tool::Brush => brush_preview(ui, &editor.brush, Some(editor.paint_color)),
-        Tool::Eraser => brush_preview(ui, &editor.eraser, None),
+        Tool::Brush => crate::brush_panel::stroke_preview(
+            ui,
+            &editor.brush,
+            Some(editor.paint_color),
+            "tool-brush-preview",
+        ),
+        Tool::Eraser => crate::brush_panel::stroke_preview(ui, &editor.eraser, None, "tool-eraser-preview"),
         _ => {}
     }
     egui::Grid::new("paint_tool").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
@@ -223,19 +228,23 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
             ui.end_row();
         }
         match tool {
-            Tool::Brush => {
-                ui.label(tr("Preset"));
-                egui::ComboBox::from_id_salt("brush_preset").selected_text(tr("Choose…")).show_ui(ui, |ui| {
-                    for (name, preset) in inkframe_core::BrushSettings::presets() {
-                        if ui.button(name).clicked() {
-                            editor.brush = preset;
-                        }
-                    }
-                });
+            Tool::Brush | Tool::Eraser => {
+                ui.label(tr("Brush"));
+                brush_preset_menu(ui, editor, tool);
                 ui.end_row();
-                brush_controls(ui, &mut editor.brush, true);
+                if let Some(settings) = editor.brush_of(tool) {
+                    brush_controls(ui, settings, true);
+                }
+                ui.label("");
+                if ui
+                    .button(tr("Brush Settings…"))
+                    .on_hover_text(tr("Every setting of the brush: its tip, dynamics, texture and more"))
+                    .clicked()
+                {
+                    editor.show_brush_settings = true;
+                }
+                ui.end_row();
             }
-            Tool::Eraser => brush_controls(ui, &mut editor.eraser, true),
             Tool::PaintBucket => {
                 ui.label(tr("Tolerance"))
                     .on_hover_text(tr("How different a colour may be and still be filled"));
@@ -349,88 +358,14 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
     }
 }
 
-/// The settings every brush tip has. `paint` adds the ones only painting
-/// (rather than retouching) uses: opacity, flow and the paper grain.
-/// A sample stroke drawn with the brush engine itself, so size, hardness,
-/// opacity, flow, spacing, grain and pressure all show as they will on the
-/// canvas. The pressure swells and fades along it, as a pen's would. For
-/// the eraser (`paint` is `None`), a stroke erased out of a patch of
-/// colour. Redrawn only when the settings change.
-fn brush_preview(
-    ui: &mut egui::Ui,
-    settings: &inkframe_core::BrushSettings,
-    paint: Option<inkframe_core::Color>,
-) {
-    use inkframe_core::{BrushMode, BrushStroke, Canvas, Color, Point};
-    const WIDTH: u32 = 300;
-    const HEIGHT: u32 = 80;
-    // Big brushes are shown smaller, to fit; the caption says so.
-    let shown = settings.size.min(HEIGHT as f32 * 0.6);
-    let key = format!("{settings:?}{paint:?}{}", ui.visuals().dark_mode);
-    let id = egui::Id::new("brush-preview");
-    let cached: Option<(String, egui::TextureHandle)> = ui.data(|d| d.get_temp(id));
-    let texture = match cached {
-        Some((k, texture)) if k == key => texture,
-        _ => {
-            let mut canvas = Canvas::new(WIDTH, HEIGHT);
-            let ink = paint.unwrap_or(Color::rgb(120, 130, 150));
-            if paint.is_none() {
-                // Something to erase from.
-                let patch: Vec<u8> = (0..WIDTH * HEIGHT).flat_map(|_| [ink.r, ink.g, ink.b, 255]).collect();
-                canvas.write_region(0, 0, WIDTH, HEIGHT, &patch);
-            }
-            let mode = if paint.is_some() { BrushMode::Paint(ink) } else { BrushMode::Erase };
-            let mut stroke =
-                BrushStroke::new(inkframe_core::BrushSettings { size: shown, ..*settings }, mode);
-            let steps = 120;
-            for i in 0..=steps {
-                let t = i as f32 / steps as f32;
-                let x = 20.0 + t * (WIDTH as f32 - 40.0);
-                let y = HEIGHT as f32 / 2.0 + (t * std::f32::consts::TAU).sin() * HEIGHT as f32 * 0.22;
-                // Light at the ends, full in the middle.
-                let pressure = 0.15 + 0.85 * (t * std::f32::consts::PI).sin();
-                stroke.add_point(&mut canvas, Point::new(x, y), pressure);
-            }
-            let image = egui::ColorImage::from_rgba_premultiplied(
-                [WIDTH as usize, HEIGHT as usize],
-                &canvas.to_pixels(),
-            );
-            let texture = ui.ctx().load_texture("brush-preview", image, egui::TextureOptions::LINEAR);
-            ui.data_mut(|d| d.insert_temp(id, (key, texture.clone())));
-            texture
-        }
-    };
-    let size = egui::vec2(WIDTH as f32, HEIGHT as f32) * (ui.available_width() / WIDTH as f32).min(1.0);
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-    // Paper behind it, light or dark to suit the colour.
-    let paper = if paint.is_some_and(|c| (c.r as u32 + c.g as u32 + c.b as u32) > 600) {
-        egui::Color32::from_gray(60)
-    } else {
-        egui::Color32::from_rgb(0xf4, 0xf1, 0xea)
-    };
-    ui.painter().rect_filled(rect, 4.0, paper);
-    ui.painter().image(
-        texture.id(),
-        rect,
-        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-        egui::Color32::WHITE,
-    );
-    if shown < settings.size {
-        ui.weak(tr_args(
-            "Shown at {shown} px of {size} px",
-            &[("shown", &format!("{shown:.0}")), ("size", &format!("{:.0}", settings.size))],
-        ));
-    }
-    ui.add_space(6.0);
-}
-
 fn brush_controls(ui: &mut egui::Ui, settings: &mut inkframe_core::BrushSettings, paint: bool) {
     ui.label(tr("Size")).on_hover_text(tr("[ and ] make it smaller and bigger"));
-    ui.add(egui::Slider::new(&mut settings.size, 1.0..=500.0).logarithmic(true).suffix(" px"));
+    ui.add(egui::Slider::new(&mut settings.size, 1.0..=2500.0).logarithmic(true).suffix(" px"));
     ui.end_row();
-    ui.label(tr("Hardness"))
-        .on_hover_text(tr("How crisp the edge is: 100% is a hard disc, 0% fades from the middle"));
-    ui.add(percent(&mut settings.hardness));
+    ui.label(tr("Hardness")).on_hover_text(tr(
+        "How crisp the edge is: 100% is a hard disc, 0% fades from the middle. Shift+[ and Shift+] change it",
+    ));
+    ui.add_enabled(settings.tip == inkframe_core::Tip::Round, percent(&mut settings.hardness));
     ui.end_row();
     if paint {
         ui.label(tr("Opacity"))
@@ -441,28 +376,66 @@ fn brush_controls(ui: &mut egui::Ui, settings: &mut inkframe_core::BrushSettings
             .on_hover_text(tr("How much each touch of the brush adds: low flow builds up like an airbrush"));
         ui.add(percent(&mut settings.flow));
         ui.end_row();
-        ui.label(tr("Grain"))
-            .on_hover_text(tr("A paper texture that breaks the paint up, like chalk or a dry brush"));
-        ui.add(percent(&mut settings.grain));
-        ui.end_row();
     }
     ui.label(tr("Spacing")).on_hover_text(tr("Distance between dabs, as a share of the brush's size"));
     ui.add(
-        egui::Slider::new(&mut settings.spacing, 0.02..=1.0)
+        egui::Slider::new(&mut settings.spacing, 0.01..=10.0)
+            .logarithmic(true)
             .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
     );
     ui.end_row();
     ui.label(tr("Pressure")).on_hover_text(tr("What pressing harder with a pen does"));
     ui.horizontal(|ui| {
-        ui.checkbox(&mut settings.pressure_size, tr("Size"));
-        ui.checkbox(&mut settings.pressure_flow, if paint { tr("Flow") } else { tr("Strength") });
+        if paint {
+            crate::brush_panel::pressure_switches(ui, settings);
+        } else {
+            // The retouching tools: size, and strength through the flow.
+            let mut size =
+                settings.shape.on && settings.shape.size_control == inkframe_core::Control::PenPressure;
+            if ui.checkbox(&mut size, tr("Size")).changed() {
+                settings.shape.on = size;
+                settings.shape.size_control = inkframe_core::Control::PenPressure;
+            }
+            let mut strength =
+                settings.transfer.on && settings.transfer.flow_control == inkframe_core::Control::PenPressure;
+            if ui.checkbox(&mut strength, tr("Strength")).changed() {
+                settings.transfer.on = strength;
+                settings.transfer.flow_control = inkframe_core::Control::PenPressure;
+            }
+        }
     });
     ui.end_row();
-    if settings.pressure_size {
+    if settings.shape.on && settings.shape.size_control == inkframe_core::Control::PenPressure {
         ui.label(tr("Lightest"))
             .on_hover_text(tr("The size at the lightest touch, as a share of the full size"));
-        ui.add(percent(&mut settings.min_size));
+        ui.add(percent(&mut settings.shape.minimum_diameter));
         ui.end_row();
+    }
+}
+
+/// A menu of the brushes, ready-made and saved, for the Brush or Eraser.
+fn brush_preset_menu(ui: &mut egui::Ui, editor: &mut Editor, tool: crate::editor::Tool) {
+    let current = editor.brushes.picked.clone().unwrap_or_else(|| tr("Custom").to_owned());
+    let shown = crate::brush_panel::preset_name(&current);
+    let mut picked = None;
+    egui::ComboBox::from_id_salt("brush_preset").selected_text(shown).width(170.0).show_ui(ui, |ui| {
+        for (preset, saved) in editor.brushes.all() {
+            if saved && !editor.brushes.saved.is_empty() && std::ptr::eq(preset, &editor.brushes.saved[0]) {
+                ui.separator();
+            }
+            if ui
+                .selectable_label(current == preset.name, crate::brush_panel::preset_name(&preset.name))
+                .clicked()
+            {
+                picked = Some(preset.clone());
+            }
+        }
+    });
+    if let Some(preset) = picked {
+        if let Some(settings) = editor.brush_of(tool) {
+            *settings = preset.settings;
+        }
+        editor.brushes.picked = Some(preset.name);
     }
 }
 
