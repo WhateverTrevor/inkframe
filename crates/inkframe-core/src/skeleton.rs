@@ -254,7 +254,7 @@ impl BoneBinding {
 
 /// Every bone's place on a frame: the matrix taking a point from where it
 /// is at rest to where the bone has carried it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Pose {
     pub moves: Vec<Affine>,
     /// The same without the stretching: how each bone carries the bones
@@ -329,38 +329,6 @@ impl Bone {
     }
 }
 
-thread_local! {
-    /// Poses worked out inside [`with_pose_cache`] on this thread, by
-    /// skeleton (where it is in memory, which can't change while the
-    /// document is borrowed to draw it) and frame. `None` outside one.
-    static POSE_CACHE: std::cell::RefCell<Option<std::collections::HashMap<(usize, u32), Pose>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// Runs `f` with poses cached: each skeleton's pose on a frame is worked
-/// out once, however many layers it bends. Only for code that reads a
-/// document it holds borrowed, unchanging, throughout, as drawing a frame
-/// does: a pose cached before an edit would otherwise outlive it. The cache
-/// goes when `f` returns (or panics); one already running is shared.
-pub fn with_pose_cache<R>(f: impl FnOnce() -> R) -> R {
-    struct Clear;
-    impl Drop for Clear {
-        fn drop(&mut self) {
-            POSE_CACHE.with(|cache| *cache.borrow_mut() = None);
-        }
-    }
-    let started = POSE_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        let start = cache.is_none();
-        if start {
-            *cache = Some(std::collections::HashMap::new());
-        }
-        start
-    });
-    let _clear = started.then_some(Clear);
-    f()
-}
-
 impl Skeleton {
     /// The bone `index` hangs from, if it's a real one earlier in the list.
     fn parent_of(&self, index: usize) -> Option<usize> {
@@ -382,23 +350,11 @@ impl Skeleton {
     /// Where every bone is on `frame`. Bones with dynamics are simulated
     /// up to it, swinging after the bones they hang from.
     ///
-    /// Inside [`with_pose_cache`], each skeleton's pose on a frame is worked
-    /// out once and reused: every layer a skeleton bends asks for it, and
-    /// target bones and dynamics make it costly.
+    /// While a frame is drawn (see `draw_cache.rs`), each skeleton's pose on
+    /// a frame is worked out once and shared: every layer a skeleton bends
+    /// asks for it, and target bones and dynamics make it costly.
     pub fn pose(&self, frame: u32) -> Pose {
-        let key = (self as *const Skeleton as usize, frame);
-        if let Some(pose) =
-            POSE_CACHE.with(|cache| cache.borrow().as_ref().and_then(|c| c.get(&key).cloned()))
-        {
-            return pose;
-        }
-        let pose = self.work_out_pose(frame);
-        POSE_CACHE.with(|cache| {
-            if let Some(cache) = cache.borrow_mut().as_mut() {
-                cache.insert(key, pose.clone());
-            }
-        });
-        pose
+        crate::draw_cache::pose(self as *const Skeleton as usize, frame, || self.work_out_pose(frame))
     }
 
     fn work_out_pose(&self, frame: u32) -> Pose {
@@ -1110,6 +1066,23 @@ impl crate::Document {
         })
     }
 
+    /// [`Document::posed_elements`], worked out once per layer and frame
+    /// while a frame is drawn (see `draw_cache.rs`) and shared after, rather
+    /// than bent again for every band of the picture that draws it.
+    pub fn posed_shapes<'a>(&self, layer: &'a crate::Layer, frame: u32) -> crate::Posed<'a> {
+        let shared = crate::draw_cache::posed(layer as *const crate::Layer as usize, frame, || {
+            match self.posed_elements(layer, frame) {
+                std::borrow::Cow::Owned(posed) => Some(std::sync::Arc::new(posed)),
+                // Unchanged by posing, so borrowed as it is: nothing to share.
+                std::borrow::Cow::Borrowed(_) => None,
+            }
+        });
+        match shared {
+            Some(posed) => crate::Posed::Shared(posed),
+            None => crate::Posed::Own(self.posed_elements(layer, frame)),
+        }
+    }
+
     /// What `layer` draws on `frame`: as its own deformers bend it (see
     /// [`crate::Layer::shown_elements`]), reshaped by any smart bone that
     /// morphs it, and then bent by the skeleton it's bound to. Pictures and
@@ -1481,10 +1454,10 @@ mod tests {
         let mut skeleton = Skeleton::default();
         let bone = skeleton.add_bone(None, Point::new(0.0, 0.0), Point::new(100.0, 0.0), 0);
         let tip = |s: &Skeleton| s.pose(0).moves[bone].apply(Point::new(100.0, 0.0));
-        let still = with_pose_cache(|| {
+        let still = crate::with_pose_cache(|| {
             let first = tip(&skeleton);
             // Asked again in the scope (as every layer it bends asks), the same.
-            assert_eq!(with_pose_cache(|| tip(&skeleton)), first);
+            assert_eq!(crate::with_pose_cache(|| tip(&skeleton)), first);
             first
         });
         // Turned afterwards, it's posed afresh: nothing cached survives.
@@ -1493,7 +1466,7 @@ mod tests {
         assert!(still.distance(turned) > 100.0, "{still:?} {turned:?}");
         // And a scope that panics still clears it.
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            with_pose_cache(|| {
+            crate::with_pose_cache(|| {
                 tip(&skeleton);
                 panic!("drawing failed");
             })

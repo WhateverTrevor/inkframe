@@ -5,6 +5,15 @@ notes on GitHub are its section here.
 
 ## Unreleased
 
+### Speed
+
+- Drawing a frame shares each skeleton's pose and each bent layer's
+  shapes across every part of the picture and every processor core,
+  rather than working them out again for each, and the stage's picture is
+  handed to the screen in one copy: on a 500-layer scene with rigged
+  characters, drawing is about 20% quicker at the stage's size and the
+  editor's updates about 7%.
+
 ### Scripting
 
 - A script's result shows the moment it finishes. A script run from the

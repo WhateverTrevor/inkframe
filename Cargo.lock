@@ -1710,6 +1710,7 @@ name = "inkframe-app"
 version = "0.5.1"
 dependencies = [
  "block2 0.6.2",
+ "bytemuck",
  "eframe",
  "egui",
  "egui_kittest",

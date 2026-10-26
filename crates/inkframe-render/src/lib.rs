@@ -173,11 +173,15 @@ fn in_bands(pixmap: &mut Pixmap, draw: impl Fn(&mut PixmapMut, Affine) + Sync) {
         draw(&mut band, Affine::translate(Point::new(0.0, -(top as f32))));
     };
     let workers = std::thread::available_parallelism().map_or(1, |n| n.get()).min(bands.len());
-    // Each worker works out each skeleton's pose once, for every layer it
-    // bends in every band it draws (the document can't change meanwhile).
+    // Skeletons' poses and bent layers' shapes are worked out once for the
+    // whole picture and shared by every band and worker (see `draw_cache.rs`
+    // in the core; the document can't change meanwhile).
+    let cache = std::sync::Arc::new(inkframe_core::DrawCache::default());
     if workers <= 1 || height < 2 * BAND_HEIGHT {
         // Small images (thumbnails, tests) aren't worth starting threads for.
-        inkframe_core::with_pose_cache(|| bands.iter_mut().for_each(|(top, rows)| draw_band(*top, rows)));
+        inkframe_core::with_draw_cache(&cache, || {
+            bands.iter_mut().for_each(|(top, rows)| draw_band(*top, rows))
+        });
         return;
     }
     // Deal the bands out round-robin, so each worker gets a mix of the top,
@@ -188,9 +192,9 @@ fn in_bands(pixmap: &mut Pixmap, draw: impl Fn(&mut PixmapMut, Affine) + Sync) {
     }
     std::thread::scope(|scope| {
         for share in shares {
-            let draw_band = &draw_band;
+            let (draw_band, cache) = (&draw_band, &cache);
             scope.spawn(move || {
-                inkframe_core::with_pose_cache(|| {
+                inkframe_core::with_draw_cache(cache, || {
                     share.into_iter().for_each(|(top, rows)| draw_band(top, rows))
                 })
             });
@@ -798,7 +802,7 @@ fn draw_layer(
             || inkframe_core::Rect::bounding(corners).is_some_and(|b| overlaps(b, image))
     };
     // Shapes as posed: reshaped by smart bones and bent by the skeleton.
-    let elements = doc.posed_elements(layer, frame);
+    let elements = doc.posed_shapes(layer, frame);
     // A layer bound to one bone moves as a whole, so its pixels can be drawn
     // through one matrix; one bound by region needs them bent piece by piece.
     let rigid = bend.as_ref().and_then(|b| b.rigid());

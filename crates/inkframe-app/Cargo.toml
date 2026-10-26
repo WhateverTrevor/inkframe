@@ -11,6 +11,9 @@ name = "inkframe"
 path = "src/main.rs"
 
 [dependencies]
+# Already in the build through egui and tiny-skia: hands the stage's pixels
+# to egui as they are, without converting them one by one.
+bytemuck = "1.25"
 inkframe-core.workspace = true
 inkframe-render.workspace = true
 inkframe-export.workspace = true

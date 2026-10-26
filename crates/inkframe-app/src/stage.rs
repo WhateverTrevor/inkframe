@@ -3065,10 +3065,12 @@ impl StageView {
         };
         render_timeline_into(&mut pixmap, doc, timeline, editor.frame, to_stage, None, &options);
 
-        // tiny-skia and egui both use premultiplied alpha, so the bytes can be
-        // handed over as they are.
-        let image =
-            egui::ColorImage::from_rgba_premultiplied([size.0 as usize, size.1 as usize], pixmap.data());
+        // tiny-skia's premultiplied RGBA bytes are egui's Color32s already,
+        // so they're copied across in one go rather than pixel by pixel.
+        let image = egui::ColorImage::new(
+            [size.0 as usize, size.1 as usize],
+            bytemuck::cast_slice::<u8, egui::Color32>(pixmap.data()).to_vec(),
+        );
         match &mut self.texture {
             Some(texture) => texture.set(image, egui::TextureOptions::LINEAR),
             None => self.texture = Some(ctx.load_texture("stage", image, egui::TextureOptions::LINEAR)),
