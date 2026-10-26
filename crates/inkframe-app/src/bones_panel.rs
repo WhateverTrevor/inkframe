@@ -8,6 +8,7 @@ use egui::RichText;
 use inkframe_core::{LayerId, Skeleton};
 
 use crate::editor::{Editor, Tool};
+use crate::i18n::tr;
 
 /// The bones in tree order, each after the bone it hangs from, with how
 /// deep it hangs.
@@ -47,16 +48,16 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
         editor.layers().iter().rev().filter(|l| l.skeleton.is_some()).map(|l| l.id).collect();
     let mut setup = editor.rig_setup;
     if ui
-        .checkbox(&mut setup, "Rig setup")
-        .on_hover_text("Show skeletons at rest, to draw, paint and rig on (View › Rig Setup)")
+        .checkbox(&mut setup, tr("Rig setup"))
+        .on_hover_text(tr("Show skeletons at rest, to draw, paint and rig on (View › Rig Setup)"))
         .changed()
     {
         editor.rig_setup = setup;
     }
     ui.add_space(4.0);
     if skeletons.is_empty() {
-        ui.weak("No skeletons yet. Select a character's layers and make one: they bend with its bones, painted ones too.");
-        if ui.button("New Skeleton").clicked() {
+        ui.weak(tr("No skeletons yet. Select a character's layers and make one: they bend with its bones, painted ones too."));
+        if ui.button(tr("New Skeleton")).clicked() {
             editor.new_skeleton();
         }
         return;
@@ -76,7 +77,7 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         .default_open(true)
         .show(ui, |ui| {
             if skeleton.bones.is_empty() {
-                ui.weak("No bones yet.");
+                ui.weak(tr("No bones yet."));
             }
             for (bone, depth) in tree(&skeleton) {
                 let b = &skeleton.bones[bone];
@@ -101,7 +102,11 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                     });
                 });
             }
-            if ui.small_button("Add Bones").on_hover_text("Draw bones with the Add Bone tool").clicked() {
+            if ui
+                .small_button(tr("Add Bones"))
+                .on_hover_text(tr("Draw bones with the Add Bone tool"))
+                .clicked()
+            {
                 editor.select(Some(id));
                 editor.use_tool(Tool::AddBone);
             }
@@ -112,7 +117,7 @@ fn skeleton_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 return;
             }
             ui.add_space(4.0);
-            ui.label(RichText::new("Rigs").small().weak());
+            ui.label(RichText::new(tr("Rigs")).small().weak());
             let names: Vec<String> = skeleton.bones.iter().map(|b| b.name.clone()).collect();
             // Bones with others hanging from them, which a layer can follow as a limb.
             let limbs: Vec<bool> = (0..skeleton.bones.len())

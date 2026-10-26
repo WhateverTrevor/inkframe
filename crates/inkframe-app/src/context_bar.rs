@@ -87,7 +87,7 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
             tr("Key the shapes at this turn (Enter)"),
             Command::FinishCorrection,
         );
-        act(ui, command, Icon::Cross, tr("Cancel"), "Drop the changes (Esc)", Command::CancelCorrection);
+        act(ui, command, Icon::Cross, tr("Cancel"), tr("Drop the changes (Esc)"), Command::CancelCorrection);
         return;
     }
     // A bone shown at a turn of its own, from its action timeline: the pose

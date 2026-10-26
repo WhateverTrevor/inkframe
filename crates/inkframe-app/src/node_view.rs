@@ -21,6 +21,7 @@ use inkframe_core::{Document, Filter, FilterKind, Layer, LayerId, TimelineId};
 
 use crate::convert::to_color32;
 use crate::editor::Editor;
+use crate::i18n::tr;
 use crate::theme;
 
 /// A node, by what it stands for (the core's, as its place is saved).
@@ -164,13 +165,13 @@ enum Drag {
 impl NodeView {
     pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         ui.horizontal(|ui| {
-            if ui.button("Arrange").on_hover_text("Lay the nodes out again").clicked() {
+            if ui.button(tr("Arrange")).on_hover_text(tr("Lay the nodes out again")).clicked() {
                 let timeline = editor.timeline();
                 editor.doc.clear_node_places(timeline);
                 self.pan = Vec2::ZERO;
                 self.zoom = None;
             }
-            ui.weak("Drag from an output to an input to wire it; right-click an input to unplug it.");
+            ui.weak(tr("Drag from an output to an input to wire it; right-click an input to unplug it."));
         });
         let (response, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         let area = response.rect;
@@ -223,8 +224,8 @@ impl NodeView {
             let fill = if port.is_output() { theme::TEXT } else { theme::CONTROL_HOVER };
             painter.circle(center, PORT_RADIUS * zoom, fill, Stroke::new(1.0, theme::LINE));
             let label = match port {
-                Port::Parent(_) => Some(("parent", Align2::RIGHT_CENTER)),
-                Port::Mask(_) => Some(("mask", Align2::RIGHT_CENTER)),
+                Port::Parent(_) => Some((tr("parent"), Align2::RIGHT_CENTER)),
+                Port::Mask(_) => Some((tr("mask"), Align2::RIGHT_CENTER)),
                 _ => None,
             };
             // Outside the node, left of the port.
@@ -456,13 +457,13 @@ impl NodeView {
         let frame = editor.frame;
         response.context_menu(|ui| match target {
             Some(MenuTarget::Port(port)) => {
-                if ui.button("Unplug").clicked() {
+                if ui.button(tr("Unplug")).clicked() {
                     disconnect(&mut editor.doc, port, frame);
                     ui.close();
                 }
             }
             Some(MenuTarget::Node(NodeKey::Layer(layer))) => {
-                ui.menu_button("Add Filter", |ui| {
+                ui.menu_button(tr("Add Filter"), |ui| {
                     for kind in FilterKind::ALL {
                         if ui.button(kind.label()).clicked() {
                             edit_effects(editor, layer, |e| e.filters.push(Filter { enabled: true, kind }));
@@ -476,7 +477,7 @@ impl NodeView {
                     .doc
                     .layer(layer)
                     .and_then(|l| l.track.effects_at(frame as f32).filters.get(index).map(|f| f.enabled));
-                let label = if enabled == Some(false) { "Switch On" } else { "Switch Off" };
+                let label = if enabled == Some(false) { tr("Switch On") } else { tr("Switch Off") };
                 if ui.button(label).clicked() {
                     edit_effects(editor, layer, |e| {
                         if let Some(f) = e.filters.get_mut(index) {
@@ -485,7 +486,7 @@ impl NodeView {
                     });
                     ui.close();
                 }
-                if ui.button("Remove Filter").clicked() {
+                if ui.button(tr("Remove Filter")).clicked() {
                     edit_effects(editor, layer, |e| {
                         if index < e.filters.len() {
                             e.filters.remove(index);
@@ -495,13 +496,13 @@ impl NodeView {
                 }
             }
             Some(MenuTarget::Node(NodeKey::ColorEffect(layer))) => {
-                if ui.button("Remove Colour Effect").clicked() {
+                if ui.button(tr("Remove Colour Effect")).clicked() {
                     edit_effects(editor, layer, |e| e.color = inkframe_core::ColorEffect::None);
                     ui.close();
                 }
             }
             _ => {
-                ui.weak("Right-click a layer, a filter or an input");
+                ui.weak(tr("Right-click a layer, a filter or an input"));
             }
         });
     }
@@ -542,15 +543,15 @@ impl NodeView {
                     theme::TEXT,
                 );
                 let kind = if layer.mask {
-                    "mask"
+                    tr("mask")
                 } else if layer.guide {
-                    "guide"
+                    tr("guide")
                 } else if layer.instance.is_some() {
-                    "symbol"
+                    tr("symbol")
                 } else if !layer.draws_vectors() {
-                    "paint"
+                    tr("paint")
                 } else {
-                    "drawing"
+                    tr("drawing")
                 };
                 painter.text(
                     rect.left_bottom() + vec2(14.0, -9.0) * zoom,
@@ -564,7 +565,7 @@ impl NodeView {
                 let effects = doc.layer(id).map(|l| l.track.effects_at(frame as f32)).unwrap_or_default();
                 let (label, on) = match node.key {
                     NodeKey::Filter(_, i) => {
-                        effects.filters.get(i).map_or(("Filter", false), |f| (f.kind.label(), f.enabled))
+                        effects.filters.get(i).map_or((tr("Filter"), false), |f| (f.kind.label(), f.enabled))
                     }
                     _ => (effects.color.label(), true),
                 };
@@ -578,7 +579,7 @@ impl NodeView {
                 painter.text(
                     rect.center_top() + vec2(0.0, 6.0 * zoom),
                     Align2::CENTER_TOP,
-                    "Composite",
+                    tr("Composite"),
                     title,
                     theme::TEXT,
                 );
@@ -590,7 +591,7 @@ impl NodeView {
             }
             NodeKey::Display => {
                 painter.rect(rect, 6.0 * zoom, theme::ACCENT_DIM, outline(false), egui::StrokeKind::Inside);
-                painter.text(rect.center(), Align2::CENTER_CENTER, "Display", title, theme::TEXT);
+                painter.text(rect.center(), Align2::CENTER_CENTER, tr("Display"), title, theme::TEXT);
             }
         }
     }

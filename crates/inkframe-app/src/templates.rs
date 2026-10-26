@@ -10,6 +10,7 @@ use inkframe_core::{Document, TEMPLATE_EXTENSION, Template};
 use inkframe_render::RenderOptions;
 
 use crate::editor::Editor;
+use crate::i18n::tr;
 use crate::icons::{Icon, IconButton};
 use crate::theme;
 
@@ -78,14 +79,14 @@ impl TemplateLibrary {
     fn save(&mut self, editor: &Editor, name: &str) -> Result<(), String> {
         let name = name.trim();
         if name.is_empty() {
-            return Err("Give the template a name first.".to_owned());
+            return Err(tr("Give the template a name first.").to_owned());
         }
         let ids = editor.selected_with_folders();
         let template = editor
             .doc
             .make_template(name, &ids, editor.project_dir().as_deref())
-            .ok_or("Select the layers to save first.")?;
-        let folder = self.folder().ok_or("There's no settings folder to save templates in.")?;
+            .ok_or(tr("Select the layers to save first."))?;
+        let folder = self.folder().ok_or(tr("There's no settings folder to save templates in."))?;
         std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
         let path = free_path(&folder, name);
         let json = template.to_json().map_err(|e| e.to_string())?;
@@ -100,12 +101,14 @@ impl TemplateLibrary {
         }
         ui.horizontal(|ui| {
             ui.add(
-                egui::TextEdit::singleline(&mut self.name).hint_text("Template name").desired_width(110.0),
+                egui::TextEdit::singleline(&mut self.name)
+                    .hint_text(tr("Template name"))
+                    .desired_width(110.0),
             );
             let can_save = !editor.selected_ids().is_empty();
-            let save = ui.add_enabled(can_save, egui::Button::new("Save Selected")).on_hover_text(
-                "Save the selected layers, with their animation, as a template for any project",
-            );
+            let save = ui.add_enabled(can_save, egui::Button::new(tr("Save Selected"))).on_hover_text(tr(
+                tr("Save the selected layers, with their animation, as a template for any project"),
+            ));
             if save.clicked() {
                 let name = self.name.clone();
                 self.problem = self.save(editor, &name).err();
@@ -113,7 +116,7 @@ impl TemplateLibrary {
                     self.name.clear();
                 }
             }
-            if ui.add(IconButton::new(Icon::History, "Read the Templates folder again")).clicked() {
+            if ui.add(IconButton::new(Icon::History, tr("Read the Templates folder again"))).clicked() {
                 self.scan();
             }
         });
@@ -126,9 +129,9 @@ impl TemplateLibrary {
         let mut delete = None;
         let entries = self.entries.as_mut().expect("scanned above");
         if entries.is_empty() {
-            ui.weak(
+            ui.weak(tr(
                 "No templates yet. Select a rig, a cycle or a prop and save it here to use in any project.",
-            );
+            ));
         }
         // Cards in rows as wide as the panel allows.
         let gap = ui.spacing().item_spacing.x;
@@ -155,16 +158,16 @@ impl TemplateLibrary {
                             );
                         }
                         let response =
-                            response.on_hover_text("Double-click (or Insert) to add it at the playhead");
+                            response.on_hover_text(tr("Double-click (or Insert) to add it at the playhead"));
                         if response.double_clicked() {
                             insert = Some(i);
                         }
                         response.context_menu(|ui| {
-                            if ui.button("Insert at Playhead").clicked() {
+                            if ui.button(tr("Insert at Playhead")).clicked() {
                                 insert = Some(i);
                                 ui.close();
                             }
-                            if ui.button("Delete Template").clicked() {
+                            if ui.button(tr("Delete Template")).clicked() {
                                 delete = Some(i);
                                 ui.close();
                             }
@@ -172,7 +175,7 @@ impl TemplateLibrary {
                         ui.horizontal(|ui| {
                             ui.label(&entry.template.name);
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.small_button("Insert").clicked() {
+                                if ui.small_button(tr("Insert")).clicked() {
                                     insert = Some(i);
                                 }
                             });

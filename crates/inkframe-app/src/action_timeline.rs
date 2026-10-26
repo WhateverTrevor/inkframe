@@ -23,6 +23,7 @@
 use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Vec2};
 use inkframe_core::{RotationLimits, SmartAction};
 
+use crate::i18n::{tr, tr_args};
 use crate::theme;
 
 /// What the person asked of the strip this frame.
@@ -73,7 +74,7 @@ pub fn show(
     let width = ui.available_width().max(120.0);
     let height = RULER + LANE * actions.len() as f32 + 4.0;
     let (rect, strip) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click_and_drag());
-    let strip = strip.on_hover_text("Drag along to see the bone at any turn, without keying it");
+    let strip = strip.on_hover_text(tr("Drag along to see the bone at any turn, without keying it"));
     let painter = ui.painter_at(rect.expand(2.0));
     let inner = Rect::from_min_max(
         Pos2::new(rect.left() + INSET, rect.top()),
@@ -157,9 +158,9 @@ pub fn show(
                             id.with(k),
                             Sense::click_and_drag(),
                         )
-                        .on_hover_text(format!(
-                            "Keyed at {:.0}°: drag to move, double-click to redraw",
-                            key.turn
+                        .on_hover_text(tr_args(
+                            "Keyed at {turn}°: drag to move, double-click to redraw",
+                            &[("turn", &format!("{:.0}", key.turn))],
                         ));
                     let lit = response.hovered() || response.dragged();
                     if response.dragged()
@@ -171,11 +172,14 @@ pub fn show(
                         asked = Some(Asked::Edit { action: i, turn: key.turn });
                     }
                     response.context_menu(|ui| {
-                        if ui.button(format!("Redraw at {:.0}°", key.turn)).clicked() {
+                        if ui
+                            .button(tr_args("Redraw at {turn}°", &[("turn", &format!("{:.0}", key.turn))]))
+                            .clicked()
+                        {
                             asked = Some(Asked::Edit { action: i, turn: key.turn });
                             ui.close();
                         }
-                        if ui.button("Remove Key").clicked() {
+                        if ui.button(tr("Remove Key")).clicked() {
                             removed = Some(k);
                             ui.close();
                         }
@@ -212,12 +216,15 @@ pub fn show(
     }
     ui.horizontal(|ui| {
         if previewing {
-            ui.label(egui::RichText::new(format!("Previewing {now:.0}°")).color(theme::ACCENT));
-            if ui.small_button("Back to the animation").clicked() {
+            ui.label(
+                egui::RichText::new(tr_args("Previewing {turn}°", &[("turn", &format!("{now:.0}"))]))
+                    .color(theme::ACCENT),
+            );
+            if ui.small_button(tr("Back to the animation")).clicked() {
                 asked = Some(Asked::EndPreview);
             }
         } else {
-            ui.weak(format!("Turned {now:.0}° on this frame"));
+            ui.weak(tr_args("Turned {turn}° on this frame", &[("turn", &format!("{now:.0}"))]));
         }
     });
     asked

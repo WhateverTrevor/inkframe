@@ -1,8 +1,7 @@
 # Translating Inkframe
 
-Inkframe's interface can be translated: the menus, the tools and toolbar,
-the context bar, the timeline, the window's areas, the first-run tour and
-What's New so far, and more of it as each part of the app is converted.
+Inkframe's interface can be translated: nearly all of it now (see "What's
+wrapped so far" below), and the rest as it's converted.
 A translation is one plain text file; no programming is needed.
 
 ## Translating
@@ -73,15 +72,24 @@ a cramped layout shows where longer translations won't fit.
 - The tools' names and tips, and the toolbar
 - The context bar above the stage
 - The timeline: its buttons, tips and right-click menus
+- Properties, with its search
+- Find a Command
+- The Library, the panels (Swatches, Align, Controllers, History…) and
+  the dialogs (export, batch export, lip sync, scripts, presets…)
+- Messages: errors, and what the stage says when it's empty
 - The window's areas: their names, the area menu and its groups
 - The first-run tour
 - What's New's window (its notes come from the changelog, which isn't
   translated)
 
-Still to do, a part at a time: Properties, Find a Command, the dialogs,
-the Library and the other panels, and the names that come from elsewhere
-in the code (workspaces, adjustments, perspective kinds, easings, blend
-modes).
+Still to do: the names that come from elsewhere in the code (workspaces,
+adjustments, particle presets, perspective kinds, easings, blend modes,
+filters), the names new layers are given, and the names of undo steps.
+
+The long lists of words in the template (`name visible hidden show…`)
+are what Properties' search looks for in each section: translate them as
+words someone might search by. Searching finds the English words too, as
+does Find a Command.
 
 Names that are also data (a tool's or an area's, which the screenshot
 hooks and the guidebook's appendix use in English) keep an English

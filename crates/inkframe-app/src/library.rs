@@ -15,6 +15,7 @@ use inkframe_core::{Asset, Symbol};
 
 use crate::audio_engine::AudioEngine;
 use crate::editor::Editor;
+use crate::i18n::{tr, tr_args};
 use crate::icons::{self, Icon, IconButton};
 
 const SMALLEST_CARD: f32 = 56.0;
@@ -174,7 +175,7 @@ impl LibraryView {
         // Always there (while there's anything to preview), so choosing a
         // card doesn't push the cards down under the pointer.
         if !assets.is_empty() {
-            egui::CollapsingHeader::new("Preview").id_salt("library-preview").default_open(true).show(
+            egui::CollapsingHeader::new(tr("Preview")).id_salt("library-preview").default_open(true).show(
                 ui,
                 |ui| {
                     self.preview(ui, editor, audio);
@@ -193,10 +194,10 @@ impl LibraryView {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             if assets.is_empty() {
                 ui.add_space(8.0);
-                ui.weak(
+                ui.weak(tr(
                     "Nothing here yet. Select layers and press F8 to make a symbol, or drop image and sound \
                      files here.",
-                );
+                ));
                 return;
             }
             let search = self.search.trim().to_lowercase();
@@ -229,14 +230,14 @@ impl LibraryView {
                 if self.folder_header(ui, &folder, contents.len(), !search.is_empty(), &mut actions) {
                     ui.indent(("library-folder", &folder), |ui| {
                         if contents.is_empty() {
-                            ui.weak("Empty: drag cards here.");
+                            ui.weak(tr("Empty: drag cards here."));
                         }
                         self.grid(ui, editor, &contents, &mut actions);
                     });
                 }
             }
             if !found_any {
-                ui.weak(format!("Nothing called \"{}\".", self.search.trim()));
+                ui.weak(tr_args("Nothing called “{search}”.", &[("search", self.search.trim())]));
             }
         });
 
@@ -252,14 +253,16 @@ impl LibraryView {
     /// New Folder, card size and search.
     fn toolbar(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         ui.horizontal(|ui| {
-            if ui.add(IconButton::new(Icon::Folder, "New folder")).clicked() {
+            if ui.add(IconButton::new(Icon::Folder, tr("New folder"))).clicked() {
                 actions.push(Action::NewFolder);
             }
             ui.spacing_mut().slider_width = 60.0;
             ui.add(egui::Slider::new(&mut self.card_size, SMALLEST_CARD..=LARGEST_CARD).show_value(false))
-                .on_hover_text("Card size");
+                .on_hover_text(tr("Card size"));
             ui.add(
-                egui::TextEdit::singleline(&mut self.search).hint_text("Search").desired_width(f32::INFINITY),
+                egui::TextEdit::singleline(&mut self.search)
+                    .hint_text(tr("Search"))
+                    .desired_width(f32::INFINITY),
             );
         });
     }
@@ -334,10 +337,14 @@ impl LibraryView {
             actions.push(Action::MoveTo(*asset, folder.to_owned()));
         }
         response.context_menu(|ui| {
-            if ui.button("Rename").clicked() {
+            if ui.button(tr("Rename")).clicked() {
                 self.renaming = Some(Renaming::Folder(folder.to_owned(), folder.to_owned()));
             }
-            if ui.button("Delete Folder").on_hover_text("What's in it moves to the top level").clicked() {
+            if ui
+                .button(tr("Delete Folder"))
+                .on_hover_text(tr("What's in it moves to the top level"))
+                .clicked()
+            {
                 actions.push(Action::DeleteFolder(folder.to_owned()));
             }
         });
@@ -463,24 +470,25 @@ impl LibraryView {
             Asset::Symbol(symbol) => editor.can_place(symbol),
             _ => true,
         };
-        let place = if matches!(asset, Asset::Sound(_)) { "Add to Timeline" } else { "Place on Stage" };
+        let place =
+            if matches!(asset, Asset::Sound(_)) { tr("Add to Timeline") } else { tr("Place on Stage") };
         if ui
             .add_enabled(placeable, egui::Button::new(place))
-            .on_disabled_hover_text("A symbol can't go inside itself")
+            .on_disabled_hover_text(tr("A symbol can't go inside itself"))
             .clicked()
         {
             actions.push(Action::Place(asset));
         }
-        if matches!(asset, Asset::Symbol(_)) && ui.button("Edit Symbol").clicked() {
+        if matches!(asset, Asset::Symbol(_)) && ui.button(tr("Edit Symbol")).clicked() {
             actions.push(Action::Edit(asset));
         }
-        if ui.button("Rename").clicked() {
+        if ui.button(tr("Rename")).clicked() {
             let name = doc.asset_name(asset).unwrap_or_default().to_owned();
             self.renaming = Some(Renaming::Asset(asset, name));
         }
         let current = doc.asset_folder(asset).unwrap_or_default().to_owned();
-        ui.menu_button("Move to", |ui| {
-            if ui.add_enabled(!current.is_empty(), egui::Button::new("Top Level")).clicked() {
+        ui.menu_button(tr("Move to"), |ui| {
+            if ui.add_enabled(!current.is_empty(), egui::Button::new(tr("Top Level"))).clicked() {
                 actions.push(Action::MoveTo(asset, String::new()));
             }
             for folder in doc.library_folder_names() {
@@ -491,11 +499,11 @@ impl LibraryView {
         });
         ui.separator();
         let why_not = match asset {
-            Asset::Symbol(_) => "Still used on the stage",
-            _ => "Still on the stage",
+            Asset::Symbol(_) => tr("Still used on the stage"),
+            _ => tr("Still on the stage"),
         };
         if ui
-            .add_enabled(doc.can_remove_asset(asset), egui::Button::new("Delete"))
+            .add_enabled(doc.can_remove_asset(asset), egui::Button::new(tr("Delete")))
             .on_disabled_hover_text(why_not)
             .clicked()
         {
@@ -537,7 +545,7 @@ impl LibraryView {
             ui.painter().text(
                 rect.center(),
                 Align2::CENTER_CENTER,
-                "Click a card to preview it",
+                tr("Click a card to preview it"),
                 FontId::proportional(12.0),
                 ui.visuals().weak_text_color(),
             );
@@ -591,9 +599,9 @@ impl LibraryView {
 
                 controls.horizontal(|ui| {
                     let (icon, tip) = if self.preview.playing {
-                        (Icon::Pause, "Pause preview")
+                        (Icon::Pause, tr("Pause preview"))
                     } else {
-                        (Icon::Play, "Play preview")
+                        (Icon::Play, tr("Play preview"))
                     };
                     if ui.add_enabled(duration > 1, IconButton::new(icon, tip)).clicked() {
                         self.preview.playing = !self.preview.playing;
@@ -612,8 +620,7 @@ impl LibraryView {
                     ui.weak(format!("{shown} / {duration}"));
                 });
                 let uses = doc.symbol_use_count(id);
-                let plural = if uses == 1 { "" } else { "s" };
-                controls.weak(format!("Symbol · {duration} frames · used {uses} time{plural}"));
+                controls.weak(symbol_summary(duration, uses));
             }
             Asset::Image(id) => {
                 let side = inside.width().min(inside.height());
@@ -628,8 +635,13 @@ impl LibraryView {
                 }
                 paint_texture(ui, self.preview.picture.as_ref(), square);
                 if let Some(image) = doc.image(id) {
-                    let placed = if doc.image_in_use(id) { "on the stage" } else { "not on the stage" };
-                    controls.weak(format!("Image · {} × {} px · {placed}", image.width, image.height));
+                    let (width, height) = (image.width.to_string(), image.height.to_string());
+                    let size = [("width", width.as_str()), ("height", height.as_str())];
+                    controls.weak(if doc.image_in_use(id) {
+                        tr_args("Image · {width} × {height} px · on the stage", &size)
+                    } else {
+                        tr_args("Image · {width} × {height} px · not on the stage", &size)
+                    });
                 }
             }
             Asset::Sound(id) => {
@@ -650,8 +662,11 @@ impl LibraryView {
                 }
                 controls.horizontal(|ui| {
                     let playing = position.is_some();
-                    let (icon, tip) =
-                        if playing { (Icon::Pause, "Stop sound") } else { (Icon::Play, "Play sound") };
+                    let (icon, tip) = if playing {
+                        (Icon::Pause, tr("Stop sound"))
+                    } else {
+                        (Icon::Play, tr("Play sound"))
+                    };
                     if ui.add_enabled(peaks.is_some(), IconButton::new(icon, tip)).clicked() {
                         if playing {
                             audio.stop_preview();
@@ -659,8 +674,11 @@ impl LibraryView {
                             audio.preview(track, project_dir.as_deref());
                         }
                     }
-                    let seconds = length.map_or_else(|| "loading…".to_owned(), |s| format!("{s:.1} s"));
-                    ui.weak(format!("Sound · {seconds} · starts on frame {}", track.start + 1));
+                    let seconds = length.map_or_else(|| tr("loading…").to_owned(), |s| format!("{s:.1} s"));
+                    ui.weak(tr_args(
+                        "Sound · {length} · starts on frame {frame}",
+                        &[("length", &seconds), ("frame", &(track.start + 1).to_string())],
+                    ));
                 });
             }
         }
@@ -728,7 +746,7 @@ fn paint_waveform(ui: &egui::Ui, peaks: Option<&[f32]>, rect: Rect) {
         ui.painter().text(
             rect.center(),
             Align2::CENTER_CENTER,
-            "Loading…",
+            tr("Loading…"),
             FontId::proportional(11.0),
             color,
         );
@@ -774,6 +792,19 @@ fn elide(ui: &egui::Ui, name: &str, width: f32) -> String {
 }
 
 /// The tooltip for a card: its name, what it is, and how it's used.
+/// A symbol's length and how often it's used, as a line under its card.
+fn symbol_summary(frames: u32, uses: usize) -> String {
+    let frames = frames.to_string();
+    if uses == 1 {
+        tr_args("Symbol · {frames} frames · used once", &[("frames", &frames)])
+    } else {
+        tr_args(
+            "Symbol · {frames} frames · used {count} times",
+            &[("frames", &frames), ("count", &uses.to_string())],
+        )
+    }
+}
+
 fn describe(ui: &mut egui::Ui, editor: &Editor, asset: Asset) {
     let doc = &editor.doc;
     ui.strong(doc.asset_name(asset).unwrap_or_default());
@@ -781,24 +812,29 @@ fn describe(ui: &mut egui::Ui, editor: &Editor, asset: Asset) {
         Asset::Symbol(id) => {
             let uses = doc.symbol_use_count(id);
             let frames = doc.symbol(id).map_or(0, |s| s.duration);
-            let plural = if uses == 1 { "" } else { "s" };
-            ui.label(format!("Symbol · {frames} frames · used {uses} time{plural}"));
-            ui.weak("Drag onto the stage or timeline to place it. Double-click to edit it.");
+            ui.label(symbol_summary(frames, uses));
+            ui.weak(tr("Drag onto the stage or timeline to place it. Double-click to edit it."));
         }
         Asset::Image(id) => {
             if let Some(image) = doc.image(id) {
-                ui.label(format!("Image · {} × {} px", image.width, image.height));
+                ui.label(tr_args(
+                    "Image · {width} × {height} px",
+                    &[("width", &image.width.to_string()), ("height", &image.height.to_string())],
+                ));
             }
             if let Some(problem) = editor.images.problem(id) {
                 ui.colored_label(ui.visuals().error_fg_color, problem);
             }
-            ui.weak("Drag onto the stage or timeline to place it.");
+            ui.weak(tr("Drag onto the stage or timeline to place it."));
         }
         Asset::Sound(id) => {
             if let Some(track) = doc.audio_track(id) {
-                ui.label(format!("Sound · starts on frame {}", track.start + 1));
+                ui.label(tr_args(
+                    "Sound · starts on frame {frame}",
+                    &[("frame", &(track.start + 1).to_string())],
+                ));
             }
-            ui.weak("Drag onto the timeline to add another copy from that frame.");
+            ui.weak(tr("Drag onto the timeline to add another copy from that frame."));
         }
     }
 }

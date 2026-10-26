@@ -691,13 +691,13 @@ impl Layout {
                     self.close_tab(id, tab);
                 }
                 button.context_menu(|ui| {
-                    if ui.add_enabled(tabs.len() > 1, egui::Button::new("Close Tab")).clicked() {
+                    if ui.add_enabled(tabs.len() > 1, egui::Button::new(tr("Close Tab"))).clicked() {
                         self.close_tab(id, tab);
                         ui.close();
                     }
                 });
             }
-            let add = ui.add(IconButton::new(Icon::Plus, "Add a tab"));
+            let add = ui.add(IconButton::new(Icon::Plus, tr("Add a tab")));
             egui::Popup::menu(&add).show(|ui| {
                 if let Some(chosen) = kind_menu(ui, kind) {
                     self.add_tab(id, chosen);
@@ -718,30 +718,30 @@ impl Layout {
                 self.move_tab(dragged.area, dragged.kind, id);
             }
         }
-        response.on_hover_text("Right-click for the area menu").context_menu(|ui| {
+        response.on_hover_text(tr("Right-click for the area menu")).context_menu(|ui| {
             let half = 0.5;
-            if ui.button("Split Side by Side").clicked() {
+            if ui.button(tr("Split Side by Side")).clicked() {
                 self.split(id, Direction::Across, half, false);
                 ui.close();
             }
-            if ui.button("Split Top and Bottom").clicked() {
+            if ui.button(tr("Split Top and Bottom")).clicked() {
                 self.split(id, Direction::Down, half, false);
                 ui.close();
             }
             let sibling = self.sibling(id);
-            if ui.add_enabled(sibling.is_some(), egui::Button::new("Join with Neighbour")).clicked()
+            if ui.add_enabled(sibling.is_some(), egui::Button::new(tr("Join with Neighbour"))).clicked()
                 && let Some(other) = sibling
             {
                 self.join(id, other);
                 ui.close();
             }
             let alone = matches!(self.root, Node::Area { .. });
-            if ui.add_enabled(!alone, egui::Button::new("Close Area")).clicked() {
+            if ui.add_enabled(!alone, egui::Button::new(tr("Close Area"))).clicked() {
                 self.close(id);
                 ui.close();
             }
             ui.separator();
-            let label = if self.maximized == Some(id) { "Back to Layout" } else { "Maximise Area" };
+            let label = if self.maximized == Some(id) { tr("Back to Layout") } else { tr("Maximise Area") };
             if ui.add(egui::Button::new(label).shortcut_text("Ctrl+Space")).clicked() {
                 self.toggle_maximized(id);
                 ui.close();
@@ -840,7 +840,7 @@ impl Layout {
                     painter.text(
                         rect.center(),
                         Align2::CENTER_CENTER,
-                        "Join",
+                        tr("Join"),
                         FontId::proportional(18.0),
                         Color32::WHITE,
                     );
@@ -852,7 +852,7 @@ impl Layout {
                     painter.text(
                         rect.center(),
                         Align2::CENTER_CENTER,
-                        "Swap",
+                        tr("Swap"),
                         FontId::proportional(18.0),
                         accent,
                     );

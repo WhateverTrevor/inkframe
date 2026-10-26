@@ -11,6 +11,7 @@ use egui::{Pos2, Rect, Sense, Stroke, StrokeKind, Vec2, pos2, vec2};
 use inkframe_core::{Document, Layer, LayerId, MotionPreset, PRESET_EXTENSION, Point, Property, Transform};
 
 use crate::editor::Editor;
+use crate::i18n::{tr, tr_args};
 use crate::icons::{Icon, IconButton};
 
 const PREVIEW: Vec2 = vec2(64.0, 40.0);
@@ -75,7 +76,7 @@ impl PresetLibrary {
 
     /// Saves `preset` as a file of its own, named after it.
     pub fn save(&mut self, preset: &MotionPreset) -> Result<(), String> {
-        let folder = self.folder().ok_or("There's no settings folder to save presets in.")?;
+        let folder = self.folder().ok_or(tr("There's no settings folder to save presets in."))?;
         std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
         let stem: String = preset.name.chars().filter(|c| !"/\\:*?\"<>|".contains(*c)).collect();
         let mut path = folder.join(format!("{stem}.{PRESET_EXTENSION}"));
@@ -126,16 +127,15 @@ impl PresetLibrary {
         ui.horizontal(|ui| {
             let chosen = self.chosen_preset().cloned();
             let can = chosen.is_some() && !targets.is_empty();
-            let plural = if targets.len() == 1 { "" } else { "s" };
-            let label = if targets.is_empty() {
-                "Apply".to_owned()
-            } else {
-                format!("Apply to {} layer{plural}", targets.len())
+            let label = match targets.len() {
+                0 => tr("Apply").to_owned(),
+                1 => tr("Apply to 1 layer").to_owned(),
+                n => tr_args("Apply to {count} layers", &[("count", &n.to_string())]),
             };
             if ui
                 .add_enabled(can, egui::Button::new(label))
-                .on_hover_text("From the playhead, starting from where each layer is now")
-                .on_disabled_hover_text("Pick a preset below and select the layers to move")
+                .on_hover_text(tr("From the playhead, starting from where each layer is now"))
+                .on_disabled_hover_text(tr("Pick a preset below and select the layers to move"))
                 .clicked()
                 && let Some(preset) = chosen
             {
@@ -149,16 +149,16 @@ impl PresetLibrary {
         let time = ui.input(|i| i.time);
         ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(1.0 / fps));
 
-        ui.label(crate::inspector::section_text("Built in"));
+        ui.label(crate::inspector::section_text(tr("Built in")));
         let built_in = self.built_in.clone();
         for preset in &built_in {
             self.row(ui, preset, true, time * fps, false);
         }
         ui.add_space(6.0);
-        ui.label(crate::inspector::section_text("Yours"));
+        ui.label(crate::inspector::section_text(tr("Yours")));
         let saved = self.saved.clone().unwrap_or_default();
         if saved.is_empty() {
-            ui.weak("None yet. Animate a layer, then save its movement here.");
+            ui.weak(tr("None yet. Animate a layer, then save its movement here."));
         }
         let mut delete = None;
         for (path, preset) in &saved {
@@ -179,13 +179,14 @@ impl PresetLibrary {
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(140.0));
             let tip = match range {
-                Some((first, last)) => {
-                    format!("The selected layer's movement, frames {} to {}", first + 1, last + 1)
-                }
-                None => "Select a layer that moves (or pick its frames in the timeline)".to_owned(),
+                Some((first, last)) => tr_args(
+                    "The selected layer's movement, frames {first} to {last}",
+                    &[("first", &(first + 1).to_string()), ("last", &(last + 1).to_string())],
+                ),
+                None => tr("Select a layer that moves (or pick its frames in the timeline)").to_owned(),
             };
             if ui
-                .add_enabled(range.is_some(), egui::Button::new("Save Movement"))
+                .add_enabled(range.is_some(), egui::Button::new(tr("Save Movement")))
                 .on_hover_text(&tip)
                 .on_disabled_hover_text(&tip)
                 .clicked()
@@ -194,7 +195,7 @@ impl PresetLibrary {
             {
                 self.problem = match MotionPreset::from_layer(self.name.trim(), layer, first, last) {
                     Some(preset) => self.save(&preset).err(),
-                    None => Some("That layer doesn't move over those frames.".to_owned()),
+                    None => Some(tr("That layer doesn't move over those frames.").to_owned()),
                 };
             }
         });
@@ -228,8 +229,8 @@ impl PresetLibrary {
                 paint_preview(ui, rect, layer, preset, frame);
                 let text = egui::RichText::new(&preset.name);
                 let label = ui.selectable_label(chosen, if chosen { text.strong() } else { text });
-                ui.weak(format!("{} frames", preset.length));
-                if deletable && ui.add(IconButton::new(Icon::Trash, "Delete this preset")).clicked() {
+                ui.weak(tr_args("{count} frames", &[("count", &preset.length.to_string())]));
+                if deletable && ui.add(IconButton::new(Icon::Trash, tr("Delete this preset"))).clicked() {
                     deleted = true;
                 }
                 label

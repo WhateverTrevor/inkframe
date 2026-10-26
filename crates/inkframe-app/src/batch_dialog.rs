@@ -17,6 +17,7 @@ use inkframe_export::{ExportFormat, Progress, ffmpeg};
 
 use crate::app::FILE_EXTENSION;
 use crate::export_dialog::{file_label, reveal_in_file_manager};
+use crate::i18n::{tr, tr_args};
 use crate::icons::{Icon, IconButton};
 
 const SIZES: [(&str, f32); 4] = [("25%", 0.25), ("50%", 0.5), ("100%", 1.0), ("200%", 2.0)];
@@ -106,7 +107,7 @@ impl BatchDialog {
             return;
         }
         let mut open = self.open;
-        egui::Window::new("Batch Export").open(&mut open).collapsible(false).default_width(620.0).show(
+        egui::Window::new(tr("Batch Export")).open(&mut open).collapsible(false).default_width(620.0).show(
             ctx,
             |ui| {
                 ui.add_enabled_ui(self.running.is_none(), |ui| self.queue_ui(ui, current));
@@ -124,10 +125,10 @@ impl BatchDialog {
 
     fn queue_ui(&mut self, ui: &mut egui::Ui, current: Option<(&Path, bool)>) {
         ui.horizontal(|ui| {
-            if ui.button("Add Projects…").clicked()
+            if ui.button(tr("Add Projects…")).clicked()
                 && let Some(paths) = rfd::FileDialog::new()
-                    .set_title("Add projects to the batch")
-                    .add_filter("Inkframe document", &[FILE_EXTENSION])
+                    .set_title(tr("Add projects to the batch"))
+                    .add_filter(tr("Inkframe document"), &[FILE_EXTENSION])
                     .pick_files()
             {
                 for path in paths {
@@ -136,8 +137,8 @@ impl BatchDialog {
             }
             let this = current.map(|(path, _)| path.to_owned());
             if ui
-                .add_enabled(this.is_some(), egui::Button::new("Add This Project"))
-                .on_disabled_hover_text("Save the project first")
+                .add_enabled(this.is_some(), egui::Button::new(tr("Add This Project")))
+                .on_disabled_hover_text(tr("Save the project first"))
                 .clicked()
                 && let Some(path) = this
             {
@@ -147,7 +148,7 @@ impl BatchDialog {
         ui.add_space(4.0);
 
         if self.rows.is_empty() {
-            ui.weak("Add projects to export them one after another. Add a project more than once to export it in several formats.");
+            ui.weak(tr("Add projects to export them one after another. Add a project more than once to export it in several formats."));
             return;
         }
         let outputs = batch::outputs(&self.jobs(), &self.output_folder());
@@ -168,20 +169,23 @@ impl BatchDialog {
                         });
                     let alpha = row.job.format.supports_alpha();
                     let mut transparent = row.job.transparent && alpha;
-                    ui.add_enabled(alpha, egui::Checkbox::new(&mut transparent, "Transparent"))
-                        .on_disabled_hover_text("This format has no alpha channel");
+                    ui.add_enabled(alpha, egui::Checkbox::new(&mut transparent, tr("Transparent")))
+                        .on_disabled_hover_text(tr("This format has no alpha channel"));
                     if alpha {
                         row.job.transparent = transparent;
                     }
                     status_ui(ui, &row.status, &row.job.project, &outputs[i]);
                     ui.horizontal(|ui| {
                         if ui
-                            .add(IconButton::new(Icon::Duplicate, "Add again, to export in another format"))
+                            .add(IconButton::new(
+                                Icon::Duplicate,
+                                tr("Add again, to export in another format"),
+                            ))
                             .clicked()
                         {
                             duplicate = Some(i);
                         }
-                        if ui.add(IconButton::new(Icon::Trash, "Remove")).clicked() {
+                        if ui.add(IconButton::new(Icon::Trash, tr("Remove"))).clicked() {
                             remove = Some(i);
                         }
                     });
@@ -199,10 +203,11 @@ impl BatchDialog {
 
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label("Save to");
+            ui.label(tr("Save to"));
             ui.monospace(self.output_folder().display().to_string());
-            if ui.button("Choose…").clicked()
-                && let Some(folder) = rfd::FileDialog::new().set_title("Save batch exports to").pick_folder()
+            if ui.button(tr("Choose…")).clicked()
+                && let Some(folder) =
+                    rfd::FileDialog::new().set_title(tr("Save batch exports to")).pick_folder()
             {
                 self.folder = Some(folder);
             }
@@ -212,13 +217,13 @@ impl BatchDialog {
         {
             ui.colored_label(
                 ui.visuals().warn_fg_color,
-                "This project has unsaved changes. The batch exports the saved file, so save first to include them.",
+                tr("This project has unsaved changes. The batch exports the saved file, so save first to include them."),
             );
         }
         if !self.ffmpeg_found && self.rows.iter().any(|r| r.job.format.needs_ffmpeg()) {
             ui.colored_label(
                 ui.visuals().warn_fg_color,
-                "ffmpeg isn't installed, so the video exports will fail. PNG sequences and sprite sheets still work.",
+                tr("ffmpeg isn't installed, so the video exports will fail. PNG sequences and sprite sheets still work."),
             );
         }
     }
@@ -237,27 +242,32 @@ impl BatchDialog {
             let done =
                 self.rows.iter().filter(|r| matches!(r.status, Status::Done(_) | Status::Failed(_))).count();
             let overall = (done as f32 + progress.fraction()) / self.rows.len().max(1) as f32;
-            ui.add(egui::ProgressBar::new(overall).text(format!(
-                "Job {} of {} · frame {} of {}",
-                index + 1,
-                self.rows.len(),
-                progress.frames_done,
-                progress.frames_total
+            ui.add(egui::ProgressBar::new(overall).text(tr_args(
+                "Job {job} of {jobs} · frame {frame} of {frames}",
+                &[
+                    ("job", &(index + 1).to_string()),
+                    ("jobs", &self.rows.len().to_string()),
+                    ("frame", &progress.frames_done.to_string()),
+                    ("frames", &progress.frames_total.to_string()),
+                ],
             )));
-            if ui.button("Cancel").clicked() {
+            if ui.button(tr("Cancel")).clicked() {
                 running.cancel.store(true, Ordering::Relaxed);
             }
             return;
         }
 
         ui.horizontal(|ui| {
-            if ui.add_enabled(!self.rows.is_empty(), egui::Button::new("Export All")).clicked() {
+            if ui.add_enabled(!self.rows.is_empty(), egui::Button::new(tr("Export All"))).clicked() {
                 self.start(ctx);
             }
             if let Some(folder) = &self.finished {
                 let done = self.rows.iter().filter(|r| matches!(r.status, Status::Done(_))).count();
-                ui.label(format!("{done} of {} exported", self.rows.len()));
-                if ui.small_button("Show Folder").clicked() {
+                ui.label(tr_args(
+                    "{done} of {total} exported",
+                    &[("done", &done.to_string()), ("total", &self.rows.len().to_string())],
+                ));
+                if ui.small_button(tr("Show Folder")).clicked() {
                     reveal_in_file_manager(folder);
                 }
             }
@@ -343,7 +353,7 @@ fn status_ui(ui: &mut egui::Ui, status: &Status, project: &Path, output: &Path) 
         // A queue kept from last time may name a project that's since
         // moved; better to say so now than when the batch reaches it.
         Status::Waiting if !project.exists() => {
-            ui.colored_label(ui.visuals().warn_fg_color, "Project missing")
+            ui.colored_label(ui.visuals().warn_fg_color, tr("Project missing"))
                 .on_hover_text(project.display().to_string());
         }
         Status::Waiting => {
@@ -353,12 +363,12 @@ fn status_ui(ui: &mut egui::Ui, status: &Status, project: &Path, output: &Path) 
             ui.add(egui::ProgressBar::new(progress.fraction()).desired_width(110.0));
         }
         Status::Done(path) => {
-            if ui.link(format!("✔ {}", file_label(path))).on_hover_text("Show in folder").clicked() {
+            if ui.link(format!("✔ {}", file_label(path))).on_hover_text(tr("Show in folder")).clicked() {
                 reveal_in_file_manager(path);
             }
         }
         Status::Failed(message) => {
-            ui.colored_label(ui.visuals().error_fg_color, "Failed").on_hover_text(message);
+            ui.colored_label(ui.visuals().error_fg_color, tr("Failed")).on_hover_text(message);
         }
     }
 }

@@ -17,6 +17,7 @@
 //! A tween's easing is shared by its x and y, so with both curves moving,
 //! either curve's handles can shape it.
 
+use crate::i18n::tr;
 use egui::{Align2, Color32, FontId, Pos2, Rect, Response, Stroke, pos2};
 use inkframe_core::{Easing, Layer, Point, Property, Track};
 
@@ -76,7 +77,7 @@ impl ValueGraph {
             painter.text(
                 area.center(),
                 Align2::CENTER_CENTER,
-                "Select a layer to see its animation as a graph",
+                tr("Select a layer to see its animation as a graph"),
                 FontId::proportional(13.0),
                 ui.visuals().weak_text_color(),
             );

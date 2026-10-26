@@ -285,7 +285,10 @@ impl InkframeApp {
 
         let editor = match open_path {
             Some(path) => Editor::open(&path).unwrap_or_else(|err| {
-                show_error(&format!("Couldn't open {}", path.display()), &err.to_string());
+                show_error(
+                    &tr_args("Couldn't open {file}", &[("file", &path.display().to_string())]),
+                    &err.to_string(),
+                );
                 Editor::new(Document::default())
             }),
             None => Editor::new(Document::default()),
@@ -853,7 +856,7 @@ impl InkframeApp {
             Command::StartTour => self.tour.start(),
             Command::WhatsNew => {
                 if !self.whats_new.open() {
-                    show_error("What's New", "This build has no notes yet: it's between releases.");
+                    show_error(tr("What's New"), tr("This build has no notes yet: it's between releases."));
                 }
             }
             Command::Vectorise => self.vectorise.open(&self.editor),
@@ -934,12 +937,12 @@ impl InkframeApp {
             // Inside a layer with shapes picked, F8 makes a symbol of just them.
             Command::ConvertToSymbol if !editor.picked_shapes().is_empty() => {
                 if let Err(problem) = editor.shapes_to_symbol() {
-                    show_error("Couldn't make a symbol", &problem);
+                    show_error(tr("Couldn't make a symbol"), &problem);
                 }
             }
             Command::ConvertToSymbol => {
                 if let Err(problem) = editor.convert_selected_to_symbol() {
-                    show_error("Couldn't make a symbol", &problem);
+                    show_error(tr("Couldn't make a symbol"), &problem);
                 }
             }
             Command::MaskLayerBelow => {
@@ -968,7 +971,7 @@ impl InkframeApp {
             Command::NextDrawing => editor.cycle_drawing(1),
             Command::CombineShapes(how) => {
                 if let Err(problem) = editor.combine_shapes(how) {
-                    show_error("Couldn't combine the shapes", &problem);
+                    show_error(tr("Couldn't combine the shapes"), &problem);
                 }
             }
             Command::SwapSymbol => self.swap.open(editor),
@@ -991,7 +994,7 @@ impl InkframeApp {
             Command::ClearGuides => editor.doc.ruler_guides.clear(),
             Command::StartLattice(kind) => {
                 if let Err(problem) = editor.start_lattice(kind) {
-                    show_error(&format!("Couldn't start {}", kind.name()), &problem);
+                    show_error(&tr_args("Couldn't start {what}", &[("what", tr(kind.name()))]), &problem);
                 }
             }
             Command::FinishLattice => editor.finish_lattice(),
@@ -1006,9 +1009,11 @@ impl InkframeApp {
             Command::BreakApart => {
                 if editor.break_apart() == 0 {
                     show_error(
-                        "Nothing to break apart",
-                        "Break Apart turns text into a shape for each letter, and pencil lines into filled shapes. \
+                        tr("Nothing to break apart"),
+                        tr(
+                            "Break Apart turns text into a shape for each letter, and pencil lines into filled shapes. \
                          Select a text layer, or double-click a layer and pick its text or lines.",
+                        ),
                     );
                 }
             }
@@ -1020,9 +1025,11 @@ impl InkframeApp {
             Command::ReverseFrames => {
                 if !editor.reverse_frames() {
                     show_error(
-                        "Pick some frames first",
-                        "Reverse Frames plays a stretch backwards. Shift-click or Shift-drag along a layer's row in \
+                        tr("Pick some frames first"),
+                        tr(
+                            "Reverse Frames plays a stretch backwards. Shift-click or Shift-drag along a layer's row in \
                          the timeline to pick the frames.",
+                        ),
                     );
                 }
             }
@@ -1040,8 +1047,10 @@ impl InkframeApp {
             Command::MakeInbetweens => {
                 if editor.make_inbetweens() == 0 {
                     show_error(
-                        "No inbetweens to draw",
-                        "Inbetweens are drawn between two key drawings: put the playhead between a drawing and the next one it swaps to, with frames to fill between them.",
+                        tr("No inbetweens to draw"),
+                        tr(
+                            "Inbetweens are drawn between two key drawings: put the playhead between a drawing and the next one it swaps to, with frames to fill between them.",
+                        ),
                     );
                 }
             }
@@ -1401,7 +1410,7 @@ impl InkframeApp {
                     use crate::envelope::LatticeKind;
                     let bendable = has_selection && self.editor.lattice.is_none();
                     for kind in [LatticeKind::Distort, LatticeKind::Envelope] {
-                        item(ui, kind.name(), None, Command::StartLattice(kind), bendable);
+                        item(ui, tr(kind.name()), None, Command::StartLattice(kind), bendable);
                     }
                     ui.weak(tr("On the picked shapes, or everything in the selected layer."));
                 });
@@ -1787,13 +1796,15 @@ impl InkframeApp {
             return;
         }
         let Some(path) =
-            rfd::FileDialog::new().add_filter("Inkframe document", &[FILE_EXTENSION]).pick_file()
+            rfd::FileDialog::new().add_filter(tr("Inkframe document"), &[FILE_EXTENSION]).pick_file()
         else {
             return;
         };
         match Editor::open(&path) {
             Ok(editor) => self.replace_editor(editor),
-            Err(err) => show_error(&format!("Couldn't open {}", file_name(&path)), &err.to_string()),
+            Err(err) => {
+                show_error(&tr_args("Couldn't open {file}", &[("file", &file_name(&path))]), &err.to_string())
+            }
         }
     }
 
@@ -1807,35 +1818,37 @@ impl InkframeApp {
                 let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
                 self.replace_editor(Editor::untitled_copy(doc, name));
             }
-            Err(err) => show_error(&format!("Couldn't open {}", file_name(path)), &err.to_string()),
+            Err(err) => {
+                show_error(&tr_args("Couldn't open {file}", &[("file", &file_name(path))]), &err.to_string())
+            }
         }
     }
 
     fn import_image(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .set_title("Import to stage")
-            .add_filter("Images and Photoshop files", &[&IMAGE_EXTENSIONS[..], &["psd"]].concat())
+            .set_title(tr("Import to stage"))
+            .add_filter(tr("Images and Photoshop files"), &[&IMAGE_EXTENSIONS[..], &["psd"]].concat())
             .pick_file()
         else {
             return;
         };
         if let Err(message) = self.editor.import_image(&path) {
-            show_error("Couldn't import the image", &message);
+            show_error(tr("Couldn't import the image"), &message);
         }
     }
 
     /// File › Export PSD: the current frame, layer by layer.
     fn export_psd(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .set_title("Export Photoshop file")
-            .add_filter("Photoshop file", &["psd"])
+            .set_title(tr("Export Photoshop file"))
+            .add_filter(tr("Photoshop file"), &["psd"])
             .set_file_name(format!("{}.psd", self.editor.display_name()))
             .save_file()
         else {
             return;
         };
         if let Err(message) = self.editor.export_psd(&path) {
-            show_error("Couldn't export the Photoshop file", &message);
+            show_error(tr("Couldn't export the Photoshop file"), &message);
         }
     }
 
@@ -1858,11 +1871,11 @@ impl InkframeApp {
             let extension = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
             if onto_library && IMAGE_EXTENSIONS.contains(&extension.as_str()) {
                 if let Err(message) = self.editor.add_library_image(&path) {
-                    show_error("Couldn't import the image", &message);
+                    show_error(tr("Couldn't import the image"), &message);
                 }
             } else if IMAGE_EXTENSIONS.contains(&extension.as_str()) || extension == "psd" {
                 if let Err(message) = self.editor.import_image(&path) {
-                    show_error("Couldn't import the image", &message);
+                    show_error(tr("Couldn't import the image"), &message);
                 }
             } else if AUDIO_EXTENSIONS.contains(&extension.as_str()) {
                 self.editor.import_audio(&path);
@@ -1870,10 +1883,10 @@ impl InkframeApp {
                 self.import_font(&path);
             } else {
                 show_error(
-                    "Can't import that file",
-                    &format!(
-                        "{} isn't an image, Photoshop, sound or font file Inkframe can read.",
-                        file_name(&path)
+                    tr("Can't import that file"),
+                    &tr_args(
+                        "{file} isn't an image, Photoshop, sound or font file Inkframe can read.",
+                        &[("file", &file_name(&path))],
                     ),
                 );
             }
@@ -1884,8 +1897,8 @@ impl InkframeApp {
     /// regular, bold and italic.
     fn import_fonts(&mut self) {
         let Some(paths) = rfd::FileDialog::new()
-            .set_title("Import fonts")
-            .add_filter("Fonts", &FONT_EXTENSIONS)
+            .set_title(tr("Import fonts"))
+            .add_filter(tr("Fonts"), &FONT_EXTENSIONS)
             .pick_files()
         else {
             return;
@@ -1897,14 +1910,14 @@ impl InkframeApp {
 
     fn import_font(&mut self, path: &Path) {
         if let Err(message) = self.editor.import_font(path) {
-            show_error("Couldn't import the font", &message);
+            show_error(tr("Couldn't import the font"), &message);
         }
     }
 
     fn import_audio(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .set_title("Import audio")
-            .add_filter("Audio", &AUDIO_EXTENSIONS)
+            .set_title(tr("Import audio"))
+            .add_filter(tr("Audio"), &AUDIO_EXTENSIONS)
             .pick_file()
         else {
             return;
@@ -1923,7 +1936,7 @@ impl InkframeApp {
 
     fn save_as(&mut self) -> bool {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("Inkframe document", &[FILE_EXTENSION])
+            .add_filter(tr("Inkframe document"), &[FILE_EXTENSION])
             .set_file_name(format!("{}.{FILE_EXTENSION}", self.editor.display_name()))
             .save_file()
         else {
@@ -1942,7 +1955,7 @@ impl InkframeApp {
                 true
             }
             Err(err) => {
-                show_error(&format!("Couldn't save {}", file_name(path)), &err.to_string());
+                show_error(&tr_args("Couldn't save {file}", &[("file", &file_name(path))]), &err.to_string());
                 false
             }
         }
@@ -1958,14 +1971,14 @@ impl InkframeApp {
         }
         let mut recover = None;
         let mut discard = Vec::new();
-        egui::Window::new("Recover Unsaved Work")
+        egui::Window::new(tr("Recover Unsaved Work"))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
-                ui.label(
+                ui.label(tr(
                     "Inkframe didn't close properly last time. This work was autosaved but never saved:",
-                );
+                ));
                 ui.add_space(6.0);
                 egui::Grid::new("recoveries").num_columns(3).spacing([12.0, 8.0]).show(ui, |ui| {
                     for (i, found) in self.recoveries.iter().enumerate() {
@@ -1975,21 +1988,22 @@ impl InkframeApp {
                             let place = found
                                 .original
                                 .as_ref()
-                                .map_or_else(|| "Never saved".to_owned(), |p| p.display().to_string());
+                                .map_or_else(|| tr("Never saved").to_owned(), |p| p.display().to_string());
                             ui.add(egui::Label::new(egui::RichText::new(place).weak()).truncate());
-                            ui.weak(format!("Autosaved {}", found.when()));
+                            ui.weak(tr_args("Autosaved {when}", &[("when", &found.when())]));
                         });
-                        if ui.button("Recover").clicked() {
+                        if ui.button(tr("Recover")).clicked() {
                             recover = Some(i);
                         }
-                        if ui.button("Discard").on_hover_text("Delete this autosaved copy").clicked() {
+                        if ui.button(tr("Discard")).on_hover_text(tr("Delete this autosaved copy")).clicked()
+                        {
                             discard.push(i);
                         }
                         ui.end_row();
                     }
                 });
                 ui.add_space(4.0);
-                if self.recoveries.len() > 1 && ui.button("Discard All").clicked() {
+                if self.recoveries.len() > 1 && ui.button(tr("Discard All")).clicked() {
                     discard.extend(0..self.recoveries.len());
                 }
             });
@@ -2002,7 +2016,10 @@ impl InkframeApp {
                     // It's this session's unsaved work now, autosaved as such.
                     discard.push(i);
                 }
-                Err(err) => show_error(&format!("Couldn't recover {}", self.recoveries[i].name), &err),
+                Err(err) => show_error(
+                    &tr_args("Couldn't recover {name}", &[("name", &self.recoveries[i].name)]),
+                    &err,
+                ),
             }
         }
         discard.sort_unstable();
@@ -2018,8 +2035,11 @@ impl InkframeApp {
         }
         let answer = rfd::MessageDialog::new()
             .set_level(rfd::MessageLevel::Warning)
-            .set_title("Unsaved changes")
-            .set_description(format!("Save changes to “{}” first?", self.editor.display_name()))
+            .set_title(tr("Unsaved changes"))
+            .set_description(tr_args(
+                "Save changes to “{name}” first?",
+                &[("name", &self.editor.display_name())],
+            ))
             .set_buttons(rfd::MessageButtons::YesNoCancel)
             .show();
         match answer {
@@ -2044,9 +2064,9 @@ impl InkframeApp {
             || {
                 let answer = rfd::MessageDialog::new()
                 .set_level(rfd::MessageLevel::Warning)
-                .set_title("Still working")
+                .set_title(tr("Still working"))
                 .set_description(
-                    "Quitting now will stop the export or script, which may leave an incomplete file. Quit anyway?",
+                    tr("Quitting now will stop the export or script, which may leave an incomplete file. Quit anyway?"),
                 )
                 .set_buttons(rfd::MessageButtons::OkCancel)
                 .show();
@@ -2446,8 +2466,8 @@ fn breadcrumbs(ui: &mut egui::Ui, editor: &mut Editor) {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 if ui
-                    .link("Scene")
-                    .on_hover_text("Back to the main timeline (Esc steps out one level)")
+                    .link(tr("Scene"))
+                    .on_hover_text(tr("Back to the main timeline (Esc steps out one level)"))
                     .clicked()
                 {
                     exit_to = Some(0);
@@ -2477,7 +2497,7 @@ fn drop_hint(ctx: &egui::Context) {
     painter.text(
         area.center(),
         egui::Align2::CENTER_CENTER,
-        "Drop images, sounds or fonts to import them",
+        tr("Drop images, sounds or fonts to import them"),
         egui::FontId::proportional(20.0),
         egui::Color32::WHITE,
     );
