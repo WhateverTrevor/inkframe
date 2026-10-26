@@ -1044,6 +1044,12 @@ after the Harmony features (palettes to master controllers).
     tour; their version counts as seen); Help › What's New
     (`Command::WhatsNew`, Find a Command). A build between releases has no
     section, so nothing shows. Hook `INKFRAME_SCREENSHOT_WHATS_NEW=1`.
+132. Script start-up: timed with `cargo run --release -p inkframe-script
+    --example startup` (new example): a run, engine and prelude included,
+    takes ~0.6 ms, so reusing the engine isn't worth it. The felt delay was
+    the app: console runs requested no repaint (result appeared on the
+    next input), menu runs waited for a 100 ms timer. `Scripts::ctx`
+    (taken in `show`) is woken by the worker thread on finishing.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

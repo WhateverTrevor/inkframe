@@ -3,6 +3,15 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
+## Unreleased
+
+### Scripting
+
+- A script's result shows the moment it finishes. A script run from the
+  Script Console used to wait for the mouse to move before its changes
+  and output appeared, and one from the Scripts menu up to a tenth of a
+  second.
+
 ## [0.5.1]
 
 What's new after an update, scripted Rhubarb lip sync, faster particles,
