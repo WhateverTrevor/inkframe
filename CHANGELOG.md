@@ -3,6 +3,29 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
+## Unreleased
+
+### Brushes
+
+- The Mixer Brush, Photoshop's wet brush, shares the Brush's slot
+  (Shift+B): it carries a reservoir of paint that mixes with the colours it
+  passes (Mix), smears them (Wet), and runs dry over a stroke unless it's
+  loaded with plenty (Load).
+- Textures from pictures: import any picture as a brush's pattern, or make
+  one from selected pixels with Edit › Define Pattern, light raised and
+  dark hollow. Photoshop `.abr` files bring their own patterns, so
+  imported brushes keep their textures.
+- Define Brush Preset, Define Pattern, Brushes and Brush Settings are in
+  Find a Command.
+
+### Speed
+
+- Smudge, Blur, Sharpen, Dodge, Burn and Clone Stamp keep up with big
+  brushes: each dab's square of pixels is worked in bands across every
+  processor core, changed in place rather than copied out and back, and
+  blurred with running sums. At 2500 pixels the slowest moment of a
+  stroke went from up to 130 ms (Blur) to about 12 ms.
+
 ## [0.6.0]
 
 Photoshop's brushes, setting for setting, with brushes for painting

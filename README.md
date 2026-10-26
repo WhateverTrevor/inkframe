@@ -105,11 +105,13 @@ planned (the code is already cross-platform and CI builds it on Windows).
   [Exporting from the command line](#exporting-from-the-command-line)).
 
 - **Paint** like in Photoshop, alongside the vector drawing: paint layers
-  hold pixels, painted with a soft or hard round brush (size, hardness,
-  opacity, flow, spacing, paper grain, smoothing, and presets from inking
-  pen to chalk and airbrush), erased with the eraser, coloured with the
-  eyedropper. The paint bucket, gradient, smudge, blur, sharpen, dodge,
-  burn and clone stamp work as in Photoshop, as do selections (marquee,
+  hold pixels, painted with Photoshop's brush engine (round and sampled
+  tips, Shape Dynamics, Scattering, Texture, Dual Brush, Color Dynamics,
+  Transfer, Wet Edges, Build-up; brushes for scenes and backgrounds, your
+  own, and Photoshop `.abr` files with their patterns), erased with the
+  eraser, coloured with the eyedropper. The Mixer Brush, paint bucket,
+  gradient, smudge, blur, sharpen, dodge, burn and clone stamp work as in
+  Photoshop, as do selections (marquee,
   lasso, magic wand), adjustments (Brightness/Contrast, Hue/Saturation,
   Levels, Curves) and layer blend modes (Multiply, Screen, Overlay…).
   Turn the canvas view to draw at a comfortable angle, and trade layered

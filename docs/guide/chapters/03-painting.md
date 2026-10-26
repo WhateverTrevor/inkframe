@@ -48,7 +48,7 @@ The **Brushes** panel lists the brushes, each by a sample stroke. Besides round 
 | **Brush Tip Shape** | The tip, round or sampled; its size, angle, roundness and flips; the hardness of a round tip; and the spacing between dabs. Drag the arrow in the circle to turn the tip, or a dot to squash it. |
 | **Shape Dynamics** | How each dab's size, angle and roundness vary: a *jitter* (at random) and a *control* (pen pressure, pen tilt, a fade over some dabs, or, for the angle, the stroke's direction). |
 | **Scattering** | Throws dabs off the path, across it or both ways, several at a time. |
-| **Texture** | Presses a pattern (paper, canvas, grain…) into the paint. **Height** catches paint on the pattern's peaks, like chalk on paper; **Multiply** and the others darken paint into its hollows. |
+| **Texture** | Presses a pattern (paper, canvas, grain…, or a picture: **Import…**, or **From Selection** as Photoshop's **Edit › Define Pattern** makes one) into the paint. **Height** catches paint on the pattern's peaks, like chalk on paper; **Multiply** and the others darken paint into its hollows. |
 | **Dual Brush** | A second tip along the same path: the paint shows only where the two meet, for broken, bristly edges. |
 | **Color Dynamics** | The colour wanders, per dab or per stroke: towards the second colour, or in hue, saturation and brightness. |
 | **Transfer** | Each dab's opacity and flow, by chance or by pressure. |
@@ -72,6 +72,7 @@ The rest of the painting tools work as they do in Photoshop:
 |---|---|---|
 | **Paint Bucket** | [[G]] | Fills the area of similar colour you click. **Tolerance** sets how similar; **Contiguous** keeps the fill to connected pixels. |
 | **Gradient** | [[⇧G]] | Drag to blend from the paint colour to a second colour (or to transparent), linear or radial. |
+| **Mixer Brush** | [[⇧B]] | Paints wet, as Photoshop's does: **Wet** picks up and smears the paint under the brush, **Load** is how much paint it holds before running dry, and **Mix** how much of what it picks up blends into its paint. |
 | **Smudge** | [[U]] | Pushes paint around, as with a finger. |
 | **Blur** and **Sharpen** | [[⇧U]] | Soften or crisp up the paint under the brush. |
 | **Dodge** and **Burn** | [[D]], [[⇧D]] | Lighten or darken it. **Range** picks the shadows, midtones or highlights. |

@@ -49,6 +49,7 @@ mod morph;
 mod node_places;
 mod paint;
 mod palette;
+mod parallel;
 mod particles;
 mod perspective;
 mod preset;

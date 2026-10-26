@@ -2132,6 +2132,7 @@ impl StageView {
             | Tool::Eyedropper
             | Tool::PaintBucket
             | Tool::Gradient
+            | Tool::Mixer
             | Tool::Smudge
             | Tool::Blur
             | Tool::Sharpen
@@ -2373,7 +2374,7 @@ impl StageView {
             match editor.tool {
                 // Alt picks a colour with the brush, as in Photoshop.
                 Tool::Eyedropper => return pick_color(editor, view.to_local(press)),
-                Tool::Brush if alt => return pick_color(editor, view.to_local(press)),
+                Tool::Brush | Tool::Mixer if alt => return pick_color(editor, view.to_local(press)),
                 // Alt-click sets where the Clone Stamp copies from.
                 Tool::CloneStamp if alt => return set_clone_source(editor, view, press),
                 Tool::PaintBucket => return fill_at(editor, view, press),
@@ -3020,6 +3021,7 @@ impl StageView {
                         | Tool::Eyedropper
                         | Tool::PaintBucket
                         | Tool::Gradient
+                        | Tool::Mixer
                         | Tool::Smudge
                         | Tool::Blur
                         | Tool::Sharpen
@@ -3480,6 +3482,12 @@ fn retouch_kind(
     let strength = editor.retouch_of(tool)?.strength;
     let range = editor.tone_range;
     Some(match tool {
+        Tool::Mixer => Retouch::Mixer {
+            color: editor.paint_color,
+            wet: strength,
+            load: editor.mixer_load,
+            mix: editor.mixer_mix,
+        },
         Tool::Smudge => Retouch::Smudge { strength },
         Tool::Blur => Retouch::Blur { strength },
         Tool::Sharpen => Retouch::Sharpen { strength },

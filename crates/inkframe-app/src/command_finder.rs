@@ -116,6 +116,16 @@ pub(crate) fn entries() -> Vec<Entry> {
             .keys(shortcuts::DUPLICATE),
         entry(tr_later("Delete Layer"), tr_later("Edit"), Command::DeleteLayer).icon(Icon::Trash),
         entry(tr_later("Select All"), tr_later("Edit"), Command::SelectAll).keys(shortcuts::SELECT_ALL),
+        entry(tr_later("Define Brush Preset…"), tr_later("Edit"), Command::DefineBrush)
+            .also(tr_later("brush tip from selection custom stamp photoshop")),
+        entry(tr_later("Define Pattern…"), tr_later("Edit"), Command::DefinePattern)
+            .also(tr_later("texture pattern from selection paper photoshop")),
+        entry(tr_later("Brushes"), tr_later("Edit"), Command::ShowBrushes)
+            .icon(Icon::Brushes)
+            .also(tr_later("brush presets panel import abr export")),
+        entry(tr_later("Brush Settings"), tr_later("Edit"), Command::ShowBrushSettings)
+            .icon(Icon::BrushSettings)
+            .also(tr_later("brush engine dynamics scattering texture dual jitter photoshop")),
         entry(tr_later("Convert to Symbol"), tr_later("Modify"), Command::ConvertToSymbol)
             .icon(Icon::Symbol)
             .keys(shortcuts::CONVERT_TO_SYMBOL)
@@ -272,6 +282,7 @@ pub(crate) fn entries() -> Vec<Entry> {
         tool_entry(Tool::AddBone),
         tool_entry(Tool::Camera),
         tool_entry(Tool::Brush),
+        tool_entry(Tool::Mixer),
         tool_entry(Tool::PaintBucket),
         tool_entry(Tool::Text),
     ]

@@ -25,7 +25,7 @@ use tiny_skia::{
     Pattern, Pixmap, PixmapMut, PixmapPaint, SpreadMode, Transform,
 };
 
-pub use images::{IMAGE_EXTENSIONS, ImageLibrary, image_size};
+pub use images::{IMAGE_EXTENSIONS, ImageLibrary, image_size, read_rgba};
 pub use path::build_path;
 pub use text::{
     FontFamilies, TextLayout, add_font_file, font_families, fonts_generation, layout as layout_text,
