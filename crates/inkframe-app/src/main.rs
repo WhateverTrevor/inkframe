@@ -44,7 +44,6 @@ mod panels;
 mod pen;
 mod prefs;
 mod reference;
-mod rhubarb;
 mod screenshot;
 mod scripts;
 mod shape_ops;

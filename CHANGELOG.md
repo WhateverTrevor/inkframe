@@ -5,6 +5,12 @@ notes on GitHub are its section here.
 
 ## Unreleased
 
+### Scripting
+
+- `lipSync` can have Rhubarb Lip Sync listen to the dialogue, as the Lip
+  Sync window does: `mouth.lipSync("line", { rhubarb: true })`, with a
+  `language` and the `dialogue` said.
+
 ### Guidebook
 
 - A chapter on scripting: running the example scripts, a first script in

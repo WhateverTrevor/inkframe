@@ -36,9 +36,10 @@ overwriting yours.
 
 A script sees only the `inkframe` object and `console`. It can change the
 open project, open and save Inkframe projects (`.inkf` files), and export.
-It can also bring sound files into a project (`importAudio`) and read
-lip sync timing files (`.tsv`, `.txt` or `.dat`). It can't read or write
-other files, use the network or run programs. A
+It can also bring sound files into a project (`importAudio`), read lip
+sync timing files (`.tsv`, `.txt` or `.dat`), and have the Rhubarb Lip
+Sync that comes with Inkframe listen to a project's sound. It can't read
+or write other files, use the network or run other programs. A
 relative path starts from the project's folder (from the command line,
 for a new project, the current folder). `~/` means your home folder.
 
@@ -143,7 +144,7 @@ doc.export({ format: "h264", to: `renders/${doc.name}_v001.mp4`, scale: 0.5 });
 | `poseBone(name, frame, pose)` | Keys a bone: `turn` (degrees from rest), `moveTo: [x, y]` (where its start goes, as dragging a root does) and `stretch` |
 | `follows` | How a layer in a skeleton's folder follows the bones: `"nearby"`, `"none"`, `{ bone: name }` or `{ limb: name }`; can be set |
 | `drawings`, `addDrawing(name, { copy })`, `showDrawing(name, frame)` | The layer's drawings by name; adds one (blank, or a copy of another); shows one from a frame on |
-| `lipSync(sound, { timing })` | Lip-syncs a mouth layer to a sound (by name), its drawings matched to the mouth shapes by their names: from the sound's loudness, or a Rhubarb (`.tsv`) or Papagayo (`.dat`) timing file. Returns how many mouth changes it made |
+| `lipSync(sound, options)` | Lip-syncs a mouth layer to a sound (by name), its drawings matched to the mouth shapes by their names: from the sound's loudness; with `{ rhubarb: true }`, Rhubarb Lip Sync listening to it (`language: "english"` or `"other"`, and the `dialogue` said, which helps with unclear words); or from a Rhubarb (`.tsv`) or Papagayo (`.dat`) file named by `timing`. Returns how many mouth changes it made |
 | `button` | What clicking the layer does in a Web Page export (below), or `null`; can be set |
 | `moveUp(steps)`, `moveDown(steps)` | Restacks it |
 | `remove()` | Deletes it |

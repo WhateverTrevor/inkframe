@@ -92,10 +92,10 @@ leg.follows = { limb: "Thigh" };
 The talking head and the banner of *Chapter 12* and *Chapter 13* can be scripted as well:
 
 - `layer.addDrawing("A", { copy: "closed" })` adds a drawing, and `layer.showDrawing("A", 12)` shows it from frame 12.
-- `doc.importAudio("line.wav")` brings in a sound file, and `mouth.lipSync("line")` times the mouth's drawings to it from its loudness. Give it a timing file from Rhubarb Lip Sync for more precise mouths: `mouth.lipSync("line", { timing: "line.tsv" })`.
+- `doc.importAudio("line.wav")` brings in a sound file, and `mouth.lipSync("line")` times the mouth's drawings to it from its loudness. For mouths that follow the actual words, have Rhubarb listen, as the Lip Sync window does: `mouth.lipSync("line", { rhubarb: true, dialogue: "Hello there!" })`.
 - `layer.button = { openLink: "https://example.com" }` makes a layer a web page button, and `doc.setFrameAction(36, "stop")` stops the page on frame 36.
 
-> Important note: A script can only reach the files you name in it: projects it opens and saves, exports, sound files and lip sync timing files. It can't read other files, use the internet or run programs, so a script from someone else can't do more than change your project.
+> Important note: A script can only reach the files you name in it: projects it opens and saves, exports, sound files and lip sync timing files. It can't read other files, use the internet or run programs (beyond the Rhubarb Lip Sync that comes with Inkframe), so a script from someone else can't do more than change your project.
 
 **docs/SCRIPTING.md**, in Inkframe's source, lists everything scripts can do.
 

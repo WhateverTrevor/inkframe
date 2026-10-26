@@ -1736,6 +1736,7 @@ dependencies = [
  "hound",
  "inkframe-core",
  "rubato",
+ "serde_json",
  "symphonia",
  "thiserror 2.0.21",
 ]

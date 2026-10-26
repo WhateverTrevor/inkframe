@@ -8,6 +8,7 @@
 
 mod decode;
 mod mix;
+pub mod rhubarb;
 
 use std::path::Path;
 

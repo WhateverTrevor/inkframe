@@ -493,4 +493,30 @@ mod round_two {
         .expect_err("refused");
         assert!(error.to_string().contains("isn't a sound file"), "{error}");
     }
+
+    #[test]
+    fn a_script_lip_syncs_with_rhubarb_listening() {
+        if inkframe_audio::rhubarb::locate().is_none() {
+            assert!(std::env::var_os("INKFRAME_REQUIRE_RHUBARB").is_none(), "Rhubarb wasn't found");
+            return;
+        }
+        let sound = std::env::temp_dir().join(format!("inkframe-script-hum-{}.wav", std::process::id()));
+        inkframe_audio::rhubarb::write_hum(&sound);
+        let source = format!(
+            r##"
+            const doc = inkframe.document;
+            const mouth = doc.addLayer("Mouth", {{ ellipse: [60, 20] }});
+            mouth.addDrawing("X").addDrawing("A").addDrawing("D");
+            const name = doc.importAudio({path:?}, 1);
+            const changes = mouth.lipSync(name, {{ rhubarb: true, language: "other" }});
+            console.log(name, changes > 0);
+        "##,
+            path = sound.display().to_string()
+        );
+        let out =
+            run(Script { limit: Some(Duration::from_secs(60)), ..Script::new(source, Document::default()) });
+        let _ = std::fs::remove_file(&sound);
+        let out = out.unwrap_or_else(|e| panic!("{e}"));
+        assert!(out.log[0].ends_with(" true"), "{:?}", out.log);
+    }
 }

@@ -1018,6 +1018,12 @@ after the Harmony features (palettes to master controllers).
     `script-walk` from `examples/scripts/walk-cycle.js`). The guide's
     converter now sets fenced code blocks (``` lines) as `<pre><code>`.
     v0.5.0 tagged on a06720d; draft has dmg, setup.exe and the guidebook.
+128. Rhubarb from scripts: `rhubarb.rs` moved from the app to
+    `inkframe-audio` (`inkframe_audio::rhubarb`; adds `recognize`, the
+    blocking run, and a hidden `write_hum` test helper; serde_json dep).
+    Script `lipSync(sound, options)` takes `{ rhubarb, language, dialogue }`
+    or `{ timing }` (options now passed as JSON). Only the bundled Rhubarb
+    runs (`locate`).
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)
