@@ -1063,6 +1063,17 @@ after the Harmony features (palettes to master controllers).
     ghosts through a tiny-skia `Mask` + fill_rect: slower (21 -> 25.5 ms,
     no zero-skipping), reverted. Onion (~21 ms) is now mostly the three
     renders a step needs; thumbnails (~10%) are already budgeted.
+134. Translation groundwork: app `i18n.rs` (gettext-style: English is the
+    key; `tr(&'static str) -> &'static str`, `tr_args(text, &[(name,
+    value)])` for `{name}`s, `tr_later` const marker for tables; language
+    chosen once in main from INKFRAME_LANGUAGE or LANG; `BUILT_IN` list of
+    include_str'd `locales/<code>.txt`, none yet; `pseudo` language).
+    Converted: menu bar (all of `menu_bar`), tour.rs, whats_new.rs window.
+    `cargo xtask strings` writes `locales/template.txt` (163 texts); xtask
+    tests: template up to date (CRLF-tolerant), translations not stale.
+    docs/TRANSLATING.md lists what's wrapped and what's left (toolbar,
+    Properties, timeline, context bar, finder, dialogs, panels, names from
+    enums). Keep wrapping new UI text in tr and rerun `cargo xtask strings`.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

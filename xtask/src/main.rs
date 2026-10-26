@@ -8,6 +8,7 @@
 mod guide;
 mod icon;
 mod samples;
+mod strings;
 // Bundling uses tools that only exist on macOS (iconutil, codesign, hdiutil).
 #[cfg(target_os = "macos")]
 mod macos;
@@ -26,6 +27,7 @@ Usage: cargo xtask <task>
 Tasks:
   guide [--keep-shots]       Build the guidebook PDF in target/guide/ (needs Google Chrome)
   icon                       Redraw the app icon PNGs in assets/icon/
+  strings                    List the app's translatable texts in locales/template.txt
   samples                    Rebuild the sample projects in examples/
   bundle-macos [options]     Build target/release/Inkframe.app
       --ffmpeg <path>        Bundle this ffmpeg (must be a self-contained build)
@@ -40,6 +42,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("icon") => write_icon_pngs(),
+        Some("strings") => strings::write_template(),
         Some("guide") => guide::Options::parse(&args[1..]).and_then(|options| guide::build(&options)),
         Some("samples") => samples::write_all(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples")),
         #[cfg(target_os = "macos")]
