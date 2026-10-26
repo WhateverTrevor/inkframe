@@ -5,6 +5,12 @@ notes on GitHub are its section here.
 
 ## Unreleased
 
+### What's New
+
+- After an update, a window shows what changed in the new version, from
+  these notes; Help › What's New shows it again. Someone new gets the
+  first-run tour instead.
+
 ### History
 
 - A script's changes are one undo step named after it ("Run Script

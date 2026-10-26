@@ -39,6 +39,8 @@ pub struct Prefs {
     pub toured: bool,
     /// The Properties sections folded away.
     pub folded_sections: Vec<String>,
+    /// The newest version whose What's New has been seen.
+    pub seen_version: Option<String>,
 }
 
 /// A Batch Export job as saved: the format by its short name, the same
@@ -75,6 +77,7 @@ impl Prefs {
             no_guide_snapping: false,
             toured: false,
             folded_sections: Vec::new(),
+            seen_version: None,
         }
     }
 

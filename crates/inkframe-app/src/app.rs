@@ -51,6 +51,8 @@ pub(crate) enum Command {
     OpenExample,
     /// Help › Take the Tour: the first-run tour again.
     StartTour,
+    /// Help › What's New: this version's changes.
+    WhatsNew,
     /// Opens the Vectorise window for the selected layer.
     Vectorise,
     NewParticleLayer(inkframe_core::Preset),
@@ -185,7 +187,7 @@ pub(crate) const FILE_EXTENSION: &str = "inkf";
 /// The guide that walks through a first animation, and where problems are
 /// reported (Help menu).
 /// The guidebook PDF is attached to each release.
-const GUIDEBOOK_URL: &str = "https://github.com/WhateverTrevor/inkframe/releases/latest";
+pub(crate) const GUIDEBOOK_URL: &str = "https://github.com/WhateverTrevor/inkframe/releases/latest";
 /// A one-page start, pointing on to the guidebook.
 const GUIDE_URL: &str = "https://github.com/WhateverTrevor/inkframe/blob/main/docs/GETTING_STARTED.md";
 const ISSUES_URL: &str = "https://github.com/WhateverTrevor/inkframe/issues";
@@ -265,6 +267,11 @@ pub struct InkframeApp {
     /// how long each update took (see `AutoScreenshot::bench`).
     bench: Option<(u32, Vec<std::time::Duration>)>,
     toured: bool,
+    /// What changed in this version, shown once after an update.
+    whats_new: crate::whats_new::WhatsNew,
+    /// The newest version whose What's New has been seen, kept with the
+    /// settings: `None` before this one first ran.
+    seen_version: Option<String>,
 }
 
 impl InkframeApp {
@@ -316,6 +323,8 @@ impl InkframeApp {
             tour_targets: Default::default(),
             bench: AutoScreenshot::bench().map(|frames| (frames, Vec::new())),
             toured: false,
+            whats_new: Default::default(),
+            seen_version: None,
         };
         // Screenshots always use the usual layout, so they look the same
         // on every machine.
@@ -338,12 +347,21 @@ impl InkframeApp {
             app.editor.snap_to_guides = !prefs.no_guide_snapping;
             app.batch.restore(prefs.batch_jobs(), prefs.batch_folder.clone());
             app.toured = prefs.toured;
+            app.seen_version = prefs.seen_version.clone();
             app.editor.folded_sections = prefs.folded_sections.iter().cloned().collect();
         }
         // The tour shows the first time Inkframe opens, and never in a
         // screenshot unless asked for.
         if app.screenshot.is_none() && !app.toured {
             app.tour.start();
+        } else if app.screenshot.is_none() && app.seen_version.as_deref() != Some(env!("CARGO_PKG_VERSION")) {
+            // Updated since last time: what changed. (Someone new gets the
+            // tour instead, and this version's notes count as seen.)
+            app.whats_new.open();
+        }
+        app.seen_version = Some(env!("CARGO_PKG_VERSION").to_owned());
+        if AutoScreenshot::whats_new() {
+            app.whats_new.open();
         }
         if let Some(card) = AutoScreenshot::tour() {
             app.tour.start_at(card);
@@ -832,6 +850,11 @@ impl InkframeApp {
             Command::BatchExport => self.batch.open(),
             Command::OpenExample => self.examples.open(&self.ctx),
             Command::StartTour => self.tour.start(),
+            Command::WhatsNew => {
+                if !self.whats_new.open() {
+                    show_error("What's New", "This build has no notes yet: it's between releases.");
+                }
+            }
             Command::Vectorise => self.vectorise.open(&self.editor),
             Command::ExportPsd => self.export_psd(),
             Command::ToggleMaximize => {
@@ -1668,6 +1691,7 @@ impl InkframeApp {
             let help = ui.menu_button("Help", |ui| {
                 item(ui, "Find a Command…", Some(shortcuts::FIND_COMMAND), Command::OpenFinder, true);
                 item(ui, "Take the Tour", None, Command::StartTour, true);
+                item(ui, "What's New", None, Command::WhatsNew, true);
                 ui.separator();
                 if ui.button("Inkframe for Artists (Guidebook)").clicked() {
                     open_in_browser(GUIDEBOOK_URL);
@@ -1742,6 +1766,7 @@ impl InkframeApp {
             lock_guides: self.editor.lock_guides,
             no_guide_snapping: !self.editor.snap_to_guides,
             toured: self.toured,
+            seen_version: self.seen_version.clone(),
             folded_sections: self.editor.folded_sections.iter().cloned().collect(),
             ..Prefs::gather(self.editor.guides, self.batch.jobs(), self.batch.chosen_folder())
         }
@@ -2299,6 +2324,10 @@ impl InkframeApp {
         self.scripts.show(&ctx, &mut self.editor);
         if let Some(path) = self.examples.show(&ctx) {
             self.open_example(&path);
+        }
+        // After the recovery window and the tour, so it's not in their way.
+        if self.recoveries.is_empty() && !self.tour.is_open() {
+            self.whats_new.show(&ctx);
         }
         if self.recoveries.is_empty()
             && let Some(ended) = self.tour.show(&ctx, &self.tour_targets)

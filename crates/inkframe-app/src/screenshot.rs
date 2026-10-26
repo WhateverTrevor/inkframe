@@ -110,6 +110,7 @@
 //!   update, as scrubbing does, before the screenshot, and prints how long
 //!   the updates took: a check on how the editor copes with a big scene.
 //! * `INKFRAME_SCREENSHOT_TOUR=2` shows the first-run tour's second card.
+//! * `INKFRAME_SCREENSHOT_WHATS_NEW=1` shows this version's What's New.
 //! * `INKFRAME_SCREENSHOT_ROTATE=30` turns the view 30° clockwise.
 //! * `INKFRAME_SCREENSHOT_LAYOUT=custom` splits the stage in two and puts an exposure sheet
 //!   beside the timeline, to show the layout's areas.
@@ -462,6 +463,11 @@ impl AutoScreenshot {
     /// Whether to put the arm's layers (in examples/rig.inkf) in a folder.
     pub fn folder() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_FOLDER").is_some()
+    }
+
+    /// Whether to show this version's What's New.
+    pub fn whats_new() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_WHATS_NEW").is_some()
     }
 
     /// Which card of the first-run tour to show, counting from 1.

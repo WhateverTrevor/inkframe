@@ -61,6 +61,7 @@ mod toolbar;
 mod tour;
 mod value_graph;
 mod vectorise_dialog;
+mod whats_new;
 mod xsheet;
 
 use std::path::PathBuf;
