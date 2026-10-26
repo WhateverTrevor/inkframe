@@ -28,9 +28,9 @@ impl SafeAreas {
 
     pub fn label(self) -> &'static str {
         match self {
-            SafeAreas::Off => "Off",
-            SafeAreas::Current => "Current (93% / 90%)",
-            SafeAreas::Classic => "Classic (90% / 80%)",
+            SafeAreas::Off => crate::i18n::tr_later("Off"),
+            SafeAreas::Current => crate::i18n::tr_later("Current (93% / 90%)"),
+            SafeAreas::Classic => crate::i18n::tr_later("Classic (90% / 80%)"),
         }
     }
 

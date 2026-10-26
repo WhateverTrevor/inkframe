@@ -76,7 +76,7 @@ impl AdjustDialog {
         let Some(open) = &mut self.open else { return };
         let mut window_open = true;
         let mut finished = None;
-        egui::Window::new(open.adjustment.name())
+        egui::Window::new(tr(open.adjustment.name()))
             .open(&mut window_open)
             .collapsible(false)
             .resizable(false)

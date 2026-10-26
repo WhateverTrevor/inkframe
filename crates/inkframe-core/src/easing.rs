@@ -47,12 +47,12 @@ impl Easing {
 
     pub fn label(&self) -> &'static str {
         match self {
-            Easing::Linear => "Linear",
-            Easing::EaseIn => "Ease In",
-            Easing::EaseOut => "Ease Out",
-            Easing::EaseInOut => "Ease In-Out",
-            Easing::Hold => "Hold",
-            Easing::CubicBezier { .. } => "Custom",
+            Easing::Linear => crate::i18n::tr_later("Linear"),
+            Easing::EaseIn => crate::i18n::tr_later("Ease In"),
+            Easing::EaseOut => crate::i18n::tr_later("Ease Out"),
+            Easing::EaseInOut => crate::i18n::tr_later("Ease In-Out"),
+            Easing::Hold => crate::i18n::tr_later("Hold"),
+            Easing::CubicBezier { .. } => crate::i18n::tr_later("Custom"),
         }
     }
 

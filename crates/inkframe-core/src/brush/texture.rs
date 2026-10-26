@@ -107,12 +107,12 @@ impl Pattern {
 
     pub fn label(&self) -> &str {
         match self {
-            Pattern::Paper => "Paper",
-            Pattern::RoughPaper => "Rough Paper",
-            Pattern::Canvas => "Canvas",
-            Pattern::Grain => "Grain",
-            Pattern::Sponge => "Sponge",
-            Pattern::Fibre => "Fibre",
+            Pattern::Paper => crate::i18n::tr_later("Paper"),
+            Pattern::RoughPaper => crate::i18n::tr_later("Rough Paper"),
+            Pattern::Canvas => crate::i18n::tr_later("Canvas"),
+            Pattern::Grain => crate::i18n::tr_later("Grain"),
+            Pattern::Sponge => crate::i18n::tr_later("Sponge"),
+            Pattern::Fibre => crate::i18n::tr_later("Fibre"),
             Pattern::Picture(image) => &image.name,
         }
     }
@@ -191,16 +191,16 @@ impl Blend {
 
     pub fn label(self) -> &'static str {
         match self {
-            Blend::Multiply => "Multiply",
-            Blend::Subtract => "Subtract",
-            Blend::Darken => "Darken",
-            Blend::Overlay => "Overlay",
-            Blend::ColorDodge => "Color Dodge",
-            Blend::ColorBurn => "Color Burn",
-            Blend::LinearBurn => "Linear Burn",
-            Blend::HardMix => "Hard Mix",
-            Blend::LinearHeight => "Linear Height",
-            Blend::Height => "Height",
+            Blend::Multiply => crate::i18n::tr_later("Multiply"),
+            Blend::Subtract => crate::i18n::tr_later("Subtract"),
+            Blend::Darken => crate::i18n::tr_later("Darken"),
+            Blend::Overlay => crate::i18n::tr_later("Overlay"),
+            Blend::ColorDodge => crate::i18n::tr_later("Color Dodge"),
+            Blend::ColorBurn => crate::i18n::tr_later("Color Burn"),
+            Blend::LinearBurn => crate::i18n::tr_later("Linear Burn"),
+            Blend::HardMix => crate::i18n::tr_later("Hard Mix"),
+            Blend::LinearHeight => crate::i18n::tr_later("Linear Height"),
+            Blend::Height => crate::i18n::tr_later("Height"),
         }
     }
 

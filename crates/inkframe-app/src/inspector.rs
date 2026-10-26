@@ -317,10 +317,10 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
                 if matches!(tool, Tool::Dodge | Tool::Burn) {
                     ui.label(tr("Range")).on_hover_text(tr("Which tones it works on most"));
                     egui::ComboBox::from_id_salt("tone_range")
-                        .selected_text(editor.tone_range.label())
+                        .selected_text(tr(editor.tone_range.label()))
                         .show_ui(ui, |ui| {
                             for range in inkframe_core::ToneRange::ALL {
-                                ui.selectable_value(&mut editor.tone_range, range, range.label());
+                                ui.selectable_value(&mut editor.tone_range, range, tr(range.label()));
                             }
                         });
                     ui.end_row();
@@ -623,9 +623,9 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         span_editor(ui, layer, last_frame);
         ui.horizontal(|ui| {
             ui.label(tr("Blend")).on_hover_text(tr("How the layer mixes with what's beneath it"));
-            egui::ComboBox::from_id_salt("blend").selected_text(layer.blend.label()).show_ui(ui, |ui| {
+            egui::ComboBox::from_id_salt("blend").selected_text(tr(layer.blend.label())).show_ui(ui, |ui| {
                 for mode in inkframe_core::BlendMode::ALL {
-                    ui.selectable_value(&mut layer.blend, mode, mode.label());
+                    ui.selectable_value(&mut layer.blend, mode, tr(mode.label()));
                 }
             });
         });
@@ -639,11 +639,11 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 let current = layer.line_texture.map(|t| t.kind);
                 let mut chosen = current;
                 egui::ComboBox::from_id_salt("line texture")
-                    .selected_text(current.map_or(tr("Flat"), TextureKind::label))
+                    .selected_text(current.map_or(tr("Flat"), |kind| tr(kind.label())))
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut chosen, None, tr("Flat"));
                         for kind in TextureKind::ALL {
-                            ui.selectable_value(&mut chosen, Some(kind), kind.label());
+                            ui.selectable_value(&mut chosen, Some(kind), tr(kind.label()));
                         }
                     });
                 if chosen != current {
@@ -1247,7 +1247,7 @@ fn particles_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         ui.horizontal_wrapped(|ui| {
             ui.weak(tr("Start from"));
             for preset in Preset::ALL {
-                if ui.small_button(preset.name()).on_hover_text(tr("Replace these settings with the preset's")).clicked() {
+                if ui.small_button(tr(preset.name())).on_hover_text(tr("Replace these settings with the preset's")).clicked() {
                     *emitter = Emitter { seed: emitter.seed, ..Emitter::preset(preset) };
                 }
             }
@@ -1428,7 +1428,7 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         .open(searching)
         .show(ui, |ui| {
             let effect = &mut fx.color;
-            egui::ComboBox::from_id_salt("color_effect_kind").selected_text(effect.label()).show_ui(
+            egui::ComboBox::from_id_salt("color_effect_kind").selected_text(tr(effect.label())).show_ui(
                 ui,
                 |ui| {
                     let choices = [
@@ -1438,7 +1438,7 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                         ColorEffect::Advanced { multiply: [1.0; 4], add: [0.0; 4] },
                     ];
                     for choice in choices {
-                        if ui.selectable_label(effect.label() == choice.label(), choice.label()).clicked()
+                        if ui.selectable_label(effect.label() == choice.label(), tr(choice.label())).clicked()
                             && effect.label() != choice.label()
                         {
                             *effect = choice;
@@ -1495,7 +1495,7 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                 ui.push_id(i, |ui| {
                     ui.separator();
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut filter.enabled, filter.kind.label());
+                        ui.checkbox(&mut filter.enabled, tr(filter.kind.label()));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
                                 .add(crate::icons::IconButton::new(
@@ -1529,7 +1529,7 @@ fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
             }
             ui.menu_button(tr("Add Filter"), |ui| {
                 for kind in FilterKind::ALL {
-                    if ui.button(kind.label()).clicked() {
+                    if ui.button(tr(kind.label())).clicked() {
                         fx.filters.push(Filter { enabled: true, kind });
                         ui.close();
                     }
@@ -1703,14 +1703,13 @@ fn instance_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         }
 
         ui.label(tr("Playback"));
-        egui::ComboBox::from_id_salt("instance_playback").selected_text(instance.playback.label()).show_ui(
-            ui,
-            |ui| {
+        egui::ComboBox::from_id_salt("instance_playback")
+            .selected_text(tr(instance.playback.label()))
+            .show_ui(ui, |ui| {
                 for playback in Playback::ALL {
-                    ui.selectable_value(&mut instance.playback, playback, playback.label());
+                    ui.selectable_value(&mut instance.playback, playback, tr(playback.label()));
                 }
-            },
-        );
+            });
         ui.end_row();
 
         // Shown 1-based, like every other frame number in the interface.
@@ -1825,12 +1824,12 @@ fn transform_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame:
                 toggled = Some(property);
             }
             let label = if mixed.contains(&property) {
-                ui.label(format!("{} •", property.name())).on_hover_text(tr(
+                ui.label(format!("{} •", tr(property.name()))).on_hover_text(tr(
                     "Differs between the selected layers. Changing it sets them all (position moves them all \
                      by the same amount).",
                 ))
             } else {
-                ui.label(property.name())
+                ui.label(tr(property.name()))
             };
             if property == Property::Depth {
                 label.on_hover_text(tr(
@@ -2175,11 +2174,11 @@ fn shape_tween_controls(ui: &mut egui::Ui, editor: &mut Editor) {
     let Some(tween) = editor.selected_layer_mut().and_then(|l| l.shape_tween_mut(frame)) else { return };
     ui.horizontal(|ui| {
         ui.label(tr("Easing"));
-        egui::ComboBox::from_id_salt("shape_tween_easing").selected_text(tween.easing.label()).show_ui(
+        egui::ComboBox::from_id_salt("shape_tween_easing").selected_text(tr(tween.easing.label())).show_ui(
             ui,
             |ui| {
                 for preset in Easing::PRESETS {
-                    ui.selectable_value(&mut tween.easing, preset, preset.label());
+                    ui.selectable_value(&mut tween.easing, preset, tr(preset.label()));
                 }
             },
         );
@@ -2287,10 +2286,13 @@ fn key_toggle(ui: &mut egui::Ui, property: Property, is_key: bool) -> egui::Resp
     let tip = if is_key {
         tr_args(
             "Remove the {property} keyframe on this frame",
-            &[("property", &property.name().to_lowercase())],
+            &[("property", &tr(property.name()).to_lowercase())],
         )
     } else {
-        tr_args("Add a {property} keyframe on this frame", &[("property", &property.name().to_lowercase())])
+        tr_args(
+            "Add a {property} keyframe on this frame",
+            &[("property", &tr(property.name()).to_lowercase())],
+        )
     };
     response.on_hover_text(tip)
 }
@@ -2318,7 +2320,7 @@ fn easing_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u3
         for (property, tween) in &tweens {
             let focused = editor.focused_property == *property;
             if ui
-                .selectable_label(focused, property.name())
+                .selectable_label(focused, tr(property.name()))
                 .on_hover_text(tr("Show this curve below"))
                 .clicked()
             {
@@ -2369,9 +2371,9 @@ fn easing_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId, frame: u3
 /// The easing picker. Returns true when the choice changed.
 fn easing_combo(ui: &mut egui::Ui, id_salt: Property, easing: &mut Easing) -> bool {
     let before = *easing;
-    egui::ComboBox::from_id_salt(("easing", id_salt)).selected_text(easing.label()).show_ui(ui, |ui| {
+    egui::ComboBox::from_id_salt(("easing", id_salt)).selected_text(tr(easing.label())).show_ui(ui, |ui| {
         for preset in Easing::PRESETS {
-            ui.selectable_value(easing, preset, preset.label());
+            ui.selectable_value(easing, preset, tr(preset.label()));
         }
         // "Custom" starts from the current curve so it's a tweak, not a reset.
         let is_custom = matches!(easing, Easing::CubicBezier { .. });
@@ -2554,7 +2556,7 @@ fn text_editor(ui: &mut egui::Ui, text: &mut Text, font_problem: Option<&str>) {
         ui.label(tr("Align"));
         ui.horizontal(|ui| {
             for align in TextAlign::ALL {
-                ui.selectable_value(&mut text.align, align, align.label());
+                ui.selectable_value(&mut text.align, align, tr(align.label()));
             }
         });
         ui.end_row();

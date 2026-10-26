@@ -114,14 +114,14 @@ impl ExportDialog {
     fn settings_ui(&mut self, ui: &mut egui::Ui, doc: &Document) {
         egui::Grid::new("export_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
             ui.label(tr("Format"));
-            egui::ComboBox::from_id_salt("format").selected_text(self.format.label()).width(240.0).show_ui(
-                ui,
-                |ui| {
+            egui::ComboBox::from_id_salt("format")
+                .selected_text(tr(self.format.label()))
+                .width(240.0)
+                .show_ui(ui, |ui| {
                     for format in ExportFormat::ALL.into_iter().filter(|f| f.is_available()) {
-                        ui.selectable_value(&mut self.format, format, format.label());
+                        ui.selectable_value(&mut self.format, format, tr(format.label()));
                     }
-                },
-            );
+                });
             ui.end_row();
 
             ui.label(tr("Background"));

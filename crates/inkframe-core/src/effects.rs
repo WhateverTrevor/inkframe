@@ -38,10 +38,10 @@ impl ColorEffect {
 
     pub fn label(&self) -> &'static str {
         match self {
-            ColorEffect::None => "None",
-            ColorEffect::Brightness { .. } => "Brightness",
-            ColorEffect::Tint { .. } => "Tint",
-            ColorEffect::Advanced { .. } => "Advanced",
+            ColorEffect::None => crate::i18n::tr_later("None"),
+            ColorEffect::Brightness { .. } => crate::i18n::tr_later("Brightness"),
+            ColorEffect::Tint { .. } => crate::i18n::tr_later("Tint"),
+            ColorEffect::Advanced { .. } => crate::i18n::tr_later("Advanced"),
         }
     }
 }
@@ -101,11 +101,11 @@ impl FilterKind {
 
     pub fn label(&self) -> &'static str {
         match self {
-            FilterKind::DropShadow { .. } => "Drop Shadow",
-            FilterKind::Blur { .. } => "Blur",
-            FilterKind::Glow { .. } => "Glow",
-            FilterKind::AdjustColor { .. } => "Adjust Color",
-            FilterKind::MotionBlur { .. } => "Motion Blur",
+            FilterKind::DropShadow { .. } => crate::i18n::tr_later("Drop Shadow"),
+            FilterKind::Blur { .. } => crate::i18n::tr_later("Blur"),
+            FilterKind::Glow { .. } => crate::i18n::tr_later("Glow"),
+            FilterKind::AdjustColor { .. } => crate::i18n::tr_later("Adjust Color"),
+            FilterKind::MotionBlur { .. } => crate::i18n::tr_later("Motion Blur"),
         }
     }
 

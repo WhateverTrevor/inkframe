@@ -1,7 +1,7 @@
 # Translating Inkframe
 
-Inkframe's interface can be translated: nearly all of it now (see "What's
-wrapped so far" below), and the rest as it's converted.
+Inkframe's whole interface can be translated, including the names it
+gives new layers and undo steps.
 A translation is one plain text file; no programming is needed.
 
 ## Translating
@@ -32,8 +32,9 @@ A translation is one plain text file; no programming is needed.
    const BUILT_IN: &[(&str, &str)] = &[("de", include_str!("../../../locales/de.txt"))];
    ```
 
-Inkframe uses the system's language when it has a translation for it. To
-try one regardless, start Inkframe with `INKFRAME_LANGUAGE` set:
+Inkframe uses the system's language when it has a translation for it, or
+the one picked in View › Language (from the next time it opens). To try
+one without changing that, start Inkframe with `INKFRAME_LANGUAGE` set:
 
 ```sh
 INKFRAME_LANGUAGE=de target/release/inkframe
@@ -49,6 +50,12 @@ can be translated:
 | `tr("Save As…")` | A text |
 | `tr_args("Undo {what}", &[("what", label)])` | A text with something filled in. Never build sentences from pieces with `format!`: word order differs between languages |
 | `tr_later("Welcome")` | A text kept in a constant table and translated where it's shown, with `tr(text)` |
+
+The core and the exporter keep the names of things in English, as those
+are also data (saved in files, used by scripts): `inkframe_core::i18n::tr_later`
+marks them, and the app shows them with `tr(mode.label())`. Text the core
+writes for people, the names of undo steps, uses `inkframe_core::i18n::tr`,
+which translates with the app's `tr` once the app has started.
 
 After adding or changing texts, run `cargo xtask strings`, which lists
 them all in `locales/template.txt` for translators; a test fails if it's
@@ -66,7 +73,7 @@ Every wrapped text shows accented, a third longer and in brackets,
 `[Sávé Ås…~~]`, so text still in plain English hasn't been wrapped, and
 a cramped layout shows where longer translations won't fit.
 
-### What's wrapped so far
+### What's wrapped
 
 - The menu bar, its menus and their tips
 - The tools' names and tips, and the toolbar
@@ -78,13 +85,15 @@ a cramped layout shows where longer translations won't fit.
   the dialogs (export, batch export, lip sync, scripts, presets…)
 - Messages: errors, and what the stage says when it's empty
 - The window's areas: their names, the area menu and its groups
+- The names of things: workspaces, blend modes, easings, filters,
+  adjustments, particle presets, export formats and the like
+- The names new layers and folders are given, and undo steps' names
 - The first-run tour
 - What's New's window (its notes come from the changelog, which isn't
   translated)
 
-Still to do: the names that come from elsewhere in the code (workspaces,
-adjustments, particle presets, perspective kinds, easings, blend modes,
-filters), the names new layers are given, and the names of undo steps.
+Left in English on purpose: the command line, the screenshot hooks, and
+the guidebook's appendix, which is written in English.
 
 The long lists of words in the template (`name visible hidden show…`)
 are what Properties' search looks for in each section: translate them as

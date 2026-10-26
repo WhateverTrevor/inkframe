@@ -38,6 +38,7 @@ mod freehand;
 mod geometry;
 mod guide;
 mod history;
+pub mod i18n;
 mod ik;
 mod image;
 mod library;

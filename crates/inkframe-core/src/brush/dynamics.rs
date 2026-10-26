@@ -43,12 +43,12 @@ impl Control {
 
     pub fn label(self) -> &'static str {
         match self {
-            Control::Off => "Off",
-            Control::Fade(_) => "Fade",
-            Control::PenPressure => "Pen Pressure",
-            Control::PenTilt => "Pen Tilt",
-            Control::Direction => "Direction",
-            Control::InitialDirection => "Initial Direction",
+            Control::Off => crate::i18n::tr_later("Off"),
+            Control::Fade(_) => crate::i18n::tr_later("Fade"),
+            Control::PenPressure => crate::i18n::tr_later("Pen Pressure"),
+            Control::PenTilt => crate::i18n::tr_later("Pen Tilt"),
+            Control::Direction => crate::i18n::tr_later("Direction"),
+            Control::InitialDirection => crate::i18n::tr_later("Initial Direction"),
         }
     }
 

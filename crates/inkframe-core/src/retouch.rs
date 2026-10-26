@@ -38,9 +38,9 @@ impl ToneRange {
 
     pub fn label(self) -> &'static str {
         match self {
-            ToneRange::Shadows => "Shadows",
-            ToneRange::Midtones => "Midtones",
-            ToneRange::Highlights => "Highlights",
+            ToneRange::Shadows => crate::i18n::tr_later("Shadows"),
+            ToneRange::Midtones => crate::i18n::tr_later("Midtones"),
+            ToneRange::Highlights => crate::i18n::tr_later("Highlights"),
         }
     }
 

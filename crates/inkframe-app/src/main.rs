@@ -84,8 +84,12 @@ fn main() -> eframe::Result {
     }
     let open_path = std::env::args_os().nth(1).map(PathBuf::from);
 
-    // Before anything's shown, which language it's shown in.
-    i18n::choose_language();
+    // Before anything's shown, which language it's shown in: the one
+    // picked in View › Language, if any. Screenshots, for the guidebook,
+    // never take the person's settings.
+    let picked =
+        if std::env::var_os("INKFRAME_SCREENSHOT").is_none() { prefs::Prefs::load().language } else { None };
+    i18n::choose_language(picked.as_deref());
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Inkframe")
