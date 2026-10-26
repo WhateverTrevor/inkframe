@@ -3,6 +3,18 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
+## Unreleased
+
+### Guidebook
+
+- A chapter on scripting: running the example scripts, a first script in
+  the Script Console, and scripting rigs, mouths and web buttons.
+
+### Timeline
+
+- Cut, Copy and Paste Frames are on a row's right-click menu too, and
+  Paste Frames only ever pastes copied frames (not layers copied since).
+
 ## [0.5.0]
 
 Copying frames, scripting characters, and a quicker editor. Projects

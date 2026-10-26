@@ -97,3 +97,7 @@ mouth-drawings   | examples/rig.inkf           | SELECT=Mouth FRAME=7 FOLD="tran
 # Chapter 13: Project: An Interactive Web Banner
 banner           | -                           | BANNER=1
 banner-export    | -                           | BANNER=1 EXPORT=web
+
+# Chapter 14: Automating with Scripts
+script-console   | -                           | CONSOLE=docs/guide/scripts/first-script.js
+script-walk      | -                           | SCRIPT=examples/scripts/walk-cycle.js FRAME=4 ONION=1

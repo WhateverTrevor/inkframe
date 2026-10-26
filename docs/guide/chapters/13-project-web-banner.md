@@ -54,7 +54,7 @@ Left to itself, a web page export loops. A banner should end on its button and w
 Then export:
 
 1. Press [[⌘E]] and set **Format** to **Web Page (.html)**.
-2. Leave **Transparent** off, so the background is drawn.
+2. Untick **Transparent**, so the banner's background is drawn.
 3. Click **Export…** and save the page.
 
 Open the page in a browser. The title pops, the line fades up, the button slides in and the banner stops. Hover over the button to see it light up, and click it to open the link. The page is one file with nothing else to load, so it can go straight onto a website.
@@ -65,4 +65,4 @@ Open the page in a browser. The title pops, the line fades up, the button slides
 
 In this project, we set up a banner-sized stage, animated its words with motion presets, made a button that opens a link, stopped the animation on its last frame, and exported it as a web page to try in a browser.
 
-That's the end of this book's projects. Appendix A lists every tool and its key, and Appendix B every command and where to find it. Now go and make something move.
+That's the end of this book's projects. In the last chapter, we'll see how scripts can do the repetitive parts of jobs like these for you.

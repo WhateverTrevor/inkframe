@@ -1009,6 +1009,15 @@ after the Harmony features (palettes to master controllers).
     Colour Effect/Filters headers open while searching. "No settings
     match" note. Hook `INKFRAME_SCREENSHOT_SEARCH=text`. Keep SECTION_WORDS
     in step when adding settings to a section.
+126. Frame commands on the timeline's right-click menu: `TimelineView::show`
+    (and `grid`, `context_menu`) take `frames_copied` and return an
+    `Option<Command>` the app runs (it owns the clipboard). `Command::
+    PasteFrames` now pastes only `Clipboard::Frames`.
+127. Guidebook chapter 14, Automating with Scripts (`14-scripting.md`,
+    figures `script-console` from `docs/guide/scripts/first-script.js` and
+    `script-walk` from `examples/scripts/walk-cycle.js`). The guide's
+    converter now sets fenced code blocks (``` lines) as `<pre><code>`.
+    v0.5.0 tagged on a06720d; draft has dmg, setup.exe and the guidebook.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)
