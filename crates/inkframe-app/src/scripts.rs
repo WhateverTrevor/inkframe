@@ -105,6 +105,9 @@ pub struct Scripts {
     report: Option<Report>,
     console_source: String,
     console_lines: Vec<Line>,
+    /// The window's context, to wake it the moment a script finishes, so
+    /// its result shows straight away rather than at the next mouse move.
+    ctx: Option<egui::Context>,
 }
 
 impl Default for Scripts {
@@ -114,6 +117,7 @@ impl Default for Scripts {
             report: None,
             console_source: CONSOLE_START.to_owned(),
             console_lines: Vec::new(),
+            ctx: None,
         }
     }
 }
@@ -190,8 +194,12 @@ impl Scripts {
             ..Script::new(source, editor.doc.clone())
         };
         let (sender, result) = mpsc::channel();
+        let ctx = self.ctx.clone();
         std::thread::spawn(move || {
             let _ = sender.send(inkframe_script::run(script));
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
         });
         self.report = None;
         self.running = Some(Running {
@@ -207,10 +215,15 @@ impl Scripts {
     /// Shows a running script's progress, and what the last one said; takes
     /// a finished script's result.
     pub fn show(&mut self, ctx: &egui::Context, editor: &mut Editor) {
+        if self.ctx.is_none() {
+            self.ctx = Some(ctx.clone());
+        }
         self.finish(editor);
         // The console has its own Stop button and shows its own output.
         if let Some(running) = self.running.as_ref().filter(|r| !r.from_console) {
-            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            // Only to keep the seconds counting: the result itself wakes
+            // the window as it arrives.
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
             egui::Window::new("Running Script")
                 .collapsible(false)
                 .resizable(false)
@@ -392,6 +405,24 @@ mod tests {
         on_disk.sort();
         let built_in: Vec<&str> = EXAMPLES.iter().map(|(name, _)| *name).collect();
         assert_eq!(on_disk, built_in, "add new example scripts to EXAMPLES");
+    }
+
+    #[test]
+    fn a_finished_script_wakes_the_window() {
+        let ctx = egui::Context::default();
+        let woken = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&woken);
+        ctx.set_request_repaint_callback(move |_| flag.store(true, Ordering::Relaxed));
+        let mut editor = Editor::new(inkframe_core::Document::default());
+        let mut scripts = Scripts { ctx: Some(ctx), ..Scripts::default() };
+        scripts.run("Script Console".into(), r#"inkframe.document.addLayer("Ball");"#.into(), &editor, true);
+        let started = Instant::now();
+        while !woken.load(Ordering::Relaxed) && started.elapsed() < std::time::Duration::from_secs(10) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(woken.load(Ordering::Relaxed), "the window was asked to redraw without any input");
+        scripts.finish(&mut editor);
+        assert_eq!(editor.doc.layers.len(), 1);
     }
 
     #[test]
