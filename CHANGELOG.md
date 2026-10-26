@@ -5,6 +5,16 @@ notes on GitHub are its section here.
 
 ## Unreleased
 
+### History
+
+- A script's changes are one undo step named after it ("Run Script
+  “walk-cycle”"), and Edit › Undo and Redo say what they'll undo and redo.
+
+### Getting started
+
+- The getting started guide is now a one-page quick start, pointing on to
+  the guidebook for everything else; Help › Quick Start opens it.
+
 ### Speed
 
 - Particles draw faster: a soft dot is filled as a square of its gradient,

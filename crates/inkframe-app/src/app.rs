@@ -186,6 +186,7 @@ pub(crate) const FILE_EXTENSION: &str = "inkf";
 /// reported (Help menu).
 /// The guidebook PDF is attached to each release.
 const GUIDEBOOK_URL: &str = "https://github.com/WhateverTrevor/inkframe/releases/latest";
+/// A one-page start, pointing on to the guidebook.
 const GUIDE_URL: &str = "https://github.com/WhateverTrevor/inkframe/blob/main/docs/GETTING_STARTED.md";
 const ISSUES_URL: &str = "https://github.com/WhateverTrevor/inkframe/issues";
 pub(crate) const SCRIPTING_URL: &str =
@@ -1318,8 +1319,12 @@ impl InkframeApp {
                 item(ui, "Batch Export…", None, Command::BatchExport, true);
             });
             ui.menu_button("Edit", |ui| {
-                item(ui, "Undo", Some(shortcuts::UNDO), Command::Undo, self.editor.history.can_undo());
-                item(ui, "Redo", Some(shortcuts::REDO), Command::Redo, self.editor.history.can_redo());
+                // Named for what they'd undo and redo, as the History panel names it.
+                let (undo, redo) = self.editor.history.next_labels();
+                let undo = undo.map_or_else(|| "Undo".to_owned(), |l| format!("Undo {l}"));
+                let redo = redo.map_or_else(|| "Redo".to_owned(), |l| format!("Redo {l}"));
+                item(ui, &undo, Some(shortcuts::UNDO), Command::Undo, self.editor.history.can_undo());
+                item(ui, &redo, Some(shortcuts::REDO), Command::Redo, self.editor.history.can_redo());
                 ui.separator();
                 item(
                     ui,
@@ -1668,7 +1673,7 @@ impl InkframeApp {
                     open_in_browser(GUIDEBOOK_URL);
                     ui.close();
                 }
-                if ui.button("Getting Started Guide").clicked() {
+                if ui.button("Quick Start (Five Minutes)").clicked() {
                     open_in_browser(GUIDE_URL);
                     ui.close();
                 }

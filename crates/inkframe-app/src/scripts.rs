@@ -272,8 +272,12 @@ impl Scripts {
                 ),
             }),
             Ok(outcome) => {
-                // The script's copy becomes the project: one undo step.
+                // The script's copy becomes the project: one undo step,
+                // named after the script.
+                editor.commit_history();
                 editor.doc = outcome.document;
+                let label = if name == "Script Console" { name.clone() } else { format!("Run Script “{name}”") };
+                editor.history.commit_as(&editor.doc, label);
                 editor.path = outcome.path;
                 if let Some(selection) = outcome.selection {
                     editor.select_many(&selection);
@@ -388,5 +392,22 @@ mod tests {
         on_disk.sort();
         let built_in: Vec<&str> = EXAMPLES.iter().map(|(name, _)| *name).collect();
         assert_eq!(on_disk, built_in, "add new example scripts to EXAMPLES");
+    }
+
+    #[test]
+    fn a_scripts_changes_are_one_undo_step_named_after_it() {
+        let mut editor = Editor::new(inkframe_core::Document::default());
+        let mut scripts = Scripts::default();
+        let source = r#"inkframe.document.addLayer("Ball"); inkframe.document.addLayer("Floor");"#;
+        scripts.run("bouncing-ball".into(), source.into(), &editor, false);
+        let started = Instant::now();
+        while scripts.running.is_some() && started.elapsed() < std::time::Duration::from_secs(10) {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            scripts.finish(&mut editor);
+        }
+        assert_eq!(editor.doc.layers.len(), 2);
+        assert_eq!(editor.history.next_labels().0, Some("Run Script “bouncing-ball”"));
+        editor.undo();
+        assert!(editor.doc.layers.is_empty(), "both layers go in one step");
     }
 }
