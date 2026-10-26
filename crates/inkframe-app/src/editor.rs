@@ -40,6 +40,8 @@ pub enum Tool {
     Camera,
     /// Paints pixels on a paint layer (see `paint.rs` and `brush.rs`).
     Brush,
+    /// Paints wet, mixing with the paint it passes (see `retouch.rs`).
+    Mixer,
     Eraser,
     /// Picks the paint colour from the stage.
     Eyedropper,
@@ -76,7 +78,7 @@ impl Tool {
         &[Tool::RectMarquee, Tool::EllipseMarquee],
         &[Tool::Lasso, Tool::PolygonLasso],
         &[Tool::MagicWand],
-        &[Tool::Brush],
+        &[Tool::Brush, Tool::Mixer],
         &[Tool::Eraser],
         &[Tool::PaintBucket, Tool::Gradient],
         &[Tool::Smudge, Tool::Blur, Tool::Sharpen],
@@ -109,6 +111,7 @@ impl Tool {
             Tool::AddBone => tr_later("Add Bone"),
             Tool::Camera => tr_later("Camera"),
             Tool::Brush => tr_later("Brush"),
+            Tool::Mixer => tr_later("Mixer Brush"),
             Tool::Eraser => tr_later("Eraser"),
             Tool::Eyedropper => tr_later("Eyedropper"),
             Tool::PaintBucket => tr_later("Paint Bucket"),
@@ -159,6 +162,9 @@ impl Tool {
             Tool::AddBone => tr_later("Drag to draw a skeleton's bones; each new one hangs from the last"),
             Tool::Camera => tr_later("Drag to pan the camera, Shift-drag to turn it, Alt-drag to zoom"),
             Tool::Brush => tr_later("Paint on a paint layer; Alt-click picks a colour"),
+            Tool::Mixer => {
+                tr_later("Paint wet, blending with the paint under the brush; Alt-click picks a colour")
+            }
             Tool::Eraser => tr_later("Rub paint away"),
             Tool::Eyedropper => tr_later("Click to pick a colour from the stage"),
             Tool::PaintBucket => {
@@ -205,6 +211,7 @@ impl Tool {
             self,
             Tool::Brush
                 | Tool::Eraser
+                | Tool::Mixer
                 | Tool::Smudge
                 | Tool::Blur
                 | Tool::Sharpen
@@ -328,6 +335,12 @@ pub struct Editor {
     pub brush_quick_menu: Option<(f32, f32)>,
     /// Asked for from the Tool Settings: show the Brush Settings panel.
     pub show_brush_settings: bool,
+    /// The Mixer Brush's brush; its strength is how wet it is.
+    pub mixer: RetouchBrush,
+    /// How much paint the Mixer Brush holds, and how much of what it picks
+    /// up mixes into it, each 0 to 1.
+    pub mixer_load: f32,
+    pub mixer_mix: f32,
     pub smudge: RetouchBrush,
     pub blur: RetouchBrush,
     pub sharpen: RetouchBrush,
@@ -491,6 +504,9 @@ impl Editor {
             brushes: crate::brushes::BrushLibrary::default(),
             brush_quick_menu: None,
             show_brush_settings: false,
+            mixer: RetouchBrush::new(40.0, 0.5),
+            mixer_load: 0.8,
+            mixer_mix: 0.5,
             smudge: RetouchBrush::new(40.0, 0.6),
             blur: RetouchBrush::new(40.0, 0.5),
             sharpen: RetouchBrush::new(40.0, 0.5),
@@ -1169,31 +1185,36 @@ impl Editor {
     }
 
     /// Makes the current tool's brush `factor` times bigger.
-    /// Makes a brush tip from the selected pixels of the paint layer (or
-    /// all of it, with nothing selected), as Photoshop's Define Brush
-    /// Preset does: dark, opaque pixels are paint. The new brush is saved
-    /// and becomes the Brush tool's. Returns its name.
-    pub fn define_brush(&mut self) -> Result<String, String> {
-        let (_, canvas_id, _, _) =
-            self.paint_target().ok_or(tr("Select a paint layer to make a brush tip from."))?;
+    /// The selected pixels of the paint layer (or all its paint, with
+    /// nothing selected), trimmed to the paint, as straight RGBA with their
+    /// width and height: what Define Brush Preset and Define Pattern make
+    /// theirs from.
+    fn picked_pixels(&self) -> Result<(u32, u32, Vec<u8>), String> {
+        let (_, canvas_id, _, _) = self.paint_target().ok_or(tr("Select a paint layer to make it from."))?;
         let canvas = self.doc.canvas(canvas_id).ok_or(tr("The paint layer has gone."))?;
         let picked = match self.selection_on(canvas_id) {
             Some(selection) => selection.keep(canvas),
             None => canvas.clone(),
         };
-        let bounds = picked.painted_bounds().ok_or(tr("There's no paint there to make a tip from."))?;
-        let (x, y) = (bounds.min.x as i64, bounds.min.y as i64);
+        let bounds = picked.painted_bounds().ok_or(tr("There's no paint there to make it from."))?;
         let (width, height) = (bounds.width() as u32, bounds.height() as u32);
         if width.max(height) > 2500 {
-            return Err(
-                tr("A brush tip can be at most 2500 pixels across: select a smaller part.").to_owned()
-            );
+            return Err(tr("Select at most 2500 pixels across.").to_owned());
         }
-        let straight: Vec<u8> = picked
-            .read_region(x, y, width, height)
+        let straight = picked
+            .read_region(bounds.min.x as i64, bounds.min.y as i64, width, height)
             .chunks_exact(4)
             .flat_map(inkframe_core::unpremultiply)
             .collect();
+        Ok((width, height, straight))
+    }
+
+    /// Makes a brush tip from the selected pixels of the paint layer (or
+    /// all of it, with nothing selected), as Photoshop's Define Brush
+    /// Preset does: dark, opaque pixels are paint. The new brush is saved
+    /// and becomes the Brush tool's. Returns its name.
+    pub fn define_brush(&mut self) -> Result<String, String> {
+        let (width, height, straight) = self.picked_pixels()?;
         let name = tr("Custom Tip");
         let tip = inkframe_core::TipImage::from_picture(name, width, height, &straight)
             .ok_or(tr("There's nothing dark there to make a tip from: dark is paint, light isn't."))?;
@@ -1210,6 +1231,30 @@ impl Editor {
         self.brushes.picked = Some(name.clone());
         self.tool = Tool::Brush;
         Ok(name)
+    }
+
+    /// Makes a texture pattern from the selected pixels (or the paint
+    /// layer's), as Photoshop's Define Pattern does, and presses it into
+    /// the brush in use: light is the pattern's peaks, dark its hollows.
+    pub fn define_pattern(&mut self) -> Result<(), String> {
+        let (width, height, straight) = self.picked_pixels()?;
+        self.use_pattern(inkframe_core::TipImage::pattern_from_picture(
+            tr("Custom Pattern"),
+            width,
+            height,
+            &straight,
+        ));
+        Ok(())
+    }
+
+    /// Gives the brush in use (the Brush tool's, if the tool doesn't paint)
+    /// `picture` as its texture, turning the texture on.
+    pub fn use_pattern(&mut self, picture: inkframe_core::TipImage) {
+        let tool = if self.brush_for(self.tool).is_some() { self.tool } else { Tool::Brush };
+        if let Some(brush) = self.brush_of(tool) {
+            brush.texture.pattern = inkframe_core::Pattern::Picture(std::sync::Arc::new(picture));
+            brush.texture.on = true;
+        }
     }
 
     /// A fresh seed for a stroke's chance.
@@ -1238,6 +1283,7 @@ impl Editor {
             match tool {
                 Tool::Brush => &self.brush,
                 Tool::Eraser => &self.eraser,
+                Tool::Mixer => &self.mixer.brush,
                 Tool::Smudge => &self.smudge.brush,
                 Tool::Blur => &self.blur.brush,
                 Tool::Sharpen => &self.sharpen.brush,
@@ -1261,6 +1307,7 @@ impl Editor {
 
     pub fn retouch_of(&mut self, tool: Tool) -> Option<&mut RetouchBrush> {
         Some(match tool {
+            Tool::Mixer => &mut self.mixer,
             Tool::Smudge => &mut self.smudge,
             Tool::Blur => &mut self.blur,
             Tool::Sharpen => &mut self.sharpen,

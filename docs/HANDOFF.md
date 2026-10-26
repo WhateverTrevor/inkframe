@@ -59,8 +59,10 @@ and Moho's main features, and more:
   timeline's hold-to-reorder delay (`HOLD_TO_REORDER`, `SCROLL_THRESHOLD`
   in timeline.rs).
 - **Photoshop `.abr` files from the wild.** The reader is tested on files
-  built in its tests; the `desc` key names are from memory of the format.
-  `.abr` patterns (`patt`) aren't read.
+  built in its tests; the `desc` key names and the `patt` layout are from
+  memory of the format.
+- **The Mixer Brush** feel (Wet, Load, Mix) is tuned by tests, not by a
+  painter; `MIX_PER_DAB` and `DRY_PER_DAB` in retouch.rs set it.
 - **View › Language** hasn't been clicked through in a running app (no
   app-level test harness; screenshots ignore the setting by design).
 - **The Windows installer** on a real PC, copy and paste between two

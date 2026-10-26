@@ -84,6 +84,8 @@ pub enum Asked {
     /// Export the saved brushes, or one of them.
     ExportBrushes(Option<usize>),
     DefineBrush,
+    ImportPattern,
+    DefinePattern,
     ShowBrushSettings,
     ShowBrushes,
 }
@@ -125,7 +127,8 @@ pub fn brush_settings(ui: &mut egui::Ui, editor: &mut Editor, panels: &mut Brush
         ));
         ui.add_space(4.0);
     }
-    let tips = tip_choices(editor);
+    let editing = editor.brush_for(tool);
+    let choices = Choices::gather(editor, editing.as_ref());
     let Some(settings) = editor.brush_of(tool) else { return };
     // Side by side when there's room, as in Photoshop; in a narrow panel,
     // the list above the settings, so the sliders keep their width.
@@ -136,12 +139,12 @@ pub fn brush_settings(ui: &mut egui::Ui, editor: &mut Editor, panels: &mut Brush
                 section_list(ui, settings, panels);
             });
             ui.separator();
-            ui.vertical(|ui| section_controls(ui, settings, panels.section, &tips));
+            ui.vertical(|ui| section_controls(ui, settings, panels.section, &choices, &mut panels.asked));
         });
     } else {
         section_menu(ui, settings, panels);
         ui.separator();
-        section_controls(ui, settings, panels.section, &tips);
+        section_controls(ui, settings, panels.section, &choices, &mut panels.asked);
     }
     ui.add_space(8.0);
     let settings = editor.brush_for(tool).expect("a painting tool");
@@ -232,7 +235,14 @@ fn section_menu(ui: &mut egui::Ui, settings: &mut BrushSettings, panels: &mut Br
 }
 
 /// The chosen section's settings.
-fn section_controls(ui: &mut egui::Ui, settings: &mut BrushSettings, section: Section, tips: &[Tip]) {
+fn section_controls(
+    ui: &mut egui::Ui,
+    settings: &mut BrushSettings,
+    section: Section,
+    choices: &Choices,
+    asked: &mut Option<Asked>,
+) {
+    let tips = &choices.tips;
     // The tip pickers wrap, which a grid can't size, so they go above it.
     match section {
         Section::TipShape => {
@@ -251,7 +261,7 @@ fn section_controls(ui: &mut egui::Ui, settings: &mut BrushSettings, section: Se
         Section::TipShape => tip_shape(ui, settings),
         Section::Shape => shape_dynamics(ui, settings),
         Section::Scattering => scattering(ui, settings),
-        Section::Texture => texture(ui, settings),
+        Section::Texture => texture(ui, settings, &choices.patterns, asked),
         Section::Dual => dual_brush(ui, settings),
         Section::Color => color_dynamics(ui, settings),
         Section::Transfer => transfer(ui, settings),
@@ -347,20 +357,39 @@ fn scattering(ui: &mut egui::Ui, s: &mut BrushSettings) {
     control(ui, "count_control", &mut d.count_control, false);
 }
 
-fn texture(ui: &mut egui::Ui, s: &mut BrushSettings) {
+fn texture(ui: &mut egui::Ui, s: &mut BrushSettings, pictures: &[Pattern], asked: &mut Option<Asked>) {
     let t = &mut s.texture;
     ui.label(tr("Pattern"));
     ui.horizontal(|ui| {
         egui::ComboBox::from_id_salt("texture_pattern").selected_text(tr_pattern(&t.pattern)).show_ui(
             ui,
             |ui| {
-                for pattern in Pattern::MADE {
+                for pattern in Pattern::MADE.into_iter().chain(pictures.iter().cloned()) {
                     let label = tr_pattern(&pattern);
                     ui.selectable_value(&mut t.pattern, pattern, label);
                 }
             },
         );
         ui.checkbox(&mut t.invert, tr("Invert"));
+    });
+    ui.end_row();
+    ui.label("");
+    // One under the other: side by side they don't fit a narrow panel.
+    ui.vertical(|ui| {
+        if ui
+            .small_button(tr("Import…"))
+            .on_hover_text(tr("A pattern from a picture: light is raised, dark is hollow"))
+            .clicked()
+        {
+            *asked = Some(Asked::ImportPattern);
+        }
+        if ui
+            .small_button(tr("From Selection"))
+            .on_hover_text(tr("A pattern from the selected pixels of a paint layer"))
+            .clicked()
+        {
+            *asked = Some(Asked::DefinePattern);
+        }
     });
     ui.end_row();
     ui.label("");
@@ -570,22 +599,39 @@ fn compass(ui: &mut egui::Ui, angle: &mut f32, roundness: &mut f32) {
     response.on_hover_text(tr("Drag the arrow to turn the tip, or a dot to squash it"));
 }
 
-/// Every tip to choose from: round, then each sampled tip among the
-/// brushes (once each, by name).
-fn tip_choices(editor: &Editor) -> Vec<Tip> {
-    let mut tips = vec![Tip::Round];
-    for (preset, _) in editor.brushes.all() {
-        for tip in [&preset.settings.tip, &preset.settings.dual.tip] {
-            if let Tip::Sampled(image) = tip
-                && !tips.iter().any(
-                    |t| matches!(t, Tip::Sampled(i) if i.name == image.name && i.amounts == image.amounts),
-                )
+/// The tips and picture patterns to choose from, gathered from the
+/// brushes (each once) and the brush being edited.
+struct Choices {
+    /// Round first, then each sampled tip.
+    tips: Vec<Tip>,
+    patterns: Vec<Pattern>,
+}
+
+impl Choices {
+    fn gather(editor: &Editor, editing: Option<&BrushSettings>) -> Self {
+        let mut choices = Self { tips: vec![Tip::Round], patterns: Vec::new() };
+        let brushes = editor.brushes.all().map(|(preset, _)| &preset.settings).chain(editing);
+        for settings in brushes {
+            for tip in [&settings.tip, &settings.dual.tip] {
+                if let Tip::Sampled(image) = tip
+                    && !choices.tips.iter().any(|t| matches!(t, Tip::Sampled(i) if same(i, image)))
+                {
+                    choices.tips.push(tip.clone());
+                }
+            }
+            if let Pattern::Picture(image) = &settings.texture.pattern
+                && !choices.patterns.iter().any(|p| matches!(p, Pattern::Picture(i) if same(i, image)))
             {
-                tips.push(tip.clone());
+                choices.patterns.push(settings.texture.pattern.clone());
             }
         }
+        choices
     }
-    tips
+}
+
+/// Whether two pictures are the same one.
+fn same(a: &inkframe_core::TipImage, b: &inkframe_core::TipImage) -> bool {
+    std::ptr::eq(a, b) || (a.name == b.name && a.amounts == b.amounts)
 }
 
 /// A row of tips to pick from, the picked one outlined.

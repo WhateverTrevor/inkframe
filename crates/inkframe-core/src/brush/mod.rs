@@ -47,6 +47,7 @@ pub use tip::{Tip, TipImage};
 use crate::color::Color;
 use crate::geometry::Point;
 use crate::paint::{Canvas, TILE};
+use crate::parallel::{PARALLEL_PIXELS, in_parallel};
 use crate::selection::Selection;
 
 /// How a brush paints. Sizes are in canvas pixels, angles in degrees
@@ -802,32 +803,10 @@ impl BrushStroke {
     }
 }
 
-/// Pixels a stamp must cover before its work is shared across the
-/// machine's cores: a small dab is quicker done here than threads started.
-const PARALLEL_PIXELS: u32 = 512 * 512;
-
 /// Whether a stamp over `area` (left, top, right, bottom) is big enough to
-/// share out.
+/// share out across the cores.
 fn worth_sharing((x0, y0, x1, y1): (u32, u32, u32, u32)) -> bool {
-    (x1 - x0) * (y1 - y0) >= PARALLEL_PIXELS
-}
-
-/// Runs `work` on each job, across the machine's cores if `share` (a big
-/// brush's dab spans dozens of tiles), or on this thread.
-fn in_parallel<T: Send>(share: bool, mut jobs: Vec<T>, work: impl Fn(T) + Sync) {
-    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(jobs.len());
-    if !share || threads < 2 {
-        jobs.into_iter().for_each(work);
-        return;
-    }
-    let per_thread = jobs.len().div_ceil(threads);
-    let work = &work;
-    std::thread::scope(|scope| {
-        while !jobs.is_empty() {
-            let share: Vec<T> = jobs.drain(..per_thread.min(jobs.len())).collect();
-            scope.spawn(move || share.into_iter().for_each(work));
-        }
-    });
+    ((x1 - x0) * (y1 - y0)) as usize >= PARALLEL_PIXELS
 }
 
 /// The tiles a pixel area (left, top, right, bottom) touches.

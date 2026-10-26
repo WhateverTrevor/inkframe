@@ -222,7 +222,7 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
         _ => {}
     }
     egui::Grid::new("paint_tool").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-        if matches!(tool, Tool::Brush | Tool::PaintBucket | Tool::Gradient | Tool::Eyedropper) {
+        if matches!(tool, Tool::Brush | Tool::Mixer | Tool::PaintBucket | Tool::Gradient | Tool::Eyedropper) {
             ui.label(tr("Colour"));
             color_button(ui, &mut editor.paint_color);
             ui.end_row();
@@ -307,11 +307,24 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
                         (tr("Exposure"), tr("How much each pass lightens or darkens"))
                     }
                     Tool::CloneStamp => (tr("Opacity"), tr("How strongly the copy covers what's there")),
+                    Tool::Mixer => {
+                        (tr("Wet"), tr("How much of the paint under the brush it picks up and smears"))
+                    }
                     _ => (tr("Strength"), tr("How strongly each pass works")),
                 };
                 if let Some(retouch) = editor.retouch_of(tool) {
                     ui.label(label).on_hover_text(hint);
                     ui.add(percent(&mut retouch.strength));
+                    ui.end_row();
+                }
+                if tool == Tool::Mixer {
+                    ui.label(tr("Load"))
+                        .on_hover_text(tr("How much paint the brush holds: with little, it runs dry"));
+                    ui.add(percent(&mut editor.mixer_load));
+                    ui.end_row();
+                    ui.label(tr("Mix"))
+                        .on_hover_text(tr("How much of the colour it picks up mixes into its paint"));
+                    ui.add(percent(&mut editor.mixer_mix));
                     ui.end_row();
                 }
                 if matches!(tool, Tool::Dodge | Tool::Burn) {

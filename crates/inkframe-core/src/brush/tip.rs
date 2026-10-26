@@ -95,6 +95,27 @@ impl TipImage {
         Some(Self::new(name, w, h, trimmed.collect()))
     }
 
+    /// A texture's pattern from a picture's pixels (straight RGBA, row by
+    /// row), all of it, as Photoshop's Define Pattern takes one: light is a
+    /// peak and dark a hollow (kept, like a tip, as dark being paint), with
+    /// see-through parts as white paper. A picture over `PATTERN_SIDE`
+    /// across is halved until it fits, so brushes stay small to save.
+    pub fn pattern_from_picture(name: impl Into<String>, width: u32, height: u32, rgba: &[u8]) -> Self {
+        let mut amounts: Vec<u8> = rgba
+            .chunks_exact(4)
+            .map(|p| {
+                let luma = (p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114) / 1000;
+                let over_white = (luma * p[3] as u32 + 255 * (255 - p[3] as u32)) / 255;
+                (255 - over_white) as u8
+            })
+            .collect();
+        let (mut w, mut h) = (width.max(1), height.max(1));
+        while w.max(h) > PATTERN_SIDE {
+            (amounts, w, h) = halved(&amounts, w, h);
+        }
+        Self::new(name, w, h, amounts)
+    }
+
     /// How much paint the tip puts down at (`u`, `v`), each 0 to 1 across
     /// it, for a tip drawn `across` pixels wide: from the copy nearest that
     /// size, blended between its pixels.
@@ -136,15 +157,7 @@ impl TipImage {
             let mut levels: Vec<(u32, u32, Vec<u8>)> = Vec::new();
             let (mut w, mut h, mut amounts) = (self.width, self.height, self.amounts.clone());
             while w > 4 && h > 4 {
-                let (nw, nh) = (w / 2, h / 2);
-                let half: Vec<u8> = (0..nh)
-                    .flat_map(|y| (0..nw).map(move |x| (x, y)))
-                    .map(|(x, y)| {
-                        let at = |dx: u32, dy: u32| amounts[((y * 2 + dy) * w + x * 2 + dx) as usize] as u32;
-                        ((at(0, 0) + at(1, 0) + at(0, 1) + at(1, 1)) / 4) as u8
-                    })
-                    .collect();
-                (w, h, amounts) = (nw, nh, half);
+                (amounts, w, h) = halved(&amounts, w, h);
                 levels.push((w, h, amounts.clone()));
             }
             levels
@@ -174,6 +187,23 @@ impl TipImage {
         buffer.truncate((info.width * info.height) as usize);
         Ok(Self::new(name, info.width, info.height, buffer))
     }
+}
+
+/// The longest side a pattern made from a picture keeps.
+const PATTERN_SIDE: u32 = 1024;
+
+/// `amounts` (`w`×`h`) at half the size, each pixel the average of four.
+fn halved(amounts: &[u8], w: u32, h: u32) -> (Vec<u8>, u32, u32) {
+    let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
+    let at = |x: u32, y: u32| amounts[(y.min(h - 1) * w + x.min(w - 1)) as usize] as u32;
+    let half = (0..nh)
+        .flat_map(|y| (0..nw).map(move |x| (x, y)))
+        .map(|(x, y)| {
+            ((at(x * 2, y * 2) + at(x * 2 + 1, y * 2) + at(x * 2, y * 2 + 1) + at(x * 2 + 1, y * 2 + 1)) / 4)
+                as u8
+        })
+        .collect();
+    (half, nw, nh)
 }
 
 /// How a sampled tip is saved: its name and its picture as a PNG, in
@@ -237,6 +267,18 @@ mod tests {
         let tip = TipImage::new("checks", 64, 64, amounts);
         let small = tip.sample(0.3, 0.3, 8.0);
         assert!((0.4..0.6).contains(&small), "{small}");
+    }
+
+    #[test]
+    fn a_picture_becomes_a_whole_pattern_with_light_as_peaks() {
+        // White, black, clear, half-clear black: nothing trimmed.
+        let rgba = [255, 255, 255, 255, 0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 128];
+        let pattern = TipImage::pattern_from_picture("p", 2, 2, &rgba);
+        assert_eq!((pattern.width, pattern.height), (2, 2));
+        assert_eq!(pattern.amounts[..3], [0, 255, 0], "white is a peak, black a hollow, clear is paper");
+        assert!((120..=135).contains(&pattern.amounts[3]));
+        let big = TipImage::pattern_from_picture("big", 3000, 10, &vec![128; 3000 * 10 * 4]);
+        assert!(big.width <= 1024 && big.height >= 1, "{}×{}", big.width, big.height);
     }
 
     #[test]

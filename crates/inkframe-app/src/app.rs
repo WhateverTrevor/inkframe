@@ -116,6 +116,8 @@ pub(crate) enum Command {
     HarderBrush,
     /// Edit › Define Brush Preset: a brush tip from the selected pixels.
     DefineBrush,
+    /// Edit › Define Pattern: a brush texture from the selected pixels.
+    DefinePattern,
     ShowBrushSettings,
     ShowBrushes,
     /// Opens the Lip Sync window for the selected layer.
@@ -1000,6 +1002,11 @@ impl InkframeApp {
                 Ok(_) => self.layout.reveal(Kind::Brushes),
                 Err(problem) => show_error(tr("Couldn't define a brush"), &problem),
             },
+            Command::DefinePattern => {
+                if let Err(problem) = editor.define_pattern() {
+                    show_error(tr("Couldn't define a pattern"), &problem);
+                }
+            }
             Command::ShowBrushSettings => self.layout.reveal(Kind::BrushSettings),
             Command::ShowBrushes => self.layout.reveal(Kind::Brushes),
             Command::PreviousDrawing => editor.cycle_drawing(-1),
@@ -1423,6 +1430,7 @@ impl InkframeApp {
                 ui.separator();
                 let painting = self.editor.paint_target().is_some();
                 item(ui, tr("Define Brush Preset…"), None, Command::DefineBrush, painting);
+                item(ui, tr("Define Pattern…"), None, Command::DefinePattern, painting);
                 item(ui, tr("Brushes"), None, Command::ShowBrushes, true);
                 item(ui, tr("Brush Settings"), None, Command::ShowBrushSettings, true);
             });
@@ -1993,6 +2001,34 @@ impl InkframeApp {
             Some(Asked::DefineBrush) => {
                 if let Err(problem) = self.editor.define_brush() {
                     show_error(tr("Couldn't define a brush"), &problem);
+                }
+            }
+            Some(Asked::DefinePattern) => {
+                if let Err(problem) = self.editor.define_pattern() {
+                    show_error(tr("Couldn't define a pattern"), &problem);
+                }
+            }
+            Some(Asked::ImportPattern) => {
+                let Some(path) = rfd::FileDialog::new()
+                    .set_title(tr("Import a picture as a pattern"))
+                    .add_filter(tr("Images"), &IMAGE_EXTENSIONS)
+                    .pick_file()
+                else {
+                    return;
+                };
+                match inkframe_render::read_rgba(&path) {
+                    Ok((width, height, rgba)) => {
+                        let name = path
+                            .file_stem()
+                            .map_or_else(|| tr("Pattern").to_owned(), |s| s.to_string_lossy().into_owned());
+                        self.editor.use_pattern(inkframe_core::TipImage::pattern_from_picture(
+                            name, width, height, &rgba,
+                        ));
+                    }
+                    Err(problem) => show_error(
+                        &tr_args("Couldn't import {file}", &[("file", &file_name(&path))]),
+                        &problem,
+                    ),
                 }
             }
             Some(Asked::ImportBrushes) => {

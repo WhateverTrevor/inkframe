@@ -156,13 +156,21 @@ impl Canvas {
     /// A rectangle of pixels, `width`×`height` from (`x`, `y`), row by row,
     /// premultiplied RGBA. Parts outside the canvas come back transparent.
     pub fn read_region(&self, x: i64, y: i64, width: u32, height: u32) -> Vec<u8> {
-        let mut pixels = vec![0; (width * height * 4) as usize];
+        let mut pixels = Vec::new();
+        self.read_region_into(x, y, width, height, &mut pixels);
+        pixels
+    }
+
+    /// [`Self::read_region`] into `pixels`, reusing its room: for brushes,
+    /// which read a big square for every dab.
+    pub fn read_region_into(&self, x: i64, y: i64, width: u32, height: u32, pixels: &mut Vec<u8>) {
+        pixels.clear();
+        pixels.resize((width * height * 4) as usize, 0);
         self.each_tile_span(x, y, width, height, |tile_at, from, to, count| {
             if let Some(tile) = self.tile(tile_at) {
                 pixels[to..to + count * 4].copy_from_slice(&tile[from..from + count * 4]);
             }
         });
-        pixels
     }
 
     /// Writes a rectangle read by [`Canvas::read_region`] back, after

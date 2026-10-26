@@ -122,7 +122,7 @@ pub fn tool_key(tool: Tool) -> Key {
         Tool::Bone | Tool::AddBone => Key::K,
         // Animate's.
         Tool::Camera => Key::C,
-        Tool::Brush => Key::B,
+        Tool::Brush | Tool::Mixer => Key::B,
         Tool::Eraser => Key::E,
         Tool::Eyedropper => Key::I,
     }

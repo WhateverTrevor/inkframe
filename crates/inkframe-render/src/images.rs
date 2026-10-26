@@ -104,6 +104,14 @@ pub fn image_size(path: &Path) -> Result<(u32, u32), String> {
     image::image_dimensions(path).map_err(|e| describe(path, e))
 }
 
+/// An image file's pixels, straight (not premultiplied) RGBA, row by row,
+/// with its width and height: for turning a picture into something else,
+/// such as a brush texture.
+pub fn read_rgba(path: &Path) -> Result<(u32, u32, Vec<u8>), String> {
+    let rgba = image::open(path).map_err(|e| describe(path, e))?.into_rgba8();
+    Ok((rgba.width(), rgba.height(), rgba.into_raw()))
+}
+
 fn decode(path: &Path) -> Result<Pixmap, String> {
     let rgba = image::open(path).map_err(|e| describe(path, e))?.into_rgba8();
     let size = IntSize::from_wh(rgba.width(), rgba.height()).ok_or("the image is empty")?;

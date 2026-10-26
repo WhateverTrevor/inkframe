@@ -13,15 +13,15 @@
 //!   one by one. A file with tips and no descriptions gives a plain brush
 //!   for each tip.
 //!
-//! Patterns (`patt`), for textures, aren't read yet: a brush whose texture
-//! uses one gets Inkframe's paper texture instead, at the same settings.
+//! Patterns (`patt`) are read too, for the brushes' textures; a texture
+//! whose pattern isn't in the file gets Inkframe's paper instead.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::brush::{
-    Blend, BrushPreset, BrushSettings, ColorDynamics, Control, DualBrush, Scattering, ShapeDynamics, Texture,
-    Tip, TipImage, Transfer,
+    Blend, BrushPreset, BrushSettings, ColorDynamics, Control, DualBrush, Pattern, Scattering, ShapeDynamics,
+    Texture, Tip, TipImage, Transfer,
 };
 
 /// Reads a brush file's brushes. `stem` names those that have no name of
@@ -75,7 +75,7 @@ fn read_old(r: &mut Reader, version: u16, stem: &str) -> Result<Vec<BrushPreset>
                     if version == 2 { r.unicode()?.filter(|n| !n.is_empty()).unwrap_or(name) } else { name };
                 r.skip(1 + 8)?; // antialiasing, short bounds
                 let tip = read_sample(r, &name)?;
-                presets.push(BrushPreset::new(name, plain_sampled(tip, spacing)));
+                presets.push(BrushPreset::new(name, plain_sampled(Arc::new(tip), spacing)));
             }
             _ => {}
         }
@@ -121,10 +121,10 @@ fn read_sample(r: &mut Reader, name: &str) -> Result<TipImage, String> {
 
 /// A plain brush with a sampled tip, as Photoshop makes one from a picture:
 /// its own size, spacing as given.
-fn plain_sampled(tip: TipImage, spacing: f32) -> BrushSettings {
+fn plain_sampled(tip: Arc<TipImage>, spacing: f32) -> BrushSettings {
     let size = tip.width.max(tip.height) as f32;
     BrushSettings {
-        tip: Tip::Sampled(Arc::new(tip)),
+        tip: Tip::Sampled(tip),
         size,
         spacing: if spacing > 0.0 { spacing } else { 0.25 },
         shape: ShapeDynamics::default(),
@@ -135,7 +135,8 @@ fn plain_sampled(tip: TipImage, spacing: f32) -> BrushSettings {
 /// Versions 6 to 10: tagged sections.
 fn read_tagged(r: &mut Reader, stem: &str) -> Result<Vec<BrushPreset>, String> {
     let subversion = r.u16()?;
-    let mut tips: Vec<(String, TipImage)> = Vec::new();
+    let mut tips: Vec<(String, Arc<TipImage>)> = Vec::new();
+    let mut patterns = Vec::new();
     let mut descriptor = None;
     while r.left() >= 12 {
         if r.take(4)? != b"8BIM" {
@@ -155,11 +156,12 @@ fn read_tagged(r: &mut Reader, stem: &str) -> Result<Vec<BrushPreset>, String> {
                     let header = if subversion == 1 { 47 } else { 301 };
                     r.skip(header - 1 - id_length.min(header - 1))?;
                     if let Ok(tip) = read_sample(r, &format!("{stem} {}", tips.len() + 1)) {
-                        tips.push((id, tip));
+                        tips.push((id, Arc::new(tip)));
                     }
                     r.at = next.min(end);
                 }
             }
+            b"patt" => patterns = read_patterns(r, end),
             b"desc" => {
                 let mut d = Reader::new(r.take(length)?);
                 d.skip(4)?; // the descriptor's version
@@ -173,7 +175,11 @@ fn read_tagged(r: &mut Reader, stem: &str) -> Result<Vec<BrushPreset>, String> {
             r.at += 1;
         }
     }
-    let presets = descriptor.as_ref().map(|d| presets_from(d, &tips, stem)).unwrap_or_default();
+    let found = Found {
+        tips: tips.iter().map(|(id, tip)| (id.clone(), tip.clone())).collect(),
+        patterns: patterns.into_iter().collect(),
+    };
+    let presets = descriptor.as_ref().map(|d| presets_from(d, &found, stem)).unwrap_or_default();
     if !presets.is_empty() {
         return Ok(presets);
     }
@@ -184,10 +190,16 @@ fn read_tagged(r: &mut Reader, stem: &str) -> Result<Vec<BrushPreset>, String> {
         .collect())
 }
 
+/// The sampled tips and patterns a file holds, by their ids, for its
+/// descriptions to refer to.
+struct Found {
+    tips: HashMap<String, Arc<TipImage>>,
+    patterns: HashMap<String, Arc<TipImage>>,
+}
+
 /// The brushes an action descriptor describes.
-fn presets_from(root: &Descriptor, tips: &[(String, TipImage)], stem: &str) -> Vec<BrushPreset> {
+fn presets_from(root: &Descriptor, found: &Found, stem: &str) -> Vec<BrushPreset> {
     let Some(Value::List(brushes)) = root.get("Brsh") else { return Vec::new() };
-    let tip_by_id: HashMap<&str, &TipImage> = tips.iter().map(|(id, tip)| (id.as_str(), tip)).collect();
     brushes
         .iter()
         .enumerate()
@@ -195,16 +207,16 @@ fn presets_from(root: &Descriptor, tips: &[(String, TipImage)], stem: &str) -> V
             let Value::Descriptor(d) = value else { return None };
             let name =
                 d.text("Nm  ").filter(|n| !n.is_empty()).unwrap_or_else(|| format!("{stem} {}", i + 1));
-            Some(BrushPreset::new(name, settings_from(d, &tip_by_id)))
+            Some(BrushPreset::new(name, settings_from(d, found)))
         })
         .collect()
 }
 
 /// One brush's settings from its description.
-fn settings_from(d: &Descriptor, tips: &HashMap<&str, &TipImage>) -> BrushSettings {
+fn settings_from(d: &Descriptor, found: &Found) -> BrushSettings {
     let mut s = BrushSettings { shape: ShapeDynamics::default(), ..BrushSettings::default() };
     if let Some(Value::Descriptor(tip)) = d.get("Brsh") {
-        tip_shape(tip, tips, &mut s.tip, &mut s.size, &mut s.spacing);
+        tip_shape(tip, &found.tips, &mut s.tip, &mut s.size, &mut s.spacing);
         s.angle = tip.number("Angl").unwrap_or(0.0);
         s.roundness = tip.fraction("Rndn").unwrap_or(1.0).clamp(0.01, 1.0);
         s.hardness = tip.fraction("Hrdn").unwrap_or(1.0).clamp(0.0, 1.0);
@@ -273,14 +285,14 @@ fn settings_from(d: &Descriptor, tips: &HashMap<&str, &TipImage>) -> BrushSettin
         minimum_depth: d.fraction("minimumDepth").unwrap_or(0.0),
         depth_jitter,
         depth_control,
-        ..Texture::default()
+        pattern: pattern_of(d, found),
     };
 
     if let Some(Value::Descriptor(dual)) = d.get("dualBrush") {
         let mut tip = Tip::Round;
         let (mut size, mut spacing) = (25.0, 0.25);
         if let Some(Value::Descriptor(t)) = dual.get("Brsh") {
-            tip_shape(t, tips, &mut tip, &mut size, &mut spacing);
+            tip_shape(t, &found.tips, &mut tip, &mut size, &mut spacing);
         }
         let (scatter, _) = variation(dual, "scatterDynamics");
         s.dual = DualBrush {
@@ -305,18 +317,13 @@ fn settings_from(d: &Descriptor, tips: &HashMap<&str, &TipImage>) -> BrushSettin
 /// diameter and spacing.
 fn tip_shape(
     t: &Descriptor,
-    tips: &HashMap<&str, &TipImage>,
+    tips: &HashMap<String, Arc<TipImage>>,
     tip: &mut Tip,
     size: &mut f32,
     spacing: &mut f32,
 ) {
-    if let Some(found) = t.text("sampledData").and_then(|id| tips.get(id.as_str()).copied()) {
-        *tip = Tip::Sampled(Arc::new(TipImage::new(
-            found.name.clone(),
-            found.width,
-            found.height,
-            found.amounts.clone(),
-        )));
+    if let Some(found) = t.text("sampledData").and_then(|id| tips.get(&id)) {
+        *tip = Tip::Sampled(found.clone());
     }
     if let Some(diameter) = t.number("Dmtr") {
         *size = diameter.max(1.0);
@@ -324,6 +331,94 @@ fn tip_shape(
     if let Some(gap) = t.fraction("Spcn") {
         *spacing = gap.max(0.01);
     }
+}
+
+/// The pattern a brush's texture uses: the file's own, found by its id (or
+/// failing that its name), else Inkframe's paper.
+fn pattern_of(d: &Descriptor, found: &Found) -> Pattern {
+    let Some(Value::Descriptor(t)) = d.get("Txtr") else { return Pattern::Paper };
+    let by_id = t.text("Idnt").and_then(|id| found.patterns.get(&id));
+    let by_name = || {
+        let name = t.text("Nm  ")?;
+        found.patterns.values().find(|p| p.name == name)
+    };
+    by_id.or_else(by_name).map_or(Pattern::Paper, |p| Pattern::Picture(p.clone()))
+}
+
+/// The `patt` section's patterns, by id: greyscale pictures (colour ones
+/// greyed), kept as Pattern::Picture wants them, dark as paint, so a
+/// pattern's dark parts are its hollows. The layout is Photoshop's pattern
+/// format: a header with the colour mode, size, name and id, then each
+/// channel as a "virtual memory array".
+fn read_patterns(r: &mut Reader, end: usize) -> Vec<(String, Arc<TipImage>)> {
+    let mut patterns = Vec::new();
+    while r.at + 4 <= end {
+        let Ok(length) = r.u32() else { break };
+        let next = (r.at + (length as usize).div_ceil(4) * 4).min(end);
+        if let Ok(found) = read_pattern(r) {
+            patterns.push(found);
+        }
+        r.at = next;
+    }
+    patterns
+}
+
+fn read_pattern(r: &mut Reader) -> Result<(String, Arc<TipImage>), String> {
+    r.skip(4)?; // version
+    let mode = r.u32()?;
+    let (height, width) = (r.u16()? as u32, r.u16()? as u32);
+    let name = r.unicode()?.unwrap_or_default();
+    let id_length = r.u8()? as usize;
+    let id = String::from_utf8_lossy(r.take(id_length)?).into_owned();
+    if mode == 2 {
+        r.skip(768)?; // an indexed picture's colour table
+    }
+    r.skip(4 + 4 + 16)?; // the array list's version, length and bounds
+    let channels = r.u32()?;
+    // Grey has one channel; colour is averaged over its first three.
+    let wanted = if mode == 1 { 1 } else { channels.min(3) };
+    let mut planes: Vec<Vec<u8>> = Vec::new();
+    for _ in 0..channels {
+        if r.u32()? == 0 {
+            continue; // not written
+        }
+        let length = r.u32()? as usize;
+        if length == 0 {
+            continue;
+        }
+        let start = r.at;
+        r.skip(4 + 16)?; // depth and bounds
+        let depth = r.u16()?;
+        let compressed = r.u8()? == 1;
+        let row = (width * (depth as u32 / 8).max(1)) as usize;
+        let plane = if compressed {
+            let lengths: Vec<usize> =
+                (0..height).map(|_| r.u16().map(|n| n as usize)).collect::<Result<_, _>>()?;
+            let mut out = Vec::with_capacity(row * height as usize);
+            for length in lengths {
+                out.extend(
+                    crate::psd::unpack_bits(r.take(length)?, row).map_err(|_| "a pattern is cut short")?,
+                );
+            }
+            out
+        } else {
+            r.take(row * height as usize)?.to_vec()
+        };
+        // 16-bit channels keep their top byte.
+        let step = (depth as usize / 8).max(1);
+        planes.push(plane.chunks(step).map(|v| v[0]).collect());
+        r.at = start + length;
+        if planes.len() == wanted as usize {
+            break;
+        }
+    }
+    if planes.is_empty() || planes.iter().any(|p| p.len() < (width * height) as usize) {
+        return Err("a pattern has no picture".into());
+    }
+    let amounts = (0..(width * height) as usize)
+        .map(|i| 255 - (planes.iter().map(|p| p[i] as u32).sum::<u32>() / planes.len() as u32) as u8)
+        .collect();
+    Ok((id, Arc::new(TipImage::new(name, width, height, amounts))))
 }
 
 /// A variation (`brVr`) description: its jitter and its control.
@@ -722,6 +817,44 @@ mod tests {
         assert!(s.shape.on);
         assert_eq!((s.shape.size_jitter, s.shape.size_control), (0.4, Control::PenPressure));
         assert!(s.scattering.on && s.wet_edges && !s.build_up);
+    }
+
+    #[test]
+    fn a_brushs_texture_uses_the_files_own_pattern() {
+        // A 2×2 grey pattern: black, white, white, black.
+        let id = "pattern-1";
+        let mut channel = Writer::default();
+        channel.u32(8).bytes(&[0; 16]).u16(8).u8(0).bytes(&[0, 255, 255, 0]);
+        let mut pattern = Writer::default();
+        pattern.u32(1).u32(1).u16(2).u16(2).unicode("Checks").u8(id.len() as u8).bytes(id.as_bytes());
+        pattern.u32(3).u32(0).bytes(&[0; 16]).u32(1);
+        pattern.u32(1).u32(channel.0.len() as u32).bytes(&channel.0);
+        let mut patt = Writer::default();
+        patt.u32(pattern.0.len() as u32).bytes(&pattern.0);
+        while patt.0.len() % 4 != 0 {
+            patt.u8(0);
+        }
+
+        let mut desc = Writer::default();
+        desc.u32(16).start(1).id("Brsh").bytes(b"VlLs").u32(1).bytes(b"Objc").start(3);
+        desc.id("Nm  ").bytes(b"TEXT").unicode("Textured");
+        desc.flag("useTexture", true);
+        desc.id("Txtr").bytes(b"Objc").start(2);
+        desc.id("Nm  ").bytes(b"TEXT").unicode("Checks").id("Idnt").bytes(b"TEXT").unicode(id);
+
+        let mut w = Writer::default();
+        w.u16(10).u16(2);
+        w.bytes(b"8BIM").bytes(b"patt").u32(patt.0.len() as u32).bytes(&patt.0);
+        w.bytes(b"8BIM").bytes(b"desc").u32(desc.0.len() as u32).bytes(&desc.0);
+        let presets = read(&w.0, "Set").unwrap();
+        let texture = &presets[0].settings.texture;
+        assert!(texture.on);
+        let Pattern::Picture(picture) = &texture.pattern else {
+            panic!("the file's pattern: {:?}", texture.pattern)
+        };
+        assert_eq!(picture.name, "Checks");
+        // Kept dark as paint, so white is a peak.
+        assert_eq!(picture.amounts, [255, 0, 0, 255]);
     }
 
     #[test]

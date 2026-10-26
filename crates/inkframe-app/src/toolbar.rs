@@ -270,6 +270,19 @@ pub(crate) fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) 
             painter.line_segment([at(0.8, 0.0), at(0.8, 0.3)], stroke);
             painter.line_segment([at(0.65, 0.15), at(0.95, 0.15)], stroke);
         }
+        Tool::Mixer => {
+            // The brush, over a drop of paint being mixed in.
+            painter
+                .line_segment([at(0.95, 0.05), at(0.6, 0.4)], Stroke::new(stroke.width + 1.0, stroke.color));
+            let bristles = [(0.52, 0.42), (0.6, 0.5), (0.42, 0.68), (0.32, 0.6)];
+            painter.add(egui::Shape::convex_polygon(
+                bristles.iter().map(|&(x, y)| at(x, y)).collect(),
+                stroke.color,
+                Stroke::NONE,
+            ));
+            painter.circle_stroke(at(0.25, 0.8), r.width() * 0.17, stroke);
+            painter.circle_filled(at(0.25, 0.8), r.width() * 0.08, stroke.color.gamma_multiply(0.6));
+        }
         Tool::Brush => {
             // A round brush, handle up and to the right, its bristles
             // coming to a point at the bottom left.
