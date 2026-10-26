@@ -82,8 +82,9 @@ pub use audio::{AudioId, AudioTrack};
 pub use blend::BlendMode;
 pub use boolean::{Area, CombineError, ShapeOp, area_of, break_apart, combine};
 pub use brush::{
-    Blend, BrushMode, BrushPreset, BrushSettings, BrushStroke, ColorDynamics, Control, DabInput, DabPath,
-    DualBrush, Pattern, Pen, Scattering, ShapeDynamics, Texture, Tip, TipImage, Transfer,
+    Blend, BrushMode, BrushPose, BrushPreset, BrushSettings, BrushStroke, ColorDynamics, Control, DabInput,
+    DabPath, DualBrush, Pattern, PatternPaint, Pen, Scattering, ShapeDynamics, Symmetry, Texture, Tip,
+    TipImage, Transfer,
 };
 pub use camera::FOCAL_LENGTH;
 pub use channel::{Animatable, AnyChannel, Bend, Channel, Key, MotionCurve, Tween};

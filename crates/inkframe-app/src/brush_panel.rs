@@ -37,6 +37,7 @@ pub enum Section {
     Dual,
     Color,
     Transfer,
+    Pose,
 }
 
 impl Section {
@@ -49,6 +50,7 @@ impl Section {
             Section::Dual => tr("Dual Brush"),
             Section::Color => tr("Color Dynamics"),
             Section::Transfer => tr("Transfer"),
+            Section::Pose => tr("Brush Pose"),
         }
     }
 
@@ -62,6 +64,7 @@ impl Section {
             Section::Dual => &mut s.dual.on,
             Section::Color => &mut s.color.on,
             Section::Transfer => &mut s.transfer.on,
+            Section::Pose => &mut s.pose.on,
         })
     }
 }
@@ -100,6 +103,7 @@ impl BrushPanels {
             "dual" => Section::Dual,
             "color" => Section::Color,
             "transfer" => Section::Transfer,
+            "pose" => Section::Pose,
             _ => Section::TipShape,
         };
     }
@@ -113,13 +117,13 @@ fn brush_tool(editor: &Editor) -> Tool {
 /// Whether the tool paints with the whole brush engine (the retouching
 /// tools use only the tip's size and hardness).
 fn full_engine(tool: Tool) -> bool {
-    matches!(tool, Tool::Brush | Tool::Eraser)
+    matches!(tool, Tool::Brush | Tool::Eraser | Tool::PatternStamp)
 }
 
 /// The Brush Settings panel.
 pub fn brush_settings(ui: &mut egui::Ui, editor: &mut Editor, panels: &mut BrushPanels) {
     let tool = brush_tool(editor);
-    let paint = (tool == Tool::Brush).then_some(editor.paint_color);
+    let paint = (tool != Tool::Eraser).then_some(editor.paint_color);
     if !full_engine(tool) {
         ui.weak(tr_args(
             "The {tool} tool uses the tip's size, hardness and spacing; the other sections are for the Brush and Eraser.",
@@ -165,6 +169,7 @@ fn section_list(ui: &mut egui::Ui, settings: &mut BrushSettings, panels: &mut Br
         Section::Dual,
         Section::Color,
         Section::Transfer,
+        Section::Pose,
     ] {
         ui.horizontal(|ui| {
             match section.switch(settings) {
@@ -196,7 +201,7 @@ fn section_list(ui: &mut egui::Ui, settings: &mut BrushSettings, panels: &mut Br
 /// The sections as a menu, for a narrow panel: the chosen one's switch
 /// beside it, and Noise, Wet Edges and Build-up below.
 fn section_menu(ui: &mut egui::Ui, settings: &mut BrushSettings, panels: &mut BrushPanels) {
-    const SECTIONS: [Section; 7] = [
+    const SECTIONS: [Section; 8] = [
         Section::TipShape,
         Section::Shape,
         Section::Scattering,
@@ -204,6 +209,7 @@ fn section_menu(ui: &mut egui::Ui, settings: &mut BrushSettings, panels: &mut Br
         Section::Dual,
         Section::Color,
         Section::Transfer,
+        Section::Pose,
     ];
     ui.horizontal(|ui| {
         egui::ComboBox::from_id_salt("brush_section_menu")
@@ -265,6 +271,7 @@ fn section_controls(
         Section::Dual => dual_brush(ui, settings),
         Section::Color => color_dynamics(ui, settings),
         Section::Transfer => transfer(ui, settings),
+        Section::Pose => pose(ui, settings),
     });
 }
 
@@ -499,6 +506,32 @@ fn transfer(ui: &mut egui::Ui, s: &mut BrushSettings) {
     ui.end_row();
 }
 
+fn pose(ui: &mut egui::Ui, s: &mut BrushSettings) {
+    let p = &mut s.pose;
+    ui.label("");
+    ui.weak(tr("A pen's pose to paint with when there's no pen, or always with Override."));
+    ui.end_row();
+    ui.label(tr("Tilt X")).on_hover_text(tr("Leaning left (−) or right (+)"));
+    ui.add(egui::Slider::new(&mut p.tilt.0, -1.0..=1.0));
+    ui.end_row();
+    ui.label(tr("Tilt Y")).on_hover_text(tr("Leaning away (−) or towards you (+)"));
+    ui.add(egui::Slider::new(&mut p.tilt.1, -1.0..=1.0));
+    ui.end_row();
+    ui.label("");
+    ui.checkbox(&mut p.override_tilt, tr("Override Tilt"));
+    ui.end_row();
+    ui.label(tr("Rotation"))
+        .on_hover_text(tr("Turns the tip, as turning a pen in the fingers turns a flat brush"));
+    ui.add(egui::Slider::new(&mut p.rotation, -180.0..=180.0).suffix("°"));
+    ui.end_row();
+    ui.label(tr("Pressure"));
+    ui.add(percent(&mut p.pressure));
+    ui.end_row();
+    ui.label("");
+    ui.checkbox(&mut p.override_pressure, tr("Override Pressure"));
+    ui.end_row();
+}
+
 fn jitter(ui: &mut egui::Ui, label: &str, value: &mut f32) {
     ui.label(label);
     ui.add(percent(value));
@@ -627,6 +660,29 @@ impl Choices {
         }
         choices
     }
+}
+
+/// The patterns to choose from: the made ones, then pictures in the
+/// brushes and the Pattern Stamp's.
+pub(crate) fn pattern_choices(editor: &Editor) -> Vec<Pattern> {
+    let mut patterns: Vec<Pattern> = Pattern::MADE.into();
+    for picture in
+        Choices::gather(editor, None).patterns.into_iter().chain([editor.stamp_pattern.pattern.clone()])
+    {
+        if !patterns.contains(&picture) {
+            patterns.push(picture);
+        }
+    }
+    patterns
+}
+
+/// A menu of `patterns`, the picked one in `value`.
+pub(crate) fn pattern_menu(ui: &mut egui::Ui, id: &str, value: &mut Pattern, patterns: &[Pattern]) {
+    egui::ComboBox::from_id_salt(id).selected_text(tr_pattern(value)).show_ui(ui, |ui| {
+        for pattern in patterns {
+            ui.selectable_value(value, pattern.clone(), tr_pattern(pattern));
+        }
+    });
 }
 
 /// Whether two pictures are the same one.

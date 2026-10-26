@@ -107,13 +107,14 @@ planned (the code is already cross-platform and CI builds it on Windows).
 - **Paint** like in Photoshop, alongside the vector drawing: paint layers
   hold pixels, painted with Photoshop's brush engine (round and sampled
   tips, Shape Dynamics, Scattering, Texture, Dual Brush, Color Dynamics,
-  Transfer, Wet Edges, Build-up; brushes for scenes and backgrounds, your
-  own, and Photoshop `.abr` files with their patterns), erased with the
-  eraser, coloured with the eyedropper. The Mixer Brush, paint bucket,
-  gradient, smudge, blur, sharpen, dodge, burn and clone stamp work as in
-  Photoshop, as do selections (marquee,
-  lasso, magic wand), adjustments (Brightness/Contrast, Hue/Saturation,
-  Levels, Curves) and layer blend modes (Multiply, Screen, Overlay…).
+  Transfer, Brush Pose, Wet Edges, Build-up; brushes for scenes and
+  backgrounds, your own, and Photoshop `.abr` files with their patterns;
+  symmetry painting), erased with the eraser, coloured with the
+  eyedropper. The Mixer Brush, Pattern Stamp, paint bucket, gradient,
+  smudge, blur, sharpen, dodge, burn and clone stamp work as in Photoshop,
+  as do selections (marquee, lasso, magic wand), adjustments
+  (Brightness/Contrast, Hue/Saturation, Levels, Curves) and layer blend
+  modes (Multiply, Screen, Overlay…).
   Turn the canvas view to draw at a comfortable angle, and trade layered
   paintings with Photoshop and other apps as .psd files. A pen tablet's pressure thins and thickens the stroke
   (Windows Ink pens and macOS tablets such as Wacom). Paint layers animate

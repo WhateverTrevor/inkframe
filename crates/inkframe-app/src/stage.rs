@@ -212,14 +212,16 @@ enum Gesture {
         /// Timeline coordinates to the space `start` is in (the parent's).
         into_space: Affine,
     },
-    /// Dragging an edge of the selection box to slant the layer. `grab` is
-    /// where the drag started, in the space `start` is in.
+    /// Dragging an edge of the selection box to slant the layer (or, with
+    /// `group`, the selected layers together). `grab` is where the drag
+    /// started, in the space `start` is in.
     Skew {
         layer: LayerId,
         edge: ScaleHandle,
         start: Transform,
         bounds: StageRect,
         grab: Point,
+        group: Vec<GroupMember>,
         into_space: Affine,
     },
     /// Dragging the rotation knob or a corner's rotate zone.
@@ -489,8 +491,8 @@ impl Handles {
             return Some(HandleHit::Scale(*handle));
         }
         // Along an edge between the handles: skew, as in Animate's Free
-        // Transform. One layer at a time, like the skew setting itself.
-        if self.group.is_empty() {
+        // Transform (several layers slant together, as one).
+        {
             let corner = |x, y| self.scale.iter().find(|(h, _)| h.x == x && h.y == y).map(|(_, pos)| *pos);
             let edges = [
                 ((0, -1), (-1, -1), (1, -1)),
@@ -1127,6 +1129,7 @@ impl StageView {
         {
             draw_brush_outline(&overlay, editor, view, pointer);
         }
+        draw_symmetry(&overlay, editor, view);
         self.draw_painting(&overlay, editor, view);
         self.draw_selection(ui, &overlay, editor, view);
         if editor.layers().is_empty() && editor.timeline() == TimelineId::Main {
@@ -1271,8 +1274,13 @@ impl StageView {
                         transform_group(editor, group, start, &pose);
                     }
                 }
-                Some(Gesture::Skew { layer, edge, start, bounds, grab, into_space }) => {
-                    editor.set_pose(*layer, skew_pose(start, *bounds, *edge, *grab, into_space.apply(p)));
+                Some(Gesture::Skew { layer, edge, start, bounds, grab, group, into_space }) => {
+                    let pose = skew_pose(start, *bounds, *edge, *grab, into_space.apply(p));
+                    if group.is_empty() {
+                        editor.set_pose(*layer, pose);
+                    } else {
+                        transform_group(editor, group, start, &pose);
+                    }
                 }
                 Some(Gesture::Rotate { layer, drag, group, into_space }) => {
                     let pose = drag.update(into_space.apply(p), shift);
@@ -2007,8 +2015,16 @@ impl StageView {
                             return Some(Gesture::Rotate { layer, drag, group: handles.group, into_space });
                         }
                         Some(HandleHit::Skew(edge)) => {
-                            let (start, bounds) = (handles.pose, handles.bounds);
-                            return Some(Gesture::Skew { layer, edge, start, bounds, grab: q, into_space });
+                            let (start, bounds, group) = (handles.pose, handles.bounds, handles.group);
+                            return Some(Gesture::Skew {
+                                layer,
+                                edge,
+                                start,
+                                bounds,
+                                grab: q,
+                                group,
+                                into_space,
+                            });
                         }
                         Some(HandleHit::Pivot) => return Some(Gesture::Pivot { layer }),
                         None => {}
@@ -2139,6 +2155,7 @@ impl StageView {
             | Tool::Dodge
             | Tool::Burn
             | Tool::CloneStamp
+            | Tool::PatternStamp
             | Tool::RectMarquee
             | Tool::EllipseMarquee
             | Tool::Lasso
@@ -3028,6 +3045,7 @@ impl StageView {
                         | Tool::Dodge
                         | Tool::Burn
                         | Tool::CloneStamp
+                        | Tool::PatternStamp
                         | Tool::RectMarquee
                         | Tool::EllipseMarquee
                         | Tool::Lasso
@@ -3387,6 +3405,47 @@ fn draw_skeleton(painter: &egui::Painter, editor: &Editor, view: View) {
 
 /// A circle the size the brush (or eraser) paints at full pressure, around
 /// the pointer, scaled like the canvas it would paint on.
+/// Symmetry's lines through the paint layer's middle, faintly, while the
+/// Brush or Eraser paints with it: one or two mirror lines, or a line out
+/// to each segment's edge.
+fn draw_symmetry(painter: &egui::Painter, editor: &Editor, view: View) {
+    use inkframe_core::Symmetry;
+    if editor.symmetry == Symmetry::Off
+        || !matches!(editor.tool, Tool::Brush | Tool::Eraser | Tool::PatternStamp)
+    {
+        return;
+    }
+    let Some((layer, _, width, height)) = editor.paint_target() else { return };
+    let (w, h) = (width as f32, height as f32);
+    let middle = Point::new(w / 2.0, h / 2.0);
+    let reach = w.max(h);
+    let mut lines = Vec::new();
+    match editor.symmetry {
+        Symmetry::Vertical => lines.push((Point::new(w / 2.0, 0.0), Point::new(w / 2.0, h))),
+        Symmetry::Horizontal => lines.push((Point::new(0.0, h / 2.0), Point::new(w, h / 2.0))),
+        Symmetry::Both => {
+            lines.push((Point::new(w / 2.0, 0.0), Point::new(w / 2.0, h)));
+            lines.push((Point::new(0.0, h / 2.0), Point::new(w, h / 2.0)));
+        }
+        Symmetry::Radial(n) | Symmetry::Mandala(n) => {
+            for i in 0..n {
+                let turn = std::f32::consts::TAU * i as f32 / n as f32 - std::f32::consts::FRAC_PI_2;
+                lines
+                    .push((middle, Point::new(middle.x + turn.cos() * reach, middle.y + turn.sin() * reach)));
+            }
+        }
+        Symmetry::Off => {}
+    }
+    let colour = Color32::from_rgba_unmultiplied(120, 170, 255, 140);
+    for (a, b) in lines {
+        if let (Some(a), Some(b)) =
+            (canvas_to_screen(editor, view, layer, a), canvas_to_screen(editor, view, layer, b))
+        {
+            painter.add(egui::Shape::dashed_line(&[a, b], (1.0, colour), 6.0, 4.0));
+        }
+    }
+}
+
 fn draw_brush_outline(painter: &egui::Painter, editor: &Editor, view: View, pointer: Pos2) {
     let Some(settings) = editor.brush_for(editor.tool) else { return };
     let canvas_scale = editor
@@ -3437,17 +3496,31 @@ fn start_painting(editor: &mut Editor, view: View, press: Pos2) -> Option<Painti
     }
     let (layer, canvas, width, height) = editor.paint_target()?;
     let size = (width, height);
+    // Symmetry mirrors round the canvas's middle.
+    let middle = Point::new(width as f32 / 2.0, height as f32 / 2.0);
     // Painting stays inside the selection, if there is one.
     let selection = editor.selection_on(canvas).cloned();
     let work = match editor.tool {
         Tool::Brush => PaintWork::Brush(
             BrushStroke::new(editor.brush.clone(), BrushMode::Paint(editor.paint_color))
+                .with_symmetry(editor.symmetry, middle)
                 .with_background(editor.second_color)
                 .with_seed(editor.next_stroke_seed())
                 .within(selection.clone()),
         ),
         Tool::Eraser => PaintWork::Brush(
             BrushStroke::new(editor.eraser.clone(), BrushMode::Erase)
+                .with_symmetry(editor.symmetry, middle)
+                .with_seed(editor.next_stroke_seed())
+                .within(selection.clone()),
+        ),
+        Tool::PatternStamp => PaintWork::Brush(
+            BrushStroke::new(editor.pattern_stamp.clone(), BrushMode::Paint(editor.paint_color))
+                .with_pattern(inkframe_core::PatternPaint {
+                    texture: editor.stamp_pattern.clone(),
+                    light: editor.second_color,
+                })
+                .with_symmetry(editor.symmetry, middle)
                 .with_seed(editor.next_stroke_seed())
                 .within(selection.clone()),
         ),
@@ -3464,7 +3537,7 @@ fn start_painting(editor: &mut Editor, view: View, press: Pos2) -> Option<Painti
         size,
         work,
         smoothed: Pos2::ZERO,
-        pen: tablet::Sample { pos: Pos2::ZERO, pressure: 1.0, tilt: (0.0, 0.0) },
+        pen: tablet::Sample { pos: Pos2::ZERO, pressure: 1.0, tilt: (0.0, 0.0), stylus: false },
     })
 }
 
@@ -3549,7 +3622,7 @@ fn paint_to(painting: &mut Painting, editor: &mut Editor, view: View, pen: table
     let Some(canvas) = editor.doc.canvas_mut(painting.canvas) else { return };
     match &mut painting.work {
         PaintWork::Brush(stroke) => {
-            stroke.add_pen(canvas, at, Pen { pressure: pen.pressure, tilt: pen.tilt })
+            stroke.add_pen(canvas, at, Pen { pressure: pen.pressure, tilt: pen.tilt, stylus: pen.stylus })
         }
         PaintWork::Retouch(stroke) => stroke.add_point(canvas, at, pen.pressure),
         PaintWork::Gradient { .. } => {}
@@ -3859,18 +3932,18 @@ struct TextEditing {
     selecting: bool,
 }
 
-/// Moves, scales and turns several layers as one, by however the imaginary
-/// layer around them changed from `before` to `after`.
+/// Moves, scales, turns and slants several layers as one, by however the
+/// imaginary layer around them changed from `before` to `after`.
 ///
 /// Each layer's position, relative to the group's middle, is scaled and
 /// turned the same way the group was, and its own scale and rotation change
 /// by the same amounts. That's exact for even scaling, any rotation, and
 /// layers that aren't turned.
 ///
-/// Stretching a turned (or skewed) layer unevenly along the group's axes
-/// slants it, which its own scale can't express. For those, the layer's new
-/// matrix is worked out directly and turned back into a pose, skew included
-/// (`Transform::from_affine`).
+/// Slanting the group, or stretching a turned (or skewed) layer unevenly
+/// along the group's axes, slants the layer, which its own scale can't
+/// express. For those, the layer's new matrix is worked out directly and
+/// turned back into a pose, skew included (`Transform::from_affine`).
 ///
 /// A layer with a parent has its pose in the parent's space, so it always
 /// takes the matrix route: the change is carried into that space first.
@@ -3879,13 +3952,14 @@ fn transform_group(editor: &mut Editor, group: &[GroupMember], before: &Transfor
     let turn = (after.rotation - before.rotation).to_radians();
     let (sin, cos) = turn.sin_cos();
     let uneven = (factor.x - factor.y).abs() > 1e-4;
+    let slanting = after.skew != before.skew;
     let group_change = before.to_affine().inverse().map(|undo| after.to_affine().pre_concat(undo));
     for &GroupMember { id, pose: start, space } in group {
         let slanted = start.rotation % 90.0 != 0.0 || start.skew != Point::ZERO;
         let parented = space != Affine::IDENTITY;
         let in_space = |change: Affine| Some(space.inverse()?.pre_concat(change).pre_concat(space));
         let pose = match group_change.and_then(in_space) {
-            Some(change) if parented || (uneven && slanted) => {
+            Some(change) if parented || slanting || (uneven && slanted) => {
                 let mut pose = start.from_affine(change.pre_concat(start.to_affine()));
                 // The matrix only knows the angle modulo a full turn; keep the
                 // layer's own count of turns, so a tween through it still spins
@@ -4627,6 +4701,29 @@ mod tests {
         assert!(pose(a).position.distance(Point::new(250.0, 250.0)) < 4.0, "{:?}", pose(a).position);
         assert!(pose(b).position.distance(Point::new(1050.0, 250.0)) < 4.0, "{:?}", pose(b).position);
         assert!(pose(a).scale.distance(Point::new(2.0, 2.0)) < 0.03, "{:?}", pose(a).scale);
+    }
+
+    #[test]
+    fn several_layers_slant_together_from_the_group_edge() {
+        // The boxes span (150, 150) to (650, 250) together. Slide the
+        // group's top edge 100 px right: both lean 45° over its 100 px
+        // height, and the bottom stays put.
+        let (mut editor, a, b) = two_boxes();
+        editor.select_many(&[a, b]);
+        let mut h = harness(editor);
+        let edge = screen(&h, 250.0, 150.0);
+        let target = screen(&h, 350.0, 150.0);
+        drag(&mut h, edge, &[edge + vec2(5.0, 0.0), target]);
+
+        let editor = &h.state().1;
+        let pose = |id| editor.doc.layer(id).unwrap().transform_at(0);
+        for id in [a, b] {
+            assert!((pose(id).skew.x - 45.0).abs() < 2.0, "{:?}", pose(id).skew);
+            // Each box's bottom middle (50 px below its centre) is where it was.
+            let bottom = pose(id).to_affine().apply(Point::new(0.0, 50.0));
+            assert!((bottom.y - 250.0).abs() < 2.0, "{bottom:?}");
+        }
+        assert!((pose(b).position.x - pose(a).position.x - 400.0).abs() < 2.0, "still 400 px apart");
     }
 
     #[test]

@@ -12,8 +12,8 @@ pub mod rhubarb;
 
 use std::path::Path;
 
-pub use decode::decode;
-pub use mix::{MixTrack, mix, mix_document};
+pub use decode::{Decoded, decode, decode_first};
+pub use mix::{MixTrack, audible_seconds, mix, mix_document};
 
 /// Every clip is resampled to this rate. 48 kHz is the standard for video,
 /// so exports need no further conversion.

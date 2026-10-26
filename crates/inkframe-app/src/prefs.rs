@@ -49,6 +49,8 @@ pub struct Prefs {
     pub brush: Option<inkframe_core::BrushSettings>,
     pub eraser: Option<inkframe_core::BrushSettings>,
     pub brush_name: Option<String>,
+    /// Symmetry painting, as last left.
+    pub symmetry: inkframe_core::Symmetry,
 }
 
 /// A Batch Export job as saved: the format by its short name, the same
@@ -90,6 +92,7 @@ impl Prefs {
             brush: None,
             eraser: None,
             brush_name: None,
+            symmetry: inkframe_core::Symmetry::Off,
         }
     }
 

@@ -53,6 +53,8 @@ pub enum Tool {
     Dodge,
     Burn,
     CloneStamp,
+    /// Paints a pattern in the paint and second colours (see `PatternPaint`).
+    PatternStamp,
     /// The selection tools: what the painting tools may change.
     RectMarquee,
     EllipseMarquee,
@@ -83,7 +85,7 @@ impl Tool {
         &[Tool::PaintBucket, Tool::Gradient],
         &[Tool::Smudge, Tool::Blur, Tool::Sharpen],
         &[Tool::Dodge, Tool::Burn],
-        &[Tool::CloneStamp],
+        &[Tool::CloneStamp, Tool::PatternStamp],
         &[Tool::Eyedropper],
     ];
 
@@ -122,6 +124,7 @@ impl Tool {
             Tool::Dodge => tr_later("Dodge"),
             Tool::Burn => tr_later("Burn"),
             Tool::CloneStamp => tr_later("Clone Stamp"),
+            Tool::PatternStamp => tr_later("Pattern Stamp"),
             Tool::RectMarquee => tr_later("Rectangular Marquee"),
             Tool::EllipseMarquee => tr_later("Elliptical Marquee"),
             Tool::Lasso => tr_later("Lasso"),
@@ -177,6 +180,9 @@ impl Tool {
             Tool::Dodge => tr_later("Lighten the paint under the brush"),
             Tool::Burn => tr_later("Darken the paint under the brush"),
             Tool::CloneStamp => tr_later("Alt-click where to copy from, then paint a copy elsewhere"),
+            Tool::PatternStamp => {
+                tr_later("Paint a pattern: its dark in the paint colour, its light in the second colour")
+            }
             Tool::RectMarquee => tr_later("Drag a rectangle to choose which pixels the paint tools change"),
             Tool::EllipseMarquee => tr_later("Drag an oval to choose which pixels the paint tools change"),
             Tool::Lasso => tr_later("Draw round the pixels the paint tools may change"),
@@ -218,6 +224,7 @@ impl Tool {
                 | Tool::Dodge
                 | Tool::Burn
                 | Tool::CloneStamp
+                | Tool::PatternStamp
         )
     }
 }
@@ -328,13 +335,20 @@ pub struct Editor {
     /// Strokes painted so far, which seeds each one's chance (scatter,
     /// jitter), so no two strokes scatter alike.
     strokes_painted: u64,
+    /// Symmetry painting for the Brush and Eraser, round the paint layer's
+    /// middle.
+    pub symmetry: inkframe_core::Symmetry,
     /// Saved brushes and the ready-made ones (see `brushes.rs`).
     pub brushes: crate::brushes::BrushLibrary,
     /// Where the brush quick menu is open, in screen points, if it is:
     /// right-clicking the stage with a painting tool opens it.
     pub brush_quick_menu: Option<(f32, f32)>,
-    /// Asked for from the Tool Settings: show the Brush Settings panel.
-    pub show_brush_settings: bool,
+    /// Something the Tool tab asks of the app (a panel, a file dialog),
+    /// as the brush panels do.
+    pub brush_request: Option<crate::brush_panel::Asked>,
+    /// The Pattern Stamp's brush, and the pattern it paints.
+    pub pattern_stamp: BrushSettings,
+    pub stamp_pattern: inkframe_core::Texture,
     /// The Mixer Brush's brush; its strength is how wet it is.
     pub mixer: RetouchBrush,
     /// How much paint the Mixer Brush holds, and how much of what it picks
@@ -501,9 +515,16 @@ impl Editor {
             smoothing: 0.3,
             second_color: Color::WHITE,
             strokes_painted: 0,
+            symmetry: inkframe_core::Symmetry::Off,
             brushes: crate::brushes::BrushLibrary::default(),
             brush_quick_menu: None,
-            show_brush_settings: false,
+            brush_request: None,
+            pattern_stamp: BrushSettings { size: 80.0, hardness: 0.6, ..BrushSettings::default() },
+            stamp_pattern: inkframe_core::Texture {
+                pattern: inkframe_core::Pattern::Canvas,
+                scale: 2.0,
+                ..Default::default()
+            },
             mixer: RetouchBrush::new(40.0, 0.5),
             mixer_load: 0.8,
             mixer_mix: 0.5,
@@ -1234,8 +1255,9 @@ impl Editor {
     }
 
     /// Makes a texture pattern from the selected pixels (or the paint
-    /// layer's), as Photoshop's Define Pattern does, and presses it into
-    /// the brush in use: light is the pattern's peaks, dark its hollows.
+    /// layer's), as Photoshop's Define Pattern does, and gives it to the
+    /// brush in use (see `use_pattern`): light is the pattern's peaks, dark
+    /// its hollows.
     pub fn define_pattern(&mut self) -> Result<(), String> {
         let (width, height, straight) = self.picked_pixels()?;
         self.use_pattern(inkframe_core::TipImage::pattern_from_picture(
@@ -1248,8 +1270,13 @@ impl Editor {
     }
 
     /// Gives the brush in use (the Brush tool's, if the tool doesn't paint)
-    /// `picture` as its texture, turning the texture on.
+    /// `picture` as its texture, turning the texture on; or, with the
+    /// Pattern Stamp, makes it the pattern stamped.
     pub fn use_pattern(&mut self, picture: inkframe_core::TipImage) {
+        if self.tool == Tool::PatternStamp {
+            self.stamp_pattern.pattern = inkframe_core::Pattern::Picture(std::sync::Arc::new(picture));
+            return;
+        }
         let tool = if self.brush_for(self.tool).is_some() { self.tool } else { Tool::Brush };
         if let Some(brush) = self.brush_of(tool) {
             brush.texture.pattern = inkframe_core::Pattern::Picture(std::sync::Arc::new(picture));
@@ -1290,6 +1317,7 @@ impl Editor {
                 Tool::Dodge => &self.dodge.brush,
                 Tool::Burn => &self.burn.brush,
                 Tool::CloneStamp => &self.clone.brush,
+                Tool::PatternStamp => &self.pattern_stamp,
                 _ => return None,
             }
             .clone(),
@@ -1301,6 +1329,7 @@ impl Editor {
         Some(match tool {
             Tool::Brush => &mut self.brush,
             Tool::Eraser => &mut self.eraser,
+            Tool::PatternStamp => &mut self.pattern_stamp,
             _ => &mut self.retouch_of(tool)?.brush,
         })
     }

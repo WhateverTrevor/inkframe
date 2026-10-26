@@ -388,6 +388,21 @@ pub(crate) fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) 
             painter.rect_filled(Rect::from_min_max(at(0.1, 0.6), at(0.9, 0.78)), 1.0, stroke.color);
             painter.line_segment([at(0.15, 0.92), at(0.85, 0.92)], stroke);
         }
+        Tool::PatternStamp => {
+            // The stamp, its base printed with a checker.
+            painter.circle_stroke(at(0.5, 0.15), r.width() * 0.13, stroke);
+            painter
+                .line_segment([at(0.5, 0.28), at(0.5, 0.48)], Stroke::new(stroke.width + 1.0, stroke.color));
+            painter.rect_stroke(
+                Rect::from_min_max(at(0.1, 0.48), at(0.9, 0.92)),
+                1.0,
+                stroke,
+                StrokeKind::Middle,
+            );
+            for (x, y) in [(0.1, 0.48), (0.5, 0.48), (0.3, 0.7), (0.7, 0.7)] {
+                painter.rect_filled(Rect::from_min_max(at(x, y), at(x + 0.2, y + 0.22)), 0.0, stroke.color);
+            }
+        }
         Tool::RectMarquee => {
             let corners = [(0.05, 0.15), (0.95, 0.15), (0.95, 0.85), (0.05, 0.85)].map(|(x, y)| at(x, y));
             for i in 0..4 {

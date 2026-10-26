@@ -222,7 +222,15 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
         _ => {}
     }
     egui::Grid::new("paint_tool").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-        if matches!(tool, Tool::Brush | Tool::Mixer | Tool::PaintBucket | Tool::Gradient | Tool::Eyedropper) {
+        if matches!(
+            tool,
+            Tool::Brush
+                | Tool::Mixer
+                | Tool::PatternStamp
+                | Tool::PaintBucket
+                | Tool::Gradient
+                | Tool::Eyedropper
+        ) {
             ui.label(tr("Colour"));
             color_button(ui, &mut editor.paint_color);
             ui.end_row();
@@ -241,10 +249,11 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
                     .on_hover_text(tr("Every setting of the brush: its tip, dynamics, texture and more"))
                     .clicked()
                 {
-                    editor.show_brush_settings = true;
+                    editor.brush_request = Some(crate::brush_panel::Asked::ShowBrushSettings);
                 }
                 ui.end_row();
             }
+            Tool::PatternStamp => pattern_stamp_settings(ui, editor),
             Tool::PaintBucket => {
                 ui.label(tr("Tolerance"))
                     .on_hover_text(tr("How different a colour may be and still be filled"));
@@ -369,6 +378,50 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
     if let Some(hint) = hint {
         ui.weak(hint);
     }
+}
+
+/// The Pattern Stamp's settings: the pattern and its colours, then its
+/// brush.
+fn pattern_stamp_settings(ui: &mut egui::Ui, editor: &mut Editor) {
+    use crate::brush_panel::Asked;
+    ui.label(tr("Light colour"))
+        .on_hover_text(tr("The pattern's light parts; its dark parts are the colour above"));
+    color_button(ui, &mut editor.second_color);
+    ui.end_row();
+    ui.label(tr("Pattern"));
+    let patterns = crate::brush_panel::pattern_choices(editor);
+    crate::brush_panel::pattern_menu(ui, "stamp_pattern", &mut editor.stamp_pattern.pattern, &patterns);
+    ui.end_row();
+    ui.label("");
+    ui.horizontal(|ui| {
+        if ui.small_button(tr("Import…")).on_hover_text(tr("A pattern from a picture")).clicked() {
+            editor.brush_request = Some(Asked::ImportPattern);
+        }
+        if ui
+            .small_button(tr("From Selection"))
+            .on_hover_text(tr("A pattern from the selected pixels"))
+            .clicked()
+        {
+            editor.brush_request = Some(Asked::DefinePattern);
+        }
+    });
+    ui.end_row();
+    ui.label(tr("Scale"));
+    ui.add(
+        egui::Slider::new(&mut editor.stamp_pattern.scale, 0.1..=10.0)
+            .logarithmic(true)
+            .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
+    );
+    ui.end_row();
+    ui.label("");
+    ui.checkbox(&mut editor.stamp_pattern.invert, tr("Invert"));
+    ui.end_row();
+    brush_controls(ui, &mut editor.pattern_stamp, true);
+    ui.label("");
+    if ui.button(tr("Brush Settings…")).clicked() {
+        editor.brush_request = Some(Asked::ShowBrushSettings);
+    }
+    ui.end_row();
 }
 
 fn brush_controls(ui: &mut egui::Ui, settings: &mut inkframe_core::BrushSettings, paint: bool) {

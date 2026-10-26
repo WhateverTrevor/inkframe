@@ -120,6 +120,9 @@
 //!   Foliage if not given) and shows the Brush Settings at that section (`tip`, `shape`,
 //!   `scattering`, `texture`, `dual`, `color` or `transfer`).
 //! * `INKFRAME_SCREENSHOT_QUICK_BRUSH=1` opens the brush quick menu over the stage.
+//! * `INKFRAME_SCREENSHOT_SYMMETRY=1` paints with symmetry (a mandala in the middle) and the
+//!   Pattern Stamp (a band along the bottom), with the Brush picked and Mandala symmetry on,
+//!   so its lines show.
 //! * `INKFRAME_SCREENSHOT_PAINT=1` paints a few strokes on a new paint layer, as a pen
 //!   would (pressing harder through the middle of each), to show the brushes; `=tools`
 //!   also uses the bucket, gradient and retouching tools on them; `=select` then selects
@@ -239,6 +242,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_BANNER").is_some() {
             banner_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_SYMMETRY").is_some() {
+            symmetry_demo(editor);
         }
         if var("INKFRAME_SCREENSHOT_BRUSH_SHEET").is_some() {
             brush_sheet_demo(editor);
@@ -582,6 +588,83 @@ fn save_png(path: &std::path::Path, image: &egui::ColorImage) -> Result<(), Stri
         .ok_or("screenshot is empty")?;
     let pixmap = tiny_skia::Pixmap::from_vec(bytes, size).ok_or("screenshot has the wrong size")?;
     pixmap.save_png(path).map_err(|e| e.to_string())
+}
+
+/// Paints a mandala with symmetry round the canvas's middle, and a band of
+/// Pattern Stamp along the bottom.
+fn symmetry_demo(editor: &mut Editor) {
+    use inkframe_core::{BrushMode, BrushStroke, Color, PatternPaint, Point, Symmetry, Texture};
+    let Some(layer) = editor.add_paint_layer() else { return };
+    let Some((_, canvas, width, height)) = editor.paint_target().filter(|(id, ..)| *id == layer) else {
+        return;
+    };
+    let middle = Point::new(width as f32 / 2.0, height as f32 / 2.0);
+    let preset = |name: &str| {
+        crate::brushes::BrushLibrary::built_in()
+            .iter()
+            .find(|p| p.name == name)
+            .map(|p| p.settings.clone())
+            .unwrap_or_default()
+    };
+    // A brush, its colour and size, the symmetry, and the stroke's points
+    // from the middle.
+    type Stroke<'a> = (&'a str, Color, f32, Symmetry, &'a [(f32, f32)]);
+    let strokes: [Stroke; 3] = [
+        (
+            "Inking Pen",
+            Color::rgb(0x2a, 0x2a, 0x40),
+            10.0,
+            Symmetry::Mandala(8),
+            &[(0.0, -60.0), (40.0, -160.0), (10.0, -300.0)],
+        ),
+        (
+            "Watercolour",
+            Color::rgb(0x3a, 0x7a, 0xc8),
+            60.0,
+            Symmetry::Radial(8),
+            &[(0.0, -120.0), (60.0, -200.0), (0.0, -260.0)],
+        ),
+        (
+            "Foliage",
+            Color::rgb(0x3d, 0x8a, 0x3a),
+            40.0,
+            Symmetry::Vertical,
+            &[(-500.0, 250.0), (-350.0, 150.0), (-250.0, 300.0)],
+        ),
+    ];
+    for (i, (name, colour, size, symmetry, points)) in strokes.into_iter().enumerate() {
+        let settings = inkframe_core::BrushSettings { size, ..preset(name) };
+        let mut stroke = BrushStroke::new(settings, BrushMode::Paint(colour))
+            .with_symmetry(symmetry, middle)
+            .with_seed(i as u64 + 1);
+        for pair in points.windows(2) {
+            for step in 0..=20 {
+                let t = step as f32 / 20.0;
+                let (a, b) = (pair[0], pair[1]);
+                let at = Point::new(middle.x + a.0 + (b.0 - a.0) * t, middle.y + a.1 + (b.1 - a.1) * t);
+                if let Some(canvas) = editor.doc.canvas_mut(canvas) {
+                    stroke.add_point(canvas, at, 0.4 + 0.6 * t);
+                }
+            }
+        }
+    }
+    let stamp = PatternPaint {
+        texture: Texture { pattern: inkframe_core::Pattern::Canvas, scale: 2.0, ..Texture::default() },
+        light: Color::rgb(0xf0, 0xd8, 0x90),
+    };
+    let mut band = BrushStroke::new(
+        inkframe_core::BrushSettings { size: 90.0, hardness: 0.7, ..Default::default() },
+        BrushMode::Paint(Color::rgb(0x8a, 0x40, 0x20)),
+    )
+    .with_pattern(stamp);
+    for step in 0..=60 {
+        let at = Point::new(200.0 + step as f32 * (width as f32 - 400.0) / 60.0, height as f32 - 120.0);
+        if let Some(canvas) = editor.doc.canvas_mut(canvas) {
+            band.add_point(canvas, at, 1.0);
+        }
+    }
+    editor.tool = Tool::Brush;
+    editor.symmetry = Symmetry::Mandala(8);
 }
 
 /// Paints a stroke with each ready-made brush on a new paint layer, in

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use inkframe_core::Document;
 
-use crate::{AudioError, CHANNELS, Clip, decode, sample_frame};
+use crate::{AudioError, CHANNELS, Clip, decode_first, sample_frame};
 
 /// One clip's place in a mix.
 pub struct MixTrack<'a> {
@@ -33,6 +33,18 @@ pub fn mix(tracks: &[MixTrack], fps: f64, duration_frames: u32) -> Clip {
     out
 }
 
+/// How many seconds of the file at `path` the animation can play: from
+/// each track's start to the end of the animation, the longest of the
+/// tracks that use it (none if muted or starting after the end).
+pub fn audible_seconds(doc: &Document, path: &Path, project_dir: Option<&Path>) -> f64 {
+    let fps = doc.frame_rate.fps();
+    doc.audio
+        .iter()
+        .filter(|t| !t.muted && t.resolve(project_dir) == path)
+        .map(|t| doc.duration.saturating_sub(t.start) as f64 / fps)
+        .fold(0.0, f64::max)
+}
+
 /// Decodes and mixes every unmuted audio track in `doc`.
 ///
 /// `project_dir` resolves relative paths (see `AudioTrack::resolve`).
@@ -50,9 +62,11 @@ pub fn mix_document(
         if clips.contains_key(&path) || errors.iter().any(|(p, _)| *p == path) {
             continue;
         }
-        match decode(&path) {
-            Ok(clip) => {
-                clips.insert(path, clip);
+        // Only what the animation plays of each file: a long song under a
+        // short shot needn't be decoded whole.
+        match decode_first(&path, audible_seconds(doc, &path, project_dir)) {
+            Ok(decoded) => {
+                clips.insert(path, decoded.clip);
             }
             Err(e) => errors.push((path, e)),
         }

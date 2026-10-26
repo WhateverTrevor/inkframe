@@ -17,6 +17,27 @@ notes on GitHub are its section here.
   imported brushes keep their textures.
 - Define Brush Preset, Define Pattern, Brushes and Brush Settings are in
   Find a Command.
+- Symmetry painting, from the context bar: mirrored across the canvas's
+  middle (up and down, across, or both), or repeated round it (Radial, or
+  Mandala, mirrored in each segment), with its lines shown on the stage.
+  The copies are part of the one stroke, so they share its opacity.
+- Brush Pose, a new Brush Settings section: a pen's tilt, turn and
+  pressure for painting with a mouse, or to override the pen's.
+- The Pattern Stamp shares the Clone Stamp's slot (Shift+S): it paints a
+  pattern with the whole brush engine, its dark parts in the paint colour
+  and its light in a second colour.
+
+### Moving and transforming
+
+- Several selected layers can be slanted together, by dragging an edge of
+  their shared box, as one layer is.
+
+### Sound
+
+- Long sound files load quicker and take less memory: only as much as the
+  animation can play is decoded (and a minute more), and more when the
+  animation grows. A ten-minute song under a 30-second shot no longer
+  holds all ten minutes in memory.
 
 ### Speed
 

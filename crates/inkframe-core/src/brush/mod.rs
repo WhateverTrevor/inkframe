@@ -14,6 +14,8 @@
 //! * **Texture:** a pattern pressed into the paint (see `texture.rs`).
 //! * **Dual Brush:** a second tip, laid along the same path, that the
 //!   first only shows through.
+//! * **Brush Pose:** a fixed tilt, turn and pressure, for painting with a
+//!   mouse as if with a pen held so (or, overriding, whatever the pen does).
 //! * **Noise**, **Wet Edges** and **Build-up**: grit in soft edges, paint
 //!   pooling at a stroke's edges like watercolour, and paint that keeps
 //!   flowing while the pen rests, like an airbrush.
@@ -31,6 +33,7 @@
 
 mod dynamics;
 mod presets;
+mod symmetry;
 mod texture;
 mod tip;
 
@@ -41,11 +44,12 @@ use serde::{Deserialize, Serialize};
 
 pub use dynamics::{ColorDynamics, Control, DabInput, Random, Scattering, ShapeDynamics, Transfer};
 pub use presets::BrushPreset;
+pub use symmetry::Symmetry;
 pub use texture::{Blend, Pattern, Texture};
 pub use tip::{Tip, TipImage};
 
 use crate::color::Color;
-use crate::geometry::Point;
+use crate::geometry::{Affine, Point};
 use crate::paint::{Canvas, TILE};
 use crate::parallel::{PARALLEL_PIXELS, in_parallel};
 use crate::selection::Selection;
@@ -75,6 +79,7 @@ pub struct BrushSettings {
 
     // The other sections, each with its own on switch, kept while off.
     pub shape: ShapeDynamics,
+    pub pose: BrushPose,
     pub scattering: Scattering,
     pub texture: Texture,
     pub dual: DualBrush,
@@ -101,6 +106,7 @@ impl Default for BrushSettings {
             // Pressure thins a stroke, out of the box, as people expect of
             // a pen.
             shape: ShapeDynamics { on: true, ..ShapeDynamics::default() },
+            pose: BrushPose::default(),
             scattering: Scattering::default(),
             texture: Texture::default(),
             dual: DualBrush::default(),
@@ -239,6 +245,24 @@ impl Stamp {
         }
     }
 
+    /// The stamp carried through a symmetry's copy: moved, turned and, for
+    /// a mirror, flipped, so a copy is the stamp's reflection or turn.
+    fn through(&self, copy: &Affine) -> Stamp {
+        // The tip's own across-direction on screen (y down), as the copy
+        // carries it; a mirror also turns the tip over.
+        let across = Point::new(self.cos, -self.sin);
+        let moved = Point::new(copy.a * across.x + copy.c * across.y, copy.b * across.x + copy.d * across.y);
+        let turn = (-moved.y).atan2(moved.x);
+        let mirrored = copy.a * copy.d - copy.b * copy.c < 0.0;
+        Stamp {
+            centre: copy.apply(self.centre),
+            cos: turn.cos(),
+            sin: turn.sin(),
+            flip_y: self.flip_y != mirrored,
+            ..*self
+        }
+    }
+
     /// How far it reaches from its centre, whichever way it's turned.
     fn reach(&self) -> f32 {
         self.rx.max(self.ry) + 1.5
@@ -291,11 +315,15 @@ pub struct DabPath {
 pub struct Pen {
     pub pressure: f32,
     pub tilt: (f32, f32),
+    /// Whether a pen reported these, rather than a mouse (whose pressure
+    /// and tilt are only stand-ins).
+    pub stylus: bool,
 }
 
 impl Pen {
+    /// A mouse, or a test's pen: `pressure`, held upright.
     pub fn pressed(pressure: f32) -> Self {
-        Self { pressure, tilt: (0.0, 0.0) }
+        Self { pressure, tilt: (0.0, 0.0), stylus: false }
     }
 
     fn lerp(self, other: Pen, t: f32) -> Pen {
@@ -303,6 +331,51 @@ impl Pen {
         Pen {
             pressure: mix(self.pressure, other.pressure),
             tilt: (mix(self.tilt.0, other.tilt.0), mix(self.tilt.1, other.tilt.1)),
+            stylus: other.stylus,
+        }
+    }
+}
+
+/// Brush Pose: a pen's tilt, turn and pressure to paint with when there's
+/// no pen, or always, with the override. Dynamics steered by the pen then
+/// follow these.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BrushPose {
+    pub on: bool,
+    /// Sideways and forward lean, each −1 to 1.
+    pub tilt: (f32, f32),
+    pub override_tilt: bool,
+    /// Degrees added to the tip's angle, as turning a pen in the fingers
+    /// turns a flat brush.
+    pub rotation: f32,
+    pub pressure: f32,
+    pub override_pressure: bool,
+}
+
+impl Default for BrushPose {
+    fn default() -> Self {
+        Self {
+            on: false,
+            tilt: (0.0, 0.0),
+            override_tilt: false,
+            rotation: 0.0,
+            pressure: 1.0,
+            override_pressure: false,
+        }
+    }
+}
+
+impl BrushPose {
+    /// `pen` as the pose has it.
+    pub fn posed(&self, pen: Pen) -> Pen {
+        if !self.on {
+            return pen;
+        }
+        Pen {
+            pressure: if self.override_pressure || !pen.stylus { self.pressure } else { pen.pressure },
+            tilt: if self.override_tilt || !pen.stylus { self.tilt } else { pen.tilt },
+            ..pen
         }
     }
 }
@@ -366,6 +439,15 @@ pub enum BrushMode {
     Erase,
 }
 
+/// A pattern to paint with instead of a flat colour, as the Pattern Stamp
+/// does: the pattern (with its scale, brightness and so on) laid out over
+/// the canvas, its hollows in the paint colour and its peaks in `light`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternPaint {
+    pub texture: Texture,
+    pub light: Color,
+}
+
 /// The stroke's own layer over one tile: premultiplied colour and coverage
 /// per pixel, as fractions.
 type Layer = Vec<[f32; 4]>;
@@ -383,12 +465,17 @@ pub struct BrushStroke {
     dual: BTreeMap<(u32, u32), Vec<f32>>,
     /// The texture's heights, per tile, worked out as tiles are reached.
     heights: BTreeMap<(u32, u32), Vec<f32>>,
+    /// The pattern painted with, if any, and its heights per tile.
+    pattern: Option<PatternPaint>,
+    pattern_heights: BTreeMap<(u32, u32), Vec<f32>>,
     /// Tiles changed since the canvas was last redrawn.
     dirty: BTreeSet<(u32, u32)>,
     path: DabPath,
     dual_path: DabPath,
     /// Where it may paint, if not everywhere.
     selection: Option<Selection>,
+    /// Symmetry's copies: each dab is stamped again through each.
+    copies: Vec<Affine>,
     random: Random,
     /// Dabs laid so far, for fades.
     index: u32,
@@ -412,10 +499,13 @@ impl BrushStroke {
             layer: BTreeMap::new(),
             dual: BTreeMap::new(),
             heights: BTreeMap::new(),
+            pattern: None,
+            pattern_heights: BTreeMap::new(),
             dirty: BTreeSet::new(),
             path: DabPath::default(),
             dual_path: DabPath::default(),
             selection: None,
+            copies: Vec::new(),
             random: Random::new(1),
             index: 0,
             initial_direction: None,
@@ -428,6 +518,20 @@ impl BrushStroke {
     /// Paints only within `selection` (soft edges painting partly).
     pub fn within(mut self, selection: Option<Selection>) -> Self {
         self.selection = selection;
+        self
+    }
+
+    /// Repeats the stroke as `symmetry` does, around `centre` (canvas
+    /// pixels).
+    pub fn with_symmetry(mut self, symmetry: Symmetry, centre: Point) -> Self {
+        self.copies = symmetry.copies(centre);
+        self
+    }
+
+    /// Paints `pattern` rather than the paint colour alone (see
+    /// [`PatternPaint`]).
+    pub fn with_pattern(mut self, pattern: PatternPaint) -> Self {
+        self.pattern = Some(pattern);
         self
     }
 
@@ -452,6 +556,7 @@ impl BrushStroke {
 
     /// [`Self::add_point`] with the pen's tilt as well.
     pub fn add_pen(&mut self, canvas: &mut Canvas, at: Point, pen: Pen) {
+        let pen = self.settings.pose.posed(pen);
         let mut dabs = Vec::new();
         let settings = &self.settings;
         self.path.advance_pen(
@@ -522,6 +627,9 @@ impl BrushStroke {
             let stamp = self.stamp_for(at, input);
             let (opacity, flow, color, depth) = self.transfer_for(input);
             self.stamp(canvas, &stamp, opacity, flow, color, depth);
+            for copy in self.copies.clone() {
+                self.stamp(canvas, &stamp.through(&copy), opacity, flow, color, depth);
+            }
         }
         self.index += 1;
     }
@@ -533,7 +641,7 @@ impl BrushStroke {
         let random = &mut self.random;
         let shape = &s.shape;
         let mut diameter = s.size;
-        let mut angle = s.angle;
+        let mut angle = s.angle + if s.pose.on { s.pose.rotation } else { 0.0 };
         let mut roundness = s.roundness;
         let (mut flip_x, mut flip_y) = (s.flip_x, s.flip_y);
         if shape.on {
@@ -631,15 +739,23 @@ impl BrushStroke {
         if self.settings.texture.each_tip {
             self.prepare_heights(&tiles);
         }
+        if let Some(pattern) = &self.pattern {
+            fill_heights(&pattern.texture, &mut self.pattern_heights, &tiles);
+        }
         let s = &self.settings;
         let (selection, heights, index) = (self.selection.as_ref(), &self.heights, self.index);
         let ceiling = opacity * color.a as f32 / 255.0;
         let rgb = [color.r, color.g, color.b].map(|v| v as f32 / 255.0);
+        // A pattern's peaks in its light colour, its hollows in the dab's.
+        let light =
+            self.pattern.as_ref().map(|p| [p.light.r, p.light.g, p.light.b].map(|v| v as f32 / 255.0));
+        let pattern_heights = &self.pattern_heights;
         let (x0, y0, x1, y1) = area;
         let jobs: Vec<_> = self.layer.iter_mut().filter(|(tile, _)| tiles.contains(tile)).collect();
         in_parallel(worth_sharing(area), jobs, |(&(tx, ty), layer)| {
             let (left, top) = (tx * TILE, ty * TILE);
             let tile_heights = heights.get(&(tx, ty)).filter(|_| s.texture.on && s.texture.each_tip);
+            let tile_pattern = light.zip(pattern_heights.get(&(tx, ty)));
             for y in y0.max(top)..y1.min(top + TILE) {
                 for x in x0.max(left)..x1.min(left + TILE) {
                     let mut m = stamp.amount(&s.tip, s.hardness, x as f32 + 0.5, y as f32 + 0.5);
@@ -658,6 +774,10 @@ impl BrushStroke {
                     let selected = selection.map_or(1.0, |sel| sel.at(x as i64, y as i64) as f32 / 255.0);
                     let amount = m * flow * selected;
                     if amount > 0.0 {
+                        let rgb = match tile_pattern {
+                            Some((light, h)) => std::array::from_fn(|c| rgb[c] + (light[c] - rgb[c]) * h[i]),
+                            None => rgb,
+                        };
                         deposit(&mut layer[i], amount, ceiling, rgb);
                     }
                 }
@@ -685,47 +805,44 @@ impl BrushStroke {
                 stamp.flip_x = self.random.next() < 0.5;
                 stamp.flip_y = self.random.next() < 0.5;
             }
-            let Some(area) = bounds(canvas, stamp.centre, stamp.reach()) else { continue };
-            let tiles = tiles_under(area);
-            for &tile in &tiles {
-                self.dual.entry(tile).or_insert_with(|| vec![0.0; (TILE * TILE) as usize]);
-                if self.layer.contains_key(&tile) {
-                    self.dirty.insert(tile);
+            let copies: Vec<Stamp> = self.copies.iter().map(|copy| stamp.through(copy)).collect();
+            for stamp in std::iter::once(stamp).chain(copies) {
+                self.dual_stamp(canvas, &dual.tip, &stamp);
+            }
+        }
+    }
+
+    /// Adds one stamp of the dual brush's tip to its coverage.
+    fn dual_stamp(&mut self, canvas: &Canvas, tip: &Tip, stamp: &Stamp) {
+        let Some(area) = bounds(canvas, stamp.centre, stamp.reach()) else { return };
+        let tiles = tiles_under(area);
+        for &tile in &tiles {
+            self.dual.entry(tile).or_insert_with(|| vec![0.0; (TILE * TILE) as usize]);
+            if self.layer.contains_key(&tile) {
+                self.dirty.insert(tile);
+            }
+        }
+        let (x0, y0, x1, y1) = area;
+        let jobs: Vec<_> = self.dual.iter_mut().filter(|(tile, _)| tiles.contains(tile)).collect();
+        in_parallel(worth_sharing(area), jobs, |(&(tx, ty), coverage)| {
+            let (left, top) = (tx * TILE, ty * TILE);
+            for y in y0.max(top)..y1.min(top + TILE) {
+                for x in x0.max(left)..x1.min(left + TILE) {
+                    let m = stamp.amount(tip, 1.0, x as f32 + 0.5, y as f32 + 0.5);
+                    let c = &mut coverage[((y - top) * TILE + x - left) as usize];
+                    *c += m * (1.0 - *c);
                 }
             }
-            let (x0, y0, x1, y1) = area;
-            let jobs: Vec<_> = self.dual.iter_mut().filter(|(tile, _)| tiles.contains(tile)).collect();
-            in_parallel(worth_sharing(area), jobs, |(&(tx, ty), coverage)| {
-                let (left, top) = (tx * TILE, ty * TILE);
-                for y in y0.max(top)..y1.min(top + TILE) {
-                    for x in x0.max(left)..x1.min(left + TILE) {
-                        let m = stamp.amount(&dual.tip, 1.0, x as f32 + 0.5, y as f32 + 0.5);
-                        let c = &mut coverage[((y - top) * TILE + x - left) as usize];
-                        *c += m * (1.0 - *c);
-                    }
-                }
-            });
-        }
+        });
     }
 
     /// Works out the texture's heights over `tiles`, once a stroke: the
     /// pattern doesn't change while it's painted, and a tile is redrawn
     /// many times.
     fn prepare_heights(&mut self, tiles: &[(u32, u32)]) {
-        if !self.settings.texture.on {
-            return;
+        if self.settings.texture.on {
+            fill_heights(&self.settings.texture, &mut self.heights, tiles);
         }
-        for &tile in tiles {
-            self.heights.entry(tile).or_default();
-        }
-        let texture = &self.settings.texture;
-        let jobs: Vec<_> = self
-            .heights
-            .iter_mut()
-            .filter(|(tile, heights)| heights.is_empty() && tiles.contains(tile))
-            .collect();
-        // A whole tile's worth each, so worth sharing from two.
-        in_parallel(jobs.len() >= 2, jobs, |(&tile, heights)| *heights = texture.heights(tile));
     }
 
     /// Redraws the tiles the stroke changed: as they were before it, with
@@ -801,6 +918,16 @@ impl BrushStroke {
         }
         pixels
     }
+}
+
+/// Works out `texture`'s heights over whichever of `tiles` `heights` lacks.
+fn fill_heights(texture: &Texture, heights: &mut BTreeMap<(u32, u32), Vec<f32>>, tiles: &[(u32, u32)]) {
+    for &tile in tiles {
+        heights.entry(tile).or_default();
+    }
+    let jobs: Vec<_> = heights.iter_mut().filter(|(tile, h)| h.is_empty() && tiles.contains(tile)).collect();
+    // A whole tile's worth each, so worth sharing from two.
+    in_parallel(jobs.len() >= 2, jobs, |(&tile, h)| *h = texture.heights(tile));
 }
 
 /// Whether a stamp over `area` (left, top, right, bottom) is big enough to
@@ -1182,5 +1309,80 @@ mod tests {
         let width_down = painted(&down, (0..100).map(|x| (x, 100)));
         let width_across = painted(&across, (0..100).map(|y| (100, y)));
         assert!(width_down > 20 && width_across > 20, "{width_down} and {width_across}: the flat side leads");
+    }
+
+    #[test]
+    fn a_brush_pose_stands_in_for_a_pen_or_overrides_one() {
+        let pose = BrushPose { on: true, pressure: 0.2, tilt: (0.5, 0.0), ..BrushPose::default() };
+        let mouse = pose.posed(Pen::pressed(1.0));
+        assert_eq!((mouse.pressure, mouse.tilt), (0.2, (0.5, 0.0)), "a mouse paints with the pose");
+        let pen = Pen { pressure: 0.9, tilt: (0.0, 0.3), stylus: true };
+        assert_eq!(pose.posed(pen), pen, "a pen's own wins");
+        let firm = BrushPose { override_pressure: true, ..pose };
+        assert_eq!(firm.posed(pen).pressure, 0.2, "unless overridden");
+        assert_eq!(BrushPose::default().posed(pen), pen, "off, it does nothing");
+
+        // Its turn turns the tip: a flat brush turned a quarter stands up.
+        let flat = BrushSettings {
+            size: 40.0,
+            roundness: 0.25,
+            hardness: 1.0,
+            pose: BrushPose { on: true, rotation: 90.0, ..BrushPose::default() },
+            shape: ShapeDynamics::default(),
+            ..BrushSettings::default()
+        };
+        let mut canvas = Canvas::new(100, 100);
+        BrushStroke::new(flat, red()).add_point(&mut canvas, Point::new(50.0, 50.0), 1.0);
+        let tall = painted(&canvas, (0..100).map(|y| (50, y)));
+        assert!(tall > 35, "{tall} tall");
+    }
+
+    #[test]
+    fn symmetry_stamps_each_dab_again_in_its_copies() {
+        // A flat dab leaning up to the right, left of the middle, mirrored
+        // both ways round (50, 50).
+        let leaning = BrushSettings {
+            size: 30.0,
+            roundness: 0.2,
+            angle: 45.0,
+            hardness: 1.0,
+            shape: ShapeDynamics::default(),
+            ..BrushSettings::default()
+        };
+        let mut canvas = Canvas::new(100, 100);
+        let mut stroke =
+            BrushStroke::new(leaning, red()).with_symmetry(Symmetry::Both, Point::new(50.0, 50.0));
+        stroke.add_point(&mut canvas, Point::new(30.0, 30.0), 1.0);
+        let painted = |x: i64, y: i64| canvas.pixel(x, y)[3] > 128;
+        // The dab itself leans up-right: along it, not across it.
+        assert!(painted(30 + 8, 30 - 8) && !painted(30 + 8, 30 + 8));
+        // Its mirror on the right leans up-left.
+        assert!(painted(70 - 8, 30 - 8) && !painted(70 + 8, 30 - 8));
+        // And the two below, mirrored again.
+        assert!(painted(30 + 8, 70 + 8) && painted(70 - 8, 70 + 8));
+    }
+
+    #[test]
+    fn a_pattern_paints_in_its_two_colours() {
+        // A black-to-white pattern: dark where it's low, light where high.
+        let pattern = PatternPaint {
+            texture: Texture { pattern: Pattern::Canvas, ..Texture::default() },
+            light: Color::rgb(255, 255, 255),
+        };
+        let settings = BrushSettings {
+            size: 60.0,
+            hardness: 1.0,
+            shape: ShapeDynamics::default(),
+            ..BrushSettings::default()
+        };
+        let mut canvas = Canvas::new(200, 100);
+        let mut stroke =
+            BrushStroke::new(settings, BrushMode::Paint(Color::rgb(0, 0, 0))).with_pattern(pattern);
+        stroke.add_point(&mut canvas, Point::new(20.0, 50.0), 1.0);
+        stroke.add_point(&mut canvas, Point::new(180.0, 50.0), 1.0);
+        let reds: Vec<u8> =
+            (30..170).map(|x| canvas.pixel(x, 50)).filter(|p| p[3] == 255).map(|p| p[0]).collect();
+        assert!(reds.len() > 100, "the stroke is solid");
+        assert!(reds.iter().any(|&r| r < 60) && reds.iter().any(|&r| r > 190), "both colours show");
     }
 }
