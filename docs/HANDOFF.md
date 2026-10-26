@@ -1037,6 +1037,13 @@ after the Harmony features (palettes to master controllers).
     `finish` commits pending edits, applies the script's document, then
     `commit_as` "Run Script “name”" ("Script Console" for the console);
     Edit menu Undo/Redo show the next labels.
+131. What's New: `whats_new.rs` (`notes(version)` parses CHANGELOG.md's
+    `## [x.y.z]` section, built in; `WhatsNew` window with Got it / Read
+    the guidebook). Shown at start-up when `Prefs::seen_version` differs
+    from CARGO_PKG_VERSION and the tour isn't showing (new users get the
+    tour; their version counts as seen); Help › What's New
+    (`Command::WhatsNew`, Find a Command). A build between releases has no
+    section, so nothing shows. Hook `INKFRAME_SCREENSHOT_WHATS_NEW=1`.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)
