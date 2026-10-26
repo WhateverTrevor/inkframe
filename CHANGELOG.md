@@ -51,6 +51,10 @@ notes on GitHub are its section here.
   handed to the screen in one copy: on a 500-layer scene with rigged
   characters, drawing is about 20% quicker at the stage's size and the
   editor's updates about 7%.
+- Big brushes keep up with the pen: a dab's tiles are painted and drawn
+  on every processor core, and a texture is worked out once a stroke
+  rather than at every redraw. The slowest moment of a 2500-pixel
+  textured stroke went from about 100 ms to under 10 ms.
 
 ### Scripting
 

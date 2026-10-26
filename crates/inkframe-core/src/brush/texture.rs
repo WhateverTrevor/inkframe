@@ -6,12 +6,13 @@
 //! over paper, while Multiply and the others darken the paint into the
 //! hollows. Dual Brush combines two tips with the same modes.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
 use super::dynamics::Control;
 use super::tip::TipImage;
+use crate::paint::TILE;
 
 /// The Texture section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -64,6 +65,11 @@ impl Texture {
         let h = self.pattern.height(x as f32 / scale, y as f32 / scale);
         let h = if self.invert { 1.0 - h } else { h };
         ((h - 0.5) * (1.0 + self.contrast) + 0.5 + self.brightness).clamp(0.0, 1.0)
+    }
+
+    /// The heights over one tile of the canvas, row by row.
+    pub fn heights(&self, (tx, ty): (u32, u32)) -> Vec<f32> {
+        (0..TILE * TILE).map(|i| self.height(tx * TILE + i % TILE, ty * TILE + i / TILE)).collect()
     }
 
     /// `amount` of paint with the texture pressed in at `depth`.
@@ -254,9 +260,11 @@ fn smooth_step(from: f32, to: f32, x: f32) -> f32 {
 /// time, 0 to 1. `layer` makes independent sets.
 pub(crate) fn value_noise(x: f32, y: f32, layer: u32) -> f32 {
     // Each layer's grid is turned a different way, so its bumps don't
-    // line up in rows and columns, which reads as squares.
-    let turn = 0.45 + layer as f32 * 0.83;
-    let (sin, cos) = turn.sin_cos();
+    // line up in rows and columns, which reads as squares. The turns are
+    // worked out once: this runs for every pixel of a textured stroke.
+    static TURNS: OnceLock<[(f32, f32); 32]> = OnceLock::new();
+    let turns = TURNS.get_or_init(|| std::array::from_fn(|i| (0.45 + i as f32 * 0.83).sin_cos()));
+    let (sin, cos) = turns[layer as usize % 32];
     let (x, y) = (x * cos - y * sin, x * sin + y * cos);
     let (cx, cy) = (x.floor(), y.floor());
     let (tx, ty) = (x - cx, y - cy);
