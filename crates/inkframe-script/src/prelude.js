@@ -180,12 +180,14 @@
     }
     /**
      * Lip-syncs this mouth layer to a sound (by name), matching its drawings
-     * to the mouth shapes by their names: from the sound's loudness, or a
-     * Rhubarb (.tsv) or Papagayo (.dat) timing file named by `options.timing`.
+     * to the mouth shapes by their names: from the sound's loudness, or
+     * with `options.rhubarb`, Rhubarb Lip Sync listening to it (`language`
+     * "english" or "other", and the `dialogue` said), or from a Rhubarb
+     * (.tsv) or Papagayo (.dat) timing file named by `options.timing`.
      * Returns how many mouth changes it made.
      */
     lipSync(sound, options = {}) {
-      return native.lipSync(this.document._handle, this.id, String(sound), options.timing ?? undefined);
+      return native.lipSync(this.document._handle, this.id, String(sound), json(options));
     }
 
     // Web pages.

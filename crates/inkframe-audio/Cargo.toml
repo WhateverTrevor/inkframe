@@ -10,5 +10,6 @@ rust-version.workspace = true
 inkframe-core.workspace = true
 hound.workspace = true
 rubato.workspace = true
+serde_json.workspace = true
 symphonia.workspace = true
 thiserror.workspace = true

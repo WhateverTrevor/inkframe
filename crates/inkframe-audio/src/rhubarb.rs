@@ -1,13 +1,15 @@
 //! Running Rhubarb Lip Sync, which listens to dialogue and works out the
-//! mouth shapes, for the Lip Sync window.
+//! mouth shapes: for the app's Lip Sync window, on a thread of its own
+//! ([`Job`]), and for scripts, waiting for it ([`recognize`]).
 //!
 //! Rhubarb is a separate program (MIT licensed, by Daniel Wolf) that the
 //! installers bundle, like ffmpeg. It reads a WAV file and prints the mouth
 //! shapes in the same tab-separated format as the timing files the window
 //! can already import, so its output goes through `parse_rhubarb`.
 //!
-//! Recognising speech takes a few seconds per second of dialogue, so it
-//! runs on its own thread, reporting progress, and can be cancelled.
+//! Recognising speech takes a few seconds per second of dialogue, so in
+//! the app it runs on its own thread, reporting progress, and can be
+//! cancelled.
 
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -109,6 +111,18 @@ impl Job {
     }
 }
 
+/// Works out the mouth shapes for the sound file `audio`, at `fps`, and
+/// waits for them, for scripts. As [`Job::start`] otherwise.
+pub fn recognize(
+    rhubarb: &Path,
+    audio: &Path,
+    fps: f64,
+    recognizer: Recognizer,
+    dialogue: Option<&str>,
+) -> Result<Vec<MouthCue>, String> {
+    run(rhubarb, audio, fps, recognizer, dialogue, &Mutex::new(None), |_| {})
+}
+
 fn run(
     rhubarb: &Path,
     audio: &Path,
@@ -120,7 +134,7 @@ fn run(
 ) -> Result<Vec<MouthCue>, String> {
     // Rhubarb only reads WAV, so decode whatever the dialogue is (MP3, M4A…)
     // and hand it a WAV. The guards delete the temporary files afterwards.
-    let clip = inkframe_audio::decode(audio).map_err(|e| format!("Couldn't read the dialogue: {e}"))?;
+    let clip = crate::decode(audio).map_err(|e| format!("Couldn't read the dialogue: {e}"))?;
     let wav = TempFile::new("wav");
     clip.write_wav(&wav.0).map_err(|e| format!("Couldn't prepare the dialogue: {e}"))?;
     let text = match dialogue.map(str::trim).filter(|t| !t.is_empty()) {
@@ -231,8 +245,25 @@ impl Drop for TempFile {
     }
 }
 
+/// A second of silence, a second of hum, and a second of silence: not
+/// speech, but enough for Rhubarb to run on, for tests here and in the
+/// crates that use this one.
+#[doc(hidden)]
+pub fn write_hum(path: &Path) {
+    let rate = crate::SAMPLE_RATE as usize;
+    let samples = (0..rate * 3)
+        .flat_map(|i| {
+            let t = i as f32 / rate as f32;
+            let level = if (1.0..2.0).contains(&t) { 0.5 } else { 0.0 };
+            let s = level * (t * 220.0 * std::f32::consts::TAU).sin();
+            [s, s]
+        })
+        .collect();
+    crate::Clip { samples }.write_wav(path).expect("writes the test sound");
+}
+
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
 
     #[test]
@@ -269,20 +300,5 @@ pub(crate) mod tests {
         let cues = result.expect("Rhubarb succeeds");
         assert!(progressed, "progress was reported");
         assert_eq!(cues.first().map(|c| c.frame), Some(0));
-    }
-
-    /// A second of silence, a second of hum, and a second of silence: not
-    /// speech, but enough for Rhubarb to run on.
-    pub(crate) fn write_hum(path: &Path) {
-        let rate = inkframe_audio::SAMPLE_RATE as usize;
-        let samples = (0..rate * 3)
-            .flat_map(|i| {
-                let t = i as f32 / rate as f32;
-                let level = if (1.0..2.0).contains(&t) { 0.5 } else { 0.0 };
-                let s = level * (t * 220.0 * std::f32::consts::TAU).sin();
-                [s, s]
-            })
-            .collect();
-        inkframe_audio::Clip { samples }.write_wav(path).expect("writes the test sound");
     }
 }

@@ -15,7 +15,7 @@ use inkframe_core::{
 
 use crate::audio_engine::AudioEngine;
 use crate::editor::Editor;
-use crate::rhubarb::{self, Event, Job, Recognizer};
+use inkframe_audio::rhubarb::{self, Event, Job, Recognizer};
 
 /// Timing files the window can read: Rhubarb's tab-separated output, and
 /// Papagayo/Moho switch files.
@@ -378,7 +378,7 @@ mod tests {
             ["X", "A", "D"].map(|n| Drawing::new(n, Vec::new())).to_vec();
         editor.selection = Some(id);
         let sound = std::env::temp_dir().join(format!("inkframe-lipsync-test-{}.wav", std::process::id()));
-        crate::rhubarb::tests::write_hum(&sound);
+        rhubarb::write_hum(&sound);
         editor.doc.add_audio(&sound, None, 4);
 
         let mut dialog = LipSyncDialog::default();

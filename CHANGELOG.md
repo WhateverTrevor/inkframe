@@ -5,6 +5,18 @@ notes on GitHub are its section here.
 
 ## Unreleased
 
+### Speed
+
+- Particles draw faster: a soft dot is filled as a square of its gradient,
+  which fades to nothing at the edge anyway, rather than as a smoothed
+  circle. A 500-layer scene with fire and snow draws about 20% faster.
+
+### Scripting
+
+- `lipSync` can have Rhubarb Lip Sync listen to the dialogue, as the Lip
+  Sync window does: `mouth.lipSync("line", { rhubarb: true })`, with a
+  `language` and the `dialogue` said.
+
 ### Guidebook
 
 - A chapter on scripting: running the example scripts, a first script in

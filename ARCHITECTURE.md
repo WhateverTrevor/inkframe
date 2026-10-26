@@ -258,6 +258,11 @@ for a whole document, decoding each file once. Documents only *reference*
 audio files (`AudioTrack::path`), relative to the project file when
 possible; `AudioTrack::resolve` finds them.
 
+`rhubarb.rs` finds and runs Rhubarb Lip Sync: decoding the dialogue to a
+temporary WAV, reading progress from its `--machineReadable` log and
+parsing its TSV output. The app's Lip Sync window runs it on a background
+thread (`Job`); scripts wait for it (`recognize`).
+
 ### inkframe-export
 
 `export(doc, settings, on_progress)` renders each frame and either writes a
@@ -354,7 +359,6 @@ writes. No audio.
 | `cli.rs` | `inkframe --export …`: parses projects and options into `BatchJob`s and runs them without a window (attaching to the parent console on Windows) |
 | `lip_sync_dialog.rs` | The Lip Sync window: picks the dialogue and timing source, maps drawings to mouth shapes, applies `Layer::apply_lip_sync` |
 | `tablet.rs` | Pen pressure: from Windows Ink pens via egui's touch events with force, and on macOS from an AppKit local event monitor that notes each pen event's pressure and tilt. `samples` gives every pointer position since the last frame with its pressure |
-| `rhubarb.rs` | Finding and running Rhubarb Lip Sync on a background thread (`Job`): decodes the dialogue to a temporary WAV, reads progress from its `--machineReadable` log, parses its TSV output |
 | `theme.rs` | The look: Inter as the interface font, a palette of greys with one blue accent (constants other modules draw with), spacing and corner radii |
 | `icons.rs` | The interface's small icons (playback, layer toggles, area kinds), drawn as lines in the theme's colours, and `IconButton` |
 | `layer_thumbnails.rs` | The timeline's per-layer thumbnails (`render_layer_thumbnail` in the render crate), cached and redrawn only when what shows in them changes, a few per UI frame |

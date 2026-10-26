@@ -350,8 +350,9 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, native: &Object<'js>, state: &Shared)
                              d: usize,
                              id: f64,
                              sound: String,
-                             timing: Option<String>|
+                             options: String|
           -> rquickjs::Result<usize> {
+        let options = parse(&ctx, &options)?;
         let mut state = s.borrow_mut();
         let base = state.base_dir.clone();
         let open = doc_mut(&ctx, &mut state, d)?;
@@ -367,9 +368,12 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, native: &Object<'js>, state: &Shared)
         let decoded = inkframe_audio::decode(&file)
             .map_err(|e| throw(&ctx, format!("couldn't read {}: {e}", file.display())))?;
         let peaks = decoded.peaks_per_frame(fps);
-        let cues = match timing {
-            Some(timing) => read_timing(&ctx, &timing, base.as_deref(), fps)?,
-            None => inkframe_core::cues_from_loudness(&peaks),
+        let cues = if let Some(timing) = options["timing"].as_str() {
+            read_timing(&ctx, timing, base.as_deref(), fps)?
+        } else if options["rhubarb"].as_bool() == Some(true) {
+            listen(&ctx, &file, fps, &options)?
+        } else {
+            inkframe_core::cues_from_loudness(&peaks)
         };
         let layer = doc.layer_mut(layer_id(id)).ok_or_else(|| gone(&ctx))?;
         let map = MouthMap::guess(layer);
@@ -468,6 +472,29 @@ fn web_action(ctx: &Ctx<'_>, value: &Value) -> rquickjs::Result<Option<WebAction
             ));
         }
     }))
+}
+
+/// Mouth cues from Rhubarb Lip Sync listening to the sound `file`, as the
+/// Lip Sync window has it: `language` "english" (the default, which knows
+/// English words) or "other" (sounds only), and the `dialogue` said, which
+/// helps with unclear words. Only the Rhubarb that comes with Inkframe is
+/// run, on the project's own sound.
+fn listen(
+    ctx: &Ctx<'_>,
+    file: &Path,
+    fps: f64,
+    options: &Value,
+) -> rquickjs::Result<Vec<inkframe_core::MouthCue>> {
+    use inkframe_audio::rhubarb::{self, Recognizer};
+    let rhubarb = rhubarb::locate()
+        .ok_or_else(|| throw(ctx, "Rhubarb Lip Sync isn't included with this copy of Inkframe; use the sound's loudness or a timing file"))?;
+    let recognizer = match options["language"].as_str().unwrap_or("english") {
+        "english" => Recognizer::English,
+        "other" => Recognizer::AnyLanguage,
+        other => return Err(throw(ctx, format!("language is \"english\" or \"other\", not {other:?}"))),
+    };
+    rhubarb::recognize(&rhubarb, file, fps, recognizer, options["dialogue"].as_str())
+        .map_err(|e| throw(ctx, e))
 }
 
 /// Mouth cues from a timing file a script named: Rhubarb's tab-separated
