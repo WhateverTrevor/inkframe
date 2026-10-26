@@ -1,6 +1,9 @@
 //! Drawing a particle layer's particles (see `particles.rs` in the core).
 //!
-//! Dots are drawn as circles, softened with a radial gradient. A layer
+//! Dots are drawn as circles, softened with a radial gradient. A soft dot
+//! fades to nothing at its edge, so its whole square is filled with the
+//! gradient instead, without anti-aliasing: the same picture, without the
+//! cost of a smooth circle's edge, which was most of drawing particles. A layer
 //! whose own drawing is the particle is drawn into a small picture once,
 //! at the size the biggest particle shows, and that picture is stamped at
 //! each particle: thousands of copies of a drawing would otherwise mean
@@ -45,12 +48,18 @@ pub(crate) fn draw_particles(
 
     match emitter.sprite {
         Sprite::Dot { softness } => {
-            let Some(circle) = PathBuilder::from_circle(0.0, 0.0, 0.5) else { return };
             let softness = softness.clamp(0.0, 1.0);
+            let shape = if softness <= 0.0 {
+                PathBuilder::from_circle(0.0, 0.0, 0.5)
+            } else {
+                tiny_skia::Rect::from_xywh(-0.5, -0.5, 1.0, 1.0).map(PathBuilder::from_rect)
+            };
+            let Some(shape) = shape else { return };
             for (particle, m) in &particles {
                 let colour = style.tint.unwrap_or(particle.color);
                 let colour = colour.with_alpha((colour.a as f32 * particle.opacity).round() as u8);
-                let mut paint = Paint { anti_alias: true, ..Paint::default() };
+                // Only a hard dot has an edge to smooth.
+                let mut paint = Paint { anti_alias: softness <= 0.0, ..Paint::default() };
                 let solid = to_skia_color(colour);
                 if softness <= 0.0 {
                     paint.set_color(solid);
@@ -75,7 +84,7 @@ pub(crate) fn draw_particles(
                     };
                     paint.shader = shader;
                 }
-                pixmap.fill_path(&circle, &paint, FillRule::Winding, to_skia_transform(*m), None);
+                pixmap.fill_path(&shape, &paint, FillRule::Winding, to_skia_transform(*m), None);
             }
         }
         Sprite::Drawing => {

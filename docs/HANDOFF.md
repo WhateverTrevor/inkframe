@@ -1024,6 +1024,12 @@ after the Harmony features (palettes to master controllers).
     Script `lipSync(sound, options)` takes `{ rhubarb, language, dialogue }`
     or `{ timing }` (options now passed as JSON). Only the bundled Rhubarb
     runs (`locate`).
+129. Faster particles: profiling showed particle time was nearly all
+    rasterising each soft dot as an anti-aliased gradient circle
+    (particles_on_layer itself ~4%). Soft dots (softness > 0) now fill a
+    unit square with the same radial gradient, anti-aliasing off; hard dots
+    keep the AA circle. Heavy scene 5.0 -> 3.9 ms (half), 7.0 -> 5.5 ms
+    (full); frames differ by at most 8/255 in ~0.01% of channels.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)
