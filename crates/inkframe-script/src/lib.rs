@@ -1,6 +1,6 @@
 //! Running JavaScript against an Inkframe document (see
-//! `docs/SCRIPTING.md` for the API, and `docs/SCRIPTING_PLAN.md` for why
-//! it's shaped this way).
+//! `docs/SCRIPTING.md` for the API, and `ARCHITECTURE.md` for why it's
+//! shaped this way).
 //!
 //! A script runs against a copy of the document. Only if it finishes
 //! without an error does the caller get the copy back to use, so a script

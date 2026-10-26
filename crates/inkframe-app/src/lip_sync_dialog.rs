@@ -9,10 +9,9 @@
 
 use std::path::{Path, PathBuf};
 
-use inkframe_core::{
-    AudioId, LayerId, MouthCue, MouthMap, MouthShape, cues_from_loudness, parse_papagayo, parse_rhubarb,
-};
+use inkframe_core::{AudioId, LayerId, MouthCue, MouthMap, MouthShape, cues_from_loudness};
 
+use crate::app::file_name;
 use crate::audio_engine::AudioEngine;
 use crate::editor::Editor;
 use crate::i18n::{tr, tr_args};
@@ -343,18 +342,7 @@ impl LipSyncDialog {
 
 fn read_timing(path: &Path, fps: f64) -> Result<Vec<MouthCue>, String> {
     let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    // Papagayo's files say so on their first line; anything else is taken
-    // to be Rhubarb's.
-    let cues = if text.trim_start().starts_with("MohoSwitch") {
-        parse_papagayo(&text)
-    } else {
-        parse_rhubarb(&text, fps)
-    };
-    cues.map_err(|e| e.to_string())
-}
-
-fn file_name(path: &Path) -> String {
-    path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned())
+    inkframe_core::parse_timing(&text, fps).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -373,7 +361,7 @@ mod tests {
 
         let mut dialog = LipSyncDialog::default();
         dialog.open(&editor);
-        let cues = parse_rhubarb("0.0 D\n0.25 A\n0.5 X\n", 24.0).unwrap();
+        let cues = inkframe_core::parse_rhubarb("0.0 D\n0.25 A\n0.5 X\n", 24.0).unwrap();
         dialog.timing = Some(Timing::File { path: PathBuf::from("line.tsv"), cues });
         // The sound never loads here, so the file's own length is used.
         let summary = dialog.apply(&mut editor, &mut AudioEngine::without_output()).unwrap();

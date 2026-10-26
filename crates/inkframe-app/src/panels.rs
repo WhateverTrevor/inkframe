@@ -37,19 +37,8 @@ fn palette() -> Vec<Color> {
 }
 
 fn hsv(hue: f32, saturation: f32, value: f32) -> Color {
-    let c = value * saturation;
-    let h = hue / 60.0;
-    let x = c * (1.0 - (h % 2.0 - 1.0).abs());
-    let (r, g, b) = match h as u32 {
-        0 => (c, x, 0.0),
-        1 => (x, c, 0.0),
-        2 => (0.0, c, x),
-        3 => (0.0, x, c),
-        4 => (x, 0.0, c),
-        _ => (c, 0.0, x),
-    };
-    let m = value - c;
-    let byte = |v: f32| ((v + m) * 255.0).round() as u8;
+    let (r, g, b) = inkframe_core::hsv_to_rgb(hue / 360.0, saturation, value);
+    let byte = |v: f32| (v * 255.0).round() as u8;
     Color::rgb(byte(r), byte(g), byte(b))
 }
 

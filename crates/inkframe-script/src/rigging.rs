@@ -515,10 +515,5 @@ fn read_timing(
     }
     let text = std::fs::read_to_string(&file)
         .map_err(|e| throw(ctx, format!("couldn't read {}: {e}", file.display())))?;
-    let cues = if extension == "dat" {
-        inkframe_core::parse_papagayo(&text)
-    } else {
-        inkframe_core::parse_rhubarb(&text, fps)
-    };
-    cues.map_err(|e| throw(ctx, format!("{}: {e}", file.display())))
+    inkframe_core::parse_timing(&text, fps).map_err(|e| throw(ctx, format!("{}: {e}", file.display())))
 }

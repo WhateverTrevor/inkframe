@@ -482,7 +482,7 @@ fn selection_section(ui: &mut egui::Ui, editor: &mut Editor) {
 }
 
 /// A slider for a 0–1 setting, shown as a percentage.
-fn percent(value: &mut f32) -> egui::Slider<'_> {
+pub(crate) fn percent(value: &mut f32) -> egui::Slider<'_> {
     egui::Slider::new(value, 0.0..=1.0).custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
 }
 

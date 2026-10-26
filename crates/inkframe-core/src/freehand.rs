@@ -10,7 +10,7 @@
 //!    converting each span into an equivalent cubic Bézier, which every
 //!    renderer understands.
 
-use crate::geometry::Point;
+use crate::geometry::{Point, simplify};
 use crate::shape::{Path, Segment};
 
 /// Fits a smooth path through freehand input.
@@ -30,35 +30,6 @@ pub fn fit_freehand_path(points: &[Point], tolerance: f32) -> Option<Path> {
     let kept = simplify(&points, tolerance);
     let segments = catmull_rom_to_bezier(&kept);
     Some(Path { start: kept[0], segments, closed: false })
-}
-
-/// Ramer–Douglas–Peucker line simplification.
-///
-/// Draw a straight line from the first point to the last. Find the input
-/// point farthest from that line. If it's within `tolerance`, the line is a
-/// good enough stand-in for everything between, so drop those points.
-/// Otherwise keep the farthest point and repeat on each half.
-fn simplify(points: &[Point], tolerance: f32) -> Vec<Point> {
-    let mut keep = vec![false; points.len()];
-    keep[0] = true;
-    keep[points.len() - 1] = true;
-
-    // An explicit stack instead of recursion, so very long strokes can't
-    // overflow the call stack.
-    let mut stack = vec![(0, points.len() - 1)];
-    while let Some((first, last)) = stack.pop() {
-        let (farthest, distance) = (first + 1..last)
-            .map(|i| (i, points[i].distance_to_segment(points[first], points[last])))
-            .fold((first, 0.0f32), |best, cur| if cur.1 > best.1 { cur } else { best });
-
-        if distance > tolerance {
-            keep[farthest] = true;
-            stack.push((first, farthest));
-            stack.push((farthest, last));
-        }
-    }
-
-    points.iter().zip(keep).filter_map(|(&p, k)| k.then_some(p)).collect()
 }
 
 /// Converts a Catmull-Rom spline through `points` into cubic Bézier segments.

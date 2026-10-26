@@ -22,8 +22,9 @@ use inkframe_core::{
 };
 
 use crate::editor::{Editor, Tool};
-use crate::i18n::{tr, tr_args, tr_later};
+use crate::i18n::{tr, tr_args};
 use crate::icons::{Icon, IconButton};
+use crate::inspector::percent;
 
 /// A section of the Brush Settings panel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -509,25 +510,13 @@ fn separator(ui: &mut egui::Ui) {
     ui.end_row();
 }
 
-fn percent(value: &mut f32) -> egui::Slider<'_> {
-    egui::Slider::new(value, 0.0..=1.0).custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
-}
-
 fn parse_percent(text: &str) -> Option<f64> {
     text.trim().trim_end_matches('%').trim().parse::<f64>().ok().map(|v| v / 100.0)
 }
 
-/// A pattern's name: the made ones translated, a picture's as it is.
+/// A pattern's name: a made one's translated, a picture's as it is.
 fn tr_pattern(pattern: &Pattern) -> String {
-    match pattern {
-        Pattern::Paper => tr("Paper").to_owned(),
-        Pattern::RoughPaper => tr("Rough Paper").to_owned(),
-        Pattern::Canvas => tr("Canvas").to_owned(),
-        Pattern::Grain => tr("Grain").to_owned(),
-        Pattern::Sponge => tr("Sponge").to_owned(),
-        Pattern::Fibre => tr("Fibre").to_owned(),
-        Pattern::Picture(_) => pattern.label().to_owned(),
-    }
+    pattern.made_label().map_or_else(|| pattern.label().to_owned(), |name| tr(name).to_owned())
 }
 
 /// Photoshop's angle and roundness widget: an oval in a circle, turned to
@@ -992,40 +981,12 @@ fn preset_list(
 
 /// A ready-made brush's name, translated; a saved one's as it is.
 pub(crate) fn preset_name(name: &str) -> String {
-    if crate::brushes::BrushLibrary::built_in().iter().any(|p| p.name == name) {
-        // The ready-made names are fixed texts in the core.
-        translate_built_in(name)
-    } else {
-        name.to_owned()
+    match crate::brushes::BrushLibrary::built_in().iter().find(|p| p.name == name) {
+        // The ready-made brushes live for good, so their names can be
+        // looked up as texts.
+        Some(preset) => tr(preset.name.as_str()).to_owned(),
+        None => name.to_owned(),
     }
-}
-
-/// The ready-made brushes' names, listed here for translators (the core,
-/// which names them, keeps English).
-const BUILT_IN_NAMES: [&str; 18] = [
-    tr_later("Hard Round"),
-    tr_later("Soft Round"),
-    tr_later("Airbrush"),
-    tr_later("Inking Pen"),
-    tr_later("Pencil"),
-    tr_later("Chalk"),
-    tr_later("Charcoal"),
-    tr_later("Dry Brush"),
-    tr_later("Oil Bristle"),
-    tr_later("Flat Brush"),
-    tr_later("Watercolour"),
-    tr_later("Sponge"),
-    tr_later("Foliage"),
-    tr_later("Grass"),
-    tr_later("Clouds"),
-    tr_later("Rocks"),
-    tr_later("Spatter"),
-    tr_later("Stars and Snow"),
-];
-
-fn translate_built_in(name: &str) -> String {
-    const NAMES: [&str; 18] = BUILT_IN_NAMES;
-    NAMES.iter().find(|n| **n == name).map_or_else(|| name.to_owned(), |n| tr(n).to_owned())
 }
 
 /// The quick menu, if open: where the stage was right-clicked, a small
@@ -1101,24 +1062,5 @@ pub fn pressure_switches(ui: &mut egui::Ui, settings: &mut BrushSettings) {
     {
         settings.transfer.opacity_control = if opacity { Control::PenPressure } else { Control::Off };
         settings.transfer.on |= opacity;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_ready_made_brush_name_is_listed_for_translating() {
-        for preset in crate::brushes::BrushLibrary::built_in() {
-            // Listed: translating it with no language in use gives it back,
-            // and it's in the table.
-            assert_eq!(translate_built_in(&preset.name), preset.name);
-            assert!(
-                BUILT_IN_NAMES.contains(&preset.name.as_str()),
-                "{} is missing from translate_built_in",
-                preset.name
-            );
-        }
     }
 }

@@ -428,7 +428,7 @@ fn pack_bits(row: &[u8]) -> Vec<u8> {
     out
 }
 
-fn unpack_bits(data: &[u8], expected: usize) -> Result<Vec<u8>, PsdError> {
+pub(crate) fn unpack_bits(data: &[u8], expected: usize) -> Result<Vec<u8>, PsdError> {
     let mut out = Vec::with_capacity(expected);
     let mut i = 0;
     while i < data.len() && out.len() < expected {

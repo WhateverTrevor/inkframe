@@ -105,16 +105,26 @@ impl Pattern {
         Pattern::Fibre,
     ];
 
+    /// The pattern's name: a picture's own, or a made one's.
     pub fn label(&self) -> &str {
         match self {
+            Pattern::Picture(image) => &image.name,
+            made => made.made_label().unwrap_or_default(),
+        }
+    }
+
+    /// A made pattern's name, which is fixed (so can be translated); a
+    /// picture has none.
+    pub fn made_label(&self) -> Option<&'static str> {
+        Some(match self {
             Pattern::Paper => crate::i18n::tr_later("Paper"),
             Pattern::RoughPaper => crate::i18n::tr_later("Rough Paper"),
             Pattern::Canvas => crate::i18n::tr_later("Canvas"),
             Pattern::Grain => crate::i18n::tr_later("Grain"),
             Pattern::Sponge => crate::i18n::tr_later("Sponge"),
             Pattern::Fibre => crate::i18n::tr_later("Fibre"),
-            Pattern::Picture(image) => &image.name,
-        }
+            Pattern::Picture(_) => return None,
+        })
     }
 
     /// The height at (`x`, `y`) in the pattern's own pixels, 0 to 1.

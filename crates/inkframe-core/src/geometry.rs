@@ -236,6 +236,32 @@ impl Affine {
     }
 }
 
+/// The points of a polyline that matter for its shape (Ramer–Douglas–
+/// Peucker): the ends, and every point further than `tolerance` from the
+/// line between the points kept either side of it.
+pub(crate) fn simplify(points: &[Point], tolerance: f32) -> Vec<Point> {
+    if points.len() < 3 {
+        return points.to_vec();
+    }
+    let mut keep = vec![false; points.len()];
+    keep[0] = true;
+    keep[points.len() - 1] = true;
+    // An explicit stack instead of recursion, so very long strokes can't
+    // overflow the call stack.
+    let mut stack = vec![(0, points.len() - 1)];
+    while let Some((first, last)) = stack.pop() {
+        let (farthest, distance) = (first + 1..last)
+            .map(|i| (i, points[i].distance_to_segment(points[first], points[last])))
+            .fold((first, 0.0f32), |best, cur| if cur.1 > best.1 { cur } else { best });
+        if distance > tolerance {
+            keep[farthest] = true;
+            stack.push((first, farthest));
+            stack.push((farthest, last));
+        }
+    }
+    points.iter().zip(keep).filter_map(|(&p, k)| k.then_some(p)).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
