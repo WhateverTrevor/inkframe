@@ -36,6 +36,8 @@ This book is for illustrators, cartoonists and students who want to make their d
 
 *Chapter 13, Project: An Interactive Web Banner*, animates a banner with motion presets and gives it a button that opens a link, exported as a web page.
 
+*Chapter 14, Automating with Scripts*, runs the example scripts, writes a first one in the Script Console, and shows how scripts rig characters, time mouths and make web buttons.
+
 *Appendix A* lists every tool and its key, and *Appendix B* every command and where to find it.
 
 ## To get the most out of this book

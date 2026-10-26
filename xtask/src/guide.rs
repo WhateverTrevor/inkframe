@@ -24,6 +24,7 @@
 //! * `> Tip: …` and `> Important note: …` are boxed asides.
 //! * `{{fig:name}}` in the words becomes that figure's number ("Figure 2.3").
 //! * `[[⌘K]]` is a key to press.
+//! * A block between ``` lines is code, set as typed.
 //! * `{{reference:tools}}` and `{{reference:commands}}` are the generated
 //!   tables.
 
@@ -444,6 +445,20 @@ impl Chapter<'_, '_> {
         while i < lines.len() {
             let line = lines[i];
             let trimmed = line.trim();
+            // A fenced code block, kept as typed.
+            if trimmed.starts_with("```") {
+                flush(&mut paragraph, &mut self.html);
+                i += 1;
+                let mut code = Vec::new();
+                while i < lines.len() && !lines[i].trim().starts_with("```") {
+                    code.push(lines[i]);
+                    i += 1;
+                }
+                let escaped = code.join("\n").replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+                let _ = writeln!(self.html, "<pre><code>{escaped}</code></pre>");
+                i += 1;
+                continue;
+            }
             if trimmed.is_empty() || trimmed.starts_with("<!--") {
                 flush(&mut paragraph, &mut self.html);
                 i += 1;
@@ -783,6 +798,29 @@ mod tests {
         assert_eq!(pages.get("preface"), Some(&1));
         assert_eq!(pages.get("drawing-the-pen"), Some(&3));
         assert!(page_numbers(b"not a pdf").is_empty());
+    }
+
+    #[test]
+    fn code_blocks_are_kept_as_typed() {
+        let images = std::env::temp_dir();
+        let book = Book::new(&images, String::new(), String::new());
+        let mut chapter = Chapter {
+            book: &book,
+            label: String::new(),
+            figure_prefix: "1".into(),
+            figures: 0,
+            title: String::new(),
+            anchor: String::new(),
+            sections: Vec::new(),
+            html: String::new(),
+        };
+        chapter.render("# Scripts\n\n```\nconst a = [[1]] < 2;\n  **not bold**\n```\nAfter.").unwrap();
+        assert!(
+            chapter.html.contains("<pre><code>const a = [[1]] &lt; 2;\n  **not bold**</code></pre>"),
+            "{}",
+            chapter.html
+        );
+        assert!(chapter.html.contains("<p>After.</p>"));
     }
 
     #[test]

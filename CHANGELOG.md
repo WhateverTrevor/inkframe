@@ -5,6 +5,11 @@ notes on GitHub are its section here.
 
 ## Unreleased
 
+### Guidebook
+
+- A chapter on scripting: running the example scripts, a first script in
+  the Script Console, and scripting rigs, mouths and web buttons.
+
 ### Timeline
 
 - Cut, Copy and Paste Frames are on a row's right-click menu too, and
