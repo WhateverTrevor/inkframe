@@ -15,6 +15,7 @@
 
 use egui::{Align2, Color32, Context, Id, Key, Order, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
+use crate::i18n::{tr, tr_args, tr_later};
 use crate::theme;
 
 /// Where the parts of the window the tour points at were drawn this
@@ -61,55 +62,71 @@ struct Step {
 const STEPS: [Step; 8] = [
     Step {
         target: Target::Window,
-        title: "Welcome to Inkframe",
-        text: "A quick look around the window: seven stops, under a minute. \
+        title: tr_later("Welcome to Inkframe"),
+        text: tr_later(
+            "A quick look around the window: seven stops, under a minute. \
                Press Enter or → to go on, and Esc to leave the tour at any time.",
+        ),
     },
     Step {
         target: Target::Tools,
-        title: "The tools",
-        text: "Drawing, painting, rigging and the camera. Hover over a tool to see what it does. \
+        title: tr_later("The tools"),
+        text: tr_later(
+            "Drawing, painting, rigging and the camera. Hover over a tool to see what it does. \
                A small triangle means other tools share its slot: right-click it, or press the \
                tool's key with Shift.",
+        ),
     },
     Step {
         target: Target::ContextBar,
-        title: "What you can do now",
-        text: "This bar follows what you're doing: the tool you have, and buttons for what can be \
+        title: tr_later("What you can do now"),
+        text: tr_later(
+            "This bar follows what you're doing: the tool you have, and buttons for what can be \
                done with what's selected, such as making a symbol or bending a drawing. Its right \
                end switches rulers, onion skins and the light table.",
+        ),
     },
     Step {
         target: Target::Stage,
-        title: "The stage",
-        text: "Your picture. What's inside the frame is what gets exported. Scroll to pan, pinch \
+        title: tr_later("The stage"),
+        text: tr_later(
+            "Your picture. What's inside the frame is what gets exported. Scroll to pan, pinch \
                or ⌘-scroll to zoom, and ⌘0 fits it in view again.",
+        ),
     },
     Step {
         target: Target::Properties,
-        title: "Properties",
-        text: "Settings for what you're working on: the current Tool, the selected Layer, and the \
+        title: tr_later("Properties"),
+        text: tr_later(
+            "Settings for what you're working on: the current Tool, the selected Layer, and the \
                whole Document. Every area's name is a menu: click it to show something else there, \
                such as the Library.",
+        ),
     },
     Step {
         target: Target::Timeline,
-        title: "The timeline",
-        text: "Your layers, and their keyframes over time. + adds a layer to draw into. Move to \
+        title: tr_later("The timeline"),
+        text: tr_later(
+            "Your layers, and their keyframes over time. + adds a layer to draw into. Move to \
                another frame and change a layer, and it's keyed there. Enter plays.",
+        ),
     },
     Step {
         target: Target::Finder,
-        title: "Find anything",
-        text: "Can't find a command? Press ⌘K and type its name, or what it's for: \"bulge\", \
+        title: tr_later("Find anything"),
+        text: tr_later(
+            "Can't find a command? Press ⌘K and type its name, or what it's for: \"bulge\", \
                \"rig\", \"web page\". It also shows which menu it's in and its keys.",
+        ),
     },
     Step {
         target: Target::Help,
-        title: "Learning more",
-        text: "Help has Inkframe for Artists, a beginner's guidebook with a chapter for each group \
+        title: tr_later("Learning more"),
+        text: tr_later(
+            "Help has Inkframe for Artists, a beginner's guidebook with a chapter for each group \
                of tools, and this tour again. File › Open Example has finished projects to take \
                apart. Have fun!",
+        ),
     },
 ];
 
@@ -237,34 +254,37 @@ impl Tour {
 
     fn card_contents(&mut self, ui: &mut egui::Ui, step: usize) -> Option<Ended> {
         let Step { title, text, .. } = &STEPS[step];
-        ui.weak(format!("{} of {}", step + 1, STEPS.len()));
-        ui.label(egui::RichText::new(*title).size(17.0).strong().color(theme::TEXT));
+        ui.weak(tr_args(
+            "{step} of {steps}",
+            &[("step", &(step + 1).to_string()), ("steps", &STEPS.len().to_string())],
+        ));
+        ui.label(egui::RichText::new(tr(title)).size(17.0).strong().color(theme::TEXT));
         ui.add_space(4.0);
-        ui.label(*text);
+        ui.label(tr(text));
         ui.add_space(10.0);
         let last = step + 1 == STEPS.len();
         let mut ended = None;
         ui.horizontal(|ui| {
-            if !last && ui.button("Skip tour").clicked() {
+            if !last && ui.button(tr("Skip tour")).clicked() {
                 self.step = None;
                 ended = Some(Ended::Closed);
             }
-            if last && ui.button("Open an example").clicked() {
+            if last && ui.button(tr("Open an example")).clicked() {
                 self.step = None;
                 ended = Some(Ended::OpenExamples);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let next = if step == 0 {
-                    "Start"
+                    tr("Start")
                 } else if last {
-                    "Done"
+                    tr("Done")
                 } else {
-                    "Next"
+                    tr("Next")
                 };
                 if ui.add(egui::Button::new(next).fill(theme::ACCENT_DIM)).clicked() {
                     ended = self.next(step);
                 }
-                if step > 0 && ui.button("Back").clicked() {
+                if step > 0 && ui.button(tr("Back")).clicked() {
                     self.step = Some(step - 1);
                 }
             });

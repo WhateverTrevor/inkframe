@@ -15,6 +15,7 @@ use crate::editor::{Editor, Tool};
 use crate::examples::ExamplesWindow;
 use crate::export_dialog::ExportDialog;
 use crate::guides::SafeAreas;
+use crate::i18n::{tr, tr_args};
 use crate::layout::{AreaId, Kind, Layout, Workspace};
 use crate::library::LibraryView;
 use crate::lip_sync_dialog::LipSyncDialog;
@@ -1326,114 +1327,114 @@ impl InkframeApp {
             };
             let has_selection = self.editor.selection.is_some();
 
-            ui.menu_button("File", |ui| {
-                item(ui, "New", Some(shortcuts::NEW), Command::New, true);
-                item(ui, "Open…", Some(shortcuts::OPEN), Command::Open, true);
-                item(ui, "Open Example…", None, Command::OpenExample, true);
-                item(ui, "Import to Stage…", Some(shortcuts::IMPORT), Command::ImportImage, true);
-                item(ui, "Import Audio…", None, Command::ImportAudio, true);
-                item(ui, "Import Font…", None, Command::ImportFont, true);
+            ui.menu_button(tr("File"), |ui| {
+                item(ui, tr("New"), Some(shortcuts::NEW), Command::New, true);
+                item(ui, tr("Open…"), Some(shortcuts::OPEN), Command::Open, true);
+                item(ui, tr("Open Example…"), None, Command::OpenExample, true);
+                item(ui, tr("Import to Stage…"), Some(shortcuts::IMPORT), Command::ImportImage, true);
+                item(ui, tr("Import Audio…"), None, Command::ImportAudio, true);
+                item(ui, tr("Import Font…"), None, Command::ImportFont, true);
                 ui.separator();
-                item(ui, "Save", Some(shortcuts::SAVE), Command::Save, true);
-                item(ui, "Save As…", Some(shortcuts::SAVE_AS), Command::SaveAs, true);
+                item(ui, tr("Save"), Some(shortcuts::SAVE), Command::Save, true);
+                item(ui, tr("Save As…"), Some(shortcuts::SAVE_AS), Command::SaveAs, true);
                 ui.separator();
-                item(ui, "Export…", Some(shortcuts::EXPORT), Command::Export, true);
-                item(ui, "Export PSD…", None, Command::ExportPsd, true);
-                item(ui, "Batch Export…", None, Command::BatchExport, true);
+                item(ui, tr("Export…"), Some(shortcuts::EXPORT), Command::Export, true);
+                item(ui, tr("Export PSD…"), None, Command::ExportPsd, true);
+                item(ui, tr("Batch Export…"), None, Command::BatchExport, true);
             });
-            ui.menu_button("Edit", |ui| {
+            ui.menu_button(tr("Edit"), |ui| {
                 // Named for what they'd undo and redo, as the History panel names it.
                 let (undo, redo) = self.editor.history.next_labels();
-                let undo = undo.map_or_else(|| "Undo".to_owned(), |l| format!("Undo {l}"));
-                let redo = redo.map_or_else(|| "Redo".to_owned(), |l| format!("Redo {l}"));
+                let undo = undo.map_or_else(|| tr("Undo").to_owned(), |l| tr_args("Undo {what}", &[("what", l)]));
+                let redo = redo.map_or_else(|| tr("Redo").to_owned(), |l| tr_args("Redo {what}", &[("what", l)]));
                 item(ui, &undo, Some(shortcuts::UNDO), Command::Undo, self.editor.history.can_undo());
                 item(ui, &redo, Some(shortcuts::REDO), Command::Redo, self.editor.history.can_redo());
                 ui.separator();
                 item(
                     ui,
-                    "Duplicate Layer",
+                    tr("Duplicate Layer"),
                     Some(shortcuts::DUPLICATE),
                     Command::DuplicateLayer,
                     has_selection,
                 );
-                item(ui, "Delete Layer", None, Command::DeleteLayer, has_selection);
+                item(ui, tr("Delete Layer"), None, Command::DeleteLayer, has_selection);
                 ui.separator();
                 let layers = matches!(self.clipboard, Some(Clipboard::Layers(_) | Clipboard::Shapes(_)));
                 let keyframe = matches!(self.clipboard, Some(Clipboard::Keyframe(_)));
-                item(ui, "Select All", Some(shortcuts::SELECT_ALL), Command::SelectAll, true);
-                item(ui, "Deselect All", Some(shortcuts::DESELECT_ALL), Command::Deselect, has_selection);
+                item(ui, tr("Select All"), Some(shortcuts::SELECT_ALL), Command::SelectAll, true);
+                item(ui, tr("Deselect All"), Some(shortcuts::DESELECT_ALL), Command::Deselect, has_selection);
                 ui.separator();
-                item(ui, "Cut", Some(shortcuts::CUT), Command::Cut, has_selection);
-                item(ui, "Copy", Some(shortcuts::COPY), Command::Copy, has_selection);
-                item(ui, "Paste in Center", Some(shortcuts::PASTE), Command::Paste, layers);
-                item(ui, "Paste in Place", Some(shortcuts::PASTE_IN_PLACE), Command::PasteInPlace, layers);
+                item(ui, tr("Cut"), Some(shortcuts::CUT), Command::Cut, has_selection);
+                item(ui, tr("Copy"), Some(shortcuts::COPY), Command::Copy, has_selection);
+                item(ui, tr("Paste in Center"), Some(shortcuts::PASTE), Command::Paste, layers);
+                item(ui, tr("Paste in Place"), Some(shortcuts::PASTE_IN_PLACE), Command::PasteInPlace, layers);
                 ui.separator();
-                item(ui, "Copy Pose", Some(shortcuts::COPY_POSE), Command::CopyPose, has_selection);
-                item(ui, "Paste Pose", Some(shortcuts::PASTE_POSE), Command::PastePose, keyframe && has_selection);
+                item(ui, tr("Copy Pose"), Some(shortcuts::COPY_POSE), Command::CopyPose, has_selection);
+                item(ui, tr("Paste Pose"), Some(shortcuts::PASTE_POSE), Command::PastePose, keyframe && has_selection);
             });
-            ui.menu_button("Modify", |ui| {
+            ui.menu_button(tr("Modify"), |ui| {
                 item(
                     ui,
-                    "Convert to Symbol",
+                    tr("Convert to Symbol"),
                     Some(shortcuts::CONVERT_TO_SYMBOL),
                     Command::ConvertToSymbol,
                     has_selection,
                 );
                 // On shapes picked inside a layer (see `inside.rs`).
                 let picked = self.editor.picked_shapes().len();
-                ui.menu_button("Combine Shapes", |ui| {
+                ui.menu_button(tr("Combine Shapes"), |ui| {
                     use inkframe_core::ShapeOp;
                     for (label, how) in [
-                        ("Union", ShapeOp::Union),
-                        ("Intersect", ShapeOp::Intersect),
-                        ("Punch", ShapeOp::Punch),
-                        ("Crop", ShapeOp::Crop),
+                        (tr("Union"), ShapeOp::Union),
+                        (tr("Intersect"), ShapeOp::Intersect),
+                        (tr("Punch"), ShapeOp::Punch),
+                        (tr("Crop"), ShapeOp::Crop),
                     ] {
                         item(ui, label, None, Command::CombineShapes(how), picked >= 2);
                     }
                     if picked < 2 {
-                        ui.weak("Double-click a layer, then pick two or more of its shapes.");
+                        ui.weak(tr("Double-click a layer, then pick two or more of its shapes."));
                     }
                 });
-                item(ui, "Break Apart", Some(shortcuts::BREAK_APART), Command::BreakApart, has_selection);
-                ui.menu_button("Transform", |ui| {
+                item(ui, tr("Break Apart"), Some(shortcuts::BREAK_APART), Command::BreakApart, has_selection);
+                ui.menu_button(tr("Transform"), |ui| {
                     use crate::envelope::LatticeKind;
                     let bendable = has_selection && self.editor.lattice.is_none();
                     for kind in [LatticeKind::Distort, LatticeKind::Envelope] {
                         item(ui, kind.name(), None, Command::StartLattice(kind), bendable);
                     }
-                    ui.weak("On the picked shapes, or everything in the selected layer.");
+                    ui.weak(tr("On the picked shapes, or everything in the selected layer."));
                 });
                 ui.separator();
                 let instance_selected = self.editor.selected_layer().is_some_and(|l| l.instance.is_some());
-                item(ui, "Edit Symbol", None, Command::EditSymbol, instance_selected);
-                item(ui, "Swap Symbol…", None, Command::SwapSymbol, SwapDialog::can_open(&self.editor));
+                item(ui, tr("Edit Symbol"), None, Command::EditSymbol, instance_selected);
+                item(ui, tr("Swap Symbol…"), None, Command::SwapSymbol, SwapDialog::can_open(&self.editor));
                 let in_symbol = self.editor.timeline() != TimelineId::Main;
-                item(ui, "Exit Symbol", None, Command::ExitSymbol, in_symbol);
+                item(ui, tr("Exit Symbol"), None, Command::ExitSymbol, in_symbol);
                 ui.separator();
                 // Only offered when there's a layer below to mask.
                 let below = self
                     .editor
                     .selection
                     .is_some_and(|id| self.editor.layers().first().is_some_and(|bottom| bottom.id != id));
-                item(ui, "Mask", None, Command::MaskLayerBelow, below);
+                item(ui, tr("Mask"), None, Command::MaskLayerBelow, below);
                 ui.separator();
                 let traceable = VectoriseDialog::can_vectorise(&self.editor);
-                item(ui, "Vectorise…", None, Command::Vectorise, traceable);
-                item(ui, "New Layer", Some(shortcuts::NEW_LAYER), Command::NewLayer, true);
-                item(ui, "New Paint Layer", None, Command::NewPaintLayer, true);
-                ui.menu_button("New Particle Layer", |ui| {
+                item(ui, tr("Vectorise…"), None, Command::Vectorise, traceable);
+                item(ui, tr("New Layer"), Some(shortcuts::NEW_LAYER), Command::NewLayer, true);
+                item(ui, tr("New Paint Layer"), None, Command::NewPaintLayer, true);
+                ui.menu_button(tr("New Particle Layer"), |ui| {
                     for preset in inkframe_core::Preset::ALL {
                         item(ui, preset.name(), None, Command::NewParticleLayer(preset), true);
                     }
                 });
-                item(ui, "New Folder", None, Command::NewFolder, true);
-                item(ui, "New Skeleton", None, Command::NewSkeleton, true);
-                item(ui, "New Switch", None, Command::NewSwitch, true);
+                item(ui, tr("New Folder"), None, Command::NewFolder, true);
+                item(ui, tr("New Skeleton"), None, Command::NewSkeleton, true);
+                item(ui, tr("New Switch"), None, Command::NewSwitch, true);
                 ui.separator();
                 let hints = self.editor.shape_tween_drawings().is_some();
-                item(ui, "Add Shape Hint", Some(shortcuts::ADD_SHAPE_HINT), Command::AddShapeHint, hints);
-                item(ui, "Remove All Hints", None, Command::RemoveShapeHints, hints);
+                item(ui, tr("Add Shape Hint"), Some(shortcuts::ADD_SHAPE_HINT), Command::AddShapeHint, hints);
+                item(ui, tr("Remove All Hints"), None, Command::RemoveShapeHints, hints);
                 let below_is_paint = self.editor.selection.is_some_and(|id| {
                     let Some(timeline) = self.editor.doc.timeline_of(id) else { return false };
                     let layers = self.editor.doc.layers_of(timeline);
@@ -1441,9 +1442,9 @@ impl InkframeApp {
                     index > 0
                         && self.editor.doc.paint_canvas_at(layers[index - 1].id, self.editor.frame).is_some()
                 });
-                item(ui, "Merge Down", None, Command::MergeDown, below_is_paint);
+                item(ui, tr("Merge Down"), None, Command::MergeDown, below_is_paint);
                 let paint = self.editor.paint_target().is_some();
-                ui.menu_button("Adjustments", |ui| {
+                ui.menu_button(tr("Adjustments"), |ui| {
                     for kind in AdjustmentKind::ALL {
                         let label = format!("{}…", kind.neutral().name());
                         item(ui, &label, None, Command::Adjust(kind), paint);
@@ -1453,47 +1454,47 @@ impl InkframeApp {
                 // artwork, not symbol instances.
                 let drawn = self.editor.selected_layer().filter(|l| l.instance.is_none());
                 let swaps = drawn.is_some_and(|l| l.drawings.len() > 1);
-                item(ui, "New Drawing", None, Command::NewDrawing, drawn.is_some());
-                item(ui, "Duplicate Drawing", None, Command::DuplicateDrawing, drawn.is_some());
-                item(ui, "Delete Drawing", None, Command::DeleteDrawing, swaps);
+                item(ui, tr("New Drawing"), None, Command::NewDrawing, drawn.is_some());
+                item(ui, tr("Duplicate Drawing"), None, Command::DuplicateDrawing, drawn.is_some());
+                item(ui, tr("Delete Drawing"), None, Command::DeleteDrawing, swaps);
                 item(
                     ui,
-                    "Previous Drawing",
+                    tr("Previous Drawing"),
                     Some(shortcuts::PREVIOUS_DRAWING),
                     Command::PreviousDrawing,
                     swaps,
                 );
-                item(ui, "Next Drawing", Some(shortcuts::NEXT_DRAWING), Command::NextDrawing, swaps);
-                item(ui, "Lip Sync…", None, Command::LipSync, swaps);
+                item(ui, tr("Next Drawing"), Some(shortcuts::NEXT_DRAWING), Command::NextDrawing, swaps);
+                item(ui, tr("Lip Sync…"), None, Command::LipSync, swaps);
             });
-            ui.menu_button("Select", |ui| {
+            ui.menu_button(tr("Select"), |ui| {
                 let paint = self.editor.paint_target().is_some();
                 let selected = self.editor.active_selection().is_some();
-                item(ui, "All Pixels", Some(shortcuts::SELECT_ALL), Command::SelectAll, paint);
-                item(ui, "Deselect", Some(shortcuts::DESELECT_ALL), Command::Deselect, selected);
-                item(ui, "Inverse", Some(shortcuts::INVERT_SELECTION), Command::InvertSelection, paint);
+                item(ui, tr("All Pixels"), Some(shortcuts::SELECT_ALL), Command::SelectAll, paint);
+                item(ui, tr("Deselect"), Some(shortcuts::DESELECT_ALL), Command::Deselect, selected);
+                item(ui, tr("Inverse"), Some(shortcuts::INVERT_SELECTION), Command::InvertSelection, paint);
                 ui.separator();
-                item(ui, "Layer via Copy", Some(shortcuts::LAYER_VIA_COPY), Command::LayerViaCopy, selected);
-                item(ui, "Layer via Cut", Some(shortcuts::LAYER_VIA_CUT), Command::LayerViaCut, selected);
+                item(ui, tr("Layer via Copy"), Some(shortcuts::LAYER_VIA_COPY), Command::LayerViaCopy, selected);
+                item(ui, tr("Layer via Cut"), Some(shortcuts::LAYER_VIA_CUT), Command::LayerViaCut, selected);
                 ui.separator();
                 ui.weak(
-                    "All Pixels and Deselect use ⌘A and ⌘⇧A while a\npainting or selection tool is in use.",
+                    tr("All Pixels and Deselect use ⌘A and ⌘⇧A while a\npainting or selection tool is in use."),
                 );
             });
-            ui.menu_button("Timeline", |ui| {
-                let play = if self.editor.playback.playing { "Pause" } else { "Play" };
+            ui.menu_button(tr("Timeline"), |ui| {
+                let play = if self.editor.playback.playing { tr("Pause") } else { tr("Play") };
                 item(ui, play, Some(shortcuts::PLAY), Command::PlayPause, true);
                 ui.separator();
                 item(
                     ui,
-                    "Insert Keyframe",
+                    tr("Insert Keyframe"),
                     Some(shortcuts::INSERT_KEYFRAME),
                     Command::InsertKeyframe,
                     has_selection,
                 );
                 item(
                     ui,
-                    "Remove Keyframe",
+                    tr("Remove Keyframe"),
                     Some(shortcuts::REMOVE_KEYFRAME),
                     Command::RemoveKeyframe,
                     has_selection,
@@ -1503,44 +1504,44 @@ impl InkframeApp {
                 // current one); see `frame_commands.rs`.
                 item(
                     ui,
-                    "Insert Frames",
+                    tr("Insert Frames"),
                     Some(shortcuts::INSERT_FRAMES),
                     Command::InsertFrames,
                     has_selection,
                 );
                 item(
                     ui,
-                    "Remove Frames",
+                    tr("Remove Frames"),
                     Some(shortcuts::REMOVE_FRAMES),
                     Command::RemoveFrames,
                     has_selection,
                 );
                 item(
                     ui,
-                    "Insert Blank Keyframe",
+                    tr("Insert Blank Keyframe"),
                     Some(shortcuts::INSERT_BLANK_KEYFRAME),
                     Command::InsertBlankKeyframe,
                     has_selection,
                 );
                 let picked = self.editor.frame_range.is_some();
-                item(ui, "Convert to Keyframes", None, Command::ConvertToKeyframes, has_selection && picked);
+                item(ui, tr("Convert to Keyframes"), None, Command::ConvertToKeyframes, has_selection && picked);
                 item(
                     ui,
-                    "Convert to Blank Keyframes",
+                    tr("Convert to Blank Keyframes"),
                     None,
                     Command::ConvertToBlankKeyframes,
                     has_selection && picked,
                 );
-                item(ui, "Reverse Frames", None, Command::ReverseFrames, has_selection && picked);
+                item(ui, tr("Reverse Frames"), None, Command::ReverseFrames, has_selection && picked);
                 ui.separator();
                 let frames_copied = matches!(self.clipboard, Some(Clipboard::Frames(_)));
-                item(ui, "Cut Frames", Some(shortcuts::CUT), Command::CutFrames, has_selection && picked);
-                item(ui, "Copy Frames", Some(shortcuts::COPY), Command::CopyFrames, has_selection && picked);
-                item(ui, "Paste Frames", Some(shortcuts::PASTE), Command::PasteFrames, has_selection && frames_copied);
+                item(ui, tr("Cut Frames"), Some(shortcuts::CUT), Command::CutFrames, has_selection && picked);
+                item(ui, tr("Copy Frames"), Some(shortcuts::COPY), Command::CopyFrames, has_selection && picked);
+                item(ui, tr("Paste Frames"), Some(shortcuts::PASTE), Command::PasteFrames, has_selection && frames_copied);
                 if ui
-                    .checkbox(&mut self.editor.edit_multiple, "Edit Multiple Frames")
+                    .checkbox(&mut self.editor.edit_multiple, tr("Edit Multiple Frames"))
                     .on_hover_text(
-                        "Dragging on the stage moves layers across the picked frames (or all of them)",
+                        tr("Dragging on the stage moves layers across the picked frames (or all of them)"),
                     )
                     .clicked()
                 {
@@ -1549,14 +1550,14 @@ impl InkframeApp {
                 ui.separator();
                 item(
                     ui,
-                    "Start Layer Here",
+                    tr("Start Layer Here"),
                     Some(shortcuts::LAYER_START_HERE),
                     Command::LayerStartHere,
                     has_selection,
                 );
                 item(
                     ui,
-                    "End Layer Here",
+                    tr("End Layer Here"),
                     Some(shortcuts::LAYER_END_HERE),
                     Command::LayerEndHere,
                     has_selection,
@@ -1564,60 +1565,60 @@ impl InkframeApp {
                 ui.separator();
                 // Morphing into the next drawing swap; see `morph.rs`.
                 let tween = self.editor.shape_tween_here();
-                item(ui, "Create Shape Tween", None, Command::CreateShapeTween, tween == Some(false));
-                item(ui, "Remove Shape Tween", None, Command::RemoveShapeTween, tween == Some(true));
-                item(ui, "Draw Inbetweens", None, Command::MakeInbetweens, tween.is_some());
+                item(ui, tr("Create Shape Tween"), None, Command::CreateShapeTween, tween == Some(false));
+                item(ui, tr("Remove Shape Tween"), None, Command::RemoveShapeTween, tween == Some(true));
+                item(ui, tr("Draw Inbetweens"), None, Command::MakeInbetweens, tween.is_some());
                 ui.separator();
                 // What a Web Page export does on reaching this frame.
                 let main = self.editor.timeline() == TimelineId::Main;
                 ui.add_enabled_ui(main, |ui| {
-                    ui.menu_button("Frame Action", |ui| {
+                    ui.menu_button(tr("Frame Action"), |ui| {
                         let (frame, last) = (self.editor.frame, self.editor.last_frame());
                         let mut action = self.editor.doc.frame_action(frame).cloned();
                         let before = action.clone();
                         ui.horizontal(|ui| {
-                            ui.label(format!("On frame {}:", frame + 1));
+                            ui.label(tr_args("On frame {frame}:", &[("frame", &(frame + 1).to_string())]));
                             crate::inspector::web_action_editor(ui, "frame action", &mut action, last);
                         });
                         if action != before {
                             self.editor.doc.set_frame_action(frame, action);
                         }
-                        ui.weak("What a Web Page export does on reaching this frame,\nas Animate's stop() and gotoAndPlay().");
+                        ui.weak(tr("What a Web Page export does on reaching this frame,\nas Animate's stop() and gotoAndPlay()."));
                     });
                 });
                 ui.separator();
                 let label =
-                    if self.editor.doc.camera_layer().is_some() { "Select Camera" } else { "Add Camera" };
+                    if self.editor.doc.camera_layer().is_some() { tr("Select Camera") } else { tr("Add Camera") };
                 item(ui, label, None, Command::AddCamera, true);
                 ui.separator();
-                item(ui, "First Frame", None, Command::FirstFrame, true);
-                item(ui, "Last Frame", None, Command::LastFrame, true);
+                item(ui, tr("First Frame"), None, Command::FirstFrame, true);
+                item(ui, tr("Last Frame"), None, Command::LastFrame, true);
                 ui.separator();
-                ui.checkbox(&mut self.xsheet.open, "Exposure Sheet");
+                ui.checkbox(&mut self.xsheet.open, tr("Exposure Sheet"));
             });
-            ui.menu_button("View", |ui| {
-                item(ui, "Zoom In", Some(shortcuts::ZOOM_IN), Command::ZoomIn, true);
-                item(ui, "Zoom Out", Some(shortcuts::ZOOM_OUT), Command::ZoomOut, true);
-                item(ui, "Fit Stage", Some(shortcuts::ZOOM_FIT), Command::ZoomFit, true);
-                item(ui, "Actual Size", Some(shortcuts::ZOOM_100), Command::ZoomActualSize, true);
+            ui.menu_button(tr("View"), |ui| {
+                item(ui, tr("Zoom In"), Some(shortcuts::ZOOM_IN), Command::ZoomIn, true);
+                item(ui, tr("Zoom Out"), Some(shortcuts::ZOOM_OUT), Command::ZoomOut, true);
+                item(ui, tr("Fit Stage"), Some(shortcuts::ZOOM_FIT), Command::ZoomFit, true);
+                item(ui, tr("Actual Size"), Some(shortcuts::ZOOM_100), Command::ZoomActualSize, true);
                 ui.separator();
-                item(ui, "Rotate View Left (4)", None, Command::RotateViewLeft, true);
-                item(ui, "Rotate View Right (6)", None, Command::RotateViewRight, true);
-                item(ui, "Reset Rotation (5)", None, Command::ResetRotation, true);
-                ui.weak("Or Shift+Space and drag to turn it freely.");
+                item(ui, tr("Rotate View Left (4)"), None, Command::RotateViewLeft, true);
+                item(ui, tr("Rotate View Right (6)"), None, Command::RotateViewRight, true);
+                item(ui, tr("Reset Rotation (5)"), None, Command::ResetRotation, true);
+                ui.weak(tr("Or Shift+Space and drag to turn it freely."));
                 ui.separator();
-                ui.checkbox(&mut self.editor.onion.enabled, "Onion Skin");
-                ui.checkbox(&mut self.editor.light_table, "Light Table")
-                    .on_hover_text("Fade every layer but the selected one, to draw on it");
+                ui.checkbox(&mut self.editor.onion.enabled, tr("Onion Skin"));
+                ui.checkbox(&mut self.editor.light_table, tr("Light Table"))
+                    .on_hover_text(tr("Fade every layer but the selected one, to draw on it"));
                 ui.separator();
-                ui.menu_button("Safe Areas", |ui| {
+                ui.menu_button(tr("Safe Areas"), |ui| {
                     for kind in SafeAreas::ALL {
                         ui.radio_value(&mut self.editor.guides.safe_areas, kind, kind.label());
                     }
-                    ui.weak("Keep action inside the outer line\nand text inside the inner one.");
+                    ui.weak(tr("Keep action inside the outer line\nand text inside the inner one."));
                 });
-                ui.checkbox(&mut self.editor.guides.field_guide, "Field Guide")
-                    .on_hover_text("A 12-field chart over the camera's frame, for planning moves in fields");
+                ui.checkbox(&mut self.editor.guides.field_guide, tr("Field Guide"))
+                    .on_hover_text(tr("A 12-field chart over the camera's frame, for planning moves in fields"));
                 ui.separator();
                 // On or off, shown as a highlighted item, with its keys.
                 let toggle = |ui: &mut egui::Ui, on: bool, label: &str, keys: egui::KeyboardShortcut| {
@@ -1629,15 +1630,15 @@ impl InkframeApp {
                     }
                     clicked
                 };
-                if toggle(ui, self.editor.show_rulers, "Rulers", shortcuts::RULERS) {
+                if toggle(ui, self.editor.show_rulers, tr("Rulers"), shortcuts::RULERS) {
                     toggled = Some(Command::ToggleRulers);
                 }
-                if toggle(ui, self.editor.rig_setup, "Rig Setup (Skeletons at Rest)", shortcuts::RIG_SETUP) {
+                if toggle(ui, self.editor.rig_setup, tr("Rig Setup (Skeletons at Rest)"), shortcuts::RIG_SETUP) {
                     toggled = Some(Command::ToggleRigSetup);
                 }
-                ui.menu_button("Perspective Guide", |ui| {
+                ui.menu_button(tr("Perspective Guide"), |ui| {
                     let current = self.editor.doc.perspective.as_ref().map(|g| g.kind);
-                    let mut options = vec![(None, "None")];
+                    let mut options = vec![(None, tr("None"))];
                     options.extend(inkframe_core::PerspectiveKind::ALL.map(|k| (Some(k), k.label())));
                     for (kind, label) in options {
                         if ui.add(egui::Button::new(label).selected(current == kind)).clicked() {
@@ -1645,21 +1646,21 @@ impl InkframeApp {
                             ui.close();
                         }
                     }
-                    ui.weak("Drag its vanishing points on the stage.\nShift with the Pen snaps lines to it.");
+                    ui.weak(tr("Drag its vanishing points on the stage.\nShift with the Pen snaps lines to it."));
                 });
-                ui.menu_button("Guides", |ui| {
+                ui.menu_button(tr("Guides"), |ui| {
                     let editor = &self.editor;
                     let toggles = [
-                        (editor.show_guides, "Show Guides", shortcuts::SHOW_GUIDES, Command::ToggleGuides),
+                        (editor.show_guides, tr("Show Guides"), shortcuts::SHOW_GUIDES, Command::ToggleGuides),
                         (
                             editor.lock_guides,
-                            "Lock Guides",
+                            tr("Lock Guides"),
                             shortcuts::LOCK_GUIDES,
                             Command::ToggleLockGuides,
                         ),
                         (
                             editor.snap_to_guides,
-                            "Snap to Guides",
+                            tr("Snap to Guides"),
                             shortcuts::SNAP_TO_GUIDES,
                             Command::ToggleSnapToGuides,
                         ),
@@ -1670,42 +1671,42 @@ impl InkframeApp {
                         }
                     }
                     if ui
-                        .add_enabled(!editor.doc.ruler_guides.is_empty(), egui::Button::new("Clear Guides"))
+                        .add_enabled(!editor.doc.ruler_guides.is_empty(), egui::Button::new(tr("Clear Guides")))
                         .clicked()
                     {
                         toggled = Some(Command::ClearGuides);
                         ui.close();
                     }
-                    ui.weak("Drag from a ruler onto the stage for a guide;\ndrag it back to take it away.");
+                    ui.weak(tr("Drag from a ruler onto the stage for a guide;\ndrag it back to take it away."));
                 });
                 ui.separator();
-                ui.menu_button("Workspace", |ui| {
+                ui.menu_button(tr("Workspace"), |ui| {
                     for workspace in Workspace::ALL {
                         item(ui, workspace.name(), None, Command::Workspace(workspace), true);
                     }
                 });
-                item(ui, "Reset Workspace", None, Command::ResetLayout, true);
-                ui.weak("Drag an area's corner to split or join it,\nCtrl+Space to fill the window with it.");
+                item(ui, tr("Reset Workspace"), None, Command::ResetLayout, true);
+                ui.weak(tr("Drag an area's corner to split or join it,\nCtrl+Space to fill the window with it."));
             });
-            ui.menu_button("Scripts", |ui| self.scripts.menu(ui, &self.editor));
-            let help = ui.menu_button("Help", |ui| {
-                item(ui, "Find a Command…", Some(shortcuts::FIND_COMMAND), Command::OpenFinder, true);
-                item(ui, "Take the Tour", None, Command::StartTour, true);
-                item(ui, "What's New", None, Command::WhatsNew, true);
+            ui.menu_button(tr("Scripts"), |ui| self.scripts.menu(ui, &self.editor));
+            let help = ui.menu_button(tr("Help"), |ui| {
+                item(ui, tr("Find a Command…"), Some(shortcuts::FIND_COMMAND), Command::OpenFinder, true);
+                item(ui, tr("Take the Tour"), None, Command::StartTour, true);
+                item(ui, tr("What's New"), None, Command::WhatsNew, true);
                 ui.separator();
-                if ui.button("Inkframe for Artists (Guidebook)").clicked() {
+                if ui.button(tr("Inkframe for Artists (Guidebook)")).clicked() {
                     open_in_browser(GUIDEBOOK_URL);
                     ui.close();
                 }
-                if ui.button("Quick Start (Five Minutes)").clicked() {
+                if ui.button(tr("Quick Start (Five Minutes)")).clicked() {
                     open_in_browser(GUIDE_URL);
                     ui.close();
                 }
-                if ui.button("Report a Problem…").clicked() {
+                if ui.button(tr("Report a Problem…")).clicked() {
                     open_in_browser(ISSUES_URL);
                     ui.close();
                 }
-                ui.weak(format!("Inkframe {}", env!("CARGO_PKG_VERSION")));
+                ui.weak(tr_args("Inkframe {version}", &[("version", env!("CARGO_PKG_VERSION"))]));
             });
             crate::tour::Targets::note(&mut self.tour_targets.help, help.response.rect);
 
@@ -1721,7 +1722,7 @@ impl InkframeApp {
                             }
                         }
                         ui.separator();
-                        if ui.button(format!("Reset {}", current.name())).clicked() {
+                        if ui.button(tr_args("Reset {workspace}", &[("workspace", current.name())])).clicked() {
                             chosen = Some(Command::ResetLayout);
                         }
                     },
@@ -1732,8 +1733,8 @@ impl InkframeApp {
                 ui.add_space(8.0);
                 let keys = ctx.format_shortcut(&shortcuts::FIND_COMMAND);
                 let find = ui
-                    .add(crate::icons::LabelledButton::new(crate::icons::Icon::Search, &format!("Find a command  {keys}")))
-                    .on_hover_text("Search every command and tool by name");
+                    .add(crate::icons::LabelledButton::new(crate::icons::Icon::Search, &tr_args("Find a command  {keys}", &[("keys", &keys)])))
+                    .on_hover_text(tr("Search every command and tool by name"));
                 crate::tour::Targets::note(&mut self.tour_targets.finder, find.rect);
                 if find.clicked() {
                     chosen = Some(Command::OpenFinder);

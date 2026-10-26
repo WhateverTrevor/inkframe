@@ -29,6 +29,7 @@ mod export_dialog;
 mod frame_commands;
 mod guides;
 mod handles;
+mod i18n;
 mod icons;
 mod inside;
 mod inspector;
@@ -81,6 +82,8 @@ fn main() -> eframe::Result {
     }
     let open_path = std::env::args_os().nth(1).map(PathBuf::from);
 
+    // Before anything's shown, which language it's shown in.
+    i18n::choose_language();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Inkframe")

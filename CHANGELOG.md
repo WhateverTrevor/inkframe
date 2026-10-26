@@ -5,6 +5,14 @@ notes on GitHub are its section here.
 
 ## Unreleased
 
+### Translation
+
+- The groundwork for translating Inkframe: the menus, the first-run tour
+  and What's New can be translated with a plain text file per language in
+  `locales/` (see docs/TRANSLATING.md), chosen from the system's language
+  or `INKFRAME_LANGUAGE`. `cargo xtask strings` lists every text to
+  translate, and a pseudo-language shows what's been wrapped so far.
+
 ### Speed
 
 - Drawing a frame shares each skeleton's pose and each bent layer's

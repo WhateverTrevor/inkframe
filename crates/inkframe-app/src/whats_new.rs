@@ -10,6 +10,7 @@
 
 use egui::RichText;
 
+use crate::i18n::{tr, tr_args};
 use crate::theme;
 
 const CHANGELOG: &str = include_str!("../../../CHANGELOG.md");
@@ -102,7 +103,7 @@ impl WhatsNew {
         let Some((version, parts)) = &self.showing else { return };
         let mut open = true;
         let mut close = false;
-        egui::Window::new(format!("What's New in Inkframe {version}"))
+        egui::Window::new(tr_args("What's New in Inkframe {version}", &[("version", version)]))
             .id(egui::Id::new("whats-new"))
             .open(&mut open)
             .collapsible(false)
@@ -131,10 +132,10 @@ impl WhatsNew {
                 });
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if ui.add(egui::Button::new("Got it").fill(theme::ACCENT_DIM)).clicked() {
+                    if ui.add(egui::Button::new(tr("Got it")).fill(theme::ACCENT_DIM)).clicked() {
                         close = true;
                     }
-                    if ui.button("Read the guidebook").clicked() {
+                    if ui.button(tr("Read the guidebook")).clicked() {
                         crate::app::open_in_browser(crate::app::GUIDEBOOK_URL);
                     }
                 });
