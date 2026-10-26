@@ -30,6 +30,7 @@ use std::path::PathBuf;
 use egui::{Align2, Color32, CursorIcon, FontId, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2};
 use serde::{Deserialize, Serialize};
 
+use crate::i18n::{tr, tr_later};
 use crate::icons::{self, Icon, IconButton};
 use crate::theme;
 
@@ -71,9 +72,12 @@ pub enum Kind {
 impl Kind {
     /// Every kind, grouped as the area menu lists them, Blender-style.
     pub const GROUPS: [(&'static str, &'static [Kind]); 4] = [
-        ("General", &[Kind::Stage, Kind::Tools, Kind::ToolSettings, Kind::Properties, Kind::NodeView]),
         (
-            "Animation",
+            tr_later("General"),
+            &[Kind::Stage, Kind::Tools, Kind::ToolSettings, Kind::Properties, Kind::NodeView],
+        ),
+        (
+            tr_later("Animation"),
             &[
                 Kind::Timeline,
                 Kind::GraphEditor,
@@ -84,9 +88,9 @@ impl Kind {
                 Kind::MotionPresets,
             ],
         ),
-        ("Design", &[Kind::Swatches, Kind::Align]),
+        (tr_later("Design"), &[Kind::Swatches, Kind::Align]),
         (
-            "Project",
+            tr_later("Project"),
             &[
                 Kind::Library,
                 Kind::Templates,
@@ -100,27 +104,32 @@ impl Kind {
 
     pub fn name(self) -> &'static str {
         match self {
-            Kind::Stage => "Stage",
-            Kind::Timeline => "Timeline",
-            Kind::Properties => "Properties",
-            Kind::Tools => "Tools",
-            Kind::Library => "Library",
-            Kind::ExposureSheet => "Exposure Sheet",
-            Kind::GraphEditor => "Graph Editor",
-            Kind::ToolSettings => "Tool Settings",
-            Kind::Audio => "Audio",
-            Kind::Document => "Document",
-            Kind::Swatches => "Swatches",
-            Kind::Align => "Align",
-            Kind::History => "History",
-            Kind::Controllers => "Controllers",
-            Kind::NodeView => "Node View",
-            Kind::Templates => "Templates",
-            Kind::MotionPresets => "Motion Presets",
-            Kind::Bones => "Bones",
-            Kind::DepthView => "Depth View",
-            Kind::ScriptConsole => "Script Console",
+            Kind::Stage => tr_later("Stage"),
+            Kind::Timeline => tr_later("Timeline"),
+            Kind::Properties => tr_later("Properties"),
+            Kind::Tools => tr_later("Tools"),
+            Kind::Library => tr_later("Library"),
+            Kind::ExposureSheet => tr_later("Exposure Sheet"),
+            Kind::GraphEditor => tr_later("Graph Editor"),
+            Kind::ToolSettings => tr_later("Tool Settings"),
+            Kind::Audio => tr_later("Audio"),
+            Kind::Document => tr_later("Document"),
+            Kind::Swatches => tr_later("Swatches"),
+            Kind::Align => tr_later("Align"),
+            Kind::History => tr_later("History"),
+            Kind::Controllers => tr_later("Controllers"),
+            Kind::NodeView => tr_later("Node View"),
+            Kind::Templates => tr_later("Templates"),
+            Kind::MotionPresets => tr_later("Motion Presets"),
+            Kind::Bones => tr_later("Bones"),
+            Kind::DepthView => tr_later("Depth View"),
+            Kind::ScriptConsole => tr_later("Script Console"),
         }
+    }
+
+    /// The name as shown, in the language in use.
+    pub fn label(self) -> &'static str {
+        tr(self.name())
     }
 
     pub fn icon(self) -> Icon {
@@ -946,7 +955,8 @@ fn tab_width(ui: &egui::Ui, kind: Kind, showing: bool, icon_only: bool, font: &e
     if icon_only {
         return 28.0;
     }
-    let text = ui.fonts_mut(|f| f.layout_no_wrap(kind.name().to_owned(), font.clone(), theme::TEXT).size().x);
+    let text =
+        ui.fonts_mut(|f| f.layout_no_wrap(kind.label().to_owned(), font.clone(), theme::TEXT).size().x);
     text + 32.0 + if showing { 18.0 } else { 6.0 }
 }
 
@@ -982,7 +992,7 @@ struct TabDrag {
 /// until hovered.
 fn tab_button(ui: &mut egui::Ui, kind: Kind, showing: bool, icon_only: bool) -> egui::Response {
     let font = egui::TextStyle::Button.resolve(ui.style());
-    let galley = ui.painter().layout_no_wrap(kind.name().to_owned(), font.clone(), theme::TEXT);
+    let galley = ui.painter().layout_no_wrap(kind.label().to_owned(), font.clone(), theme::TEXT);
     let size = vec2(tab_width(ui, kind, showing, icon_only, &font), HEADER - 4.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
     let popup = editors_menu_id(&response);
@@ -1018,19 +1028,19 @@ fn tab_button(ui: &mut egui::Ui, kind: Kind, showing: bool, icon_only: bool) -> 
         icons::paint(painter, Icon::Chevron, chevron, theme::TEXT_WEAK);
     }
     let hint = if icon_only {
-        kind.name()
+        kind.label()
     } else if showing {
-        "Click to change what this tab shows; drag it to another area's header to move it"
+        tr("Click to change what this tab shows; drag it to another area's header to move it")
     } else {
-        "Click to show; drag to another area's header to move it; middle-click to close"
+        tr("Click to show; drag to another area's header to move it; middle-click to close")
     };
     response.on_hover_text(hint)
 }
 
 /// One editor in the menu: icon and name, highlighted if it's the
 /// area's current one or under the pointer.
-fn kind_item(ui: &mut egui::Ui, kind: Kind, current: bool) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(vec2(150.0, 24.0), Sense::click());
+fn kind_item(ui: &mut egui::Ui, kind: Kind, current: bool, width: f32) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(width, 24.0), Sense::click());
     let fill = if current {
         Some(theme::ACCENT_DIM)
     } else if response.hovered() {
@@ -1046,7 +1056,7 @@ fn kind_item(ui: &mut egui::Ui, kind: Kind, current: bool) -> egui::Response {
     ui.painter().text(
         pos2(icon.right() + 9.0, rect.center().y),
         Align2::LEFT_CENTER,
-        kind.name(),
+        kind.label(),
         egui::TextStyle::Button.resolve(ui.style()),
         theme::TEXT,
     );
@@ -1057,13 +1067,24 @@ fn kind_item(ui: &mut egui::Ui, kind: Kind, current: bool) -> egui::Response {
 /// marked. Returns the one clicked.
 fn kind_menu(ui: &mut egui::Ui, current: Kind) -> Option<Kind> {
     let mut chosen = None;
+    // Wide enough for the longest name (longer in some languages), past
+    // the icon and with a little room after.
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let widest = Kind::GROUPS
+        .iter()
+        .flat_map(|(_, kinds)| kinds.iter())
+        .map(|kind| {
+            ui.fonts_mut(|f| f.layout_no_wrap(kind.label().to_owned(), font.clone(), theme::TEXT).size().x)
+        })
+        .fold(0.0, f32::max);
+    let width = (widest + 45.0).max(150.0);
     ui.horizontal_top(|ui| {
         for (group, kinds) in Kind::GROUPS {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
-                ui.label(egui::RichText::new(group.to_uppercase()).small().color(theme::TEXT_WEAK));
+                ui.label(egui::RichText::new(tr(group).to_uppercase()).small().color(theme::TEXT_WEAK));
                 for &kind in kinds {
-                    if kind_item(ui, kind, kind == current).clicked() {
+                    if kind_item(ui, kind, kind == current, width).clicked() {
                         chosen = Some(kind);
                     }
                 }

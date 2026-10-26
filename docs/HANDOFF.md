@@ -1074,6 +1074,14 @@ after the Harmony features (palettes to master controllers).
     docs/TRANSLATING.md lists what's wrapped and what's left (toolbar,
     Properties, timeline, context bar, finder, dialogs, panels, names from
     enums). Keep wrapping new UI text in tr and rerun `cargo xtask strings`.
+135. Translation round 2: tools (`Tool::name/description` marked
+    tr_later, `label()`/`tip()` for display), toolbar, context bar,
+    timeline, layout areas (`Kind::name` marked, `label()`; GROUPS
+    marked), envelope lattice names. Area menu width now fits the widest
+    label (pseudo showed it overflowing). Template: 334 texts. Converted
+    mostly with a regex helper (widget calls; skips test modules), then by
+    hand for format!s (tr_args) and tables. Next: Properties (inspector.rs,
+    ~370 text lines), Find a Command, dialogs, panels.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

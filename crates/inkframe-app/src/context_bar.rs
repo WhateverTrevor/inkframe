@@ -17,6 +17,7 @@ use inkframe_core::{PerspectiveKind, ShapeOp, TimelineId};
 use crate::app::Command;
 use crate::editor::{Editor, Tool};
 use crate::envelope::LatticeKind;
+use crate::i18n::tr;
 use crate::icons::{Icon, IconButton, LabelledButton};
 
 /// How tall the bar is.
@@ -59,7 +60,7 @@ fn tool_title(ui: &mut egui::Ui, tool: Tool) {
         rect.shrink(1.0),
         Stroke::new(1.5, ui.visuals().strong_text_color()),
     );
-    ui.label(RichText::new(tool.name()).strong()).union(response).on_hover_text(tool.description());
+    ui.label(RichText::new(tool.label()).strong()).union(response).on_hover_text(tool.tip());
 }
 
 /// A button for a command, with an icon and a word or two.
@@ -74,16 +75,19 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
     // Something under way comes first: it wants finishing.
     if let Some(c) = &editor.correcting {
         let layer = editor.doc.layer(c.layer).map_or("the layer".to_owned(), |l| l.name.clone());
-        ui.label(format!("Correcting {layer} at {:.0}°: reshape it with any tool", c.turn));
+        ui.label(crate::i18n::tr_args(
+            "Correcting {layer} at {turn}°: reshape it with any tool",
+            &[("layer", &layer), ("turn", &format!("{:.0}", c.turn))],
+        ));
         act(
             ui,
             command,
             Icon::Check,
-            "Finish",
-            "Key the shapes at this turn (Enter)",
+            tr("Finish"),
+            tr("Key the shapes at this turn (Enter)"),
             Command::FinishCorrection,
         );
-        act(ui, command, Icon::Cross, "Cancel", "Drop the changes (Esc)", Command::CancelCorrection);
+        act(ui, command, Icon::Cross, tr("Cancel"), "Drop the changes (Esc)", Command::CancelCorrection);
         return;
     }
     // A bone shown at a turn of its own, from its action timeline: the pose
@@ -93,25 +97,28 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
     {
         let name =
             editor.skeleton(id).and_then(|s| s.bones.get(bone)).map_or_else(String::new, |b| b.name.clone());
-        ui.label(format!("Previewing {name} at {turn:.0}°: nothing is keyed"));
+        ui.label(crate::i18n::tr_args(
+            "Previewing {name} at {turn}°: nothing is keyed",
+            &[("name", &name), ("turn", &format!("{turn:.0}"))],
+        ));
         act(
             ui,
             command,
             Icon::Cross,
-            "Back to the animation",
-            "Show the bone as animated again (Esc)",
+            tr("Back to the animation"),
+            tr("Show the bone as animated again (Esc)"),
             Command::EndPreview,
         );
         return;
     }
     if let Some(lattice) = &editor.lattice {
-        ui.label(format!("{}: drag the handles", lattice.kind.name()));
+        ui.label(crate::i18n::tr_args("{kind}: drag the handles", &[("kind", tr(lattice.kind.name()))]));
         act(
             ui,
             command,
             Icon::Check,
-            "Finish",
-            "Keep the shapes as they are now (Enter)",
+            tr("Finish"),
+            tr("Keep the shapes as they are now (Enter)"),
             Command::FinishLattice,
         );
         return;
@@ -124,8 +131,8 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                     ui,
                     command,
                     Icon::StepOut,
-                    "Step out",
-                    "Back to working with whole layers (Esc)",
+                    tr("Step out"),
+                    tr("Back to working with whole layers (Esc)"),
                     Command::ExitLayer,
                 );
                 let picked = editor.picked_shapes().len();
@@ -137,8 +144,8 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                     ui,
                     command,
                     Icon::StepOut,
-                    "Exit symbol",
-                    "Back to the scene the symbol is in (Esc)",
+                    tr("Exit symbol"),
+                    tr("Back to the scene the symbol is in (Esc)"),
                     Command::ExitSymbol,
                 );
             }
@@ -147,32 +154,32 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                     ui,
                     command,
                     Icon::Symbol,
-                    "Symbol",
-                    "Convert to Symbol: reuse it, animate inside it (F8)",
+                    tr("Symbol"),
+                    tr("Convert to Symbol: reuse it, animate inside it (F8)"),
                     Command::ConvertToSymbol,
                 );
                 act(
                     ui,
                     command,
                     Icon::Distort,
-                    "Distort",
-                    "Corner handles to lean, taper or put it in perspective",
+                    tr("Distort"),
+                    tr("Corner handles to lean, taper or put it in perspective"),
                     Command::StartLattice(LatticeKind::Distort),
                 );
                 act(
                     ui,
                     command,
                     Icon::Envelope,
-                    "Envelope",
-                    "Handles to bend and bulge it",
+                    tr("Envelope"),
+                    tr("Handles to bend and bulge it"),
                     Command::StartLattice(LatticeKind::Envelope),
                 );
                 act(
                     ui,
                     command,
                     Icon::BreakApart,
-                    "Break apart",
-                    "Text into letters, pencil lines into shapes (⌘B)",
+                    tr("Break apart"),
+                    tr("Text into letters, pencil lines into shapes (⌘B)"),
                     Command::BreakApart,
                 );
                 if editor.shape_tween_here().is_some() {
@@ -180,30 +187,37 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                         ui,
                         command,
                         Icon::Inbetween,
-                        "Inbetweens",
-                        "Draw the frames between this drawing and the next",
+                        tr("Inbetweens"),
+                        tr("Draw the frames between this drawing and the next"),
                         Command::MakeInbetweens,
                     );
                 }
             } else {
-                ui.weak("Click something on the stage to see what you can do with it.");
+                ui.weak(tr("Click something on the stage to see what you can do with it."));
             }
         }
         Tool::Pen | Tool::Pencil | Tool::Rectangle | Tool::Ellipse => {
             let mut into = editor.draw_into_layer;
             if ui
-                .add(LabelledButton::new(Icon::Plus, "Draw into layer").selected(into))
-                .on_hover_text(
+                .add(LabelledButton::new(Icon::Plus, tr("Draw into layer")).selected(into))
+                .on_hover_text(tr(
                     "On: new shapes go into the selected layer. Off: each shape gets a layer of its own",
-                )
+                ))
                 .clicked()
             {
                 into = !into;
                 editor.draw_into_layer = into;
             }
-            act(ui, command, Icon::Plus, "New layer", "An empty layer to draw on (⌘⇧N)", Command::NewLayer);
+            act(
+                ui,
+                command,
+                Icon::Plus,
+                tr("New layer"),
+                "An empty layer to draw on (⌘⇧N)",
+                Command::NewLayer,
+            );
             if editor.tool == Tool::Pen && editor.doc.perspective.is_some() {
-                ui.weak("Shift snaps to the perspective guide");
+                ui.weak(tr("Shift snaps to the perspective guide"));
             }
         }
         Tool::Bone | Tool::AddBone => {
@@ -212,8 +226,8 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                     ui,
                     command,
                     Icon::Bones,
-                    "New skeleton",
-                    "Put the selected layers in a skeleton, to rig with bones as in Moho",
+                    tr("New skeleton"),
+                    tr("Put the selected layers in a skeleton, to rig with bones as in Moho"),
                     Command::NewSkeleton,
                 );
             } else if editor.tool == Tool::Bone {
@@ -221,8 +235,8 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                     ui,
                     command,
                     Icon::Plus,
-                    "Add bones",
-                    "Draw more bones (Add Bone tool)",
+                    tr("Add bones"),
+                    tr("Draw more bones (Add Bone tool)"),
                     Command::UseTool(Tool::AddBone),
                 );
             } else {
@@ -230,13 +244,13 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                     ui,
                     command,
                     Icon::Bones,
-                    "Pose",
-                    "Pose the bones (Bone tool)",
+                    tr("Pose"),
+                    tr("Pose the bones (Bone tool)"),
                     Command::UseTool(Tool::Bone),
                 );
             }
             if editor.active_skeleton().is_some() {
-                ui.weak("Pick a bone for its settings in Properties");
+                ui.weak(tr("Pick a bone for its settings in Properties"));
             }
         }
         Tool::Camera => {
@@ -245,7 +259,7 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                     ui,
                     command,
                     Icon::Camera,
-                    "Add camera",
+                    tr("Add camera"),
                     "A camera to pan, zoom and turn the whole scene",
                     Command::AddCamera,
                 );
@@ -257,12 +271,12 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                     ui,
                     command,
                     Icon::Plus,
-                    "New paint layer",
+                    tr("New paint layer"),
                     "A layer to paint on",
                     Command::NewPaintLayer,
                 );
             }
-            ui.weak("Brush size and the like: Properties › Tool");
+            ui.weak(tr("Brush size and the like: Properties › Tool"));
         }
         _ => {}
     }
@@ -271,14 +285,14 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
 /// Combine Shapes, as a little menu.
 fn combine_menu(ui: &mut egui::Ui, command: &mut Option<Command>) {
     let response = ui
-        .add(LabelledButton::new(Icon::Combine, "Combine"))
-        .on_hover_text("Merge the picked shapes, or cut one with another");
+        .add(LabelledButton::new(Icon::Combine, tr("Combine")))
+        .on_hover_text(tr("Merge the picked shapes, or cut one with another"));
     egui::Popup::menu(&response).show(|ui| {
         for (label, op) in [
-            ("Union", ShapeOp::Union),
-            ("Intersect", ShapeOp::Intersect),
-            ("Punch", ShapeOp::Punch),
-            ("Crop", ShapeOp::Crop),
+            (tr("Union"), ShapeOp::Union),
+            (tr("Intersect"), ShapeOp::Intersect),
+            (tr("Punch"), ShapeOp::Punch),
+            (tr("Crop"), ShapeOp::Crop),
         ] {
             if ui.button(label).clicked() {
                 *command = Some(Command::CombineShapes(op));
@@ -292,28 +306,28 @@ fn combine_menu(ui: &mut egui::Ui, command: &mut Option<Command>) {
 fn view_switches(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>) {
     // Right to left, so the last added is leftmost.
     if editor.layers().iter().any(|l| l.skeleton.is_some()) {
-        let tip = "Rig setup: skeletons at rest, to draw, paint and rig on (⌥⌘B)";
+        let tip = tr("Rig setup: skeletons at rest, to draw, paint and rig on (⌥⌘B)");
         if ui.add(IconButton::new(Icon::RigSetup, tip).selected(editor.rig_setup)).clicked() {
             *command = Some(Command::ToggleRigSetup);
         }
     }
-    let tip = "Light table: fade every layer but the selected one";
+    let tip = tr("Light table: fade every layer but the selected one");
     if ui.add(IconButton::new(Icon::LightTable, tip).selected(editor.light_table)).clicked() {
         editor.light_table = !editor.light_table;
     }
-    let tip = "Onion skin: see the frames either side, faintly";
+    let tip = tr("Onion skin: see the frames either side, faintly");
     if ui.add(IconButton::new(Icon::Onion, tip).selected(editor.onion.enabled)).clicked() {
         editor.onion.enabled = !editor.onion.enabled;
     }
     let perspective = editor.doc.perspective.as_ref().map(|g| g.kind);
     let response =
-        ui.add(IconButton::new(Icon::Perspective, "Perspective guide").selected(perspective.is_some()));
+        ui.add(IconButton::new(Icon::Perspective, tr("Perspective guide")).selected(perspective.is_some()));
     egui::Popup::menu(&response).show(|ui| {
         for (label, kind) in [
-            ("None", None),
-            ("One-Point", Some(PerspectiveKind::OnePoint)),
-            ("Two-Point", Some(PerspectiveKind::TwoPoint)),
-            ("Three-Point", Some(PerspectiveKind::ThreePoint)),
+            (tr("None"), None),
+            (tr("One-Point"), Some(PerspectiveKind::OnePoint)),
+            (tr("Two-Point"), Some(PerspectiveKind::TwoPoint)),
+            (tr("Three-Point"), Some(PerspectiveKind::ThreePoint)),
         ] {
             if ui.add(egui::Button::new(label).selected(perspective == kind)).clicked() {
                 *command = Some(Command::SetPerspective(kind));
@@ -322,7 +336,7 @@ fn view_switches(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Co
     });
     if ui
         .add(
-            IconButton::new(Icon::Ruler, "Rulers (⌥⇧⌘R): drag guides out of them")
+            IconButton::new(Icon::Ruler, tr("Rulers (⌥⇧⌘R): drag guides out of them"))
                 .selected(editor.show_rulers),
         )
         .clicked()

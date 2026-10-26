@@ -17,6 +17,7 @@ use inkframe_core::{Asset, Clipboard, CopiedKeyframe, ImageId};
 use inkframe_render::ImageLibrary;
 
 use crate::guides::Guides;
+use crate::i18n::{tr, tr_later};
 
 /// The tools in the toolbar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,72 +97,85 @@ impl Tool {
 
     pub fn name(self) -> &'static str {
         match self {
-            Tool::Select => "Selection",
-            Tool::Subselect => "Subselection",
-            Tool::Width => "Width",
-            Tool::Pen => "Pen",
-            Tool::Rectangle => "Rectangle",
-            Tool::Ellipse => "Oval",
-            Tool::Pencil => "Pencil",
-            Tool::Text => "Text",
-            Tool::Bone => "Bone",
-            Tool::AddBone => "Add Bone",
-            Tool::Camera => "Camera",
-            Tool::Brush => "Brush",
-            Tool::Eraser => "Eraser",
-            Tool::Eyedropper => "Eyedropper",
-            Tool::PaintBucket => "Paint Bucket",
-            Tool::Gradient => "Gradient",
-            Tool::Smudge => "Smudge",
-            Tool::Blur => "Blur",
-            Tool::Sharpen => "Sharpen",
-            Tool::Dodge => "Dodge",
-            Tool::Burn => "Burn",
-            Tool::CloneStamp => "Clone Stamp",
-            Tool::RectMarquee => "Rectangular Marquee",
-            Tool::EllipseMarquee => "Elliptical Marquee",
-            Tool::Lasso => "Lasso",
-            Tool::PolygonLasso => "Polygonal Lasso",
-            Tool::MagicWand => "Magic Wand",
+            Tool::Select => tr_later("Selection"),
+            Tool::Subselect => tr_later("Subselection"),
+            Tool::Width => tr_later("Width"),
+            Tool::Pen => tr_later("Pen"),
+            Tool::Rectangle => tr_later("Rectangle"),
+            Tool::Ellipse => tr_later("Oval"),
+            Tool::Pencil => tr_later("Pencil"),
+            Tool::Text => tr_later("Text"),
+            Tool::Bone => tr_later("Bone"),
+            Tool::AddBone => tr_later("Add Bone"),
+            Tool::Camera => tr_later("Camera"),
+            Tool::Brush => tr_later("Brush"),
+            Tool::Eraser => tr_later("Eraser"),
+            Tool::Eyedropper => tr_later("Eyedropper"),
+            Tool::PaintBucket => tr_later("Paint Bucket"),
+            Tool::Gradient => tr_later("Gradient"),
+            Tool::Smudge => tr_later("Smudge"),
+            Tool::Blur => tr_later("Blur"),
+            Tool::Sharpen => tr_later("Sharpen"),
+            Tool::Dodge => tr_later("Dodge"),
+            Tool::Burn => tr_later("Burn"),
+            Tool::CloneStamp => tr_later("Clone Stamp"),
+            Tool::RectMarquee => tr_later("Rectangular Marquee"),
+            Tool::EllipseMarquee => tr_later("Elliptical Marquee"),
+            Tool::Lasso => tr_later("Lasso"),
+            Tool::PolygonLasso => tr_later("Polygonal Lasso"),
+            Tool::MagicWand => tr_later("Magic Wand"),
         }
+    }
+
+    /// The tool's name as shown, in the language in use. (`name` stays
+    /// English, for the screenshot hooks and the guidebook's appendix.)
+    pub fn label(self) -> &'static str {
+        tr(self.name())
+    }
+
+    /// What the tool does, as shown, in the language in use.
+    pub fn tip(self) -> &'static str {
+        tr(self.description())
     }
 
     /// What the tool does, in a line: for its tooltip and the context bar.
     pub fn description(self) -> &'static str {
         match self {
-            Tool::Select => {
-                "Click a layer to pick it; drag to move, handles to scale and turn. Double-click to work on its shapes"
+            Tool::Select => tr_later(
+                "Click a layer to pick it; drag to move, handles to scale and turn. Double-click to work on its shapes",
+            ),
+            Tool::Subselect => tr_later(
+                "Drag a shape's points and their handles. Alt-drag a point to pull curve handles out of it",
+            ),
+            Tool::Width => tr_later("Drag sideways from a pencil line to make it wider or narrower there"),
+            Tool::Pen => tr_later(
+                "Click for corners, drag for curves; click the first point to close. Edits points between paths",
+            ),
+            Tool::Rectangle => tr_later("Drag to draw a rectangle; Shift for a square"),
+            Tool::Ellipse => tr_later("Drag to draw an oval; Shift for a circle"),
+            Tool::Pencil => tr_later("Draw freehand lines that follow the pen's pressure"),
+            Tool::Text => tr_later("Click to type on the stage"),
+            Tool::Bone => tr_later("Drag a bone or a rig's layer to pose it; joints above turn to follow"),
+            Tool::AddBone => tr_later("Drag to draw a skeleton's bones; each new one hangs from the last"),
+            Tool::Camera => tr_later("Drag to pan the camera, Shift-drag to turn it, Alt-drag to zoom"),
+            Tool::Brush => tr_later("Paint on a paint layer; Alt-click picks a colour"),
+            Tool::Eraser => tr_later("Rub paint away"),
+            Tool::Eyedropper => tr_later("Click to pick a colour from the stage"),
+            Tool::PaintBucket => {
+                tr_later("Fill an area with colour; on drawn lines, fills what they enclose")
             }
-            Tool::Subselect => {
-                "Drag a shape's points and their handles. Alt-drag a point to pull curve handles out of it"
-            }
-            Tool::Width => "Drag sideways from a pencil line to make it wider or narrower there",
-            Tool::Pen => {
-                "Click for corners, drag for curves; click the first point to close. Edits points between paths"
-            }
-            Tool::Rectangle => "Drag to draw a rectangle; Shift for a square",
-            Tool::Ellipse => "Drag to draw an oval; Shift for a circle",
-            Tool::Pencil => "Draw freehand lines that follow the pen's pressure",
-            Tool::Text => "Click to type on the stage",
-            Tool::Bone => "Drag a bone or a rig's layer to pose it; joints above turn to follow",
-            Tool::AddBone => "Drag to draw a skeleton's bones; each new one hangs from the last",
-            Tool::Camera => "Drag to pan the camera, Shift-drag to turn it, Alt-drag to zoom",
-            Tool::Brush => "Paint on a paint layer; Alt-click picks a colour",
-            Tool::Eraser => "Rub paint away",
-            Tool::Eyedropper => "Click to pick a colour from the stage",
-            Tool::PaintBucket => "Fill an area with colour; on drawn lines, fills what they enclose",
-            Tool::Gradient => "Drag to lay a gradient across the selection or the canvas",
-            Tool::Smudge => "Push paint around, as with a finger",
-            Tool::Blur => "Soften the paint under the brush",
-            Tool::Sharpen => "Crisp up the paint under the brush",
-            Tool::Dodge => "Lighten the paint under the brush",
-            Tool::Burn => "Darken the paint under the brush",
-            Tool::CloneStamp => "Alt-click where to copy from, then paint a copy elsewhere",
-            Tool::RectMarquee => "Drag a rectangle to choose which pixels the paint tools change",
-            Tool::EllipseMarquee => "Drag an oval to choose which pixels the paint tools change",
-            Tool::Lasso => "Draw round the pixels the paint tools may change",
-            Tool::PolygonLasso => "Click corners round the pixels the paint tools may change",
-            Tool::MagicWand => "Click an area of one colour to choose it",
+            Tool::Gradient => tr_later("Drag to lay a gradient across the selection or the canvas"),
+            Tool::Smudge => tr_later("Push paint around, as with a finger"),
+            Tool::Blur => tr_later("Soften the paint under the brush"),
+            Tool::Sharpen => tr_later("Crisp up the paint under the brush"),
+            Tool::Dodge => tr_later("Lighten the paint under the brush"),
+            Tool::Burn => tr_later("Darken the paint under the brush"),
+            Tool::CloneStamp => tr_later("Alt-click where to copy from, then paint a copy elsewhere"),
+            Tool::RectMarquee => tr_later("Drag a rectangle to choose which pixels the paint tools change"),
+            Tool::EllipseMarquee => tr_later("Drag an oval to choose which pixels the paint tools change"),
+            Tool::Lasso => tr_later("Draw round the pixels the paint tools may change"),
+            Tool::PolygonLasso => tr_later("Click corners round the pixels the paint tools may change"),
+            Tool::MagicWand => tr_later("Click an area of one colour to choose it"),
         }
     }
 
