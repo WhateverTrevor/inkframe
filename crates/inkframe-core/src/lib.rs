@@ -87,7 +87,7 @@ pub use brush::{
 pub use camera::FOCAL_LENGTH;
 pub use channel::{Animatable, AnyChannel, Bend, Channel, Key, MotionCurve, Tween};
 pub use clipboard::{Clipboard, CopiedFrames, CopiedKeyframe, CopiedLayers, CopiedRow, CopiedShapes};
-pub use color::{Color, ParseColorError};
+pub use color::{Color, ParseColorError, hsv_to_rgb, rgb_to_hsv};
 pub use controller::{Controller, ControllerPose};
 pub use deform::Deformer;
 pub use document::{Document, DocumentError, Element, FORMAT_VERSION, FrameRate, Layer, LayerId, TimelineId};
@@ -111,6 +111,7 @@ pub use library::Asset;
 pub use line::{LineTexture, TextureKind, centreline_anchors, line_outline, with_anchors_every};
 pub use lip_sync::{
     LipSyncError, MouthCue, MouthMap, MouthShape, cues_from_loudness, parse_papagayo, parse_rhubarb,
+    parse_timing,
 };
 pub use morph::{ShapeTween, morph};
 pub use node_places::{NodePlace, NodeRef};

@@ -193,6 +193,12 @@ pub fn parse_papagayo(text: &str) -> Result<Vec<MouthCue>, LipSyncError> {
     tidy(cues)
 }
 
+/// Mouth cues from a timing file's text, Papagayo's (which says so on its
+/// first line, `MohoSwitch1`) or else Rhubarb's.
+pub fn parse_timing(text: &str, fps: f64) -> Result<Vec<MouthCue>, LipSyncError> {
+    if text.trim_start().starts_with("MohoSwitch") { parse_papagayo(text) } else { parse_rhubarb(text, fps) }
+}
+
 /// Mouth shapes from loudness alone: closed in silence, opening wider as
 /// the voice gets louder. `peaks` is the loudest sample in each frame.
 ///

@@ -22,7 +22,7 @@ use std::collections::VecDeque;
 
 use crate::color::Color;
 use crate::document::{Element, Layer};
-use crate::geometry::{Point, Rect};
+use crate::geometry::{Point, Rect, simplify};
 use crate::shape::{Path, Segment, Shape, Style};
 
 /// What a fill did.
@@ -287,33 +287,6 @@ impl Grid {
         }
         None
     }
-}
-
-/// Douglas–Peucker: drops points that lie within `tolerance` of the line
-/// through their neighbours, keeping the shape.
-fn simplify(points: &[Point], tolerance: f32) -> Vec<Point> {
-    if points.len() < 3 {
-        return points.to_vec();
-    }
-    let mut keep = vec![false; points.len()];
-    keep[0] = true;
-    keep[points.len() - 1] = true;
-    let mut stack = vec![(0, points.len() - 1)];
-    while let Some((a, b)) = stack.pop() {
-        let mut far = (0.0, a);
-        for i in a + 1..b {
-            let d = points[i].distance_to_segment(points[a], points[b]);
-            if d > far.0 {
-                far = (d, i);
-            }
-        }
-        if far.0 > tolerance {
-            keep[far.1] = true;
-            stack.push((a, far.1));
-            stack.push((far.1, b));
-        }
-    }
-    points.iter().zip(keep).filter(|(_, k)| *k).map(|(p, _)| *p).collect()
 }
 
 #[cfg(test)]

@@ -105,7 +105,7 @@ fn read_sample(r: &mut Reader, name: &str) -> Result<TipImage, String> {
         let mut out = Vec::with_capacity(row * height as usize);
         for length in lengths {
             let packed = r.take(length)?;
-            out.extend(unpack_bits(packed, row));
+            out.extend(crate::psd::unpack_bits(packed, row).map_err(|_| "a brush tip's rows are cut short")?);
         }
         out
     } else {
@@ -117,32 +117,6 @@ fn read_sample(r: &mut Reader, name: &str) -> Result<TipImage, String> {
         return Err("a brush tip's pixels are cut short".into());
     }
     Ok(TipImage::new(name, width, height, amounts))
-}
-
-/// One PackBits-compressed row, `width` bytes when unpacked.
-fn unpack_bits(packed: &[u8], width: usize) -> Vec<u8> {
-    let mut out = Vec::with_capacity(width);
-    let mut i = 0;
-    while i < packed.len() && out.len() < width {
-        let n = packed[i] as i8;
-        i += 1;
-        match n {
-            0.. => {
-                let end = (i + n as usize + 1).min(packed.len());
-                out.extend_from_slice(&packed[i..end]);
-                i = end;
-            }
-            -128 => {}
-            _ => {
-                if let Some(&byte) = packed.get(i) {
-                    out.extend(std::iter::repeat_n(byte, (1 - n as i32) as usize));
-                }
-                i += 1;
-            }
-        }
-    }
-    out.resize(width, 0);
-    out
 }
 
 /// A plain brush with a sampled tip, as Photoshop makes one from a picture:
@@ -679,13 +653,6 @@ mod tests {
     /// A 2×2 tip: its bounds, depth and pixels, uncompressed.
     fn tip_pixels(w: &mut Writer, pixels: [u8; 4]) {
         w.u32(0).u32(0).u32(2).u32(2).u16(8).u8(0).bytes(&pixels);
-    }
-
-    #[test]
-    fn packbits_rows_unpack() {
-        // Two literal bytes, then 9 repeated three times.
-        assert_eq!(unpack_bits(&[1, 5, 6, 254, 9], 5), [5, 6, 9, 9, 9]);
-        assert_eq!(unpack_bits(&[0, 7], 3), [7, 0, 0], "short rows are padded");
     }
 
     #[test]

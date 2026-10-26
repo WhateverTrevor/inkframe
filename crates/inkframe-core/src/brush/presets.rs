@@ -10,6 +10,8 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::i18n::tr_later;
+
 use super::BrushSettings;
 use super::dynamics::{ColorDynamics, Control, Random, Scattering, ShapeDynamics, Transfer};
 use super::texture::{Blend, Pattern, Texture};
@@ -56,10 +58,13 @@ pub fn built_in() -> Vec<BrushPreset> {
         ..ColorDynamics::default()
     };
     vec![
-        BrushPreset::new("Hard Round", BrushSettings { hardness: 1.0, spacing: 0.1, ..base.clone() }),
-        BrushPreset::new("Soft Round", BrushSettings { size: 60.0, hardness: 0.0, ..base.clone() }),
         BrushPreset::new(
-            "Airbrush",
+            tr_later("Hard Round"),
+            BrushSettings { hardness: 1.0, spacing: 0.1, ..base.clone() },
+        ),
+        BrushPreset::new(tr_later("Soft Round"), BrushSettings { size: 60.0, hardness: 0.0, ..base.clone() }),
+        BrushPreset::new(
+            tr_later("Airbrush"),
             BrushSettings {
                 size: 90.0,
                 hardness: 0.0,
@@ -72,7 +77,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Inking Pen",
+            tr_later("Inking Pen"),
             BrushSettings {
                 size: 8.0,
                 hardness: 0.95,
@@ -82,7 +87,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Pencil",
+            tr_later("Pencil"),
             BrushSettings {
                 size: 4.0,
                 hardness: 0.9,
@@ -99,7 +104,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Chalk",
+            tr_later("Chalk"),
             BrushSettings {
                 tip: sampled("Chalk", chalk_tip()),
                 size: 30.0,
@@ -109,7 +114,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Charcoal",
+            tr_later("Charcoal"),
             BrushSettings {
                 tip: sampled("Charcoal", charcoal_tip()),
                 size: 40.0,
@@ -125,7 +130,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Dry Brush",
+            tr_later("Dry Brush"),
             BrushSettings {
                 tip: sampled("Bristles", bristle_tip(7)),
                 size: 50.0,
@@ -144,7 +149,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Oil Bristle",
+            tr_later("Oil Bristle"),
             BrushSettings {
                 tip: sampled("Bristles", bristle_tip(11)),
                 size: 60.0,
@@ -161,7 +166,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Flat Brush",
+            tr_later("Flat Brush"),
             BrushSettings {
                 size: 40.0,
                 hardness: 0.9,
@@ -178,7 +183,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Watercolour",
+            tr_later("Watercolour"),
             BrushSettings {
                 size: 70.0,
                 hardness: 0.2,
@@ -198,7 +203,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Sponge",
+            tr_later("Sponge"),
             BrushSettings {
                 tip: sampled("Sponge", sponge_tip()),
                 size: 70.0,
@@ -217,7 +222,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Foliage",
+            tr_later("Foliage"),
             BrushSettings {
                 tip: sampled("Leaf", leaf_tip()),
                 size: 36.0,
@@ -237,7 +242,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Grass",
+            tr_later("Grass"),
             BrushSettings {
                 tip: sampled("Blade", blade_tip()),
                 size: 60.0,
@@ -257,7 +262,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Clouds",
+            tr_later("Clouds"),
             BrushSettings {
                 tip: sampled("Cloud", cloud_tip()),
                 size: 140.0,
@@ -277,7 +282,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Rocks",
+            tr_later("Rocks"),
             BrushSettings {
                 tip: sampled("Sponge", sponge_tip()),
                 size: 80.0,
@@ -302,7 +307,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Spatter",
+            tr_later("Spatter"),
             BrushSettings {
                 tip: sampled("Spatter", spatter_tip()),
                 size: 60.0,
@@ -319,7 +324,7 @@ pub fn built_in() -> Vec<BrushPreset> {
             },
         ),
         BrushPreset::new(
-            "Stars and Snow",
+            tr_later("Stars and Snow"),
             BrushSettings {
                 size: 6.0,
                 hardness: 0.6,

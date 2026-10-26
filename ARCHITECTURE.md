@@ -74,7 +74,9 @@ The data model and the math behind animation.
 | `vectorise.rs` | Tracing pixels into shapes (`trace`, `Document::vectorise_layer`): labels pixels (ink by brightness, or colours found as histogram peaks and settled on nearby pixels only, so anti-aliasing doesn't drag them), merges patches under the minimum area into their surroundings, traces each patch's outline and holes along pixel edges (turning right at diagonal touches, so loops never cross), fits curves through the midpoints of the pixel stairs keeping long-run corners sharp, and joins holes to outlines by zero-width slits (holes run the opposite way, and fills are by winding) |
 | `vector_fill.rs` | Ink and paint: a drawing's line art (`elements`) and colour art (`colour_art`, drawn beneath); `Layer::fill_enclosed` fills the area the lines enclose (grid flood with lines thickened to close gaps, grown back under them, outline traced and simplified) or recolours the fill already there |
 | `paint.rs` | Painted pixels: `Canvas` (256×256 premultiplied RGBA tiles, shared between undo snapshots with `Arc`), `Shape::Paint` naming a canvas, `Document::element_bounds`/`element_hit` (paint counts only painted pixels), `add_paint_layer`, `separate_canvases` (a duplicated layer or drawing gets its own canvas) |
-| `brush.rs` | The brush engine (and `BrushSettings::presets`, the paper `grain`, and `DabPath`, which every stroke tool uses to place its dabs): a `BrushStroke` lays round dabs along the pen's path into its own coverage mask, then redraws the touched tiles from how they were before the stroke, so opacity caps a whole stroke and flow builds up within it, as in Photoshop |
+| `brush/` | The brush engine, Photoshop's section by section. `mod.rs`: `BrushSettings` (Brush Tip Shape plus each section, kept while switched off) and `BrushStroke`, which lays a `Stamp` per dab (size, angle, roundness, flips and scatter from the dynamics) into the stroke's own layer of colour and coverage, each dab raising coverage only towards its opacity ceiling (`deposit`), then redraws the touched tiles from how they were before the stroke with the texture, dual brush and wet edges applied; `rest` keeps Build-up flowing; `DabPath` places dabs for every stroke tool. `tip.rs`: round or sampled tips (`TipImage`, with halved copies for painting a big tip small, saved as PNG in JSON). `dynamics.rs`: `Control`, `DabInput` and the Shape Dynamics, Scattering, Color Dynamics and Transfer sections. `texture.rs`: `Texture`, `Pattern`s and the `Blend` modes Texture and Dual Brush share. `presets.rs`: the ready-made `BrushPreset`s, their tips drawn in code |
+| `abr.rs` | Reading Photoshop `.abr` brush files: versions 1–2 (round and sampled brushes) and 6–10 (`samp` tips, and the `desc` action descriptor mapped onto the brush sections); PackBits rows through `psd.rs` |
+| `i18n.rs` | The core's side of translation: `tr_later` marks names the app translates where it shows them (they stay English in the core, being data too), and `tr`/`tr_args`, for the text the core writes for people (undo steps' names), translate through the function the app hands `set_translator` at start-up |
 | `selection.rs` | Pixel selections: a soft 0–255 mask per canvas pixel (`Selection`), from rectangles, ellipses and polygons (anti-aliased by 4×4 subsampling) or the magic wand; combining (`Combine`); `limit`/`limit_canvas` keep a change only where selected; `keep`/`clear`/`shifted` for moving and cutting; `outline` for marching ants |
 | `adjust.rs` | Brightness/Contrast, Hue/Saturation, Levels and Curves (a monotone cubic), returning a new canvas so the app can preview from the original |
 | `psd.rs` | Photoshop files: reading and writing 8-bit RGB layered images (PackBits or raw), and `Document::import_psd`; `inkframe_render::export_psd` draws each layer for writing |
@@ -86,7 +88,7 @@ The data model and the math behind animation.
 | `controller.rs` | Master controllers: a slider over a set of layers with poses (transforms and drawings) recorded along it; `set_controller` blends the two poses either side and keys the layers on the frame, so what it poses animates like any edit |
 | `deform.rs` | Bone deformers: a `Deformer`'s rest joints and animated bends, bending outlines by blending each point between nearby bones (subdividing segments first). `Layer::shown_elements(frame)` is the drawing as seen (drawing swapped, then bent): use it for drawing, hit testing and bounds. Also `Layer::key_frames`/`insert_key`/`remove_key`/`move_key`, covering the transform and the deformer together |
 | `drawing.rs` | Drawing substitution: a layer's named `Drawing`s and its `Exposure` keys (which drawing shows from which frame). Use `Layer::elements_at(frame)` for what a layer shows, `all_elements` for "is this asset used anywhere" |
-| `lip_sync.rs` | Lip sync: the nine standard `MouthShape`s, reading Rhubarb (`.tsv`) and Papagayo (`.dat`) timing, mouth shapes from loudness, guessing which drawing is which shape (`MouthMap`), and `Layer::apply_lip_sync`. No audio code: the app passes in per-frame loudness |
+| `lip_sync.rs` | Lip sync: the nine standard `MouthShape`s, reading Rhubarb (`.tsv`) and Papagayo (`.dat`) timing (`parse_timing` tells them apart), mouth shapes from loudness, guessing which drawing is which shape (`MouthMap`), and `Layer::apply_lip_sync`. No audio code: the app passes in per-frame loudness |
 | `line.rs` (textures) | `LineTexture` (`TextureKind` and amount), on `Layer::line_texture`; the renderer's `texture.rs` makes a tinted grain tile (hashed noise, cached per kind) to paint pencil lines and strokes through, in the layer's units |
 | `line.rs` | Pressure-sensitive lines (`Shape::Line`): a centreline with a width per anchor, eased between anchors and drawn as the filled outline it sweeps out with round ends (`line_outline`). `to_anchors` gives that outline, so deformers, morphs, fills and hit tests treat a line as its shape; the Width tool edits the widths |
 | `mask.rs` | Masks: which mask a layer is seen through, and Animate's "mask the layer below" |
@@ -96,7 +98,7 @@ The data model and the math behind animation.
 | `clipboard.rs` | Copying layers (with the symbols, images and fonts they need) and keyframes, and pasting them into the same or another project |
 | `history.rs` | Snapshot-based undo/redo; each step is named by comparing it with the one before (`describe`), for the History panel, which can `jump` several steps |
 | `align.rs` | The Align panel's work: `stage_bounds`, `align_layers`, `distribute_layers`, `match_size`, moving layers in their parents' space |
-| `geometry.rs` | `Point`, `Rect`, `Affine` |
+| `geometry.rs` | `Point`, `Rect`, `Affine`, and `simplify` (Ramer–Douglas–Peucker), which freehand strokes and vector fills share |
 
 **The animation model.** A layer is a group of shapes that animate together,
 like a tween layer holding one symbol in Animate. Each layer has a `Track`
@@ -249,6 +251,12 @@ line with `inkframe --script` (`cli_script.rs`). QuickJS is C, so this
 crate (and the app) can't be cross-checked for Windows from a Mac; CI's
 Windows runner builds it.
 
+Why it's built this way: JavaScript because Animate's JSFL and Harmony's
+scripting are both JavaScript, so people's scripts and habits carry over
+(QuickJS adds about 1.2 MB, and has no file or network access of its
+own); a failing script changes nothing, as everything runs on a copy;
+and frames count from 1, as the timeline shows them.
+
 ### inkframe-audio
 
 Turns sound files into `Clip`s: interleaved stereo `f32` at 48 kHz, whatever
@@ -346,8 +354,10 @@ writes. No audio.
 | `pen.rs` | State of the pen path being drawn, which lasts across many clicks |
 | `subselect.rs` | The math for moving, deleting and converting anchors, and pulling new handles out of them (Alt-drag), with the Subselection tool or the Pen between paths |
 | `timeline.rs` | Transport bar and the hand-painted layer × frame grid; dragging a layer name scrolls the list, holding it first restacks (pen-friendly) |
-| `inspector.rs` | The properties panel, with Tool, Layer and Document tabs that follow the selection and tool, and a live brush preview stroke |
-| `panels.rs` | The Swatches, Align and History panels |
+| `inspector.rs` | The properties panel, with Tool, Layer and Document tabs that follow the selection and tool |
+| `brushes.rs` | The brush library: the ready-made brushes and the person's (`brushes.json` in the settings folder), importing brush sets (`.inkbrushes`) and `.abr` files, exporting brush sets |
+| `brush_panel.rs` | The Brush Settings area (Photoshop's section list, or a menu when narrow; the angle-and-roundness dial; a live sample stroke), the Brushes area, and the quick menu that right-clicking the stage with a painting tool opens |
+| `panels.rs` | The Swatches, Align, Controllers and History panels |
 | `value_graph.rs` | The timeline's Graph mode: a property's values over time, with draggable keys and easing handles |
 | `easing_editor.rs` | The easing curve in the properties panel, with draggable Bézier handles |
 | `toolbar.rs` | Tool buttons with vector-drawn icons |
@@ -361,7 +371,7 @@ writes. No audio.
 | `batch_dialog.rs` | File › Batch Export: a queue of `BatchJob`s (project, format, size, transparency) run on a thread with `batch::run`, status per row |
 | `cli.rs` | `inkframe --export …`: parses projects and options into `BatchJob`s and runs them without a window (attaching to the parent console on Windows) |
 | `lip_sync_dialog.rs` | The Lip Sync window: picks the dialogue and timing source, maps drawings to mouth shapes, applies `Layer::apply_lip_sync` |
-| `tablet.rs` | Pen pressure: from Windows Ink pens via egui's touch events with force, and on macOS from an AppKit local event monitor that notes each pen event's pressure and tilt. `samples` gives every pointer position since the last frame with its pressure |
+| `tablet.rs` | Pen pressure and tilt: from Windows Ink pens via egui's touch events with force, and on macOS from an AppKit local event monitor that notes each pen event's pressure and tilt. `samples` gives every pointer position since the last frame with the pen's state |
 | `theme.rs` | The look: Inter as the interface font, a palette of greys with one blue accent (constants other modules draw with), spacing and corner radii |
 | `icons.rs` | The interface's small icons (playback, layer toggles, area kinds), drawn as lines in the theme's colours, and `IconButton` |
 | `layer_thumbnails.rs` | The timeline's per-layer thumbnails (`render_layer_thumbnail` in the render crate), cached and redrawn only when what shows in them changes, a few per UI frame |
@@ -370,7 +380,7 @@ writes. No audio.
 | `xsheet.rs` | The Exposure Sheet window: `column` turns a layer's exposure into cells (starts and holds), `enter` exposes a typed drawing name, making the drawing if it's new |
 | `shortcuts.rs` | Every keyboard shortcut in one place |
 | `motion_path.rs` | The math for showing and bending a layer's motion path on the stage |
-| `prefs.rs` | Settings kept for next time in the settings folder's `prefs.json`: the safe areas, the field guide, and the Batch Export queue and folder (formats by their command-line slug, so a job in a format this build lacks is skipped). `app.rs` gathers them every frame and saves on a change, as it does the layout; screenshot runs neither read nor write them unless `INKFRAME_SCREENSHOT_PREFS` asks |
+| `prefs.rs` | Settings kept for next time in the settings folder's `prefs.json`: the safe areas, the field guide, the brush and eraser, the language picked, and the Batch Export queue and folder (formats by their command-line slug, so a job in a format this build lacks is skipped). `app.rs` gathers them every frame and saves on a change, as it does the layout; screenshot runs neither read nor write them unless `INKFRAME_SCREENSHOT_PREFS` asks |
 | `templates.rs` | The Templates panel: the template library in the settings folder's Templates folder (`layout::settings_dir`), saving the selected layers and inserting one at the playhead, with thumbnails drawn from each template |
 | `text_edit.rs` | Typing into text on the stage: the text cursor, selection and keys, kept separate from drawing so it can be tested |
 | `screenshot.rs` | `INKFRAME_SCREENSHOT=out.png` captures the window and quits |

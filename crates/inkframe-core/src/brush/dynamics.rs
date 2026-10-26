@@ -12,7 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::color::Color;
+use crate::color::{Color, hsv_to_rgb, rgb_to_hsv};
 
 /// What steers a setting along a stroke, besides chance.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
@@ -283,37 +283,6 @@ impl Random {
     }
 }
 
-fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
-    let max = r.max(g).max(b);
-    let min = r.min(g).min(b);
-    let delta = max - min;
-    let h = if delta == 0.0 {
-        0.0
-    } else if max == r {
-        ((g - b) / delta).rem_euclid(6.0) / 6.0
-    } else if max == g {
-        ((b - r) / delta + 2.0) / 6.0
-    } else {
-        ((r - g) / delta + 4.0) / 6.0
-    };
-    let s = if max == 0.0 { 0.0 } else { delta / max };
-    (h, s, max)
-}
-
-fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
-    let sector = (h * 6.0).rem_euclid(6.0);
-    let f = sector - sector.floor();
-    let (p, q, t) = (v * (1.0 - s), v * (1.0 - s * f), v * (1.0 - s * (1.0 - f)));
-    match sector as u32 {
-        0 => (v, t, p),
-        1 => (q, v, p),
-        2 => (p, v, t),
-        3 => (p, q, v),
-        4 => (t, p, v),
-        _ => (v, p, q),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,14 +320,5 @@ mod tests {
         let grey = ColorDynamics { on: true, purity: -1.0, ..off };
         let c = grey.color(red, blue, &DabInput::default(), &mut random);
         assert_eq!((c.r, c.g, c.b), (255, 255, 255), "red with no saturation is its brightness");
-    }
-
-    #[test]
-    fn hsv_round_trips() {
-        for (r, g, b) in [(0.2, 0.5, 0.9), (1.0, 0.0, 0.0), (0.3, 0.3, 0.3), (0.9, 0.8, 0.1)] {
-            let (h, s, v) = rgb_to_hsv(r, g, b);
-            let (r2, g2, b2) = hsv_to_rgb(h, s, v);
-            assert!((r - r2).abs() < 1e-4 && (g - g2).abs() < 1e-4 && (b - b2).abs() < 1e-4);
-        }
     }
 }

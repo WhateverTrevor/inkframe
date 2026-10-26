@@ -1,6 +1,6 @@
 [package]
 name = "inkframe-script"
-description = "Runs JavaScript against Inkframe documents (see docs/SCRIPTING_PLAN.md)."
+description = "Runs JavaScript against Inkframe documents (see docs/SCRIPTING.md)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

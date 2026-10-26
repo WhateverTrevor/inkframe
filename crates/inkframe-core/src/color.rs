@@ -81,9 +81,52 @@ impl TryFrom<String> for Color {
     }
 }
 
+/// Red, green and blue (each 0 to 1) as hue (0 to 1, round the colour
+/// wheel from red), saturation and value.
+pub fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let delta = max - min;
+    let h = if delta == 0.0 {
+        0.0
+    } else if max == r {
+        ((g - b) / delta).rem_euclid(6.0) / 6.0
+    } else if max == g {
+        ((b - r) / delta + 2.0) / 6.0
+    } else {
+        ((r - g) / delta + 4.0) / 6.0
+    };
+    let s = if max == 0.0 { 0.0 } else { delta / max };
+    (h, s, max)
+}
+
+/// [`rgb_to_hsv`] the other way round.
+pub fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
+    let sector = (h * 6.0).rem_euclid(6.0);
+    let f = sector - sector.floor();
+    let (p, q, t) = (v * (1.0 - s), v * (1.0 - s * f), v * (1.0 - s * (1.0 - f)));
+    match sector as u32 {
+        0 => (v, t, p),
+        1 => (q, v, p),
+        2 => (p, v, t),
+        3 => (p, q, v),
+        4 => (t, p, v),
+        _ => (v, p, q),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hsv_round_trips() {
+        for (r, g, b) in [(0.2, 0.5, 0.9), (1.0, 0.0, 0.0), (0.3, 0.3, 0.3), (0.9, 0.8, 0.1)] {
+            let (h, s, v) = rgb_to_hsv(r, g, b);
+            let (r2, g2, b2) = hsv_to_rgb(h, s, v);
+            assert!((r - r2).abs() < 1e-4 && (g - g2).abs() < 1e-4 && (b - b2).abs() < 1e-4);
+        }
+    }
 
     #[test]
     fn hex_round_trip() {
