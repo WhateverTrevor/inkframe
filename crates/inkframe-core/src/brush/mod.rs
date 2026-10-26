@@ -380,6 +380,8 @@ pub struct BrushStroke {
     layer: BTreeMap<(u32, u32), Layer>,
     /// The dual brush's coverage, where it has painted.
     dual: BTreeMap<(u32, u32), Vec<f32>>,
+    /// The texture's heights, per tile, worked out as tiles are reached.
+    heights: BTreeMap<(u32, u32), Vec<f32>>,
     /// Tiles changed since the canvas was last redrawn.
     dirty: BTreeSet<(u32, u32)>,
     path: DabPath,
@@ -408,6 +410,7 @@ impl BrushStroke {
             before: BTreeMap::new(),
             layer: BTreeMap::new(),
             dual: BTreeMap::new(),
+            heights: BTreeMap::new(),
             dirty: BTreeSet::new(),
             path: DabPath::default(),
             dual_path: DabPath::default(),
@@ -617,45 +620,48 @@ impl BrushStroke {
 
     /// Adds one stamp of the tip to the stroke's layer.
     fn stamp(&mut self, canvas: &Canvas, stamp: &Stamp, opacity: f32, flow: f32, color: Color, depth: f32) {
-        let Some((x0, y0, x1, y1)) = bounds(canvas, stamp.centre, stamp.reach()) else { return };
+        let Some(area) = bounds(canvas, stamp.centre, stamp.reach()) else { return };
+        let tiles = tiles_under(area);
+        for &tile in &tiles {
+            self.before.entry(tile).or_insert_with(|| canvas.shared_tile(tile));
+            self.layer.entry(tile).or_insert_with(|| vec![[0.0; 4]; (TILE * TILE) as usize]);
+            self.dirty.insert(tile);
+        }
+        if self.settings.texture.each_tip {
+            self.prepare_heights(&tiles);
+        }
         let s = &self.settings;
+        let (selection, heights, index) = (self.selection.as_ref(), &self.heights, self.index);
         let ceiling = opacity * color.a as f32 / 255.0;
         let rgb = [color.r, color.g, color.b].map(|v| v as f32 / 255.0);
-        let index = self.index;
-        for ty in y0 / TILE..=(y1 - 1) / TILE {
-            for tx in x0 / TILE..=(x1 - 1) / TILE {
-                let tile = (tx, ty);
-                self.before.entry(tile).or_insert_with(|| canvas.shared_tile(tile));
-                let layer = self.layer.entry(tile).or_insert_with(|| vec![[0.0; 4]; (TILE * TILE) as usize]);
-                let (left, top) = (tx * TILE, ty * TILE);
-                for y in y0.max(top)..y1.min(top + TILE) {
-                    for x in x0.max(left)..x1.min(left + TILE) {
-                        let mut m = stamp.amount(&s.tip, s.hardness, x as f32 + 0.5, y as f32 + 0.5);
-                        if m <= 0.0 {
-                            continue;
-                        }
-                        if s.texture.on && s.texture.each_tip {
-                            m = s.texture.apply(m, x, y, depth);
-                        }
-                        if s.noise {
-                            // Grit in the soft part of the edge only.
-                            let grit = texture::hash(x, y, index) - 0.5;
-                            m = (m + grit * 4.0 * m * (1.0 - m)).clamp(0.0, 1.0);
-                        }
-                        let selected = self
-                            .selection
-                            .as_ref()
-                            .map_or(1.0, |sel| sel.at(x as i64, y as i64) as f32 / 255.0);
-                        let amount = m * flow * selected;
-                        if amount <= 0.0 {
-                            continue;
-                        }
-                        deposit(&mut layer[((y - top) * TILE + x - left) as usize], amount, ceiling, rgb);
+        let (x0, y0, x1, y1) = area;
+        let jobs: Vec<_> = self.layer.iter_mut().filter(|(tile, _)| tiles.contains(tile)).collect();
+        in_parallel(worth_sharing(area), jobs, |(&(tx, ty), layer)| {
+            let (left, top) = (tx * TILE, ty * TILE);
+            let tile_heights = heights.get(&(tx, ty)).filter(|_| s.texture.on && s.texture.each_tip);
+            for y in y0.max(top)..y1.min(top + TILE) {
+                for x in x0.max(left)..x1.min(left + TILE) {
+                    let mut m = stamp.amount(&s.tip, s.hardness, x as f32 + 0.5, y as f32 + 0.5);
+                    if m <= 0.0 {
+                        continue;
+                    }
+                    let i = ((y - top) * TILE + x - left) as usize;
+                    if let Some(h) = tile_heights {
+                        m = s.texture.mode.combine(m, h[i], depth);
+                    }
+                    if s.noise {
+                        // Grit in the soft part of the edge only.
+                        let grit = texture::hash(x, y, index) - 0.5;
+                        m = (m + grit * 4.0 * m * (1.0 - m)).clamp(0.0, 1.0);
+                    }
+                    let selected = selection.map_or(1.0, |sel| sel.at(x as i64, y as i64) as f32 / 255.0);
+                    let amount = m * flow * selected;
+                    if amount > 0.0 {
+                        deposit(&mut layer[i], amount, ceiling, rgb);
                     }
                 }
-                self.dirty.insert(tile);
             }
-        }
+        });
     }
 
     /// Lays the dual brush's stamps around `at`.
@@ -678,85 +684,157 @@ impl BrushStroke {
                 stamp.flip_x = self.random.next() < 0.5;
                 stamp.flip_y = self.random.next() < 0.5;
             }
-            let Some((x0, y0, x1, y1)) = bounds(canvas, stamp.centre, stamp.reach()) else { continue };
-            for ty in y0 / TILE..=(y1 - 1) / TILE {
-                for tx in x0 / TILE..=(x1 - 1) / TILE {
-                    let tile = (tx, ty);
-                    let coverage = self.dual.entry(tile).or_insert_with(|| vec![0.0; (TILE * TILE) as usize]);
-                    let (left, top) = (tx * TILE, ty * TILE);
-                    for y in y0.max(top)..y1.min(top + TILE) {
-                        for x in x0.max(left)..x1.min(left + TILE) {
-                            let m = stamp.amount(&dual.tip, 1.0, x as f32 + 0.5, y as f32 + 0.5);
-                            let c = &mut coverage[((y - top) * TILE + x - left) as usize];
-                            *c += m * (1.0 - *c);
-                        }
-                    }
-                    if self.layer.contains_key(&tile) {
-                        self.dirty.insert(tile);
-                    }
+            let Some(area) = bounds(canvas, stamp.centre, stamp.reach()) else { continue };
+            let tiles = tiles_under(area);
+            for &tile in &tiles {
+                self.dual.entry(tile).or_insert_with(|| vec![0.0; (TILE * TILE) as usize]);
+                if self.layer.contains_key(&tile) {
+                    self.dirty.insert(tile);
                 }
             }
+            let (x0, y0, x1, y1) = area;
+            let jobs: Vec<_> = self.dual.iter_mut().filter(|(tile, _)| tiles.contains(tile)).collect();
+            in_parallel(worth_sharing(area), jobs, |(&(tx, ty), coverage)| {
+                let (left, top) = (tx * TILE, ty * TILE);
+                for y in y0.max(top)..y1.min(top + TILE) {
+                    for x in x0.max(left)..x1.min(left + TILE) {
+                        let m = stamp.amount(&dual.tip, 1.0, x as f32 + 0.5, y as f32 + 0.5);
+                        let c = &mut coverage[((y - top) * TILE + x - left) as usize];
+                        *c += m * (1.0 - *c);
+                    }
+                }
+            });
         }
+    }
+
+    /// Works out the texture's heights over `tiles`, once a stroke: the
+    /// pattern doesn't change while it's painted, and a tile is redrawn
+    /// many times.
+    fn prepare_heights(&mut self, tiles: &[(u32, u32)]) {
+        if !self.settings.texture.on {
+            return;
+        }
+        for &tile in tiles {
+            self.heights.entry(tile).or_default();
+        }
+        let texture = &self.settings.texture;
+        let jobs: Vec<_> = self
+            .heights
+            .iter_mut()
+            .filter(|(tile, heights)| heights.is_empty() && tiles.contains(tile))
+            .collect();
+        // A whole tile's worth each, so worth sharing from two.
+        in_parallel(jobs.len() >= 2, jobs, |(&tile, heights)| *heights = texture.heights(tile));
     }
 
     /// Redraws the tiles the stroke changed: as they were before it, with
     /// the stroke on top (or taken out, erasing), after the texture and the
     /// dual brush have had their say.
     fn redraw(&mut self, canvas: &mut Canvas) {
-        let s = &self.settings;
-        let whole_texture = s.texture.on && !s.texture.each_tip;
-        let dual_depth = if matches!(s.dual.mode, Blend::Height | Blend::LinearHeight) { 0.5 } else { 1.0 };
-        for tile in std::mem::take(&mut self.dirty) {
-            let Some(layer) = self.layer.get(&tile) else { continue };
-            let dual = if s.dual.on { self.dual.get(&tile) } else { None };
-            let mut pixels = match &self.before[&tile] {
-                Some(before) => before.as_ref().clone(),
-                None => vec![0; (TILE * TILE * 4) as usize],
-            };
-            let (left, top) = (tile.0 * TILE, tile.1 * TILE);
-            for (i, (pixel, paint)) in pixels.chunks_exact_mut(4).zip(layer).enumerate() {
-                let mut alpha = paint[3];
-                if alpha <= 0.0 {
-                    continue;
-                }
-                let (x, y) = (left + i as u32 % TILE, top + i as u32 / TILE);
-                let mut shown = alpha;
-                if whole_texture {
-                    shown = s.texture.apply(shown, x, y, s.texture.depth);
-                }
-                if s.dual.on {
-                    let other = dual.map_or(0.0, |d| d[i]);
-                    shown = s.dual.mode.combine(shown, other, dual_depth);
-                }
-                if s.wet_edges {
-                    shown = wet(shown, s.opacity);
-                }
-                // The colour scales with what's left of the coverage.
-                let keep = if alpha > 0.0 { shown / alpha } else { 0.0 };
-                alpha = shown;
-                if alpha <= 0.0 {
-                    continue;
-                }
-                match self.mode {
-                    BrushMode::Paint(_) => {
-                        // Premultiplied "source over": the stroke, then what
-                        // was there, showing through.
-                        for (channel, c) in pixel[..3].iter_mut().zip(&paint[..3]) {
-                            *channel =
-                                (c * keep * 255.0 + *channel as f32 * (1.0 - alpha)).round().min(255.0) as u8;
-                        }
-                        pixel[3] = (alpha * 255.0 + pixel[3] as f32 * (1.0 - alpha)).round().min(255.0) as u8;
-                    }
-                    BrushMode::Erase => {
-                        for channel in pixel.iter_mut() {
-                            *channel = (*channel as f32 * (1.0 - alpha)).round() as u8;
-                        }
-                    }
-                }
-            }
+        let tiles: Vec<(u32, u32)> = std::mem::take(&mut self.dirty)
+            .into_iter()
+            .filter(|tile| self.layer.contains_key(tile))
+            .collect();
+        if !self.settings.texture.each_tip {
+            self.prepare_heights(&tiles);
+        }
+        let mut drawn: Vec<((u32, u32), Vec<u8>)> =
+            tiles.into_iter().map(|tile| (tile, Vec::new())).collect();
+        let this = &*self;
+        // Each a whole tile composited, so worth sharing from a few.
+        in_parallel(drawn.len() >= 4, drawn.iter_mut().collect(), |(tile, pixels)| {
+            *pixels = this.composite(*tile)
+        });
+        for (tile, pixels) in drawn {
             canvas.set_tile(tile, pixels);
         }
     }
+
+    /// One tile as it was before the stroke with the stroke over it.
+    fn composite(&self, tile: (u32, u32)) -> Vec<u8> {
+        let s = &self.settings;
+        let layer = &self.layer[&tile];
+        let heights = self.heights.get(&tile).filter(|_| s.texture.on && !s.texture.each_tip);
+        let dual = self.dual.get(&tile).filter(|_| s.dual.on);
+        let dual_depth = if matches!(s.dual.mode, Blend::Height | Blend::LinearHeight) { 0.5 } else { 1.0 };
+        let mut pixels = match &self.before[&tile] {
+            Some(before) => before.as_ref().clone(),
+            None => vec![0; (TILE * TILE * 4) as usize],
+        };
+        for (i, (pixel, paint)) in pixels.chunks_exact_mut(4).zip(layer).enumerate() {
+            let covered = paint[3];
+            if covered <= 0.0 {
+                continue;
+            }
+            let mut alpha = covered;
+            if let Some(h) = heights {
+                alpha = s.texture.mode.combine(alpha, h[i], s.texture.depth);
+            }
+            if s.dual.on {
+                alpha = s.dual.mode.combine(alpha, dual.map_or(0.0, |d| d[i]), dual_depth);
+            }
+            if s.wet_edges {
+                alpha = wet(alpha, s.opacity);
+            }
+            if alpha <= 0.0 {
+                continue;
+            }
+            match self.mode {
+                BrushMode::Paint(_) => {
+                    // Premultiplied "source over": the stroke (its colour
+                    // scaled with what's left of its coverage), then what
+                    // was there, showing through.
+                    let keep = alpha / covered;
+                    for (channel, c) in pixel[..3].iter_mut().zip(&paint[..3]) {
+                        *channel =
+                            (c * keep * 255.0 + *channel as f32 * (1.0 - alpha)).round().min(255.0) as u8;
+                    }
+                    pixel[3] = (alpha * 255.0 + pixel[3] as f32 * (1.0 - alpha)).round().min(255.0) as u8;
+                }
+                BrushMode::Erase => {
+                    for channel in pixel.iter_mut() {
+                        *channel = (*channel as f32 * (1.0 - alpha)).round() as u8;
+                    }
+                }
+            }
+        }
+        pixels
+    }
+}
+
+/// Pixels a stamp must cover before its work is shared across the
+/// machine's cores: a small dab is quicker done here than threads started.
+const PARALLEL_PIXELS: u32 = 512 * 512;
+
+/// Whether a stamp over `area` (left, top, right, bottom) is big enough to
+/// share out.
+fn worth_sharing((x0, y0, x1, y1): (u32, u32, u32, u32)) -> bool {
+    (x1 - x0) * (y1 - y0) >= PARALLEL_PIXELS
+}
+
+/// Runs `work` on each job, across the machine's cores if `share` (a big
+/// brush's dab spans dozens of tiles), or on this thread.
+fn in_parallel<T: Send>(share: bool, mut jobs: Vec<T>, work: impl Fn(T) + Sync) {
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(jobs.len());
+    if !share || threads < 2 {
+        jobs.into_iter().for_each(work);
+        return;
+    }
+    let per_thread = jobs.len().div_ceil(threads);
+    let work = &work;
+    std::thread::scope(|scope| {
+        while !jobs.is_empty() {
+            let share: Vec<T> = jobs.drain(..per_thread.min(jobs.len())).collect();
+            scope.spawn(move || share.into_iter().for_each(work));
+        }
+    });
+}
+
+/// The tiles a pixel area (left, top, right, bottom) touches.
+fn tiles_under((x0, y0, x1, y1): (u32, u32, u32, u32)) -> Vec<(u32, u32)> {
+    (y0 / TILE..=(y1 - 1) / TILE)
+        .flat_map(|ty| (x0 / TILE..=(x1 - 1) / TILE).map(move |tx| (tx, ty)))
+        .collect()
 }
 
 /// The pixels a stamp of `reach` at `centre` may touch, clipped to the
