@@ -1707,7 +1707,7 @@ dependencies = [
 
 [[package]]
 name = "inkframe-app"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "block2 0.6.2",
  "eframe",
@@ -1731,7 +1731,7 @@ dependencies = [
 
 [[package]]
 name = "inkframe-audio"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "hound",
  "inkframe-core",
@@ -1743,7 +1743,7 @@ dependencies = [
 
 [[package]]
 name = "inkframe-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "base64",
  "png",
@@ -1755,7 +1755,7 @@ dependencies = [
 
 [[package]]
 name = "inkframe-export"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "base64",
  "inkframe-audio",
@@ -1769,7 +1769,7 @@ dependencies = [
 
 [[package]]
 name = "inkframe-render"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "epaint_default_fonts",
  "fontdb",
@@ -1782,7 +1782,7 @@ dependencies = [
 
 [[package]]
 name = "inkframe-script"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "inkframe-audio",
  "inkframe-core",
@@ -5059,7 +5059,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "inkframe-core",
  "tiny-skia 0.12.0",
