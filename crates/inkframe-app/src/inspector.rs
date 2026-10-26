@@ -335,6 +335,10 @@ fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
                         .on_hover_text(tr("How much of the colour it picks up mixes into its paint"));
                     ui.add(percent(&mut editor.mixer_mix));
                     ui.end_row();
+                    ui.label("");
+                    ui.checkbox(&mut editor.mixer_sample_all, tr("Sample All Layers"))
+                        .on_hover_text(tr("Pick up colour from everything as seen, not only this layer"));
+                    ui.end_row();
                 }
                 if matches!(tool, Tool::Dodge | Tool::Burn) {
                     ui.label(tr("Range")).on_hover_text(tr("Which tones it works on most"));

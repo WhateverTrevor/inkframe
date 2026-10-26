@@ -87,6 +87,7 @@ pub enum Asked {
     /// Export the saved brushes, or one of them.
     ExportBrushes(Option<usize>),
     DefineBrush,
+    ImportTip,
     ImportPattern,
     DefinePattern,
     ShowBrushSettings,
@@ -924,6 +925,13 @@ pub fn brushes(ui: &mut egui::Ui, editor: &mut Editor, panels: &mut BrushPanels)
             .clicked()
         {
             panels.asked = Some(Asked::DefineBrush);
+        }
+        if ui
+            .small_button(tr("Import Tip…"))
+            .on_hover_text(tr("A new brush tip from a picture file: dark is paint"))
+            .clicked()
+        {
+            panels.asked = Some(Asked::ImportTip);
         }
     });
 }
