@@ -3,7 +3,13 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
-## Unreleased
+## [0.7.0]
+
+More of Photoshop's painting: the Mixer Brush, the Pattern Stamp,
+symmetry, Brush Pose and textures from your own pictures, with Photoshop
+brushes bringing their patterns. Smudge, Blur and the other retouching
+tools keep up at big sizes, groups slant together, and long sound files
+load lighter. Projects open in 0.6.0, 0.5.1 and 0.4.0 too.
 
 ### Brushes
 
