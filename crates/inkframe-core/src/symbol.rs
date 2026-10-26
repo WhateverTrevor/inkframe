@@ -111,9 +111,9 @@ impl Playback {
 
     pub fn label(self) -> &'static str {
         match self {
-            Playback::Loop => "Loop",
-            Playback::PlayOnce => "Play Once",
-            Playback::SingleFrame => "Single Frame",
+            Playback::Loop => crate::i18n::tr_later("Loop"),
+            Playback::PlayOnce => crate::i18n::tr_later("Play Once"),
+            Playback::SingleFrame => crate::i18n::tr_later("Single Frame"),
         }
     }
 }

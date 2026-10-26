@@ -62,9 +62,9 @@ impl TextAlign {
 
     pub fn label(self) -> &'static str {
         match self {
-            TextAlign::Left => "Left",
-            TextAlign::Center => "Center",
-            TextAlign::Right => "Right",
+            TextAlign::Left => crate::i18n::tr_later("Left"),
+            TextAlign::Center => crate::i18n::tr_later("Center"),
+            TextAlign::Right => crate::i18n::tr_later("Right"),
         }
     }
 }

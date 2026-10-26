@@ -546,7 +546,7 @@ impl Editor {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
         let psd = inkframe_core::Psd::from_bytes(&bytes).map_err(|e| e.to_string())?;
         let name =
-            path.file_stem().map_or_else(|| "Photoshop".to_owned(), |s| s.to_string_lossy().into_owned());
+            path.file_stem().map_or_else(|| tr("Photoshop").to_owned(), |s| s.to_string_lossy().into_owned());
         let added = self.doc.import_psd(&psd, self.timeline(), self.frame, &name);
         self.select(added.last().copied());
         Ok(())
@@ -670,7 +670,7 @@ impl Editor {
             shape: Shape::Text(Text::new("", 48.0)),
             style: Style { fill: Some(Color::BLACK), stroke: None, gradient: None },
         };
-        let name = self.doc.next_layer_name_in(self.timeline(), "Text");
+        let name = self.doc.next_layer_name_in(self.timeline(), tr("Text"));
         self.add_named_layer(name, element, at);
         self.remeasure_text();
         self.selection
@@ -714,7 +714,7 @@ impl Editor {
     pub fn display_name(&self) -> String {
         match self.path.as_deref().and_then(Path::file_stem) {
             Some(stem) => stem.to_string_lossy().into_owned(),
-            None => self.untitled_name.clone().unwrap_or_else(|| "Untitled".to_owned()),
+            None => self.untitled_name.clone().unwrap_or_else(|| tr("Untitled").to_owned()),
         }
     }
 
@@ -1222,7 +1222,7 @@ impl Editor {
     /// current frame, and selects it.
     pub fn add_paint_layer(&mut self) -> Option<LayerId> {
         let timeline = self.timeline();
-        let name = self.doc.next_layer_name_in(timeline, "Paint");
+        let name = self.doc.next_layer_name_in(timeline, tr("Paint"));
         let id = self.doc.add_paint_layer(timeline, name, self.frame)?;
         self.select(Some(id));
         Some(id)
@@ -1242,7 +1242,7 @@ impl Editor {
     /// it turns and scales around there until its pivot is moved.
     pub fn add_empty_layer(&mut self) -> Option<LayerId> {
         let timeline = self.timeline();
-        let name = self.doc.next_layer_name_in(timeline, "Layer");
+        let name = self.doc.next_layer_name_in(timeline, tr("Layer"));
         let above = self.selection.and_then(|id| {
             let index = self.layers().iter().position(|l| l.id == id)?;
             Some((index, self.layers()[index].in_folder))

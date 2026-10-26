@@ -53,7 +53,7 @@ impl Editor {
         };
         if let Some(layer) = self.doc.layer_mut(folder) {
             layer.skeleton = Some(Skeleton::default());
-            layer.name = "Skeleton".into();
+            layer.name = tr("Skeleton").into();
         }
         self.selected_bone = None;
         self.use_tool(Tool::AddBone);
@@ -235,7 +235,7 @@ impl Editor {
         self.new_folder();
         if let Some(folder) = self.selection.and_then(|id| self.doc.layer_mut(id)).filter(|l| l.folder) {
             folder.switch = true;
-            folder.name = "Switch".into();
+            folder.name = tr("Switch").into();
         }
     }
 

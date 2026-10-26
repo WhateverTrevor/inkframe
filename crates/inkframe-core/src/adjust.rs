@@ -49,10 +49,10 @@ impl Adjustment {
 
     pub fn name(&self) -> &'static str {
         match self {
-            Adjustment::BrightnessContrast { .. } => "Brightness/Contrast",
-            Adjustment::HueSaturation { .. } => "Hue/Saturation",
-            Adjustment::Levels { .. } => "Levels",
-            Adjustment::Curves { .. } => "Curves",
+            Adjustment::BrightnessContrast { .. } => crate::i18n::tr_later("Brightness/Contrast"),
+            Adjustment::HueSaturation { .. } => crate::i18n::tr_later("Hue/Saturation"),
+            Adjustment::Levels { .. } => crate::i18n::tr_later("Levels"),
+            Adjustment::Curves { .. } => crate::i18n::tr_later("Curves"),
         }
     }
 

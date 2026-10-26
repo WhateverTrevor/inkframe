@@ -1096,6 +1096,21 @@ after the Harmony features (palettes to master controllers).
     default layer names, undo step names, and the screenshot hooks and
     CLI (English on purpose). Helpers in the scratchpad: wrap.py
     (widget calls, continued literals) and wrap_list.py (given texts).
+137. Translation round 5 and View › Language. Core/export names marked
+    with `inkframe_core::i18n::tr_later` (blend, easing, filters, colour
+    effects, adjustments, particle presets, playback, tone range, texture,
+    perspective, text align, properties, export formats), app shows them
+    via `tr(x.label())`; workspaces and safe areas likewise. The core's
+    `i18n::set_translator` takes the app's `tr` at start-up, so
+    `history::describe` (undo names, now whole phrases with {layer}) and
+    new folder names translate. New layer names (Layer, Text, Paint, Oval,
+    Rectangle, Path, Stroke, Line, Skeleton, Switch, "{layer} part")
+    translate. `cargo xtask strings` now scans core and export too (1192
+    texts). View › Language: radio list (Same as the System, English,
+    built-ins named by their file's "# Name" line, pseudo), saved as
+    `Prefs::language`, used from the next start (main loads prefs before
+    `choose_language`; screenshot runs ignore it). Not clicked through in
+    a running app: there's no app-level test harness.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

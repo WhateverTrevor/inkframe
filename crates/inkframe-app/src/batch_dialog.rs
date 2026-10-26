@@ -338,14 +338,14 @@ impl BatchDialog {
 }
 
 fn format_picker(ui: &mut egui::Ui, row: usize, format: &mut ExportFormat) {
-    egui::ComboBox::from_id_salt(("batch_format", row)).selected_text(format.label()).width(200.0).show_ui(
-        ui,
-        |ui| {
+    egui::ComboBox::from_id_salt(("batch_format", row))
+        .selected_text(tr(format.label()))
+        .width(200.0)
+        .show_ui(ui, |ui| {
             for choice in ExportFormat::ALL.into_iter().filter(|f| f.is_available()) {
-                ui.selectable_value(format, choice, choice.label());
+                ui.selectable_value(format, choice, tr(choice.label()));
             }
-        },
-    );
+        });
 }
 
 fn status_ui(ui: &mut egui::Ui, status: &Status, project: &Path, output: &Path) {

@@ -36,13 +36,13 @@ impl Property {
 
     pub fn name(self) -> &'static str {
         match self {
-            Property::Position => "Position",
-            Property::Rotation => "Rotation",
-            Property::Scale => "Scale",
-            Property::Skew => "Skew",
-            Property::Opacity => "Opacity",
-            Property::Effects => "Effects",
-            Property::Depth => "Depth",
+            Property::Position => crate::i18n::tr_later("Position"),
+            Property::Rotation => crate::i18n::tr_later("Rotation"),
+            Property::Scale => crate::i18n::tr_later("Scale"),
+            Property::Skew => crate::i18n::tr_later("Skew"),
+            Property::Opacity => crate::i18n::tr_later("Opacity"),
+            Property::Effects => crate::i18n::tr_later("Effects"),
+            Property::Depth => crate::i18n::tr_later("Depth"),
         }
     }
 }

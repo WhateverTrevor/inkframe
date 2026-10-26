@@ -41,6 +41,9 @@ pub struct Prefs {
     pub folded_sections: Vec<String>,
     /// The newest version whose What's New has been seen.
     pub seen_version: Option<String>,
+    /// The language picked in View › Language, by its code (`de`,
+    /// `pt_BR`); none follows the system's.
+    pub language: Option<String>,
 }
 
 /// A Batch Export job as saved: the format by its short name, the same
@@ -78,6 +81,7 @@ impl Prefs {
             toured: false,
             folded_sections: Vec::new(),
             seen_version: None,
+            language: None,
         }
     }
 
@@ -131,8 +135,12 @@ mod tests {
             BatchJob { scale: 0.5, ..BatchJob::new("/shots/walk.inkf", ExportFormat::H264) },
             BatchJob::new("/shots/run.inkf", ExportFormat::SpriteSheet),
         ];
-        let prefs = Prefs::gather(guides, jobs.clone(), Some("/renders".into()));
+        let prefs = Prefs {
+            language: Some("pt_BR".into()),
+            ..Prefs::gather(guides, jobs.clone(), Some("/renders".into()))
+        };
         let loaded: Prefs = serde_json::from_str(&serde_json::to_string(&prefs).unwrap()).unwrap();
+        assert_eq!(loaded.language.as_deref(), Some("pt_BR"));
         assert_eq!(loaded.guides(), guides);
         assert_eq!(loaded.batch_jobs(), jobs);
         assert_eq!(loaded.batch_folder, Some(PathBuf::from("/renders")));

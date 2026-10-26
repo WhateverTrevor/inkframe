@@ -465,7 +465,7 @@ impl NodeView {
             Some(MenuTarget::Node(NodeKey::Layer(layer))) => {
                 ui.menu_button(tr("Add Filter"), |ui| {
                     for kind in FilterKind::ALL {
-                        if ui.button(kind.label()).clicked() {
+                        if ui.button(tr(kind.label())).clicked() {
                             edit_effects(editor, layer, |e| e.filters.push(Filter { enabled: true, kind }));
                             ui.close();
                         }
@@ -564,10 +564,11 @@ impl NodeView {
             NodeKey::ColorEffect(id) | NodeKey::Filter(id, _) => {
                 let effects = doc.layer(id).map(|l| l.track.effects_at(frame as f32)).unwrap_or_default();
                 let (label, on) = match node.key {
-                    NodeKey::Filter(_, i) => {
-                        effects.filters.get(i).map_or((tr("Filter"), false), |f| (f.kind.label(), f.enabled))
-                    }
-                    _ => (effects.color.label(), true),
+                    NodeKey::Filter(_, i) => effects
+                        .filters
+                        .get(i)
+                        .map_or((tr("Filter"), false), |f| (tr(f.kind.label()), f.enabled)),
+                    _ => (tr(effects.color.label()), true),
                 };
                 let fill = if on { theme::CONTROL } else { theme::PANEL };
                 painter.rect(rect, 6.0 * zoom, fill, outline(selected(id)), egui::StrokeKind::Inside);
