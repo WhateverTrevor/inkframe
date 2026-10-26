@@ -118,6 +118,10 @@ pub struct RetouchStroke {
     /// The Mixer Brush's paint (premultiplied, 0 to 255) and how much of
     /// it is left (0 to 1).
     reservoir: Option<([f32; 4], f32)>,
+    /// What the Mixer Brush picks colour up from, if not the layer itself:
+    /// every layer as seen, laid out in the layer's pixels (Sample All
+    /// Layers).
+    sample: Option<Canvas>,
     /// The canvas as it was when the stroke began, which Clone Stamp copies
     /// from, so a stroke never copies paint it has just put down.
     source: Canvas,
@@ -135,9 +139,18 @@ impl RetouchStroke {
             smudge: None,
             scratch: Scratch::default(),
             reservoir: None,
+            sample: None,
             source: canvas.clone(),
             selection: None,
         }
+    }
+
+    /// Has the Mixer Brush pick its colour up from `sample` (everything
+    /// as seen) rather than the layer alone, as Photoshop's Sample All
+    /// Layers does.
+    pub fn sampling(mut self, sample: Canvas) -> Self {
+        self.sample = Some(sample);
+        self
     }
 
     /// Changes pixels only within `selection`.
@@ -274,7 +287,14 @@ impl RetouchStroke {
                     self.reservoir.get_or_insert(([loaded[0], loaded[1], loaded[2], color.a as f32], 1.0));
                 // The canvas's colour under the dab mixes into the brush's
                 // paint, as much as Mix says and Wet lets it pick up.
-                if let Some(under) = average_under(&scratch.original, &cover) {
+                let picked_from = match &self.sample {
+                    Some(sample) => {
+                        sample.read_region_into(x0, y0, size, size, &mut scratch.source);
+                        &scratch.source
+                    }
+                    None => &scratch.original,
+                };
+                if let Some(under) = average_under(picked_from, &cover) {
                     *paint = mix(*paint, under, wet * mixing * MIX_PER_DAB);
                 }
                 // The paint runs out over the stroke, sooner with less
@@ -602,6 +622,32 @@ mod tests {
         let [r, _, b, a] = canvas.pixel(75, 20);
         // Thinner, too: wet, it smears the empty canvas in.
         assert!(a > 120 && r > 40 && b > 40, "both colours in it: {:?}", canvas.pixel(75, 20));
+    }
+
+    #[test]
+    fn sampling_all_layers_picks_up_colour_the_layer_doesnt_have() {
+        // An empty layer over red: the brush mixes red in only when it
+        // samples everything as seen.
+        let red_below = halves([255, 0, 0, 255], [255, 0, 0, 255]);
+        let blue = Color::rgb(0, 0, 255);
+        let mixer = Retouch::Mixer { color: blue, wet: 1.0, load: 1.0, mix: 1.0 };
+        let paint = |sample: Option<&Canvas>| {
+            let mut canvas = Canvas::new(100, 40);
+            let mut stroke = RetouchStroke::new(settings(16.0), mixer, &canvas);
+            if let Some(sample) = sample {
+                stroke = stroke.sampling(sample.clone());
+            }
+            for x in (10..=90).step_by(4) {
+                stroke.add_point(&mut canvas, Point::new(x as f32, 20.0), 1.0);
+            }
+            canvas.pixel(85, 20)
+        };
+        // (Wet, it lays down mostly what it smears from its own layer, so
+        // the red shows mixed in rather than taking over.)
+        let [r, ..] = paint(Some(&red_below));
+        assert!(r > 40, "red picked up: {r}");
+        let [r, _, b, _] = paint(None);
+        assert!(b > 100 && r < 20, "still blue: {:?}", [r, b]);
     }
 
     #[test]

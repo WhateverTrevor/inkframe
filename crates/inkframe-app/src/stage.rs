@@ -860,6 +860,8 @@ pub struct StageView {
     /// size and hardness on the canvas, as in Photoshop: where it began, and
     /// the size and hardness then.
     sizing_brush: Option<(Pos2, f32, f32)>,
+    /// Dragging symmetry's centre.
+    moving_symmetry: bool,
     /// A selection being drawn with the marquee or lasso.
     selecting: Option<Selecting>,
     /// The selection's outline (marching ants), worked out once per
@@ -905,6 +907,7 @@ impl Default for StageView {
             text_editing: None,
             painting: None,
             sizing_brush: None,
+            moving_symmetry: false,
             selecting: None,
             ants: None,
             texture: None,
@@ -2374,6 +2377,9 @@ impl StageView {
         {
             return;
         }
+        if self.painting.is_none() && self.move_symmetry_centre(ui, response, editor, view) {
+            return;
+        }
         let (pressed, down, alt, space_held) = ui.input(|i| {
             (
                 i.pointer.primary_pressed(),
@@ -2437,6 +2443,42 @@ impl StageView {
             }
             self.painting = None;
         }
+    }
+
+    /// Dragging symmetry's centre by its handle, rather than painting.
+    /// Returns whether it's being dragged.
+    fn move_symmetry_centre(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        editor: &mut Editor,
+        view: View,
+    ) -> bool {
+        let (pressed, down, pointer) =
+            ui.input(|i| (i.pointer.primary_pressed(), i.pointer.primary_down(), i.pointer.interact_pos()));
+        if !editor.paints_symmetrically() {
+            self.moving_symmetry = false;
+            return false;
+        }
+        let Some((layer, _, width, height)) = editor.paint_target() else { return false };
+        if pressed
+            && response.is_pointer_button_down_on()
+            && let (Some(p), Some(handle)) =
+                (pointer, canvas_to_screen(editor, view, layer, editor.symmetry_point(width, height)))
+        {
+            self.moving_symmetry = p.distance(handle) <= SYMMETRY_HANDLE + 3.0;
+        }
+        if !self.moving_symmetry {
+            return false;
+        }
+        if !down {
+            self.moving_symmetry = false;
+            return true;
+        }
+        if let Some(at) = pointer.and_then(|p| canvas_point(editor, view, layer, (width, height), p)) {
+            editor.symmetry_centre = Some((at.x, at.y));
+        }
+        true
     }
 
     /// The brush's quick menu and its on-canvas sizing, as in Photoshop:
@@ -3410,22 +3452,20 @@ fn draw_skeleton(painter: &egui::Painter, editor: &Editor, view: View) {
 /// to each segment's edge.
 fn draw_symmetry(painter: &egui::Painter, editor: &Editor, view: View) {
     use inkframe_core::Symmetry;
-    if editor.symmetry == Symmetry::Off
-        || !matches!(editor.tool, Tool::Brush | Tool::Eraser | Tool::PatternStamp)
-    {
+    if !editor.paints_symmetrically() {
         return;
     }
     let Some((layer, _, width, height)) = editor.paint_target() else { return };
     let (w, h) = (width as f32, height as f32);
-    let middle = Point::new(w / 2.0, h / 2.0);
-    let reach = w.max(h);
+    let middle = editor.symmetry_point(width, height);
+    let reach = w.max(h) * 2.0;
     let mut lines = Vec::new();
     match editor.symmetry {
-        Symmetry::Vertical => lines.push((Point::new(w / 2.0, 0.0), Point::new(w / 2.0, h))),
-        Symmetry::Horizontal => lines.push((Point::new(0.0, h / 2.0), Point::new(w, h / 2.0))),
+        Symmetry::Vertical => lines.push((Point::new(middle.x, 0.0), Point::new(middle.x, h))),
+        Symmetry::Horizontal => lines.push((Point::new(0.0, middle.y), Point::new(w, middle.y))),
         Symmetry::Both => {
-            lines.push((Point::new(w / 2.0, 0.0), Point::new(w / 2.0, h)));
-            lines.push((Point::new(0.0, h / 2.0), Point::new(w, h / 2.0)));
+            lines.push((Point::new(middle.x, 0.0), Point::new(middle.x, h)));
+            lines.push((Point::new(0.0, middle.y), Point::new(w, middle.y)));
         }
         Symmetry::Radial(n) | Symmetry::Mandala(n) => {
             for i in 0..n {
@@ -3444,7 +3484,15 @@ fn draw_symmetry(painter: &egui::Painter, editor: &Editor, view: View) {
             painter.add(egui::Shape::dashed_line(&[a, b], (1.0, colour), 6.0, 4.0));
         }
     }
+    // The centre's handle, to drag it somewhere else.
+    if let Some(at) = canvas_to_screen(editor, view, layer, middle) {
+        painter.circle(at, SYMMETRY_HANDLE, Color32::from_black_alpha(90), (1.5, Color32::WHITE));
+        painter.circle_filled(at, 2.0, Color32::WHITE);
+    }
 }
+
+/// The radius of symmetry's centre handle, in screen points.
+const SYMMETRY_HANDLE: f32 = 6.0;
 
 fn draw_brush_outline(painter: &egui::Painter, editor: &Editor, view: View, pointer: Pos2) {
     let Some(settings) = editor.brush_for(editor.tool) else { return };
@@ -3496,8 +3544,8 @@ fn start_painting(editor: &mut Editor, view: View, press: Pos2) -> Option<Painti
     }
     let (layer, canvas, width, height) = editor.paint_target()?;
     let size = (width, height);
-    // Symmetry mirrors round the canvas's middle.
-    let middle = Point::new(width as f32 / 2.0, height as f32 / 2.0);
+    // Where symmetry mirrors round.
+    let middle = editor.symmetry_point(width, height);
     // Painting stays inside the selection, if there is one.
     let selection = editor.selection_on(canvas).cloned();
     let work = match editor.tool {
@@ -3528,7 +3576,11 @@ fn start_painting(editor: &mut Editor, view: View, press: Pos2) -> Option<Painti
         tool => {
             let kind = retouch_kind(editor, tool, view, layer, size, press)?;
             let brush = editor.retouch_of(tool)?.brush.clone();
-            PaintWork::Retouch(RetouchStroke::new(brush, kind, editor.doc.canvas(canvas)?).within(selection))
+            let mut stroke = RetouchStroke::new(brush, kind, editor.doc.canvas(canvas)?).within(selection);
+            if tool == Tool::Mixer && editor.mixer_sample_all {
+                stroke = stroke.sampling(everything_as_seen(editor, layer, size));
+            }
+            PaintWork::Retouch(stroke)
         }
     };
     Some(Painting {
@@ -3711,6 +3763,41 @@ fn set_clone_source(editor: &mut Editor, view: View, press: Pos2) {
 
 /// Sets the paint colour to what the stage shows at `at` (in the
 /// coordinates of the timeline being edited).
+/// Every layer as seen on this frame, laid out in a paint layer's pixels
+/// (`size` of them): what the Mixer Brush samples with Sample All Layers.
+fn everything_as_seen(editor: &Editor, layer: LayerId, size: (u32, u32)) -> Canvas {
+    let mut seen = Canvas::new(size.0, size.1);
+    let options = inkframe_render::RenderOptions { images: Some(&editor.images), ..Default::default() };
+    let (Some(image), Some(found)) =
+        (inkframe_render::render_frame(&editor.doc, editor.frame, &options), editor.doc.layer(layer))
+    else {
+        return seen;
+    };
+    // Each of the layer's pixels, through the layer's placement (and any
+    // bend) to the stage, to the rendered pixel there.
+    let to_timeline = editor.doc.layer_matrix(found, editor.frame);
+    let bend = editor.doc.layer_bend(found, editor.frame);
+    let to_stage = editor.timeline_transform();
+    let (w, h) = (size.0 as f32, size.1 as f32);
+    let mut pixels = vec![0u8; (size.0 * size.1 * 4) as usize];
+    for (i, pixel) in pixels.chunks_exact_mut(4).enumerate() {
+        let (x, y) = ((i as u32 % size.0) as f32 + 0.5, (i as u32 / size.0) as f32 + 0.5);
+        let mut local = Point::new(x - w / 2.0, y - h / 2.0);
+        if let Some(bend) = &bend {
+            local = bend.bend(local);
+        }
+        let at = to_stage.apply(to_timeline.apply(local));
+        if at.x >= 0.0
+            && at.y >= 0.0
+            && let Some(p) = image.pixel(at.x as u32, at.y as u32)
+        {
+            pixel.copy_from_slice(&[p.red(), p.green(), p.blue(), p.alpha()]);
+        }
+    }
+    seen.write_region(0, 0, size.0, size.1, &pixels);
+    seen
+}
+
 fn pick_color(editor: &mut Editor, at: Point) {
     let stage = editor.timeline_transform().apply(at);
     let options = inkframe_render::RenderOptions { images: Some(&editor.images), ..Default::default() };
@@ -5185,6 +5272,28 @@ mod tests {
     /// The selection on the paint layer, at stage pixel (`x`, `y`).
     fn selected_at(harness: &Harness<'_, State>, x: i64, y: i64) -> u8 {
         harness.state().1.active_selection().map_or(0, |(_, s)| s.at(x, y))
+    }
+
+    #[test]
+    fn symmetrys_centre_drags_by_its_handle_and_strokes_mirror_round_it() {
+        let mut h = painting_with(Tool::Brush);
+        h.state_mut().1.symmetry = inkframe_core::Symmetry::Vertical;
+        let (w, height) = (h.state().1.doc.width as f32, h.state().1.doc.height as f32);
+        let (handle, to) = (screen(&h, w / 2.0, height / 2.0), screen(&h, w / 2.0 + 200.0, height / 2.0));
+        drag(&mut h, handle, &[handle + vec2(5.0, 0.0), to]);
+        let (x, _) = h.state().1.symmetry_centre.expect("moved");
+        assert!((x - (w / 2.0 + 200.0)).abs() < 3.0, "{x}");
+        assert_eq!(
+            painted_at(&h, (w / 2.0 + 100.0) as i64, (height / 2.0) as i64),
+            [0; 4],
+            "dragging the handle paints nothing"
+        );
+
+        // A dot 150 px left of the centre is mirrored 150 px right of it.
+        let centre = w / 2.0 + 200.0;
+        let dot = screen(&h, centre - 150.0, 200.0);
+        click(&mut h, dot);
+        assert_eq!(painted_at(&h, (centre + 150.0) as i64, 200)[3], 255);
     }
 
     #[test]

@@ -338,6 +338,9 @@ pub struct Editor {
     /// Symmetry painting for the Brush and Eraser, round the paint layer's
     /// middle.
     pub symmetry: inkframe_core::Symmetry,
+    /// Where symmetry mirrors round, in the paint layer's pixels: `None`
+    /// is its middle. Dragged on the stage.
+    pub symmetry_centre: Option<(f32, f32)>,
     /// Saved brushes and the ready-made ones (see `brushes.rs`).
     pub brushes: crate::brushes::BrushLibrary,
     /// Where the brush quick menu is open, in screen points, if it is:
@@ -355,6 +358,8 @@ pub struct Editor {
     /// up mixes into it, each 0 to 1.
     pub mixer_load: f32,
     pub mixer_mix: f32,
+    /// Whether the Mixer Brush picks up colour from every layer as seen.
+    pub mixer_sample_all: bool,
     pub smudge: RetouchBrush,
     pub blur: RetouchBrush,
     pub sharpen: RetouchBrush,
@@ -516,6 +521,7 @@ impl Editor {
             second_color: Color::WHITE,
             strokes_painted: 0,
             symmetry: inkframe_core::Symmetry::Off,
+            symmetry_centre: None,
             brushes: crate::brushes::BrushLibrary::default(),
             brush_quick_menu: None,
             brush_request: None,
@@ -528,6 +534,7 @@ impl Editor {
             mixer: RetouchBrush::new(40.0, 0.5),
             mixer_load: 0.8,
             mixer_mix: 0.5,
+            mixer_sample_all: false,
             smudge: RetouchBrush::new(40.0, 0.6),
             blur: RetouchBrush::new(40.0, 0.5),
             sharpen: RetouchBrush::new(40.0, 0.5),
@@ -1236,8 +1243,23 @@ impl Editor {
     /// and becomes the Brush tool's. Returns its name.
     pub fn define_brush(&mut self) -> Result<String, String> {
         let (width, height, straight) = self.picked_pixels()?;
-        let name = tr("Custom Tip");
-        let tip = inkframe_core::TipImage::from_picture(name, width, height, &straight)
+        self.brush_from_picture(tr("Custom Tip"), width, height, &straight)
+    }
+
+    /// Makes a brush from a picture (straight RGBA): its dark, opaque
+    /// pixels are the tip's paint. Saved, and made the Brush tool's, as
+    /// [`Self::define_brush`] does. Returns its name.
+    pub fn brush_from_picture(
+        &mut self,
+        name: &str,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> Result<String, String> {
+        if width.max(height) > 2500 {
+            return Err(tr("A brush tip can be at most 2500 pixels across.").to_owned());
+        }
+        let tip = inkframe_core::TipImage::from_picture(name, width, height, rgba)
             .ok_or(tr("There's nothing dark there to make a tip from: dark is paint, light isn't."))?;
         let size = tip.width.max(tip.height) as f32;
         let settings = BrushSettings {
@@ -1282,6 +1304,18 @@ impl Editor {
             brush.texture.pattern = inkframe_core::Pattern::Picture(std::sync::Arc::new(picture));
             brush.texture.on = true;
         }
+    }
+
+    /// Where symmetry mirrors round on a paint layer `width`×`height`.
+    pub fn symmetry_point(&self, width: u32, height: u32) -> inkframe_core::Point {
+        let (x, y) = self.symmetry_centre.unwrap_or((width as f32 / 2.0, height as f32 / 2.0));
+        inkframe_core::Point::new(x, y)
+    }
+
+    /// Whether the tool in use paints with symmetry.
+    pub fn paints_symmetrically(&self) -> bool {
+        self.symmetry != inkframe_core::Symmetry::Off
+            && matches!(self.tool, Tool::Brush | Tool::Eraser | Tool::PatternStamp)
     }
 
     /// A fresh seed for a stroke's chance.

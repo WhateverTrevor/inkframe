@@ -2007,6 +2007,24 @@ impl InkframeApp {
                     show_error(tr("Couldn't define a pattern"), &problem);
                 }
             }
+            Some(Asked::ImportTip) => {
+                let Some(path) = rfd::FileDialog::new()
+                    .set_title(tr("Import a picture as a brush tip"))
+                    .add_filter(tr("Images"), &IMAGE_EXTENSIONS)
+                    .pick_file()
+                else {
+                    return;
+                };
+                let name = path
+                    .file_stem()
+                    .map_or_else(|| tr("Custom Tip").to_owned(), |s| s.to_string_lossy().into_owned());
+                let made = inkframe_render::read_rgba(&path).and_then(|(width, height, rgba)| {
+                    self.editor.brush_from_picture(&name, width, height, &rgba)
+                });
+                if let Err(problem) = made {
+                    show_error(&tr_args("Couldn't import {file}", &[("file", &file_name(&path))]), &problem);
+                }
+            }
             Some(Asked::ImportPattern) => {
                 let Some(path) = rfd::FileDialog::new()
                     .set_title(tr("Import a picture as a pattern"))

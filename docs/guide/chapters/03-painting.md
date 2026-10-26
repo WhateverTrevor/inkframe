@@ -37,7 +37,7 @@ While a painting tool is in use, its settings show in the **Tool** tab of Proper
 
 Inkframe's brushes work as Photoshop's do, setting for setting, so a brush you know from there behaves the same here. Each stroke is a row of *dabs*, stamps of the brush's *tip*, and every dab can vary: bigger or smaller, turned, scattered, recoloured.
 
-The **Brushes** panel lists the brushes, each by a sample stroke. Besides round brushes, the ready-made ones are a painter's set for scenes and backgrounds: pencil, chalk and charcoal; dry, bristle and flat brushes; watercolour; and stamping brushes for foliage, grass, clouds, rocks, spatter and stars. Click one to paint with it. The panel's buttons save the brush as it is now as a new preset, **Import** brushes (a brush set, or a Photoshop *.abr* file), **Export** yours as a brush set to share, and **Define from Selection**: a new tip from the selected pixels of a paint layer, dark being paint, as Photoshop's **Edit › Define Brush Preset** does. Right-click a saved brush to rename, update or delete it.
+The **Brushes** panel lists the brushes, each by a sample stroke. Besides round brushes, the ready-made ones are a painter's set for scenes and backgrounds: pencil, chalk and charcoal; dry, bristle and flat brushes; watercolour; and stamping brushes for foliage, grass, clouds, rocks, spatter and stars. Click one to paint with it. The panel's buttons save the brush as it is now as a new preset, make a tip from a picture file (**Import Tip…**), **Import** brushes (a brush set, or a Photoshop *.abr* file), **Export** yours as a brush set to share, and **Define from Selection**: a new tip from the selected pixels of a paint layer, dark being paint, as Photoshop's **Edit › Define Brush Preset** does. Right-click a saved brush to rename, update or delete it.
 
 ![Every ready-made brush, one stroke each](brush-sheet){crop=0.095,0.14,0.76,0.70}
 
@@ -59,7 +59,7 @@ A stroke along the foot of the panel shows the brush as it stands.
 
 ![The Brushes panel above Brush Settings at Shape Dynamics, for the Foliage brush](brush-settings){crop=0.76,0.035,1.0,0.82}
 
-**Symmetry**, in the bar above the stage while the Brush, Eraser or Pattern Stamp is picked, repeats every stroke as you paint: mirrored across the canvas's middle (**Vertical**, **Horizontal** or both), or turned round it (**Radial**, or **Mandala**, mirrored within each segment, with the number of **Segments** to choose). Its lines show faintly on the stage.
+**Symmetry**, in the bar above the stage while the Brush, Eraser or Pattern Stamp is picked, repeats every stroke as you paint: mirrored across the canvas's middle (**Vertical**, **Horizontal** or both), or turned round it (**Radial**, or **Mandala**, mirrored within each segment, with the number of **Segments** to choose). Its lines show faintly on the stage; drag the handle where they meet to move the centre, and **Centre on the Canvas** in the menu puts it back.
 
 ![A mandala painted with symmetry, mirrored foliage, and a band of Pattern Stamp](symmetry){crop=0.095,0.14,0.76,0.70}
 
@@ -77,7 +77,7 @@ The rest of the painting tools work as they do in Photoshop:
 |---|---|---|
 | **Paint Bucket** | [[G]] | Fills the area of similar colour you click. **Tolerance** sets how similar; **Contiguous** keeps the fill to connected pixels. |
 | **Gradient** | [[⇧G]] | Drag to blend from the paint colour to a second colour (or to transparent), linear or radial. |
-| **Mixer Brush** | [[⇧B]] | Paints wet, as Photoshop's does: **Wet** picks up and smears the paint under the brush, **Load** is how much paint it holds before running dry, and **Mix** how much of what it picks up blends into its paint. |
+| **Mixer Brush** | [[⇧B]] | Paints wet, as Photoshop's does: **Wet** picks up and smears the paint under the brush, **Load** is how much paint it holds before running dry, and **Mix** how much of what it picks up blends into its paint. **Sample All Layers** picks colour up from everything as seen. |
 | **Smudge** | [[U]] | Pushes paint around, as with a finger. |
 | **Blur** and **Sharpen** | [[⇧U]] | Soften or crisp up the paint under the brush. |
 | **Dodge** and **Burn** | [[D]], [[⇧D]] | Lighten or darken it. **Range** picks the shadows, midtones or highlights. |

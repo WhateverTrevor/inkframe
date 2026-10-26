@@ -3,6 +3,17 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
+## Unreleased
+
+### Brushes
+
+- Import Tip… in the Brushes panel makes a brush tip from a picture file,
+  dark as paint.
+- Symmetry's centre can be dragged by its handle on the stage, and put
+  back in the middle from the Symmetry menu.
+- Sample All Layers for the Mixer Brush: it picks up colour from
+  everything as seen, not only its own layer.
+
 ## [0.7.0]
 
 More of Photoshop's painting: the Mixer Brush, the Pattern Stamp,

@@ -277,7 +277,7 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                 );
             }
             if matches!(tool, Tool::Brush | Tool::Eraser | Tool::PatternStamp) {
-                symmetry_menu(ui, &mut editor.symmetry);
+                symmetry_menu(ui, &mut editor.symmetry, &mut editor.symmetry_centre);
             }
             ui.weak(tr("Brush size and the like: Properties › Tool"));
         }
@@ -287,7 +287,7 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
 
 /// Symmetry painting, as a little menu: the kinds, and how many ways round
 /// a radial one goes.
-fn symmetry_menu(ui: &mut egui::Ui, symmetry: &mut inkframe_core::Symmetry) {
+fn symmetry_menu(ui: &mut egui::Ui, symmetry: &mut inkframe_core::Symmetry, centre: &mut Option<(f32, f32)>) {
     use inkframe_core::Symmetry;
     let label = if *symmetry == Symmetry::Off { tr("Symmetry") } else { tr(symmetry.label()) };
     let response = ui
@@ -305,6 +305,14 @@ fn symmetry_menu(ui: &mut egui::Ui, symmetry: &mut inkframe_core::Symmetry) {
             if ui.radio(picked, tr(kind.label())).clicked() {
                 *symmetry = kind;
             }
+        }
+        ui.separator();
+        if ui
+            .add_enabled(centre.is_some(), egui::Button::new(tr("Centre on the Canvas")))
+            .on_hover_text(tr("Drag the centre's handle on the stage to move it"))
+            .clicked()
+        {
+            *centre = None;
         }
         if let Some(mut n) = symmetry.segments() {
             ui.horizontal(|ui| {
