@@ -1030,6 +1030,13 @@ after the Harmony features (palettes to master controllers).
     unit square with the same radial gradient, anti-aliasing off; hard dots
     keep the AA circle. Heavy scene 5.0 -> 3.9 ms (half), 7.0 -> 5.5 ms
     (full); frames differ by at most 8/255 in ~0.01% of channels.
+130. Quick start and named undo: `docs/GETTING_STARTED.md` cut to a one-page
+    quick start pointing to the guidebook (Help › Quick Start (Five
+    Minutes); README points at the guidebook first). Core
+    `History::commit_as(doc, label)` and `next_labels()`; scripts.rs
+    `finish` commits pending edits, applies the script's document, then
+    `commit_as` "Run Script “name”" ("Script Console" for the console);
+    Edit menu Undo/Redo show the next labels.
 ## Not yet verified by hand
 
 - Hearing a sound from the Library's preview (`AudioEngine::preview`)

@@ -40,10 +40,17 @@ impl History {
 
     /// Records `doc` as a new undo step if it changed since the last commit.
     pub fn commit(&mut self, doc: &Document) {
+        let label = describe(&self.baseline, doc);
+        self.commit_as(doc, label);
+    }
+
+    /// Records `doc` as a new undo step called `label`, if it changed: for
+    /// changes better named for what did them than for what they changed,
+    /// such as a script's.
+    pub fn commit_as(&mut self, doc: &Document, label: String) {
         if *doc == self.baseline {
             return;
         }
-        let label = describe(&self.baseline, doc);
         let previous = std::mem::replace(&mut self.baseline, doc.clone());
         self.undo.push(Step { doc: previous, label });
         if self.undo.len() > self.limit {
@@ -89,6 +96,11 @@ impl History {
 
     /// What each step did: those done, oldest first, and those undone that
     /// can be redone, next first.
+    /// What Undo and Redo would undo and redo now, if anything.
+    pub fn next_labels(&self) -> (Option<&str>, Option<&str>) {
+        (self.undo.last().map(|s| s.label.as_str()), self.redo.last().map(|s| s.label.as_str()))
+    }
+
     pub fn labels(&self) -> (Vec<&str>, Vec<&str>) {
         let done = self.undo.iter().map(|s| s.label.as_str()).collect();
         let undone = self.redo.iter().rev().map(|s| s.label.as_str()).collect();
@@ -253,6 +265,18 @@ mod tests {
         assert_eq!(doc.width, 100);
         assert!(history.redo(&mut doc));
         assert_eq!(doc.width, 200);
+    }
+
+    #[test]
+    fn a_step_can_be_named_for_what_did_it() {
+        let mut doc = Document::default();
+        let mut history = History::new(&doc);
+        doc.add_layer("Ball", Vec::new(), 0, crate::Transform::default());
+        doc.add_layer("Floor", Vec::new(), 0, crate::Transform::default());
+        history.commit_as(&doc, "Run Script “bouncing-ball”".into());
+        assert_eq!(history.next_labels(), (Some("Run Script “bouncing-ball”"), None));
+        history.undo(&mut doc);
+        assert_eq!(history.next_labels(), (None, Some("Run Script “bouncing-ball”")));
     }
 
     #[test]

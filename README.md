@@ -119,12 +119,14 @@ planned (the code is already cross-platform and CI builds it on Windows).
 - **Undo/redo** for every change. Project files (`.inkf`) are zip files
   holding the document as readable JSON and painted pixels as PNG images.
 
-New to Inkframe? [Getting started](docs/GETTING_STARTED.md) walks through
-a first animation, and the [examples](examples), also in the app under
-File › Open Example, show off the bigger features. *Inkframe for Artists*,
-a beginner's guidebook with a chapter for each group of tools and
-screenshots of every step, is built as a PDF with `cargo xtask guide`
-(see [docs/guide](docs/guide/README.md)).
+New to Inkframe? *Inkframe for Artists*, a beginner's guidebook with a
+chapter for each group of tools, three projects and screenshots of every
+step, comes as a PDF with each
+[release](https://github.com/WhateverTrevor/inkframe/releases/latest), and
+is built with `cargo xtask guide` (see [docs/guide](docs/guide/README.md)).
+For a five-minute start, there's the [quick start](docs/GETTING_STARTED.md),
+and the [examples](examples), also in the app under File › Open Example,
+show off the bigger features.
 
 ## Download
 
@@ -238,7 +240,7 @@ Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 | Ink and paint | Strokes go into the selected layer's drawing; choose **Line Art** or **Colour Art** (which sits beneath the lines) in the Pencil, Pen, Rectangle or Oval tool's settings (Properties › Tool). Then, with the Paint Bucket on that layer, click between the lines to fill the area they enclose with the paint colour; the fill runs under the lines, and **Close gaps** (Small, Medium, Large) lets lines that don't quite meet still hold the paint. Click a fill again to recolour it; fill an area inside a filled one (an eye in a face) to give it its own colour |
 | Swatches, palettes | Click a colour to use it: the paint colour for the paint tools; otherwise the fill (or, with Stroke chosen, the stroke) for new shapes and for the selected layers' shapes. **+** adds the current colour to the document's palette; name it in its row. A palette colour owns everything painted with it: right-click it and change the colour, and every shape of that colour changes too, as in Harmony. **New Version** in the palette menu copies the palette (for a night version, say); recolour its swatches, and switching versions recolours the whole scene |
 | Align | Line the selected layers up by their edges or centres, space them evenly, or make them the same width or height. One layer, or **Align to stage**, lines up with the stage |
-| History | Every change so far, named for what it did (“Add “Ball””, “Paint on “Sky””). Click a step to go back to it, or a greyed one to go forward again |
+| History | Every change so far, named for what it did (“Add “Ball””, “Paint on “Sky””, “Run Script “walk-cycle””). Click a step to go back to it, or a greyed one to go forward again. Edit › Undo and Redo say what they'll undo and redo |
 | Swap drawings | In the properties panel's **Drawings** section, **New** adds a blank drawing (or **Duplicate** a copy of the one showing) from the current frame on. Click a drawing's name to show it from the current frame on, or press `[` and `]` to flip through them. With a layer that has several drawings selected, new shapes are drawn into the drawing that's showing. The timeline marks each swap with the drawing's name |
 | Camera | Pick the Camera tool (`C`) and drag on the stage: the first drag adds a camera, and dragging pans it (the scene follows the pointer); Shift-drag turns it and Alt-drag zooms. Or use Timeline › Add Camera, or the camera button at the right of the timeline bar. The camera is a layer at the top of the timeline, so move to another frame and pan again to animate it, with tweens and easing like any layer. Select it to type where it looks, its zoom and rotation, or Reset it. Give layers a **Depth** (in their properties) for parallax: deeper layers look smaller and move less as the camera pans. Hide the camera layer to turn it off |
 | 3D multiplane | Depth animates like any property, with keys, tweens and its own row and curve in the timeline, so layers can drift nearer or further. The camera's **Dolly** moves it in among the layers: near ones grow faster than far ones, as with a real multiplane camera (zoom can't do that), and layers it reaches fade away. The **Depth View** (an area kind, under Animation) shows the scene from above: each layer a line at its depth, the camera and what it sees. Drag a layer up or down to set its depth, or the camera to dolly and pan; scroll to zoom the view, and Fit to see everything. Tick **Stack by depth** (in the Depth View or the Document properties) and depth also decides what's in front: layers are drawn far to near on each frame, so a layer drifting back passes behind the others (layers at the same depth keep the timeline's order, and a rig's parts stay with it); the timeline bar shows **Stacked by depth** while it's on, and clicking that turns it off. Off by default, so older scenes look as they always have |
