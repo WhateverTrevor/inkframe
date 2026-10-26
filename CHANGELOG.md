@@ -3,7 +3,12 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
-## Unreleased
+## [0.6.0]
+
+Photoshop's brushes, setting for setting, with brushes for painting
+scenes and backgrounds and Photoshop brush import; the whole interface
+ready to translate, with a language setting; and big brushes that keep up
+with the pen. Projects open in 0.5.1, 0.5.0 and 0.4.0 too.
 
 ### Brushes
 
