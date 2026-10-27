@@ -3,7 +3,14 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
-## Unreleased
+## [0.8.0]
+
+A painted example to start from, brush tips from your own pictures,
+symmetry around any point and a Mixer Brush that samples every layer.
+Skeleton characters can be made symbols, so a walk cycle loops, and
+scripts make titles that draw whole. Underneath, the biggest source files
+are split up to be easier to work on. Projects open in 0.7.0 and 0.6.0
+too.
 
 ### Brushes
 
