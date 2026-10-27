@@ -332,9 +332,9 @@ writes. No audio.
 | File | What's in it |
 |---|---|
 | `autosave.rs` | Crash recovery: `Autosave::tick` copies the project every 30 s while it has unsaved changes (cloned, then zipped and written on a thread, to a temporary name renamed into place) into the settings folder's `Recovery/`, with a JSON note (original path, name, saved time, heartbeat). Saving or a normal quit `clear`s it. `left_behind` finds other sessions' copies whose heartbeat has been quiet for 2 minutes, so a second Inkframe that's still running isn't mistaken for a crash; `Recovery::open` reopens one as its project with changes unsaved (`Editor::recovered`). The window offering them is `App::recovery_window` |
-| `app.rs` | Window layout, menus, the `Command` enum, file open/save |
+| `app.rs` | The app's state and each frame's work, and the `Command` enum; `app/menus.rs` builds the menu bar, `app/keys.rs` turns key presses into commands, `app/commands.rs` carries them out, `app/files.rs` opens, saves, imports and recovers files, and `app/areas.rs` shows each area of the window (`Views`) |
 | `editor.rs` | `Editor`: document, selection, current frame, tool, and the operations panels call |
-| `stage.rs` | The canvas: zoom/pan, drawing tools, selection overlay and transform handles; `stage/rulers.rs` draws the rulers and guides and drags guides; `stage/inside.rs` handles the pointer while inside a layer (picking, moving and scaling shapes); `stage/lattice.rs` drags a Distort or Envelope's handles; `stage/bones.rs` draws skeletons and handles the Add Bone tool and posing with the Bone tool; `stage/perspective.rs` draws the perspective guide and drags its vanishing points |
+| `stage.rs` | The canvas: zoom/pan, rendering, and turning the pointer into each tool's gesture. Beside it in `stage/`: `painting.rs` (brush, eraser, Pattern Stamp, retouching, bucket, gradient and eyedropper on paint layers), `selecting.rs` (the selection tools on paint layers), `text_editing.rs` (typing into text), `anchors.rs` (the Subselection tool's anchors and handles), `pen_tool.rs`, `motion.rs` (motion paths), `transform_handles.rs` (the box of handles around the selection), `width_tool.rs`, `hints.rs` (shape hints), `rigs.rs` (skeletons, deformers and warps drawn for the Bone tool) and `decorations.rs` (backdrop, guides, emitters, camera frame, onion skins); `stage/rulers.rs` draws the rulers and guides and drags guides; `stage/inside.rs` handles the pointer while inside a layer (picking, moving and scaling shapes); `stage/lattice.rs` drags a Distort or Envelope's handles; `stage/bones.rs` draws skeletons and handles the Add Bone tool and posing with the Bone tool; `stage/perspective.rs` draws the perspective guide and drags its vanishing points |
 | `frame_commands.rs` | Animate's frame commands on the frames picked in the timeline (Insert/Remove Frames, Blank Keyframe, Convert to Keyframes, Reverse Frames) and Edit Multiple Frames' move across them (`MultiFrameMove`) |
 | `envelope.rs` | Modify › Transform › Distort and Envelope: the lattice edit under way (`Editor::lattice`), re-bending the picked shapes (or a whole layer's drawing) from their originals on every drag |
 | `skeleton.rs` | Rigging with skeletons: New Skeleton and New Switch, adding, posing, moving and deleting bones (bindings and pins follow a deleted bone's renumbering), pinning picked shapes or the Subselection's point (`Editor::picked_anchor`) to a bone, and the picked bone (`Editor::selected_bone`) |
@@ -356,7 +356,7 @@ writes. No audio.
 | `pen.rs` | State of the pen path being drawn, which lasts across many clicks |
 | `subselect.rs` | The math for moving, deleting and converting anchors, and pulling new handles out of them (Alt-drag), with the Subselection tool or the Pen between paths |
 | `timeline.rs` | Transport bar and the hand-painted layer × frame grid; dragging a layer name scrolls the list, holding it first restacks (pen-friendly) |
-| `inspector.rs` | The properties panel, with Tool, Layer and Document tabs that follow the selection and tool |
+| `inspector.rs` | The properties panel, with Tool, Layer and Document tabs that follow the selection and tool; its sections live in `inspector/`: `sections.rs` (collapsible sections and searching them), `brush.rs`, `shapes.rs`, `animation.rs` (transform, motion path, easing, shape tweens), `effects.rs`, `particles.rs`, `rigging.rs` and `document.rs` |
 | `brushes.rs` | The brush library: the ready-made brushes and the person's (`brushes.json` in the settings folder), importing brush sets (`.inkbrushes`) and `.abr` files, exporting brush sets |
 | `brush_panel.rs` | The Brush Settings area (Photoshop's section list, or a menu when narrow; the angle-and-roundness dial; a live sample stroke), the Brushes area, and the quick menu that right-clicking the stage with a painting tool opens |
 | `panels.rs` | The Swatches, Align, Controllers and History panels |
@@ -369,7 +369,7 @@ writes. No audio.
 | `cli_script.rs` | `inkframe --script SCRIPT [PROJECT...] [--save]` |
 | `examples.rs` | File › Open Example: finds the sample projects (bundled in `Contents/Resources/Examples` or an `Examples` folder beside the exe, else the checkout's `examples/`; only a folder holding `.inkf` files counts), lists them with a rendered picture and a note from `ABOUT`, and opens one as an untitled copy (`Editor::untitled_copy`) so saving never writes into the app |
 | `export_dialog.rs` | Export settings and the background export thread |
-| `guides.rs` | Safe areas (`SafeAreas`: current 93/90%, classic 90/80%) and the 12-field chart, as lines and labels in stage pixels; `stage.rs` draws them over the stage (the camera's frame), turned with the view |
+| `guides.rs` | Safe areas (`SafeAreas`: current 93/90%, classic 90/80%) and the 12-field chart, as lines and labels in stage pixels; `stage/decorations.rs` draws them over the stage (the camera's frame), turned with the view |
 | `batch_dialog.rs` | File › Batch Export: a queue of `BatchJob`s (project, format, size, transparency) run on a thread with `batch::run`, status per row |
 | `cli.rs` | `inkframe --export …`: parses projects and options into `BatchJob`s and runs them without a window (attaching to the parent console on Windows) |
 | `lip_sync_dialog.rs` | The Lip Sync window: picks the dialogue and timing source, maps drawings to mouth shapes, applies `Layer::apply_lip_sync` |
@@ -377,7 +377,7 @@ writes. No audio.
 | `theme.rs` | The look: Inter as the interface font, a palette of greys with one blue accent (constants other modules draw with), spacing and corner radii |
 | `icons.rs` | The interface's small icons (playback, layer toggles, area kinds), drawn as lines in the theme's colours, and `IconButton` |
 | `layer_thumbnails.rs` | The timeline's per-layer thumbnails (`render_layer_thumbnail` in the render crate), cached and redrawn only when what shows in them changes, a few per UI frame |
-| `layout.rs` | The window's areas, Blender-style: a binary tree of splits whose leaves are areas, each holding tabs (at most one per `Kind`; views are kept per area and kind, so a hidden tab keeps its state) and showing one `Kind` of editor, picked from a grouped menu in its header (`Kind::GROUPS`); the timeline and graph editor are one `TimelineView` whose mode follows the area's kind; resizing, splitting, joining, swapping and maximising, and saving the layout to the settings folder. `Workspace` presets build whole layouts. `app.rs` keeps a view per stage, timeline and exposure-sheet area (`Views`), menu commands acting on the stage last pointed at |
+| `layout.rs` | The window's areas, Blender-style: a binary tree of splits whose leaves are areas, each holding tabs (at most one per `Kind`; views are kept per area and kind, so a hidden tab keeps its state) and showing one `Kind` of editor, picked from a grouped menu in its header (`Kind::GROUPS`); the timeline and graph editor are one `TimelineView` whose mode follows the area's kind; resizing, splitting, joining, swapping and maximising, and saving the layout to the settings folder. `Workspace` presets build whole layouts. `app/areas.rs` keeps a view per stage, timeline and exposure-sheet area (`Views`), menu commands acting on the stage last pointed at |
 | `adjust_dialog.rs` | The Adjustments window: live preview from the canvas as it was, OK or Cancel, and the Curves editor |
 | `xsheet.rs` | The Exposure Sheet window: `column` turns a layer's exposure into cells (starts and holds), `enter` exposes a typed drawing name, making the drawing if it's new |
 | `shortcuts.rs` | Every keyboard shortcut in one place |
@@ -433,7 +433,7 @@ callbacks or retained widget trees. Panels read and change `Editor` directly.
 `Transform` and apply it in `Transform::to_affine`; add a `Property` variant
 and a `Channel` field to `Track`, and wire it into `Track::new`, `sample`,
 `set_pose`, `channel` and `channel_mut`; then add a row in
-`inspector::transform_section`. Files saved before the property existed
+`inspector/animation.rs`'s `transform_section`. Files saved before the property existed
 won't have its channel, so give it a default in `TrackFormat::Current`
 (a single key holding the identity value).
 
@@ -454,4 +454,4 @@ that checks the output with ffprobe.
 - Export tests encode real files and inspect them with ffprobe. They skip
   themselves if ffmpeg isn't installed.
 - Stage tools are tested with simulated mouse drags through `egui_kittest`
-  (see the bottom of `stage.rs`).
+  (see `stage/tests.rs`).
