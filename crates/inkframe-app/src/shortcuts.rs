@@ -44,6 +44,8 @@ pub const PASTE: KeyboardShortcut = KeyboardShortcut::new(CMD, Key::V);
 pub const PASTE_IN_PLACE: KeyboardShortcut = KeyboardShortcut::new(CMD_SHIFT, Key::V);
 pub const COPY_POSE: KeyboardShortcut = KeyboardShortcut::new(CMD_ALT, Key::C);
 pub const PASTE_POSE: KeyboardShortcut = KeyboardShortcut::new(CMD_ALT, Key::V);
+/// Photoshop's Create Clipping Mask.
+pub const CLIPPING_MASK: KeyboardShortcut = KeyboardShortcut::new(CMD_ALT, Key::G);
 /// F8, as in Animate.
 pub const CONVERT_TO_SYMBOL: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F8);
 

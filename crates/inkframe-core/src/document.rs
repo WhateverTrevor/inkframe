@@ -35,7 +35,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 39;
+pub const FORMAT_VERSION: u32 = 40;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -222,6 +222,13 @@ pub struct Layer {
     /// How the layer mixes with what's beneath it (see `blend.rs`).
     #[serde(default, skip_serializing_if = "BlendMode::is_normal")]
     pub blend: BlendMode,
+    /// Clipped to the layer beneath: drawn only where that layer has paint
+    /// (see `clipping.rs`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub clipped: bool,
+    /// A painted mask hiding parts of the layer (see `layer_mask.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_mask: Option<crate::LayerMask>,
     /// The colour chosen for the layer in the timeline and on the stage;
     /// `None` uses one picked by its id (see `folder.rs`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -472,6 +479,8 @@ impl Document {
             line_texture: None,
             button: None,
             blend: BlendMode::Normal,
+            clipped: false,
+            layer_mask: None,
             color: None,
             folder: false,
             in_folder: None,
@@ -499,9 +508,12 @@ impl Document {
         copy.name = format!("{} copy", copy.name);
         // There's only ever one camera.
         copy.camera = false;
-        // Painting on the copy mustn't paint on the original.
+        // Painting on the copy mustn't paint on the original, nor on its mask.
         for drawing in &mut copy.drawings {
             self.separate_canvases(&mut drawing.elements, false);
+        }
+        if let Some(mask) = &mut copy.layer_mask {
+            mask.canvas = self.copy_canvas(mask.canvas).unwrap_or(mask.canvas);
         }
         self.layers_of_mut(timeline)?.insert(index + 1, copy);
         Some(new_id)

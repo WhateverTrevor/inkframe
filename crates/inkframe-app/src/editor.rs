@@ -448,6 +448,9 @@ pub struct Editor {
     /// canvas changes only these. Not part of the document (Photoshop
     /// doesn't save selections either), and so not undone.
     pub pixel_selection: Option<(CanvasId, Selection)>,
+    /// The painting tools paint the selected layer's mask rather than the
+    /// layer (see `layer_masks.rs`). Choosing another layer stops it.
+    pub editing_mask: bool,
     /// The Magic Wand's tolerance and whether it selects only connected
     /// pixels.
     pub wand_tolerance: u8,
@@ -518,6 +521,7 @@ impl Editor {
                 ..BrushSettings::default()
             },
             smoothing: 0.3,
+            editing_mask: false,
             second_color: Color::WHITE,
             strokes_painted: 0,
             symmetry: inkframe_core::Symmetry::Off,
@@ -1120,9 +1124,14 @@ impl Editor {
     // ------------------------------------------------------------- painting
 
     /// The canvas the brush paints on: the selected layer's, if it's a
-    /// paint layer that can be painted on now, with the canvas's size.
+    /// paint layer that can be painted on now, with the canvas's size; or
+    /// its mask, while that's being painted (see `layer_masks.rs`).
     pub fn paint_target(&self) -> Option<(LayerId, CanvasId, u32, u32)> {
         let layer = self.selected_layer().filter(|l| !l.locked && l.is_shown_at(self.frame))?;
+        if let Some(mask) = layer.layer_mask.filter(|_| self.editing_mask) {
+            let canvas = self.doc.canvas(mask.canvas)?;
+            return Some((layer.id, mask.canvas, canvas.width, canvas.height));
+        }
         layer.elements_at(self.frame).iter().find_map(|e| match e.shape {
             Shape::Paint { canvas, width, height } => Some((layer.id, canvas, width, height)),
             _ => None,
@@ -1681,6 +1690,7 @@ impl Editor {
         // ⌘C copies the layer picked on the stage, not those frames).
         if id != self.selection {
             self.frame_range = None;
+            self.editing_mask = false;
         }
         self.selection = id;
         self.also_selected.clear();

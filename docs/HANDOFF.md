@@ -15,9 +15,9 @@ and how the work is done.
 - **Branch:** `main`. Each feature is built on its own branch, then
   merged into `main` with a merge commit and pushed.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (875 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (883 tests)
   pass, on macOS locally and on macOS and Windows in CI.
-- **File format:** version 39. Older files load and upgrade automatically
+- **File format:** version 40. Older files load and upgrade automatically
   (`crates/inkframe-core/tests/format_migration.rs`).
 - **Releases:** v0.2.0 to v0.8.0 are tagged. Their GitHub releases are
   drafts (with the .dmg, setup.exe and guidebook PDF) that the user

@@ -203,6 +203,9 @@ impl Document {
         let mut inner = layer.clone();
         inner.id = inner_id;
         inner.track.position.map_values(|p| p - pivot);
+        // The instance keeps the layer's mask and clipping, which shape it
+        // as it shows in the timeline it's in; inside, they'd apply twice.
+        (inner.layer_mask, inner.clipped) = (None, false);
 
         // The original layer becomes the instance. Its first frame lines the
         // symbol's time up with the main timeline's, so keys stay put.
@@ -361,6 +364,7 @@ impl Document {
             (false, false, None, None, None);
         (instance.folder, instance.skeleton, instance.switch, instance.bone_binding) =
             (false, None, false, crate::BoneBinding::default());
+        (instance.clipped, instance.layer_mask) = (false, None);
         instance.switch_keys.clear();
         instance.shape_tweens.clear();
         instance.pivot = Point::ZERO;

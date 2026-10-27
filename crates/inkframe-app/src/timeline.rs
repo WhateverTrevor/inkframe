@@ -46,6 +46,8 @@ const GRAPHED: [Property; 6] = [
 ];
 /// How far each level of folder indents a layer's name.
 const FOLDER_INDENT: f32 = 14.0;
+/// How much further a layer clipped to the one beneath is indented.
+const CLIP_INDENT: f32 = 14.0;
 const FRAME_WIDTH: f32 = 12.0;
 /// How far property names are indented under their layer.
 const PROPERTY_INDENT: f32 = 44.0;
@@ -837,6 +839,12 @@ impl TimelineView {
             if row.property.is_none() {
                 let layer = editor.doc.layer(row.layer)?;
                 let (is_folder, visible, locked) = (layer.folder, layer.visible, layer.locked);
+                let (picture, chip) = pictures(layout, index, editor, layer);
+                // The layer's picture goes back to painting the layer (and
+                // carries on, so it can still be dragged by).
+                if picture.contains(p) && editor.painting_mask() && editor.selection == Some(row.layer) {
+                    editor.set_editing_mask(row.layer, false);
+                }
                 // The colour square opens its menu on the click (below), not
                 // the press: opened on the press, the release that follows
                 // would count as a click outside it and close it again.
@@ -849,6 +857,10 @@ impl TimelineView {
                     if !toggled.remove(&row.layer) {
                         toggled.insert(row.layer);
                     }
+                    return None;
+                } else if chip.is_some_and(|c| c.contains(p)) {
+                    // The mask's chip picks the mask to paint, as in Photoshop.
+                    editor.set_editing_mask(row.layer, true);
                     return None;
                 } else if layout.eye_rect(index).contains(p) {
                     editor.set_visible(row.layer, !visible);
@@ -995,16 +1007,25 @@ impl TimelineView {
                         if layer.locked { (Icon::Lock, text) } else { (Icon::Unlock, faint) };
                     icons::paint(painter, lock, layout.lock_rect(index).shrink(6.0), lock_color);
 
-                    // Inside folders, indented a step per level.
-                    let indent = FOLDER_INDENT * editor.doc.folder_depth(layer).min(6) as f32;
-                    let picture = Rect::from_min_size(
-                        pos2(
-                            layout.lock_rect(index).right() + 4.0 + indent,
-                            rect.center().y - THUMBNAIL.y / 2.0,
-                        ),
-                        THUMBNAIL,
-                    );
-                    let mut name_pos = pos2(picture.right() + 8.0, rect.center().y);
+                    let (picture, mask_chip) = pictures(layout, index, editor, layer);
+                    let mut name_pos = pos2(mask_chip.unwrap_or(picture).right() + 8.0, rect.center().y);
+                    // Clipped to the layer beneath, as Photoshop shows it:
+                    // indented, with an arrow down to the base.
+                    if editor.doc.clip_base(layer.id).is_some() {
+                        let x = picture.left() - CLIP_INDENT / 2.0;
+                        let (top, bottom) = (rect.center().y - 7.0, rect.center().y + 6.0);
+                        let stroke = (1.5, text.gamma_multiply(0.7));
+                        painter.line_segment([pos2(x, top), pos2(x, bottom)], stroke);
+                        painter.line_segment([pos2(x - 3.0, bottom - 3.0), pos2(x, bottom)], stroke);
+                        painter.line_segment([pos2(x + 3.0, bottom - 3.0), pos2(x, bottom)], stroke);
+                    }
+                    if let (Some(chip), Some(mask)) = (mask_chip, layer.layer_mask) {
+                        let pixels = ui.ctx().pixels_per_point();
+                        let size = [(chip.width() * pixels) as u32, (chip.height() * pixels) as u32];
+                        let picture = self.thumbnails.mask(ui.ctx(), editor, layer.id, size);
+                        let painting = selected && editor.painting_mask();
+                        paint_mask_chip(painter, chip, picture, mask.enabled, painting);
+                    }
                     // Folders and the camera draw nothing, so they get an
                     // icon rather than a thumbnail.
                     let icon = if layer.camera {
@@ -1864,6 +1885,52 @@ fn diamond(painter: &egui::Painter, center: Pos2, radius: f32, fill: Color32) {
         center + vec2(-radius, 0.0),
     ];
     painter.add(egui::Shape::convex_polygon(points, fill, Stroke::new(1.0, Color32::from_black_alpha(160))));
+}
+
+/// Where a layer row's thumbnail goes, and its mask's chip beside it if it
+/// has a layer mask. Inside folders, they're indented a step per level, and
+/// a layer clipped to the one beneath a step more.
+fn pictures(
+    layout: &Layout,
+    index: usize,
+    editor: &Editor,
+    layer: &inkframe_core::Layer,
+) -> (Rect, Option<Rect>) {
+    let mut indent = FOLDER_INDENT * editor.doc.folder_depth(layer).min(6) as f32;
+    if editor.doc.clip_base(layer.id).is_some() {
+        indent += CLIP_INDENT;
+    }
+    let row = layout.row_rect(index, layout.names);
+    let picture = Rect::from_min_size(
+        pos2(layout.lock_rect(index).right() + 4.0 + indent, row.center().y - THUMBNAIL.y / 2.0),
+        THUMBNAIL,
+    );
+    let chip = layer.layer_mask.map(|_| picture.translate(vec2(THUMBNAIL.x + 4.0, 0.0)));
+    (picture, chip)
+}
+
+/// A layer mask's chip: a picture of the mask (white where it shows the
+/// layer, dark where it hides it), outlined while it's the one being
+/// painted, and struck through while it's turned off.
+fn paint_mask_chip(
+    painter: &egui::Painter,
+    chip: Rect,
+    picture: Option<egui::TextureId>,
+    enabled: bool,
+    painting: bool,
+) {
+    painter.rect_filled(chip, 2.0, Color32::WHITE);
+    if let Some(picture) = picture {
+        let uv = Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0));
+        painter.image(picture, chip, uv, Color32::WHITE);
+    }
+    painter.rect_stroke(chip, 2.0, (1.0, Color32::from_black_alpha(120)), egui::StrokeKind::Outside);
+    if painting {
+        painter.rect_stroke(chip.expand(1.5), 3.0, (2.0, crate::theme::ACCENT), egui::StrokeKind::Outside);
+    }
+    if !enabled {
+        painter.line_segment([chip.left_top(), chip.right_bottom()], (2.0, Color32::from_rgb(220, 50, 50)));
+    }
 }
 
 /// How many parents up a layer's chain goes: 0 for a layer on its own.

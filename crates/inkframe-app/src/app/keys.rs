@@ -43,6 +43,7 @@ impl InkframeApp {
             (CONVERT_TO_SYMBOL, Command::ConvertToSymbol),
             (BREAK_APART, Command::BreakApart),
             // The modified ones first: shortcuts ignore extra Shift and Alt.
+            (CLIPPING_MASK, Command::ToggleClipping),
             (RULERS, Command::ToggleRulers),
             (RIG_SETUP, Command::ToggleRigSetup),
             (SNAP_TO_GUIDES, Command::ToggleSnapToGuides),

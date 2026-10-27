@@ -111,6 +111,23 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
         );
         return;
     }
+    // Painting a layer's mask looks like painting in greys, so say why.
+    if editor.painting_mask() && editor.tool.uses_brush() {
+        let layer = editor.selected_layer().map_or_else(String::new, |l| l.name.clone());
+        ui.label(crate::i18n::tr_args(
+            "Painting the mask of {layer}: dark hides, light shows",
+            &[("layer", &layer)],
+        ));
+        act(
+            ui,
+            command,
+            Icon::Cross,
+            tr("Paint the layer"),
+            tr("Paint the layer itself again"),
+            Command::EditLayerMask,
+        );
+        return;
+    }
     if let Some(lattice) = &editor.lattice {
         ui.label(crate::i18n::tr_args("{kind}: drag the handles", &[("kind", tr(lattice.kind.name()))]));
         act(

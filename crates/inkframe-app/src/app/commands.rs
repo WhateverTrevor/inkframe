@@ -128,6 +128,21 @@ impl InkframeApp {
                     editor.doc.mask_layer_below(id);
                 }
             }
+            Command::ToggleClipping => editor.toggle_clipping(),
+            Command::AddLayerMask => {
+                editor.add_layer_mask();
+            }
+            Command::DeleteLayerMask => editor.delete_layer_mask(),
+            Command::ApplyLayerMask => {
+                editor.apply_layer_mask();
+            }
+            Command::ToggleLayerMask => editor.toggle_layer_mask(),
+            Command::EditLayerMask => {
+                if let Some(id) = editor.selection {
+                    let painting_mask = editor.painting_mask();
+                    editor.set_editing_mask(id, !painting_mask);
+                }
+            }
             Command::EditSymbol => {
                 if let Some(id) = editor.selection {
                     editor.enter_instance(id);

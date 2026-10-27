@@ -35,6 +35,7 @@ mod i18n;
 mod icons;
 mod inside;
 mod inspector;
+mod layer_masks;
 mod layer_thumbnails;
 mod layout;
 mod library;

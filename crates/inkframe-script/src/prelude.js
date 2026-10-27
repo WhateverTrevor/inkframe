@@ -31,6 +31,9 @@
     set visible(value) { this.#set("visible", Boolean(value)); }
     get locked() { return this.#info().locked; }
     set locked(value) { this.#set("locked", Boolean(value)); }
+    /** Clipped to the layer beneath, shown only where it has paint. */
+    get clipped() { return this.#info().clipped; }
+    set clipped(value) { this.#set("clipped", Boolean(value)); }
     /** "vector", "paint", "symbol", "particles", "folder" or "camera". */
     get kind() { return this.#info().kind; }
     /** The first frame the layer shows on. */

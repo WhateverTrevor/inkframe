@@ -124,6 +124,7 @@ doc.export({ format: "h264", to: `renders/${doc.name}_v001.mp4`, scale: 0.5 });
 | | |
 |---|---|
 | `name`, `visible`, `locked` | Can be set |
+| `clipped` | Clipped to the layer beneath, as Photoshop's clipping mask: shown only where that layer has paint; can be set |
 | `kind` | `"vector"`, `"paint"`, `"symbol"`, `"particles"`, `"folder"` or `"camera"` |
 | `start`, `end` | The first and last frame it shows on (`end` is `null` to stay to the end); can be set |
 | `parent` | The layer it's attached to in a rig, or `null`; can be set |

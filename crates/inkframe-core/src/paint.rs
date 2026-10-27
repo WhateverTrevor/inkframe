@@ -471,6 +471,7 @@ impl Document {
                 Shape::Paint { canvas, .. } => Some(canvas),
                 _ => None,
             })
+            .chain(self.all_layers().filter_map(|layer| layer.layer_mask.map(|m| m.canvas)))
             .collect();
         used.sort_unstable();
         used.dedup();

@@ -96,6 +96,16 @@ pub(crate) enum Command {
     ConvertToSymbol,
     /// Makes the selected layer a mask over the layer below it.
     MaskLayerBelow,
+    /// Clips the selected layers to the layer beneath, or releases them
+    /// (see `layer_masks.rs`).
+    ToggleClipping,
+    AddLayerMask,
+    DeleteLayerMask,
+    ApplyLayerMask,
+    /// Turns the layer mask off or back on.
+    ToggleLayerMask,
+    /// Paints the layer mask, or the layer again.
+    EditLayerMask,
     /// Opens the selected instance's symbol for editing.
     EditSymbol,
     /// Steps out of the symbol being edited.

@@ -28,6 +28,8 @@ pub struct PsdLayer {
     pub opacity: u8,
     pub visible: bool,
     pub blend: BlendMode,
+    /// Clipped to the layer beneath (see `clipping.rs`).
+    pub clipped: bool,
 }
 
 /// A layered image, `width`×`height`. Layers are bottom first. `merged`
@@ -146,7 +148,9 @@ impl Psd {
             let key =
                 BLEND_KEYS.iter().find(|(mode, _)| *mode == layer.blend).map_or(b"norm", |(_, key)| key);
             records.bytes(key);
-            records.bytes(&[layer.opacity, 0, if layer.visible { 0 } else { 2 }, 0]);
+            // Opacity, clipping (1 for a clipped layer), flags, filler.
+            let flags = if layer.visible { 0 } else { 2 };
+            records.bytes(&[layer.opacity, layer.clipped as u8, flags, 0]);
             let extra = layer_extra(&layer.name);
             records.u32(extra.len() as u32);
             records.bytes(&extra);
@@ -249,6 +253,7 @@ struct Record {
     blend: BlendMode,
     opacity: u8,
     visible: bool,
+    clipped: bool,
     name: String,
     /// A group's start or end marker, which has no pixels of its own.
     divider: bool,
@@ -268,7 +273,7 @@ fn read_layers(r: &mut Reader) -> Result<Vec<PsdLayer>, PsdError> {
         }
         let key: [u8; 4] = r.take(4)?.try_into().expect("four bytes");
         let blend = BLEND_KEYS.iter().find(|(_, k)| **k == key).map_or(BlendMode::Normal, |(mode, _)| *mode);
-        let [opacity, _clipping, flags, _filler]: [u8; 4] = r.take(4)?.try_into().expect("four bytes");
+        let [opacity, clipping, flags, _filler]: [u8; 4] = r.take(4)?.try_into().expect("four bytes");
         let extra_end = {
             let length = r.u32()? as usize;
             r.at + length
@@ -307,7 +312,20 @@ fn read_layers(r: &mut Reader) -> Result<Vec<PsdLayer>, PsdError> {
         r.at = extra_end;
         let (width, height) = ((right - left).max(0) as u32, (bottom - top).max(0) as u32);
         let visible = flags & 2 == 0;
-        records.push(Record { top, left, width, height, channels, blend, opacity, visible, name, divider });
+        let clipped = clipping != 0;
+        records.push(Record {
+            top,
+            left,
+            width,
+            height,
+            channels,
+            blend,
+            opacity,
+            visible,
+            clipped,
+            name,
+            divider,
+        });
     }
 
     let mut layers = Vec::new();
@@ -340,6 +358,7 @@ fn read_layers(r: &mut Reader) -> Result<Vec<PsdLayer>, PsdError> {
             opacity: record.opacity,
             visible: record.visible,
             blend: record.blend,
+            clipped: record.clipped,
         });
     }
     Ok(layers)
@@ -473,6 +492,7 @@ impl crate::Document {
                 opacity: 255,
                 visible: true,
                 blend: BlendMode::Normal,
+                clipped: false,
             }];
             &flat[..]
         } else {
@@ -506,6 +526,7 @@ impl crate::Document {
                 new.start = frame;
                 new.visible = layer.visible;
                 new.blend = layer.blend;
+                new.clipped = layer.clipped;
             }
             added.push(id);
         }
@@ -570,6 +591,7 @@ mod tests {
                     opacity: 255,
                     visible: true,
                     blend: BlendMode::Normal,
+                    clipped: false,
                 },
                 PsdLayer {
                     name: "Ombre – ink".into(),
@@ -583,6 +605,7 @@ mod tests {
                     opacity: 200,
                     visible: false,
                     blend: BlendMode::Multiply,
+                    clipped: true,
                 },
             ],
             merged: solid([255, 255, 255, 255], 8, 6),

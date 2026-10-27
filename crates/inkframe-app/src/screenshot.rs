@@ -123,6 +123,9 @@
 //! * `INKFRAME_SCREENSHOT_SYMMETRY=1` paints with symmetry (a mandala in the middle) and the
 //!   Pattern Stamp (a band along the bottom), with the Brush picked and Mandala symmetry on,
 //!   so its lines show.
+//! * `INKFRAME_SCREENSHOT_MASKS=1`, with `examples/painted-landscape.inkf` open, masks the
+//!   trees on the right out of the Trees layer and paints shade on a layer clipped to the
+//!   Hills, then leaves the Trees mask picked to paint with the Brush.
 //! * `INKFRAME_SCREENSHOT_PAINT=1` paints a few strokes on a new paint layer, as a pen
 //!   would (pressing harder through the middle of each), to show the brushes; `=tools`
 //!   also uses the bucket, gradient and retouching tools on them; `=select` then selects
@@ -245,6 +248,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_SYMMETRY").is_some() {
             symmetry_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_MASKS").is_some() {
+            masks_demo(editor);
         }
         if var("INKFRAME_SCREENSHOT_BRUSH_SHEET").is_some() {
             brush_sheet_demo(editor);
@@ -592,6 +598,57 @@ fn save_png(path: &std::path::Path, image: &egui::ColorImage) -> Result<(), Stri
 
 /// Paints a mandala with symmetry round the canvas's middle, and a band of
 /// Pattern Stamp along the bottom.
+/// On the painted landscape: the Trees layer's right-hand trees hidden by a
+/// soft stroke on its mask, and evening shade painted broadly across the
+/// stage on a layer clipped to the Hills, so it only darkens them.
+fn masks_demo(editor: &mut Editor) {
+    use inkframe_core::{BrushMode, BrushSettings, BrushStroke, Color, Point};
+    let find = |editor: &Editor, name: &str| editor.layers().iter().find(|l| l.name == name).map(|l| l.id);
+    let (Some(trees), Some(hills)) = (find(editor, "Trees"), find(editor, "Hills")) else {
+        eprintln!("INKFRAME_SCREENSHOT_MASKS wants examples/painted-landscape.inkf open");
+        return;
+    };
+    let soft = |size: f32| BrushSettings { size, hardness: 0.0, ..BrushSettings::default() };
+    let paint = |editor: &mut Editor, canvas, settings: BrushSettings, color, points: &[(f32, f32)]| {
+        let mut stroke = BrushStroke::new(settings, BrushMode::Paint(color));
+        for &(x, y) in points {
+            if let Some(canvas) = editor.doc.canvas_mut(canvas) {
+                stroke.add_point(canvas, Point::new(x, y), 1.0);
+            }
+        }
+    };
+    // Shade, clipped to the hills: painted right across, it stays on them.
+    editor.select(Some(hills));
+    if let Some(shade) = editor.add_paint_layer() {
+        if let Some(name) = editor.doc.layer_mut(shade).map(|l| &mut l.name) {
+            *name = "Evening shade".into();
+        }
+        let above_hills = editor.layers().iter().position(|l| l.id == hills).map_or(0, |i| i + 1);
+        editor.doc.move_layer_to(shade, above_hills);
+        editor.doc.set_clipped(shade, true);
+        if let Some(layer) = editor.doc.layer_mut(shade) {
+            let at = layer.track.sample(0.0);
+            layer.track.set_pose(0, inkframe_core::Transform { opacity: 0.55, ..at });
+        }
+        if let Some((_, canvas, ..)) = editor.paint_target() {
+            let across: Vec<(f32, f32)> =
+                (0..=40).map(|i| (i as f32 * 50.0, 1000.0 - i as f32 * 4.0)).collect();
+            paint(editor, canvas, soft(420.0), Color::rgb(40, 36, 90), &across);
+        }
+    }
+    // The trees on the right hidden by the mask, which keeps them.
+    editor.select(Some(trees));
+    if editor.add_layer_mask()
+        && let Some((_, mask, ..)) = editor.paint_target()
+    {
+        for x in [1600.0, 1760.0] {
+            let down: Vec<(f32, f32)> = (0..=20).map(|i| (x, 400.0 + i as f32 * 25.0)).collect();
+            paint(editor, mask, soft(300.0), Color::BLACK, &down);
+        }
+    }
+    editor.tool = Tool::Brush;
+}
+
 fn symmetry_demo(editor: &mut Editor) {
     use inkframe_core::{BrushMode, BrushStroke, Color, PatternPaint, Point, Symmetry, Texture};
     let Some(layer) = editor.add_paint_layer() else { return };
