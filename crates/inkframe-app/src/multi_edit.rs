@@ -25,6 +25,7 @@ pub struct LayerSettings {
     pub guide: bool,
     pub mask: bool,
     pub blend: BlendMode,
+    pub clipped: bool,
     pub start: u32,
     pub end: Option<u32>,
 }
@@ -37,6 +38,7 @@ impl LayerSettings {
             guide: layer.guide,
             mask: layer.mask,
             blend: layer.blend,
+            clipped: layer.clipped,
             start: layer.start,
             end: layer.end,
         }
@@ -131,6 +133,9 @@ impl Editor {
             }
             if after.blend != before.blend {
                 layer.blend = after.blend;
+            }
+            if after.clipped != before.clipped && inkframe_core::Document::can_clip(layer) {
+                layer.clipped = after.clipped;
             }
             if after.start != before.start {
                 layer.set_start(after.start);

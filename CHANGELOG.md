@@ -3,6 +3,29 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
+## Unreleased
+
+### Painting
+
+- Clipping masks, as in Photoshop: Modify › Create Clipping Mask (⌥⌘G),
+  or Clipped in a layer's Properties, shows a layer only where the layer
+  beneath has paint, so shading painted freely stays on the figure.
+  Several layers can clip to one base, whose opacity and blend mode apply
+  to them all. The timeline indents a clipped layer with an arrow down to
+  its base.
+- Layer masks: Modify › Layer Mask › Add (or Add in a layer's Properties)
+  gives any layer a mask to paint with the brushes, dark hiding the layer
+  and light showing it, so nothing is lost. The mask shows beside the
+  layer's picture in the timeline: click it to paint the mask, click the
+  picture to paint the layer. Masks can be turned off, applied to a paint
+  layer, or deleted.
+- Merge Down and Export PSD keep both: a merged layer is masked and
+  clipped as it showed, and Photoshop files keep which layers are clipped,
+  both ways.
+- Scripts can read and set a layer's `clipped`.
+
+File format 40: older versions can't open projects saved with this one.
+
 ## [0.8.0]
 
 A painted example to start from, brush tips from your own pictures,

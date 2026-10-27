@@ -376,6 +376,11 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
                     ui.selectable_value(&mut layer.blend, mode, tr(mode.label()));
                 }
             });
+            if inkframe_core::Document::can_clip(layer) {
+                ui.checkbox(&mut layer.clipped, tr("Clipped")).on_hover_text(tr(
+                    "Clipped to the layer beneath: shown only where that layer has paint, as Photoshop's clipping mask (⌥⌘G)",
+                ));
+            }
         });
         // The grain the layer's lines are inked with (see `line.rs` in the core).
         if layer.draws_vectors() {
@@ -413,6 +418,9 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     });
     }
     editor.carry_settings(id, before);
+    if header {
+        layer_mask_controls(ui, editor, id);
+    }
 
     ui.add_space(8.0);
     transform_section(ui, editor, id, frame);
@@ -428,6 +436,44 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     warp_section(ui, editor, id);
     drawings_section(ui, editor, id);
     shapes_section(ui, editor, id);
+}
+
+/// The layer's mask (see `layer_masks.rs`): a button to add one, or, with
+/// one, whether the brush paints it or the layer, whether it's on, and
+/// applying or deleting it.
+fn layer_mask_controls(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
+    let Some(layer) = editor.doc.layer(id) else { return };
+    if !inkframe_core::Document::can_clip(layer) {
+        return;
+    }
+    let mask = layer.layer_mask;
+    let painting = editor.doc.paint_canvas_at(id, editor.frame).is_some();
+    ui.horizontal_wrapped(|ui| {
+        ui.label(tr("Layer mask")).on_hover_text(tr(
+            "A mask painted over the layer: dark hides it, light shows it, and erasing the mask brings it back",
+        ));
+        let Some(mask) = mask else {
+            if ui.button(tr("Add")).clicked() {
+                editor.add_layer_mask();
+            }
+            return;
+        };
+        let mut paint_mask = editor.painting_mask();
+        if ui.selectable_label(paint_mask, tr("Paint the mask")).clicked() {
+            paint_mask = !paint_mask;
+            editor.set_editing_mask(id, paint_mask);
+        }
+        let mut on = mask.enabled;
+        if ui.checkbox(&mut on, tr("On")).changed() {
+            editor.toggle_layer_mask();
+        }
+        if painting && ui.button(tr("Apply")).on_hover_text(tr("Erase what the mask hides, and remove it")).clicked() {
+            editor.apply_layer_mask();
+        }
+        if ui.button(tr("Delete")).clicked() {
+            editor.delete_layer_mask();
+        }
+    });
 }
 
 /// Settings for a layer holding a symbol instance: which symbol, and how its

@@ -133,6 +133,27 @@ impl InkframeApp {
                     .selection
                     .is_some_and(|id| self.editor.layers().first().is_some_and(|bottom| bottom.id != id));
                 item(ui, tr("Mask"), None, Command::MaskLayerBelow, below);
+                let clipped = self.editor.selected_layer().is_some_and(|l| l.clipped);
+                let clipping = if clipped { tr("Release Clipping Mask") } else { tr("Create Clipping Mask") };
+                let can_clip = self.editor.can_toggle_clipping();
+                item(ui, clipping, Some(shortcuts::CLIPPING_MASK), Command::ToggleClipping, can_clip);
+                ui.menu_button(tr("Layer Mask"), |ui| {
+                    let mask = self.editor.selected_mask();
+                    let can_add = self.editor.selected_layer().is_some_and(|l| {
+                        l.layer_mask.is_none() && !(l.folder || l.camera || l.guide || l.mask)
+                    });
+                    item(ui, tr("Add"), None, Command::AddLayerMask, can_add);
+                    let paint = if self.editor.painting_mask() { tr("Paint the Layer") } else { tr("Paint the Mask") };
+                    item(ui, paint, None, Command::EditLayerMask, mask.is_some());
+                    let off = if mask.is_some_and(|m| !m.enabled) { tr("Turn On") } else { tr("Turn Off") };
+                    item(ui, off, None, Command::ToggleLayerMask, mask.is_some());
+                    // Only a painting can have the mask erased into it.
+                    let painting = self.editor.selection.is_some_and(|id| {
+                        self.editor.doc.paint_canvas_at(id, self.editor.frame).is_some()
+                    });
+                    item(ui, tr("Apply"), None, Command::ApplyLayerMask, mask.is_some() && painting);
+                    item(ui, tr("Delete"), None, Command::DeleteLayerMask, mask.is_some());
+                });
                 ui.separator();
                 let traceable = VectoriseDialog::can_vectorise(&self.editor);
                 item(ui, tr("Vectorise…"), None, Command::Vectorise, traceable);

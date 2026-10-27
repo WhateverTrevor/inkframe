@@ -359,6 +359,24 @@ pub fn canvas_image(
     Some(pixmap)
 }
 
+/// A layer mask's canvas shrunk to `width`×`height`, as Photoshop shows a
+/// mask: painted over white, so unpainted shows white and what hides shows
+/// dark.
+pub fn mask_thumbnail(
+    doc: &Document,
+    canvas: inkframe_core::CanvasId,
+    width: u32,
+    height: u32,
+) -> Option<Pixmap> {
+    let canvas = doc.canvas(canvas)?;
+    let mut pixmap = Pixmap::new(width, height)?;
+    pixmap.fill(tiny_skia::Color::WHITE);
+    let scale = (width as f32 / canvas.width as f32).min(height as f32 / canvas.height as f32);
+    let fit = Transform::from_translate(width as f32 / 2.0, height as f32 / 2.0).pre_scale(scale, scale);
+    draw_canvas(&mut pixmap.as_mut(), canvas, canvas.width, canvas.height, fit, None);
+    Some(pixmap)
+}
+
 /// One layer drawn on its own into a `width`×`height` image, as the final
 /// render draws it (effects, particles and nested symbols included).
 /// `to_image` maps the layer's timeline onto the image; the layer brings its
@@ -426,28 +444,66 @@ fn render_layers(
             && (style.show_guides || !l.guide)
             && (!l.mask || style.show_mask == Some(l.id))
     };
-    for layer in layers.iter().copied().filter(drawn) {
-        let transform = doc.pose(layer, frame);
+    // How opaque a layer is drawn, before `opacity` (the stack's own).
+    let own_opacity = |layer: &Layer| {
         let preview = if layer.mask { MASK_PREVIEW_OPACITY } else { 1.0 };
+        // Layers the camera is passing fade away (see `camera.rs`).
+        doc.pose(layer, frame).opacity * preview * doc.camera_fade(layer, frame as f32)
+    };
+    // Where a layer is at each moment the shutter is open for its motion
+    // blur, centred on this frame. Still layers need just the one.
+    let moments_of = |layer: &Layer, matrix: Affine, fx: &inkframe_core::Effects| -> Vec<Affine> {
+        let Some((shutter, samples)) = fx.motion_blur() else { return vec![matrix] };
+        let at = |i: u32, samples: u32| {
+            let t = frame as f32 + shutter * ((i as f32 + 0.5) / samples as f32 - 0.5);
+            parent.pre_concat(doc.layer_matrix_at(layer, t.max(0.0)))
+        };
+        // Enough moments that no two are more than a couple of pixels
+        // apart, however far the layer moves, so the smear is smooth
+        // rather than a row of copies.
+        let travel = layer_extent_moved(doc, layer, frame, at(0, samples), at(samples - 1, samples));
+        let samples = samples.max((travel / 2.0).ceil() as u32).min(64);
+        let all: Vec<Affine> = (0..samples).map(|i| at(i, samples)).collect();
+        if all.iter().any(|m| *m != all[0]) { all } else { vec![matrix] }
+    };
+    for (index, layer) in layers.iter().copied().enumerate() {
+        if !drawn(&layer) {
+            continue;
+        }
+        // A layer clipped to a base beneath it is drawn with that base, below.
+        let clips_to_base =
+            || layers[..index].iter().rev().find(|l| !l.clipped).is_some_and(|b| Document::can_clip(b));
+        if layer.clipped && clips_to_base() {
+            continue;
+        }
+        let clipped: Vec<&Layer> = if Document::can_clip(layer) {
+            layers[index + 1..].iter().copied().take_while(|l| l.clipped).filter(drawn).collect()
+        } else {
+            Vec::new()
+        };
         // Only the top level is faded: a symbol's own layers go with it.
         let behind = match style.light_table {
             Some(focus) if depth == 0 && layer.id != focus => LIGHT_TABLE_OPACITY,
             _ => 1.0,
         };
-        let preview = preview * behind;
-        // Layers the camera is passing fade away (see `camera.rs`).
-        let passing = doc.camera_fade(layer, frame as f32);
-        let opacity = (transform.opacity * opacity * preview * passing).clamp(0.0, 1.0);
+        let opacity = (own_opacity(layer) * opacity * behind).clamp(0.0, 1.0);
         if opacity <= 0.0 {
             continue;
         }
         // Through the layer's own parents and pivot (see `rig.rs` in the core).
         let matrix = parent.pre_concat(doc.layer_matrix(layer, frame));
         let mask = doc.mask_for(layer, frame).filter(|_| !layer.mask);
+        let layer_mask = layer.layer_mask.is_some_and(|m| m.enabled);
 
         let fx = layer.track.effects_at(frame as f32);
         let effects = !fx.is_none();
-        if opacity >= 1.0 && mask.is_none() && layer.blend.is_normal() && !effects {
+        if opacity >= 1.0
+            && mask.is_none()
+            && !layer_mask
+            && clipped.is_empty()
+            && layer.blend.is_normal()
+            && !effects
+        {
             draw_layer(pixmap, doc, layer, frame, matrix, style, depth);
             continue;
         }
@@ -459,7 +515,8 @@ fn render_layers(
         // Symbols nest, so each translucent layer needs a buffer of its own.
         // A masked layer goes through a scratch buffer too, so the mask can
         // be cut out of it before it's blended down, and so does one with a
-        // blend mode, which mixes the layer as a whole with what's beneath.
+        // blend mode, which mixes the layer as a whole with what's beneath,
+        // and a base, which the layers clipped to it are drawn into.
         //
         // The buffer only needs to cover the pixels the layer can touch.
         // A whole-image buffer would cost a full-screen allocation and blend
@@ -475,24 +532,7 @@ fn render_layers(
         // follow the zoom (`parent`'s scale), as the drawing does.
         let filter_scale = parent.average_scale();
         let margin = inkframe_core::filter_margin(&fx.filters, filter_scale);
-        // Motion blur: where the layer is at each moment the shutter is
-        // open, centred on this frame. Still layers need just the one.
-        let mut moments = vec![matrix];
-        if let Some((shutter, samples)) = fx.motion_blur() {
-            let at = |i: u32, samples: u32| {
-                let t = frame as f32 + shutter * ((i as f32 + 0.5) / samples as f32 - 0.5);
-                parent.pre_concat(doc.layer_matrix_at(layer, t.max(0.0)))
-            };
-            // Enough moments that no two are more than a couple of pixels
-            // apart, however far the layer moves, so the smear is smooth
-            // rather than a row of copies.
-            let travel = layer_extent_moved(doc, layer, frame, at(0, samples), at(samples - 1, samples));
-            let samples = samples.max((travel / 2.0).ceil() as u32).min(64);
-            let all: Vec<Affine> = (0..samples).map(|i| at(i, samples)).collect();
-            if all.iter().any(|m| *m != all[0]) {
-                moments = all;
-            }
-        }
+        let moments = moments_of(layer, matrix, &fx);
         let (width, height) = (pixmap.width(), pixmap.height());
         let region = moments
             .iter()
@@ -509,19 +549,82 @@ fn render_layers(
         let Some(region) = region else {
             continue; // Empty, or entirely outside the image.
         };
-        let mut scratch = Pixmap::new(region.width(), region.height()).expect("region is non-empty");
+        let buffer = Buffered { doc, frame, region, filter_scale, style, depth };
+        let mut scratch = buffer.draw(layer, &moments, &fx);
+
+        // Each layer clipped to this one, drawn as it would be, then kept
+        // only where this one has paint and blended into it, so the group
+        // fades and blends with this layer's opacity and mode as one.
+        if !clipped.is_empty() {
+            let base = scratch.clone();
+            let keep_inside = PixmapPaint { blend_mode: BlendMode::DestinationIn, ..PixmapPaint::default() };
+            for child in clipped {
+                let child_opacity = own_opacity(child).clamp(0.0, 1.0);
+                if child_opacity <= 0.0 {
+                    continue;
+                }
+                let child_fx = child.track.effects_at(frame as f32);
+                let child_matrix = parent.pre_concat(doc.layer_matrix(child, frame));
+                let mut drawn = buffer.draw(child, &moments_of(child, child_matrix, &child_fx), &child_fx);
+                drawn.draw_pixmap(0, 0, base.as_ref(), &keep_inside, Transform::identity(), None);
+                let paint = PixmapPaint {
+                    opacity: child_opacity,
+                    blend_mode: blend_mode(child.blend),
+                    ..PixmapPaint::default()
+                };
+                scratch.draw_pixmap(0, 0, drawn.as_ref(), &paint, Transform::identity(), None);
+            }
+        }
+        let offset = Affine::translate(Point::new(-region.x() as f32, -region.y() as f32));
+        if let Some(mask) = mask {
+            let stencil = mask_stencil(doc, mask, frame, offset.pre_concat(parent), &scratch, style, depth);
+            scratch.apply_mask(&stencil);
+        }
+        let paint = PixmapPaint { opacity, blend_mode: blend_mode(layer.blend), ..PixmapPaint::default() };
+        pixmap.draw_pixmap(region.x(), region.y(), scratch.as_ref(), &paint, Transform::identity(), None);
+    }
+}
+
+/// What's needed to draw a layer on its own into a scratch buffer covering
+/// `region` of the image (see `render_layers`).
+#[derive(Clone, Copy)]
+struct Buffered<'a> {
+    doc: &'a Document,
+    frame: u32,
+    region: IntRect,
+    filter_scale: f32,
+    style: Style<'a>,
+    depth: usize,
+}
+
+impl Buffered<'_> {
+    /// Draws `layer` fully opaque at each of its motion blur's `moments`
+    /// (averaged), cut by its layer mask, then given its colour effect and
+    /// filters. The mask comes before the filters, so a shadow follows what
+    /// the mask leaves, as in Photoshop.
+    fn draw(&self, layer: &Layer, moments: &[Affine], fx: &inkframe_core::Effects) -> Pixmap {
+        let Self { doc, frame, region, style, depth, .. } = *self;
+        let (width, height) = (region.width(), region.height());
         // Shifting by whole pixels lines the scratch buffer up exactly with
         // the image beneath it, so the result is identical to drawing in place.
         let offset = Affine::translate(Point::new(-region.x() as f32, -region.y() as f32));
-        if let [only] = moments[..] {
-            draw_layer(&mut scratch.as_mut(), doc, layer, frame, offset.pre_concat(only), style, depth);
+        let mut scratch = Pixmap::new(width, height).expect("region is non-empty");
+        let draw = |into: &mut Pixmap, matrix: Affine| {
+            let matrix = offset.pre_concat(matrix);
+            draw_layer(&mut into.as_mut(), doc, layer, frame, matrix, style, depth);
+            if let Some(stencil) = layer_mask_stencil(doc, layer, matrix, into) {
+                into.apply_mask(&stencil);
+            }
+        };
+        if let [only] = moments {
+            draw(&mut scratch, *only);
         } else {
             // Each moment drawn on its own, and the pixels averaged.
             let mut sum = vec![0u32; scratch.data().len()];
-            let mut moment = Pixmap::new(region.width(), region.height()).expect("region is non-empty");
-            for &m in &moments {
+            let mut moment = Pixmap::new(width, height).expect("region is non-empty");
+            for &m in moments {
                 moment.fill(tiny_skia::Color::TRANSPARENT);
-                draw_layer(&mut moment.as_mut(), doc, layer, frame, offset.pre_concat(m), style, depth);
+                draw(&mut moment, m);
                 for (total, &byte) in sum.iter_mut().zip(moment.data()) {
                     *total += byte as u32;
                 }
@@ -531,18 +634,26 @@ fn render_layers(
                 *byte = ((total + count / 2) / count) as u8;
             }
         }
-        if effects {
-            let (width, height) = (scratch.width() as usize, scratch.height() as usize);
+        if !fx.is_none() {
+            let (width, height) = (width as usize, height as usize);
             inkframe_core::apply_color_effect(scratch.data_mut(), &fx.color);
-            inkframe_core::apply_filters(scratch.data_mut(), width, height, &fx.filters, filter_scale);
+            inkframe_core::apply_filters(scratch.data_mut(), width, height, &fx.filters, self.filter_scale);
         }
-        if let Some(mask) = mask {
-            let stencil = mask_stencil(doc, mask, frame, offset.pre_concat(parent), &scratch, style, depth);
-            scratch.apply_mask(&stencil);
-        }
-        let paint = PixmapPaint { opacity, blend_mode: blend_mode(layer.blend), ..PixmapPaint::default() };
-        pixmap.draw_pixmap(region.x(), region.y(), scratch.as_ref(), &paint, Transform::identity(), None);
+        scratch
     }
+}
+
+/// A layer's own mask (see `layer_mask.rs` in the core), if it has one
+/// turned on, as a stencil the size of `buffer`: the mask painted over
+/// white and read by brightness. `matrix` maps the layer's coordinates onto
+/// `buffer`; the mask's canvas is centred on the layer's origin.
+fn layer_mask_stencil(doc: &Document, layer: &Layer, matrix: Affine, buffer: &Pixmap) -> Option<Mask> {
+    let mask = layer.layer_mask.filter(|m| m.enabled)?;
+    let canvas = doc.canvas(mask.canvas)?;
+    let mut drawing = Pixmap::new(buffer.width(), buffer.height())?;
+    drawing.fill(tiny_skia::Color::WHITE);
+    draw_canvas(&mut drawing.as_mut(), canvas, canvas.width, canvas.height, to_skia_transform(matrix), None);
+    Some(Mask::from_pixmap(drawing.as_ref(), MaskType::Luminance))
 }
 
 /// Photoshop's "Merge Down": paints `upper` into the paint layer directly
@@ -570,6 +681,14 @@ pub fn merge_down(doc: &mut Document, upper: LayerId, frame: u32, images: Option
     let style =
         Style { tint: None, images, show_guides: false, show_mask: None, light_table: None, texture: None };
     draw_layer(&mut above.as_mut(), doc, top, frame, matrix, style, 0);
+    if let Some(stencil) = layer_mask_stencil(doc, top, matrix, &above) {
+        above.apply_mask(&stencil);
+    }
+    // Clipped to the layer it's merging into, it keeps to that layer's paint.
+    if top.clipped && doc.clip_base(top.id) == Some(lower) {
+        let keep_inside = PixmapPaint { blend_mode: BlendMode::DestinationIn, ..PixmapPaint::default() };
+        above.draw_pixmap(0, 0, below.as_ref(), &keep_inside, Transform::identity(), None);
+    }
     let paint = PixmapPaint {
         opacity: doc.pose(top, frame).opacity.clamp(0.0, 1.0),
         blend_mode: blend_mode(top.blend),
@@ -609,6 +728,7 @@ pub fn export_psd(doc: &Document, frame: u32, images: Option<&ImageLibrary>) -> 
             opacity: 255,
             visible: true,
             blend: inkframe_core::BlendMode::Normal,
+            clipped: false,
         });
     }
     // Folders hold nothing to draw; their layers are exported one by one,
@@ -645,6 +765,8 @@ pub fn export_psd(doc: &Document, frame: u32, images: Option<&ImageLibrary>) -> 
             opacity: (opacity * 255.0).round() as u8,
             visible: layer.visible,
             blend: layer.blend,
+            // Photoshop clips it to the layer beneath, as here.
+            clipped: layer.clipped && doc.clip_base(layer.id).is_some(),
         });
     }
     let merged = render_frame(doc, frame, &RenderOptions { images, ..RenderOptions::default() })
@@ -732,8 +854,6 @@ fn mask_stencil(
     stencil
 }
 
-/// The pixels a layer can paint when drawn with `matrix`, clipped to a
-/// `width`×`height` image, or `None` if that's nothing.
 /// How far, in pixels, the farthest corner of a layer's drawing moves
 /// between two placements of it.
 fn layer_extent_moved(doc: &Document, layer: &Layer, frame: u32, from: Affine, to: Affine) -> f32 {
@@ -966,13 +1086,6 @@ fn gradient_paint(
     Some(Paint { shader, anti_alias: true, ..Paint::default() })
 }
 
-/// Draws a picture stretched over the `width`×`height` rectangle centered on
-/// the origin, or a crossed-out placeholder if its pixels aren't available.
-///
-/// The rectangle is filled with the picture as a pattern rather than copied
-/// with `draw_pixmap`, which doesn't anti-alias: a rotated image would get
-/// jagged edges. Onion-skin tinting doesn't apply; a ghost of a picture is
-/// drawn as the picture, faded.
 /// Draws a paint layer's canvas, centred on the origin, one unit per pixel.
 ///
 /// The painted tiles are gathered into one image first and drawn as one
@@ -1155,6 +1268,13 @@ fn triangle_map(from: [Point; 3], to: [Point; 3]) -> Option<Transform> {
     Some(Transform::from_row(sx, ky, kx, sy, tx, ty))
 }
 
+/// Draws a picture stretched over the `width`×`height` rectangle centered on
+/// the origin, or a crossed-out placeholder if its pixels aren't available.
+///
+/// The rectangle is filled with the picture as a pattern rather than copied
+/// with `draw_pixmap`, which doesn't anti-alias: a rotated image would get
+/// jagged edges. Onion-skin tinting doesn't apply; a ghost of a picture is
+/// drawn as the picture, faded.
 fn draw_image(pixmap: &mut PixmapMut, pixels: Option<&Mipmaps>, width: f32, height: f32, matrix: Transform) {
     let Some(rect) = tiny_skia::Rect::from_xywh(-width / 2.0, -height / 2.0, width, height) else {
         return; // Zero-sized.
@@ -1476,6 +1596,91 @@ mod tests {
         assert_eq!(doc.canvas(canvas).unwrap().pixel(60, 70), [0; 4]);
         // Nothing below to merge into.
         assert!(!merge_down(&mut doc, paint, 0, None));
+    }
+
+    /// A white 100×100 stage with a filled rectangle layer, `width`×`height`
+    /// centred on (50, 50).
+    fn rect_layer(doc: &mut Document, name: &str, width: f32, height: f32, color: Color) -> LayerId {
+        let rect = Element {
+            shape: Shape::Rect { width, height, corner_radius: 0.0 },
+            style: Style { fill: Some(color), stroke: None, gradient: None },
+        };
+        doc.add_layer(name, vec![rect], 0, Pose::at(Point::new(50.0, 50.0)))
+    }
+
+    fn small_stage() -> Document {
+        let mut doc = Document::default();
+        (doc.width, doc.height, doc.background) = (100, 100, Color::WHITE);
+        doc
+    }
+
+    #[test]
+    fn a_layer_mask_hides_where_its_painted_dark() {
+        let mut doc = small_stage();
+        let red = rect_layer(&mut doc, "Red", 100.0, 100.0, Color::rgb(255, 0, 0));
+        let mask = doc.add_layer_mask(red).unwrap();
+        // Black over the left half, grey over a strip of the right.
+        let black = [0, 0, 0, 255].repeat(50 * 100);
+        doc.canvas_mut(mask).unwrap().write_region(0, 0, 50, 100, &black);
+        doc.canvas_mut(mask).unwrap().write_region(70, 0, 10, 100, &[128, 128, 128, 255].repeat(10 * 100));
+        let pixmap = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        assert_eq!(pixel(&pixmap, 20, 50), [255, 255, 255, 255], "hidden: the stage shows");
+        assert_eq!(pixel(&pixmap, 60, 50), [255, 0, 0, 255], "unpainted: the layer shows");
+        let [_, g, ..] = pixel(&pixmap, 75, 50);
+        assert!((120..=135).contains(&g), "grey half-hides: {g}");
+
+        // Turned off, the mask is kept but everything shows.
+        doc.layer_mut(red).unwrap().layer_mask.as_mut().unwrap().enabled = false;
+        let pixmap = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        assert_eq!(pixel(&pixmap, 20, 50), [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn a_clipped_layer_shows_only_over_its_base() {
+        let mut doc = small_stage();
+        let base = rect_layer(&mut doc, "Figure", 40.0, 40.0, Color::rgb(255, 0, 0));
+        let shade = rect_layer(&mut doc, "Shade", 100.0, 20.0, Color::rgb(0, 0, 255));
+        let glow = rect_layer(&mut doc, "Glow", 20.0, 100.0, Color::rgb(0, 255, 0));
+        let render = |doc: &Document| render_frame(doc, 0, &RenderOptions::default()).unwrap();
+
+        let unclipped = render(&doc);
+        assert_eq!(pixel(&unclipped, 5, 50), [0, 0, 255, 255], "drawn past the figure at first");
+        doc.set_clipped(shade, true);
+        doc.set_clipped(glow, true);
+        let clipped = render(&doc);
+        assert_eq!(pixel(&clipped, 5, 50), [255, 255, 255, 255], "not past the figure");
+        assert_eq!(pixel(&clipped, 50, 5), [255, 255, 255, 255]);
+        assert_eq!(pixel(&clipped, 35, 50), [0, 0, 255, 255], "over the figure");
+        assert_eq!(pixel(&clipped, 50, 50), [0, 255, 0, 255], "the top clipped layer is on top");
+        assert_eq!(pixel(&clipped, 32, 32), [255, 0, 0, 255], "the figure where nothing covers it");
+
+        // The base's opacity fades the group, and hiding it hides the group.
+        doc.layer_mut(base)
+            .unwrap()
+            .track
+            .set_pose(0, Pose { opacity: 0.5, ..Pose::at(Point::new(50.0, 50.0)) });
+        let [r, _, b, _] = pixel(&render(&doc), 35, 50);
+        assert!((120..=135).contains(&r) && b == 255, "half the blue over white: {r}, {b}");
+        doc.layer_mut(base).unwrap().visible = false;
+        assert_eq!(pixel(&render(&doc), 50, 50), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn merging_down_keeps_a_layers_mask_and_clipping() {
+        let mut doc = small_stage();
+        let paint = doc.add_paint_layer(inkframe_core::TimelineId::Main, "Paint", 0).unwrap();
+        let (canvas, ..) = doc.paint_canvas_at(paint, 0).unwrap();
+        // A 40×40 red figure in the middle of the paint layer.
+        doc.canvas_mut(canvas).unwrap().write_region(30, 30, 40, 40, &[255, 0, 0, 255].repeat(40 * 40));
+        let shade = rect_layer(&mut doc, "Shade", 100.0, 100.0, Color::rgb(0, 0, 255));
+        doc.set_clipped(shade, true);
+        let mask = doc.add_layer_mask(shade).unwrap();
+        doc.canvas_mut(mask).unwrap().write_region(0, 0, 50, 100, &[0, 0, 0, 255].repeat(50 * 100));
+        assert!(merge_down(&mut doc, shade, 0, None));
+        let canvas = doc.canvas(canvas).unwrap();
+        assert_eq!(canvas.pixel(10, 50), [0, 0, 0, 0], "clipped: nothing past the figure");
+        assert_eq!(canvas.pixel(40, 50), [255, 0, 0, 255], "masked: the figure shows through");
+        assert_eq!(canvas.pixel(60, 50), [0, 0, 255, 255], "shaded where both allow");
     }
 
     #[test]

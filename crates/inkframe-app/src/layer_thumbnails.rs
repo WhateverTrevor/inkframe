@@ -22,6 +22,8 @@ const REDRAWS_PER_FRAME: usize = 6;
 #[derive(Default)]
 pub struct LayerThumbnails {
     entries: HashMap<LayerId, Entry>,
+    /// Pictures of layer masks, redrawn when the mask's pixels change.
+    masks: HashMap<LayerId, (Canvas, [u32; 2], TextureHandle)>,
     /// Redraws left this UI frame; reset by [`Self::begin_frame`].
     budget: usize,
 }
@@ -53,6 +55,7 @@ impl LayerThumbnails {
     pub fn begin_frame(&mut self, editor: &Editor) {
         self.budget = REDRAWS_PER_FRAME;
         self.entries.retain(|id, _| editor.doc.layer(*id).is_some());
+        self.masks.retain(|id, _| editor.doc.layer(*id).is_some_and(|l| l.layer_mask.is_some()));
     }
 
     /// The thumbnail of `id`, `size` pixels, redrawn first if it's out of
@@ -90,12 +93,41 @@ impl LayerThumbnails {
         }
         self.entries.get(&id)?.texture.as_ref().map(TextureHandle::id)
     }
+
+    /// The picture of `id`'s layer mask, `size` pixels, redrawn first if
+    /// its pixels have changed (sharing the redraw budget with layers).
+    pub fn mask(
+        &mut self,
+        ctx: &egui::Context,
+        editor: &Editor,
+        id: LayerId,
+        size: [u32; 2],
+    ) -> Option<egui::TextureId> {
+        let mask = editor.doc.layer(id)?.layer_mask?;
+        let canvas = editor.doc.canvas(mask.canvas)?;
+        let stale = self.masks.get(&id).is_none_or(|(was, at, _)| was != canvas || *at != size);
+        if stale {
+            if self.budget == 0 {
+                ctx.request_repaint();
+            } else if let Some(pixmap) =
+                inkframe_render::mask_thumbnail(&editor.doc, mask.canvas, size[0], size[1])
+            {
+                self.budget -= 1;
+                let image =
+                    egui::ColorImage::from_rgba_premultiplied(size.map(|n| n as usize), pixmap.data());
+                let texture = ctx.load_texture(format!("mask-{id:?}"), image, TextureOptions::LINEAR);
+                self.masks.insert(id, (canvas.clone(), size, texture));
+            }
+        }
+        self.masks.get(&id).map(|(.., texture)| texture.id())
+    }
 }
 
 fn source(editor: &Editor, id: LayerId, size: [u32; 2]) -> Option<Source> {
     let doc = &editor.doc;
     let layer = doc.layer(id)?;
     let frame = editor.frame;
+    // Its mask too, which changes what shows of it.
     let canvases = layer
         .shown_elements(frame)
         .iter()
@@ -103,6 +135,7 @@ fn source(editor: &Editor, id: LayerId, size: [u32; 2]) -> Option<Source> {
             Shape::Paint { canvas, .. } => doc.canvas(canvas).cloned(),
             _ => None,
         })
+        .chain(layer.layer_mask.and_then(|m| doc.canvas(m.canvas).cloned()))
         .collect();
     // A symbol could hold either, so an instance counts as both.
     let shows = |wanted: fn(&Shape) -> bool| {

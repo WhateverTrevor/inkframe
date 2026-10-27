@@ -168,6 +168,19 @@ pub(crate) fn entries() -> Vec<Entry> {
             .also(tr_later("replace")),
         entry(tr_later("Exit Symbol"), tr_later("Modify"), Command::ExitSymbol).icon(Icon::StepOut),
         entry(tr_later("Mask"), tr_later("Modify"), Command::MaskLayerBelow).also(tr_later("clip window")),
+        entry(tr_later("Create Clipping Mask"), tr_later("Modify"), Command::ToggleClipping)
+            .keys(shortcuts::CLIPPING_MASK)
+            .also(tr_later("clip to layer below release photoshop")),
+        entry(tr_later("Add Layer Mask"), tr_later("Modify"), Command::AddLayerMask)
+            .also(tr_later("hide reveal paint mask photoshop")),
+        entry(tr_later("Paint the Mask or Layer"), tr_later("Modify"), Command::EditLayerMask)
+            .also(tr_later("layer mask edit")),
+        entry(tr_later("Turn Layer Mask Off or On"), tr_later("Modify"), Command::ToggleLayerMask)
+            .also(tr_later("disable enable layer mask")),
+        entry(tr_later("Apply Layer Mask"), tr_later("Modify"), Command::ApplyLayerMask)
+            .also(tr_later("bake layer mask")),
+        entry(tr_later("Delete Layer Mask"), tr_later("Modify"), Command::DeleteLayerMask)
+            .also(tr_later("remove layer mask")),
         entry(tr_later("Vectorise…"), tr_later("Modify"), Command::Vectorise)
             .also(tr_later("trace bitmap paint to shapes")),
         entry(tr_later("New Layer"), tr_later("Modify"), Command::NewLayer)

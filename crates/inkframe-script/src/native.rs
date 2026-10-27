@@ -120,6 +120,7 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, state: &Shared) -> rquickjs::Result<(
             "name": layer.name,
             "visible": layer.visible,
             "locked": layer.locked,
+            "clipped": layer.clipped,
             "kind": kind,
             "start": layer.start + 1,
             "end": layer.end.map(|e| e + 1),
@@ -149,6 +150,17 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, state: &Shared) -> rquickjs::Result<(
             if !doc.set_parent(id, parent, 0) {
                 return Err(throw(&ctx, "that parent would make a loop, or isn't in the same timeline"));
             }
+            return Ok(());
+        }
+        if key == "clipped" {
+            let clipped = flag(&ctx, &value)?;
+            if doc.layer(id).is_none() {
+                return Err(gone(&ctx));
+            }
+            if clipped && !doc.layer(id).is_some_and(inkframe_core::Document::can_clip) {
+                return Err(throw(&ctx, "only a layer that draws something can be clipped"));
+            }
+            doc.set_clipped(id, clipped);
             return Ok(());
         }
         let layer = doc.layer_mut(id).ok_or_else(|| gone(&ctx))?;

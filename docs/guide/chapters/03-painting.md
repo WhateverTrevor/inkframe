@@ -8,6 +8,7 @@ In this chapter, we're going to cover the following main topics:
 - Brushes and Brush Settings
 - Filling and retouching
 - Selections, adjustments and blend modes
+- Clipping masks and layer masks
 - Ink and paint: colouring line art
 - Swatches and palettes
 - Tracing a painting into vectors
@@ -100,6 +101,18 @@ Every layer also has a **Blend** mode in its properties, which sets how it mixes
 
 ![An elliptical selection, its hue shifted, on a layer blended with Multiply](paint-select)
 
+## Clipping masks and layer masks
+
+Two of Photoshop's ways of keeping paint where it belongs, without erasing anything.
+
+A *clipping mask* shows a layer only where the layer beneath it has paint. Paint a figure, add a layer above it, and choose **Modify › Create Clipping Mask** ([[⌥⌘G]]), or tick **Clipped** in its properties: now shading painted over the figure, however loosely, stays on the figure. Several layers in a row can clip to the same layer, their *base*; the base's opacity and blend mode apply to them all, and hiding it hides them too. The timeline indents a clipped layer with an arrow pointing down to its base.
+
+A *layer mask* hides parts of a layer and keeps them. **Modify › Layer Mask › Add** (or **Add** beside **Layer mask** in the properties) gives the layer a mask, and starts you painting it: the brushes, eraser and other painting tools paint the mask rather than the layer, dark hiding it and light showing it, so a soft brush gives a soft edge and erasing brings the layer back. The mask's picture sits beside the layer's in the timeline; click it to paint the mask, and click the layer's own picture to paint the layer again. The bar above the stage says which you're painting. From the same menu, **Turn Off** shows the whole layer while keeping the mask, **Apply** erases what it hides from a paint layer for good, and **Delete** removes it.
+
+In {{fig:masks}}, the trees on the right are hidden by the Trees layer's mask, picked for painting, and evening shade painted right across the stage on a layer clipped to the Hills darkens only the hills.
+
+![A layer mask hiding the trees on the right, and shade on a layer clipped to the hills](masks)
+
 > Tip: **File › Export PSD…** saves the current frame as a layered Photoshop file, and Photoshop files can be imported with **File › Import to Stage** ([[⌘R]]), each layer arriving as a paint layer.
 
 ## Ink and paint: colouring line art
@@ -139,6 +152,6 @@ A palette can also have *versions*. **New Version** in the palette menu copies t
 
 ## Summary
 
-In this chapter, we painted on paint layers with the Brush and its presets, built brushes of our own in Brush Settings, filled and retouched with the bucket, gradient, smudge and dodge tools, and limited them with selections. We adjusted colours and blended layers, coloured line art Harmony-style with the Paint Bucket, managed colour with palettes and their versions, and traced paintings into vectors.
+In this chapter, we painted on paint layers with the Brush and its presets, built brushes of our own in Brush Settings, filled and retouched with the bucket, gradient, smudge and dodge tools, and limited them with selections. We adjusted colours and blended layers, kept paint in its place with clipping masks and layer masks, coloured line art Harmony-style with the Paint Bucket, managed colour with palettes and their versions, and traced paintings into vectors.
 
 In the next chapter, we'll make something move.
