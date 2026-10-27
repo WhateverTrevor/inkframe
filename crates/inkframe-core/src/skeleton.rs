@@ -738,6 +738,15 @@ impl Skeleton {
         map
     }
 
+    /// Moves every bone's rest pose by `delta`, carrying the whole rig (and
+    /// its animation, which is kept as moves from rest) with it.
+    pub fn translate(&mut self, delta: Point) {
+        for bone in &mut self.bones {
+            bone.start = bone.start + delta;
+            bone.end = bone.end + delta;
+        }
+    }
+
     /// Moves bone `index`'s rest pose by `delta`, as rigging rather than
     /// animating does: the whole bone, with everything hanging from it, or
     /// just its end, with the bones that start there (and theirs).
@@ -1393,6 +1402,36 @@ mod tests {
         match &doc.posed_elements(layer, frame)[0].shape {
             Shape::Path(path) => path.flatten(),
             other => panic!("bent into a path, not {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_skeleton_folder_made_a_symbol_looks_the_same() {
+        let (mut doc, folder, layer) = rigged_bar();
+        doc.layer_mut(folder).unwrap().skeleton.as_mut().unwrap().bones[1].turn.set(0, 60.0);
+        let on_stage = |doc: &crate::Document, layer: LayerId, offset: Point| -> Vec<Point> {
+            let matrix = doc.layer_matrix(doc.layer(layer).unwrap(), 0);
+            outline_of(doc, layer, 0).into_iter().map(|p| matrix.apply(p) + offset).collect()
+        };
+        let before = on_stage(&doc, layer, Point::ZERO);
+
+        let symbol = doc.convert_layer_to_symbol(folder, 0).expect("a folder can become a symbol");
+        // The folder's id and name are now the instance's, and the bar is
+        // inside.
+        let instance = doc.layer(folder).unwrap();
+        assert_eq!(instance.name, doc.symbol(symbol).unwrap().layers.iter().find(|l| l.folder).unwrap().name);
+        assert_eq!(instance.instance.as_ref().map(|i| i.symbol), Some(symbol));
+        assert!(!instance.folder && instance.skeleton.is_none());
+        let inside = &doc.symbol(symbol).unwrap().layers;
+        let inner_folder = inside.iter().find(|l| l.folder).expect("the folder went in");
+        let inner_bar = inside.iter().find(|l| !l.folder).expect("the bar went in");
+        assert!(inner_folder.skeleton.is_some());
+        assert_eq!(inner_bar.in_folder, Some(inner_folder.id));
+
+        let after = on_stage(&doc, inner_bar.id, instance.transform_at(0).position);
+        assert_eq!(before.len(), after.len());
+        for (b, a) in before.iter().zip(&after) {
+            assert!(b.distance(*a) < 1e-2, "{b:?} became {a:?}");
         }
     }
 

@@ -96,7 +96,8 @@ for a new project, the current folder). `~/` means your home folder.
 
 **`addLayer` options**, all optional: a shape (`rect: [width, height]`
 with `radius` for rounded corners, `ellipse: [width, height]`, `text`
-with a font `size`, or
+with a font `size` and an `align` of `"left"` (the default, starting at
+`at`), `"center"` or `"right"`, or
 `polygon: [[x, y], ...]`), `fill`, `stroke`, `strokeWidth`, `at: [x, y]`
 on the stage (the middle if left out), and the first `frame` it shows on.
 A layer with no shape is empty, ready to animate or parent things to.
@@ -129,7 +130,7 @@ doc.export({ format: "h264", to: `renders/${doc.name}_v001.mp4`, scale: 0.5 });
 | `children` | The layers attached to it |
 | `pivot` | The point it turns and scales around, in its own coordinates; can be set |
 | `symbol`, `playback`, `firstFrame` | For an instance: its symbol's name, how it plays (`"loop"`, `"play-once"`, `"single-frame"`) and the symbol frame it starts on; the last two can be set |
-| `convertToSymbol(frame)` | Turns the layer into a symbol, the layer becoming its instance; returns the symbol's name |
+| `convertToSymbol(frame)` | Turns the layer (a folder with everything in it, skeleton and all) into a symbol, the layer becoming its instance; returns the symbol's name |
 | `effectsAt(frame)`, `setEffects(frame, effects)` | Its colour effect and filters on a frame (below) |
 | `particles` | A particle layer's emitter settings (below); set some to change just those |
 | `setKey(frame, values, { easing })` | Keys some properties: `setKey(12, { position: [960, 880], rotation: 15 })` |

@@ -180,9 +180,15 @@ impl Document {
     /// This works for layers inside symbols too (`frame` is then a symbol
     /// frame); the new symbol is as long as the timeline the layer was in.
     pub fn convert_layer_to_symbol(&mut self, id: LayerId, frame: u32) -> Option<SymbolId> {
-        // The camera and folders have nothing to put in a symbol.
-        if self.layer(id).is_some_and(|l| l.camera || l.folder) {
+        let layer = self.layer(id)?;
+        // The camera has nothing to put in a symbol.
+        if layer.camera {
             return None;
+        }
+        // A folder goes in with everything in it (and its skeleton), and
+        // still becomes the instance.
+        if layer.folder {
+            return self.convert_layers_to_symbol(&[id], frame).ok().map(|(symbol, _)| symbol);
         }
         let timeline = self.timeline_of(id)?;
         let duration = self.duration_of(timeline);
@@ -223,7 +229,9 @@ impl Document {
     /// the topmost of them was. Everything looks exactly the same
     /// afterwards; double-click the instance to work on the layers inside.
     ///
-    /// Layers attached to the chosen ones (an arm's hand) come along too.
+    /// Layers attached to the chosen ones (an arm's hand) come along too, as
+    /// do a chosen folder's layers; a skeleton folder brings its bones.
+    /// One layer chosen becomes the instance itself, keeping its id.
     /// Rig parents, masks and motion guides among them still connect inside
     /// the symbol. A chosen layer attached to one that isn't chosen can't
     /// be separated from it, so that's refused. The camera and folders are
@@ -245,13 +253,16 @@ impl Document {
         let first = *ids.first().ok_or(ConvertError::NothingChosen)?;
         let timeline = self.timeline_of(first).ok_or(ConvertError::NothingChosen)?;
         let layers = self.layers_of(timeline);
-        let chosen = |l: &Layer| ids.contains(&l.id) && !l.camera && !l.folder;
+        let chosen = |l: &Layer| ids.contains(&l.id) && !l.camera;
         // The chosen layers and everything attached to them, in stacking order.
         let mut taken: Vec<LayerId> = layers.iter().filter(|l| chosen(l)).map(|l| l.id).collect();
         loop {
             let more: Vec<LayerId> = layers
                 .iter()
-                .filter(|l| !taken.contains(&l.id) && l.parent.is_some_and(|p| taken.contains(&p)))
+                .filter(|l| {
+                    let attached = |to: Option<LayerId>| to.is_some_and(|p| taken.contains(&p));
+                    !taken.contains(&l.id) && (attached(l.parent) || attached(l.in_folder))
+                })
                 .map(|l| l.id)
                 .collect();
             if more.is_empty() {
@@ -308,20 +319,32 @@ impl Document {
                 // Placed around the registration point; attached layers
                 // follow their parents and stay as they are.
                 layer.track.position.map_values(|p| p - middle);
+                // Bones are in the timeline's coordinates, and their moves
+                // are from rest, so moving the rest moves the whole rig.
+                if let Some(skeleton) = &mut layer.skeleton {
+                    skeleton.translate(Point::ZERO - middle);
+                }
             }
             layer.masked_by = renamed(layer.masked_by);
             layer.follow = renamed(layer.follow);
-            layer.in_folder = None;
+            layer.in_folder = renamed(layer.in_folder);
             inner.push(layer);
         }
 
         let symbol_id = SymbolId(self.next_symbol_id);
         self.next_symbol_id += 1;
         let name = self.next_symbol_name();
-        let instance_id = self.allocate_layer_id();
+        // The taken layers all have new ids, so a single one's is free for
+        // the instance: a script holding the layer then holds the instance.
+        let instance_id = if let [one] = ids { *one } else { self.allocate_layer_id() };
+        // It keeps that layer's name too, as a plain layer made a symbol does.
+        let instance_name = match ids {
+            [one] => inner.iter().find(|l| renamed(Some(*one)) == Some(l.id)).map(|l| l.name.clone()),
+            _ => None,
+        };
         let mut instance = Layer {
             id: instance_id,
-            name: name.clone(),
+            name: instance_name.unwrap_or_else(|| name.clone()),
             drawings: vec![Drawing::new("1", Vec::new())],
             exposure: Vec::new(),
             ..inner[0].clone()
@@ -336,6 +359,9 @@ impl Document {
         (instance.parent, instance.masked_by, instance.follow, instance.in_folder) = (None, None, None, None);
         (instance.mask, instance.guide, instance.particles, instance.warp, instance.deformer) =
             (false, false, None, None, None);
+        (instance.folder, instance.skeleton, instance.switch, instance.bone_binding) =
+            (false, None, false, crate::BoneBinding::default());
+        instance.switch_keys.clear();
         instance.shape_tweens.clear();
         instance.pivot = Point::ZERO;
         instance.blend = crate::BlendMode::Normal;

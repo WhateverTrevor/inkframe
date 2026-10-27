@@ -66,6 +66,25 @@ pub struct LineLayout {
     pub carets: Vec<(usize, f32)>,
 }
 
+/// Brings every text shape's stored size up to date with its layout.
+///
+/// The document model can't lay out text (that needs fonts), so it relies
+/// on these stored sizes for selection, hit-testing and for knowing which
+/// pixels a layer can reach while drawing. Text that was never measured
+/// (made by a script, say) would be clipped to nothing. Laying out is
+/// cached, so calling this often is cheap.
+pub fn measure_text(doc: &mut Document) {
+    let layers = doc.layers.iter_mut().chain(doc.symbols.iter_mut().flat_map(|s| s.layers.iter_mut()));
+    for element in layers.flat_map(|layer| layer.all_elements_mut()) {
+        if let inkframe_core::Shape::Text(text) = &mut element.shape {
+            let bounds = layout(text).bounds;
+            if text.measured != bounds {
+                text.measured = bounds;
+            }
+        }
+    }
+}
+
 /// Lays out `text`, reusing an earlier layout when nothing has changed.
 pub fn layout(text: &Text) -> Arc<TextLayout> {
     let key = LayoutKey::of(text, read_fonts().generation);

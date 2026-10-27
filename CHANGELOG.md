@@ -7,12 +7,32 @@ notes on GitHub are its section here.
 
 ### Brushes
 
+- A new example, Painted Landscape (File › Open Example…): a sunset
+  painted with the ready-made brushes, the sky, clouds, mountains, hills,
+  trees and grass each on its own paint layer, the clouds drifting.
 - Import Tip… in the Brushes panel makes a brush tip from a picture file,
   dark as paint.
 - Symmetry's centre can be dragged by its handle on the stage, and put
   back in the middle from the Symmetry menu.
 - Sample All Layers for the Mixer Brush: it picks up colour from
   everything as seen, not only its own layer.
+
+### Fixes
+
+- A skeleton folder can be made a symbol (F8, or a script's
+  `convertToSymbol`): the folder goes inside with its layers and bones,
+  so the character still bends, and the instance keeps the folder's name.
+  Before, the bones were left behind.
+- Text added by a script, then exported or saved from the command line,
+  was cut off or drawn as nothing: it's now measured, as the app does.
+- Scripts can centre or right-align text (`align` in `addLayer`).
+
+### For contributors
+
+- The biggest source files are split into modules named for what they do:
+  the stage's tools and overlays live in `stage/`, the Properties panel's
+  sections in `inspector/`, and the app's menus, keys, commands, files and
+  areas in `app/`. Nothing changes for people using Inkframe.
 
 ## [0.7.0]
 

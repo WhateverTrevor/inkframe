@@ -42,7 +42,9 @@ impl BatchJob {
         output: &Path,
         on_progress: impl FnMut(Progress) -> ControlFlow<()>,
     ) -> Result<(), ExportError> {
-        let doc = Document::load(&self.project).map_err(|e| ExportError::Open(e.to_string()))?;
+        let mut doc = Document::load(&self.project).map_err(|e| ExportError::Open(e.to_string()))?;
+        // A file saved by a script may hold text that was never measured.
+        inkframe_render::measure_text(&mut doc);
         if let Some(folder) = output.parent() {
             std::fs::create_dir_all(folder)?;
         }

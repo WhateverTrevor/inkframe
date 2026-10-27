@@ -48,7 +48,8 @@ selected.
 
 **File › Open Example…** has finished projects to take apart: a bouncing
 ball, a rigged character with lip sync, a flower inked and painted
-Harmony-style, a multiplane camera scene, and a campfire of particles.
+Harmony-style, a sunset painted with the brushes, a multiplane camera
+scene, and a campfire of particles.
 Each opens as a new project, so change it freely.
 
 | | |
@@ -57,6 +58,7 @@ Each opens as a new project, so change it freely.
 | ![](images/sample-multiplane.png) | **multiplane.inkf**: scenery at different depths, the camera dollying in |
 | ![](images/sample-particles.png) | **particles.inkf**: fire, smoke and sparks under falling snow |
 | ![](images/sample-ink-and-paint.png) | **ink-and-paint.inkf**: line art coloured with the paint bucket from palette swatches |
+| ![](images/sample-painted-landscape.png) | **painted-landscape.inkf**: a sunset painted with the ready-made brushes, a paint layer for each part |
 
 ## Where next
 
