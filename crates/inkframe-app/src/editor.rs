@@ -749,24 +749,12 @@ impl Editor {
         self.doc.layer_mut(layer)?.elements_at_mut(frame).get_mut(index)
     }
 
-    /// Brings every text shape's stored size up to date with its layout.
-    ///
-    /// The document model can't lay out text (that needs fonts), so it
-    /// relies on these stored sizes for selection and hit-testing. Laying
-    /// out is cached, so calling this every frame is cheap; it catches every
-    /// way text can change: typing, undo, a file opened on a machine with
-    /// different fonts.
+    /// Brings every text shape's stored size up to date with its layout
+    /// (see `inkframe_render::measure_text`). Called every frame, it
+    /// catches every way text can change: typing, undo, a file opened on a
+    /// machine with different fonts.
     pub fn remeasure_text(&mut self) {
-        let doc = &mut self.doc;
-        let layers = doc.layers.iter_mut().chain(doc.symbols.iter_mut().flat_map(|s| s.layers.iter_mut()));
-        for element in layers.flat_map(|layer| layer.all_elements_mut()) {
-            if let Shape::Text(text) = &mut element.shape {
-                let bounds = inkframe_render::layout_text(text).bounds;
-                if text.measured != bounds {
-                    text.measured = bounds;
-                }
-            }
-        }
+        inkframe_render::measure_text(&mut self.doc);
     }
 
     pub fn has_unsaved_changes(&self) -> bool {
@@ -1768,17 +1756,15 @@ impl Editor {
         }
     }
 
-    /// Turns the selected layer into a symbol in the library, leaving an
-    /// instance of it in the layer's place. Like F8 in Animate.
     /// Makes the selected layers a symbol (F8), as Animate does: one layer
-    /// becomes an instance of a symbol holding it; several (a folder
-    /// counting as its layers) move into one symbol together, and an
+    /// becomes an instance of a symbol holding it; several (a folder with
+    /// its layers and skeleton) move into one symbol together, and an
     /// instance takes their place. The instance is selected.
     pub fn convert_selected_to_symbol(&mut self) -> Result<SymbolId, String> {
         let ids: Vec<LayerId> = self
             .selected_with_folders()
             .into_iter()
-            .filter(|id| self.doc.layer(*id).is_some_and(|l| !l.folder && !l.camera))
+            .filter(|id| self.doc.layer(*id).is_some_and(|l| !l.camera))
             .collect();
         match ids.as_slice() {
             [] => Err(tr("Select the layers to make into a symbol.").to_owned()),

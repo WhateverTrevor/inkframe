@@ -69,6 +69,8 @@ For a quick change without leaving the canvas, right-click the stage with a pain
 
 > Tip: Painting scenery, start with big, soft shapes in the Soft Round, then break them up with the stamping brushes: Clouds for the sky, Foliage and Sponge for trees, Grass and Rocks for the ground. Color Dynamics varies their greens and browns, so a few strokes look like many leaves.
 
+The *Painted landscape* example (**File › Open Example…**) is a scene painted that way, with a paint layer for each part: the sky, clouds, mountains, hills, trees and grass. Hide the layers one by one to see how it's built up, or paint over it.
+
 ## Filling and retouching
 
 The rest of the painting tools work as they do in Photoshop:

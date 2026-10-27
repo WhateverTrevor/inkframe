@@ -15,7 +15,7 @@ use std::rc::Rc;
 
 use inkframe_core::{
     Color, Document, Effects, Element, Emitter, FrameRate, LayerId, Path as Outline, Playback, Point, Preset,
-    Property, Segment, Shape, Stroke, Style, Transform,
+    Property, Segment, Shape, Stroke, Style, TextAlign, Transform,
 };
 use rquickjs::{Ctx, Exception, Function, Object};
 use serde_json::{Value, json};
@@ -370,6 +370,8 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, state: &Shared) -> rquickjs::Result<(
                 .ok_or_else(|| throw(&ctx, "this project hasn't been saved yet: give save() a path"))?,
         };
         let open = doc_mut(&ctx, &mut state, d)?;
+        // Text the script added is measured here, as the editor would.
+        inkframe_render::measure_text(&mut open.doc);
         open.doc.save(&path).map_err(|e| throw(&ctx, format!("couldn't save {}: {e}", path.display())))?;
         open.path = Some(path);
         Ok(())
@@ -378,7 +380,8 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, state: &Shared) -> rquickjs::Result<(
     let s = Rc::clone(state);
     native!("export", move |ctx: Ctx<'js>, d: usize, options: String| -> rquickjs::Result<String> {
         let options = parse(&ctx, &options)?;
-        let state = s.borrow();
+        let mut state = s.borrow_mut();
+        inkframe_render::measure_text(&mut doc_mut(&ctx, &mut state, d)?.doc);
         let open = doc(&ctx, &state, d)?;
         let output =
             crate::files::export(&open.doc, open.path.as_deref(), state.base_dir.as_deref(), &options)
@@ -703,7 +706,7 @@ pub(crate) fn point(ctx: &Ctx<'_>, value: &Value) -> rquickjs::Result<Point> {
     crate::values::point(value).map_err(|e| throw(ctx, e))
 }
 
-/// The shape described by `spec` (`rect`, `ellipse`, `text` with `size`, or `polygon`, with
+/// The shape described by `spec` (`rect`, `ellipse`, `text` with `size` and `align`, or `polygon`, with
 /// `fill`, `stroke` and `strokeWidth`), if any.
 fn shape(ctx: &Ctx<'_>, spec: &Value) -> rquickjs::Result<Option<Element>> {
     let size = |v: &Value| -> rquickjs::Result<(f32, f32)> {
@@ -719,7 +722,17 @@ fn shape(ctx: &Ctx<'_>, spec: &Value) -> rquickjs::Result<Option<Element>> {
         Shape::Ellipse { radius_x: width / 2.0, radius_y: height / 2.0 }
     } else if let Some(content) = spec["text"].as_str() {
         let size = spec["size"].as_f64().unwrap_or(48.0) as f32;
-        Shape::Text(inkframe_core::Text::new(content, size))
+        let mut text = inkframe_core::Text::new(content, size);
+        // Where `at` falls along the line, as the Align setting does.
+        text.align = match spec["align"].as_str() {
+            None | Some("left") => TextAlign::Left,
+            Some("center") => TextAlign::Center,
+            Some("right") => TextAlign::Right,
+            Some(other) => {
+                return Err(throw(ctx, format!("align is \"left\", \"center\" or \"right\", not {other:?}")));
+            }
+        };
+        Shape::Text(text)
     } else if let Some(points) = spec["polygon"].as_array() {
         let points = points.iter().map(|p| point(ctx, p)).collect::<rquickjs::Result<Vec<_>>>()?;
         let Some((&start, rest)) = points.split_first() else {

@@ -21,7 +21,7 @@ const PICTURE_WIDTH: f32 = 220.0;
 
 /// What each example shows, by file name, in the order they're listed.
 /// Examples not named here are listed after these, without a note.
-const ABOUT: [(&str, &str); 5] = [
+const ABOUT: [(&str, &str); 6] = [
     (
         "bouncing-ball",
         tr_later("Keyframes, easing and squash and stretch: the getting-started tutorial, finished."),
@@ -30,6 +30,10 @@ const ABOUT: [(&str, &str); 5] = [
     (
         "ink-and-paint",
         tr_later("Line art coloured with the paint bucket from palette swatches, Harmony-style."),
+    ),
+    (
+        "painted-landscape",
+        tr_later("A sunset painted with the ready-made brushes, a paint layer for each part of the scene."),
     ),
     ("multiplane", tr_later("Scenery at different depths with the camera dollying in. Try the Depth View.")),
     ("particles", tr_later("A campfire of fire, smoke and spark particles, with snow falling.")),
@@ -195,7 +199,10 @@ mod tests {
         let examples = list(&dir);
         assert!(examples.iter().all(|e| e.about.is_some()), "describe new examples in ABOUT: {examples:?}");
         let names: Vec<&str> = examples.iter().map(|e| e.title.as_str()).collect();
-        assert_eq!(names, ["Bouncing ball", "Rig", "Ink and paint", "Multiplane", "Particles"]);
+        assert_eq!(
+            names,
+            ["Bouncing ball", "Rig", "Ink and paint", "Painted landscape", "Multiplane", "Particles"]
+        );
     }
 
     #[test]

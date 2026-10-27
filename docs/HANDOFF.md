@@ -1,7 +1,8 @@
 # Handoff: where Inkframe stands
 
 A checkpoint for picking development back up. Last updated 2026-10-26,
-after the Photoshop-style brushes and the translation work.
+after splitting the biggest files into modules and adding the painted
+landscape example.
 
 What each release added is in `CHANGELOG.md`, how the code is laid out in
 `ARCHITECTURE.md`, and the story of each change in `git log` (every
@@ -14,11 +15,11 @@ and how the work is done.
 - **Branch:** `main`. Each feature is built on its own branch, then
   merged into `main` with a merge commit and pushed.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (856 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (875 tests)
   pass, on macOS locally and on macOS and Windows in CI.
 - **File format:** version 39. Older files load and upgrade automatically
   (`crates/inkframe-core/tests/format_migration.rs`).
-- **Releases:** v0.2.0 to v0.5.1 are tagged. Their GitHub releases are
+- **Releases:** v0.2.0 to v0.7.0 are tagged. Their GitHub releases are
   drafts (with the .dmg, setup.exe and guidebook PDF) that the user
   publishes. Unreleased work is under *Unreleased* in the changelog.
 - **Remote:** https://github.com/WhateverTrevor/inkframe (public). CI runs

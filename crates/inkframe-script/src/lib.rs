@@ -339,6 +339,34 @@ mod tests {
     }
 
     #[test]
+    fn text_a_script_adds_is_aligned_and_measured_when_saved() {
+        let dir = scratch("text");
+        let script = r##"
+            const doc = inkframe.document;
+            doc.addLayer("Title", { text: "Hello", size: 80, align: "center", at: [960, 200] });
+            doc.save("title.inkf");
+        "##;
+        run(Script { base_dir: Some(dir.clone()), ..Script::new(script, Document::default()) }).unwrap();
+        let saved = Document::load(dir.join("title.inkf")).unwrap();
+        let inkframe_core::Shape::Text(text) = &saved.layers[0].drawings[0].elements[0].shape else {
+            panic!("a text layer");
+        };
+        assert_eq!(text.align, inkframe_core::TextAlign::Center);
+        // Measured, so it draws whole: centred on its origin, and rising
+        // above the baseline the origin is on.
+        let box_ = text.measured;
+        assert!(box_.width() > 100.0 && (box_.center().x).abs() < 5.0, "{box_:?}");
+        assert!(box_.min.y < -40.0, "{box_:?}");
+        assert!(
+            run_on(Document::default(), "inkframe.document.addLayer('T', { text: 'x', align: 'middle' })")
+                .unwrap_err()
+                .to_string()
+                .contains("align is")
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn a_script_reads_and_sets_the_selection() {
         let mut doc = Document::default();
         let a = doc.add_layer("A", vec![], 0, inkframe_core::Transform::default());

@@ -28,7 +28,7 @@ fn every_example_opens_and_draws() {
         }
         seen += 1;
     }
-    assert!(seen >= 5, "found {seen} examples");
+    assert!(seen >= 6, "found {seen} examples");
 }
 
 #[test]
@@ -38,4 +38,21 @@ fn the_flower_is_painted_under_its_lines() {
     // The middle, six petals and the leaf.
     assert_eq!(flower.drawings[0].colour_art.len(), 8);
     assert_eq!(doc.palette.swatches.len(), 3);
+}
+
+#[test]
+fn the_landscape_is_painted_on_a_layer_per_part() {
+    let doc = example("painted-landscape.inkf");
+    let names: Vec<&str> = doc.layers.iter().map(|l| l.name.as_str()).collect();
+    for part in ["Sky", "Clouds", "Mountains", "Hills", "Trees", "Grass"] {
+        let layer =
+            doc.layers.iter().find(|l| l.name == part).unwrap_or_else(|| panic!("{part} in {names:?}"));
+        let (canvas, ..) =
+            doc.paint_canvas_at(layer.id, 0).unwrap_or_else(|| panic!("{part} is a paint layer"));
+        assert!(!doc.canvas(canvas).unwrap().is_empty(), "{part} is painted");
+    }
+    // The clouds drift across the sky.
+    let clouds = doc.layers.iter().find(|l| l.name == "Clouds").unwrap();
+    let (start, end) = (clouds.transform_at(0), clouds.transform_at(doc.last_frame()));
+    assert!(end.position.x > start.position.x + 50.0);
 }
