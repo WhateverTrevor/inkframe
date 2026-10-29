@@ -169,6 +169,37 @@ pub fn gradient(canvas: &mut Canvas, gradient: &Gradient, selection: Option<&Sel
     canvas.write_region(0, 0, canvas.width, canvas.height, &pixels);
 }
 
+/// Lasso Fill: everything inside `outline` (in the canvas's pixels, closed
+/// from its last point to its first) painted `color`, its edge smoothed as
+/// the lasso selection's is, and kept to `selection` if there is one.
+/// Returns false if the outline encloses nothing.
+pub fn lasso_fill(
+    canvas: &mut Canvas,
+    outline: &[Point],
+    color: Color,
+    selection: Option<&Selection>,
+) -> bool {
+    let inside = Selection::polygon(canvas.width, canvas.height, outline);
+    if inside.is_empty() {
+        return false;
+    }
+    let before = canvas.read_region(0, 0, canvas.width, canvas.height);
+    let mut pixels = before.clone();
+    let source = premultiply(&[color.r, color.g, color.b, color.a]);
+    for (i, pixel) in pixels.chunks_exact_mut(4).enumerate() {
+        let (x, y) = ((i as u32 % canvas.width) as i64, (i as u32 / canvas.width) as i64);
+        let covered = inside.at(x, y);
+        if covered > 0 {
+            over(pixel, source, covered as f32 / 255.0);
+        }
+    }
+    if let Some(selection) = selection {
+        selection.limit(0, 0, canvas.width, &before, &mut pixels);
+    }
+    canvas.write_region(0, 0, canvas.width, canvas.height, &pixels);
+    true
+}
+
 /// Premultiplied `source` over `pixel`, at `alpha`.
 fn over(pixel: &mut [u8], source: [u8; 4], alpha: f32) {
     let a = source[3] as f32 / 255.0 * alpha;
@@ -180,6 +211,23 @@ fn over(pixel: &mut [u8], source: [u8; 4], alpha: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_lasso_fill_paints_inside_its_outline_and_its_selection() {
+        let mut canvas = Canvas::new(40, 20);
+        let square =
+            [Point::new(5.0, 5.0), Point::new(25.0, 5.0), Point::new(25.0, 15.0), Point::new(5.0, 15.0)];
+        let red = Color::rgb(200, 0, 0);
+        assert!(lasso_fill(&mut canvas, &square, red, None));
+        assert_eq!(canvas.pixel(10, 10), [200, 0, 0, 255]);
+        assert_eq!(canvas.pixel(30, 10), [0; 4], "outside the outline");
+        // Kept to a selection of the left half.
+        let mut canvas = Canvas::new(40, 20);
+        let left = Selection::rectangle(40, 20, Point::new(0.0, 0.0), Point::new(15.0, 20.0));
+        lasso_fill(&mut canvas, &square, red, Some(&left));
+        assert_eq!((canvas.pixel(10, 10)[3], canvas.pixel(20, 10)[3]), (255, 0));
+        assert!(!lasso_fill(&mut canvas, &square[..2], red, None), "a line encloses nothing");
+    }
 
     /// A 60×20 canvas: a black outline of a box from x 10 to 30, the rest
     /// empty.

@@ -191,6 +191,8 @@ pub(crate) enum Command {
     RotateViewLeft,
     RotateViewRight,
     ResetRotation,
+    /// Mirrors the view (not the drawing) left to right, or back.
+    FlipView,
     /// A toolbar slot's key: its last-used tool, or with `cycle` the next
     /// tool in the slot.
     UseSlot {

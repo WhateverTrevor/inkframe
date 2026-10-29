@@ -221,6 +221,8 @@ impl InkframeApp {
                 (Key::Num4, Command::RotateViewLeft),
                 (Key::Num6, Command::RotateViewRight),
                 (Key::Num5, Command::ResetRotation),
+                // Mirror the view, to see a drawing afresh.
+                (Key::H, Command::FlipView),
                 (Key::Backspace, Command::DeleteLayer),
             ];
             // Ctrl+Space: the area under the pointer fills the window, or

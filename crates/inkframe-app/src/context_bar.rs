@@ -282,6 +282,9 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                 );
             }
         }
+        Tool::LassoFill => {
+            ui.weak(tr("Draw round an area: it fills with the paint colour when you let go"));
+        }
         // On a drawn layer, the Eraser cuts lines and fills, as Animate's.
         Tool::Eraser if editor.vector_erase_target().is_some() => {
             ui.label(tr("Erase"));

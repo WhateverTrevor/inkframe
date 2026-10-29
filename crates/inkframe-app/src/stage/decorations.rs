@@ -96,8 +96,7 @@ pub(super) fn draw_emitters(painter: &egui::Painter, editor: &Editor, view: View
         let centre = at(0.0, 0.0);
         painter.circle_stroke(centre, 5.0, (1.5, EMITTER));
         // The heading, turned with the layer as the particles are.
-        let turn = to_stage.b.atan2(to_stage.a) + view.rotation;
-        let angle = emitter.direction.to_radians() + turn;
+        let angle = view.screen_angle(emitter.direction.to_radians() + to_stage.b.atan2(to_stage.a));
         let tip = centre + vec2(angle.cos(), angle.sin()) * 40.0;
         painter.arrow(centre, tip - centre, (1.5, EMITTER));
     }

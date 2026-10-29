@@ -11,6 +11,7 @@ mod decorations;
 mod gradient_handles;
 mod hints;
 mod inside;
+mod lasso_fill;
 mod lattice;
 mod motion;
 mod painting;
@@ -108,6 +109,10 @@ struct View {
     /// about its middle, as when turning paper to draw a curve
     /// comfortably. The drawing itself isn't changed.
     rotation: f32,
+    /// Mirrored left to right about the stage's middle (before turning),
+    /// as painters flip the canvas to see a drawing afresh. The drawing
+    /// itself isn't changed either.
+    flipped: bool,
     timeline_to_stage: Affine,
     stage_to_timeline: Affine,
     /// Screen points per local unit, for sizing hit targets and strokes.
@@ -117,12 +122,13 @@ struct View {
 
 impl View {
     /// A view of the main timeline.
-    fn stage(center: Pos2, size: Vec2, stage_zoom: f32, rotation: f32) -> Self {
+    fn stage(center: Pos2, size: Vec2, stage_zoom: f32, rotation: f32, flipped: bool) -> Self {
         Self {
             center,
             size,
             stage_zoom,
             rotation,
+            flipped,
             timeline_to_stage: Affine::IDENTITY,
             stage_to_timeline: Affine::IDENTITY,
             zoom: stage_zoom,
@@ -149,16 +155,27 @@ impl View {
 
     fn to_screen(self, p: Point) -> Pos2 {
         let on_stage = self.timeline_to_stage.apply(p);
-        self.center
-            + rotate(
-                vec2(on_stage.x, on_stage.y) * self.stage_zoom - self.size * self.stage_zoom / 2.0,
-                self.rotation,
-            )
+        let from_middle = vec2(on_stage.x, on_stage.y) * self.stage_zoom - self.size * self.stage_zoom / 2.0;
+        self.center + rotate(self.mirror(from_middle), self.rotation)
     }
 
     fn to_local(self, p: Pos2) -> Point {
-        let unturned = rotate(p - self.center, -self.rotation) / self.stage_zoom + self.size / 2.0;
+        let from_middle = self.mirror(rotate(p - self.center, -self.rotation));
+        let unturned = from_middle / self.stage_zoom + self.size / 2.0;
         self.stage_to_timeline.apply(Point::new(unturned.x, unturned.y))
+    }
+
+    /// A vector from the stage's middle mirrored left to right, if the view
+    /// is flipped (its own inverse).
+    fn mirror(self, v: Vec2) -> Vec2 {
+        if self.flipped { vec2(-v.x, v.y) } else { v }
+    }
+
+    /// An angle on the stage (clockwise from pointing right, in radians) as
+    /// it shows on screen.
+    fn screen_angle(self, angle: f32) -> f32 {
+        let mirrored = if self.flipped { std::f32::consts::PI - angle } else { angle };
+        mirrored + self.rotation
     }
 
     /// The stage's corners on screen, clockwise from its top left.
@@ -345,6 +362,8 @@ pub struct StageView {
     pan: Vec2,
     /// How far the view is turned, clockwise, in degrees.
     rotation: f32,
+    /// Whether the view is mirrored left to right (see `View::flipped`).
+    flipped: bool,
     gesture: Option<Gesture>,
     /// The path being drawn with the Pen tool, which lasts across many clicks.
     pen: Option<PenPath>,
@@ -357,6 +376,8 @@ pub struct StageView {
     /// The Eraser rubbing shapes on a drawn layer: where it was last, in
     /// the layer's coordinates (see `vector_eraser.rs`).
     erasing: Option<Point>,
+    /// The outline Lasso Fill is drawing, on screen (see `lasso_fill.rs`).
+    lasso_fill: Option<Vec<Pos2>>,
     /// Ctrl+Option-dragging (Alt+right-dragging on Windows) the brush's
     /// size and hardness on the canvas, as in Photoshop: where it began, and
     /// the size and hardness then.
@@ -402,12 +423,14 @@ impl Default for StageView {
             zoom: None,
             pan: Vec2::ZERO,
             rotation: 0.0,
+            flipped: false,
             gesture: None,
             pen: None,
             anchor_selection: None,
             text_editing: None,
             painting: None,
             erasing: None,
+            lasso_fill: None,
             sizing_brush: None,
             moving_symmetry: false,
             selecting: None,
@@ -485,6 +508,15 @@ impl StageView {
         self.rotation = 0.0;
     }
 
+    /// Mirrors the view left to right, or back.
+    pub fn flip_view(&mut self) {
+        self.flipped = !self.flipped;
+    }
+
+    pub fn is_flipped(&self) -> bool {
+        self.flipped
+    }
+
     pub fn zoom_to_actual_size(&mut self, doc: &Document) {
         self.set_zoom_about(doc, self.last_area.center(), 1.0);
     }
@@ -534,6 +566,17 @@ impl StageView {
             painter.add(egui::Shape::mesh(mesh));
         }
         painter.add(egui::Shape::closed_line(corners.to_vec(), (1.0, Color32::from_black_alpha(90))));
+        // A mirrored view is easy to forget, and everything looks wrong
+        // way round in it; say so.
+        if self.flipped {
+            painter.text(
+                area.left_top() + vec2(10.0, 8.0),
+                egui::Align2::LEFT_TOP,
+                tr("Flipped (H)"),
+                egui::FontId::proportional(12.0),
+                crate::theme::ACCENT,
+            );
+        }
 
         // Switching away from the pen (or anything else that changes the tool)
         // finishes the path in progress rather than silently dropping it.
@@ -564,6 +607,9 @@ impl StageView {
         }
         if editor.tool == Tool::Pen {
             self.handle_pen(ui, &response, editor, view);
+        }
+        if editor.tool == Tool::LassoFill {
+            self.handle_lasso_fill(ui, &response, editor, view);
         }
         if editor.tool.paints() {
             self.handle_painting(ui, &response, editor, view);
@@ -598,6 +644,7 @@ impl StageView {
         }
         self.draw_text_editing(ui, &overlay, editor, view);
         self.draw_pen_preview(&overlay, view, response.hover_pos());
+        self.draw_lasso_fill(&overlay, editor);
         // While sizing, the outline stays where the drag began.
         if editor.tool.uses_brush()
             && let Some(pointer) = self.sizing_brush.map(|(origin, ..)| origin).or(response.hover_pos())
@@ -644,7 +691,7 @@ impl StageView {
                 vec2(stage_size.x * cos + stage_size.y * sin, stage_size.x * sin + stage_size.y * cos);
             (available / turned).min_elem().clamp(MIN_ZOOM, MAX_ZOOM)
         });
-        View::stage(area.center() + self.pan, stage_size, zoom, rotation)
+        View::stage(area.center() + self.pan, stage_size, zoom, rotation, self.flipped)
     }
 
     /// Changes zoom while keeping the stage point under `anchor` fixed on
@@ -832,6 +879,9 @@ impl StageView {
                         CameraDrag::Turn => {
                             let centre = view.to_screen(editor.doc.stage_rect().center());
                             let turned = angle_around(centre, pointer) - angle_around(centre, *grab);
+                            // In a mirrored view, turning one way on screen
+                            // turns the other way on the stage.
+                            let turned = if view.flipped { -turned } else { turned };
                             Transform { rotation: start.rotation - turned.to_degrees(), ..*start }
                         }
                         // Up zooms in, down out, by the same factor for the
@@ -1294,7 +1344,7 @@ impl StageView {
             // Subselection tool does.
             Tool::Pen if self.pen.is_none() => self.begin_anchor_edit(editor, view, press, p, alt),
             // Add Bone handles its own presses; see `bones.rs`.
-            Tool::Pen | Tool::Text | Tool::AddBone => None,
+            Tool::Pen | Tool::Text | Tool::AddBone | Tool::LassoFill => None,
             Tool::Brush
             | Tool::Eraser
             | Tool::Eyedropper
@@ -1527,7 +1577,9 @@ impl StageView {
                             CursorIcon::Crosshair
                         }
                     }
-                    (None, Tool::Rectangle | Tool::Ellipse | Tool::Pencil) => CursorIcon::Crosshair,
+                    (None, Tool::Rectangle | Tool::Ellipse | Tool::Pencil | Tool::LassoFill) => {
+                        CursorIcon::Crosshair
+                    }
                     (None, Tool::AddBone) => CursorIcon::Crosshair,
                     (None, Tool::Text) => CursorIcon::Text,
                     // The brush's outline shows its size (`draw_brush_outline`);

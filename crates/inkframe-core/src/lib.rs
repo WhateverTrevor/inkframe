@@ -105,7 +105,7 @@ pub use effects::{
 };
 pub use envelope::Lattice;
 pub use erase::{EraseMode, Rub, erase};
-pub use fill::{BucketSettings, Gradient, GradientShape, bucket_fill, gradient};
+pub use fill::{BucketSettings, Gradient, GradientShape, bucket_fill, gradient, lasso_fill};
 pub use folder::TAG_COLORS;
 pub use font_file::{FontFile, FontFileId};
 pub use freehand::fit_freehand_path;

@@ -45,6 +45,12 @@ notes on GitHub are its section here.
 
 ### Tools
 
+- Lasso Fill, beside the Paint Bucket and Gradient (G): draw round an
+  area and it fills with the paint colour when you let go. On a paint
+  layer it fills pixels inside any selection; on a drawn layer it adds a
+  filled shape under the lines.
+- Flip View Horizontally (H) mirrors the view, not the drawing, to see it
+  afresh, as painters flip the canvas.
 - Hold a tool's key to use it for a moment: let go and the tool before
   comes back, as Photoshop's spring-loaded tools. A tap picks the tool as
   before.

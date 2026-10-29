@@ -246,6 +246,8 @@ pub(crate) fn entries() -> Vec<Entry> {
         entry(tr_later("Zoom In"), tr_later("View"), Command::ZoomIn).keys(shortcuts::ZOOM_IN),
         entry(tr_later("Zoom Out"), tr_later("View"), Command::ZoomOut).keys(shortcuts::ZOOM_OUT),
         entry(tr_later("Fit Stage"), tr_later("View"), Command::ZoomFit).keys(shortcuts::ZOOM_FIT),
+        entry(tr_later("Flip View Horizontally"), tr_later("View"), Command::FlipView)
+            .also(tr_later("mirror canvas check proportions h")),
         entry(tr_later("Rulers"), tr_later("View"), Command::ToggleRulers)
             .icon(Icon::Ruler)
             .keys(shortcuts::RULERS)

@@ -34,9 +34,9 @@ fn strips(area: Rect) -> (Rect, Rect) {
 }
 
 /// The rulers show only when they mean something: asked for, and the view
-/// not turned.
+/// neither turned nor mirrored, since they're read along the stage's edges.
 fn rulers_shown(editor: &Editor, view: View) -> bool {
-    editor.show_rulers && view.rotation.abs() < 1e-4
+    editor.show_rulers && view.rotation.abs() < 1e-4 && !view.flipped
 }
 
 /// A guide's line on screen, from one side of the area to the other.
