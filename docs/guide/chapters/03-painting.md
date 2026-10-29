@@ -28,7 +28,7 @@ While a painting tool is in use, its settings show in the **Tool** tab of Proper
 - **Spacing** and **Smoothing** shape how strokes are laid down.
 - **Pressure** decides what pressing harder does with a tablet: a bigger mark, a more solid one, or both.
 
-[[[]] and [[]]] shrink and grow the brush as you paint, and [[⇧[]] and [[⇧]]] make it softer and harder. The **Eraser** ([[E]]) rubs paint away, and the **Eyedropper** ([[I]]), or [[⌥]]-click with the brush, picks up a colour from the stage.
+[[[]] and [[]]] shrink and grow the brush as you paint, and [[⇧[]] and [[⇧]]] make it softer and harder. The **Eraser** ([[E]]) rubs paint away (on a drawn layer it cuts lines and fills instead; see the previous chapter), and the **Eyedropper** ([[I]]), or [[⌥]]-click with the brush, picks up a colour from the stage.
 
 ![Strokes painted with a few brush presets, each pressed harder through its middle](paint){crop=0.095,0.14,0.664,0.558}
 

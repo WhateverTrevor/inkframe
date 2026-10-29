@@ -23,7 +23,7 @@ When Inkframe opens, it gives you an empty stage 1920 × 1080 pixels in size, tw
 Here's what each numbered part is for:
 
 1. **The menu bar**: every command, grouped as in Animate: **File**, **Edit**, **Modify**, **Select**, **Timeline**, **View**, **Scripts** and **Help**.
-2. **The toolbar**: the drawing, painting, rigging and camera tools. Tools that share a slot have a small triangle in their corner; right-click the slot, or press the tool's key with [[⇧]], to switch between them.
+2. **The toolbar**: the drawing, painting, rigging and camera tools. Tools that share a slot have a small triangle in their corner; right-click the slot, or press the tool's key with [[⇧]], to switch between them. Tap a tool's key to pick it; hold the key down, use the tool and let go, and you're back to the tool you had, as in Photoshop.
 3. **The context bar**: the current tool, and buttons for what you can do right now. With a layer selected, it offers **Symbol**, **Distort**, **Envelope** and **Break apart**; with a bone tool, it offers to add bones or pose them. Its right end turns on the rulers, the perspective guide, onion skins, the light table and rig setup.
 4. **The stage**: your picture. What's inside the frame is what gets exported; you can draw outside it too, for things that will move in.
 5. **Properties**: settings for whatever you're working on, in three tabs: **Tool** (the current tool's settings), **Layer** (the selected layer's) and **Document** (the whole project's: its size, frame rate and length). A long panel is split into sections, such as Transform and Easing: click a section's title to fold it away, and again to open it. Inkframe remembers what you've folded. To find a setting without hunting, type it in the search box at the top of the Layer tab, such as "blur" or "pivot": only the sections that have it show, opened, until you clear the box.
@@ -101,8 +101,13 @@ Use the arrow keys to choose a result and [[Enter]] to run it. Each result shows
 | **Bouncing ball** | Keyframes, easing and squash and stretch. You'll build it yourself in *Chapter 4*. |
 | **Rig** | A character built from parented parts, with lip sync on the mouth. |
 | **Ink and paint** | Line art coloured with the paint bucket from palette swatches, as in Harmony. |
+| **Painted landscape** | A sunset painted with the ready-made brushes, a paint layer for each part of the scene. |
 | **Multiplane** | Scenery at different depths, with the camera dollying in. |
 | **Particles** | A campfire of fire, smoke and sparks under falling snow. |
+
+### Keeping up to date
+
+Once a day, as it starts, Inkframe asks GitHub whether there's a newer version. If there is, it tells you what's new and offers to **Download** it (the installer opens in your browser, to install as you did this one), to remind you **Later**, or to **Skip This Version**. **Help › Check for Updates…** asks straight away, and **Help › Check for Updates Automatically** turns the daily check off. Nothing but the question is sent.
 
 ### Saving your work
 

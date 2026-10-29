@@ -31,6 +31,7 @@ mod drawing;
 mod easing;
 mod effects;
 mod envelope;
+mod erase;
 mod fill;
 mod folder;
 mod font_file;
@@ -62,6 +63,7 @@ mod ruler_guides;
 mod selection;
 mod shape;
 mod skeleton;
+mod sprite_sheet;
 mod switch;
 mod symbol;
 mod template;
@@ -102,6 +104,7 @@ pub use effects::{
     ColorEffect, Effects, Filter, FilterKind, apply_color_effect, apply_filters, filter_margin,
 };
 pub use envelope::Lattice;
+pub use erase::{EraseMode, Rub, erase};
 pub use fill::{BucketSettings, Gradient, GradientShape, bucket_fill, gradient};
 pub use folder::TAG_COLORS;
 pub use font_file::{FontFile, FontFileId};
@@ -133,6 +136,9 @@ pub use shape::{Dash, GradientStop, LineCap, LineJoin, Path, Segment, Shape, Sha
 pub use skeleton::{
     Bone, BoneBinding, BonePoints, CorrectionKey, Dynamics, LayerBend, MESH_CELL, Pose, RestPart,
     RestPoseView, ShapeBones, Skeleton, SmartAction, TurnPreview, corrected, mesh_lines,
+};
+pub use sprite_sheet::{
+    SheetData, SheetImage, SpriteError, SpriteFrame, grid_frames, guess_grid, merge_sheets, read_sheet_data,
 };
 pub use switch::SwitchKey;
 pub use symbol::{ConvertError, Instance, MAX_SYMBOL_DEPTH, Playback, Symbol, SymbolId, SymbolSwap};

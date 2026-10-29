@@ -42,6 +42,8 @@ pub(crate) enum Command {
     New,
     Open,
     ImportImage,
+    /// File › Import Sprite Sheet… (see `sprite_import_dialog.rs`).
+    ImportSpriteSheet,
     ImportAudio,
     ImportFont,
     Save,
@@ -55,6 +57,8 @@ pub(crate) enum Command {
     StartTour,
     /// Help › What's New: this version's changes.
     WhatsNew,
+    /// Help › Check for Updates… (see `updates.rs`).
+    CheckForUpdates,
     /// Opens the Vectorise window for the selected layer.
     Vectorise,
     NewParticleLayer(inkframe_core::Preset),
@@ -250,6 +254,7 @@ pub struct InkframeApp {
     examples: ExamplesWindow,
     scripts: crate::scripts::Scripts,
     lip_sync: LipSyncDialog,
+    sprite_import: crate::sprite_import_dialog::SpriteImportDialog,
     xsheet: ExposureSheet,
     adjust: AdjustDialog,
     library: LibraryView,
@@ -270,6 +275,8 @@ pub struct InkframeApp {
     ctx: egui::Context,
     /// Find a Command (see `command_finder.rs`).
     finder: crate::command_finder::CommandFinder,
+    /// A tool picked by holding its key (see `keys.rs`).
+    held_tool: Option<keys::HeldTool>,
     /// The first-run tour (see `tour.rs`), where the parts of the window
     /// it points at were drawn this frame, and whether it's been seen.
     tour: crate::tour::Tour,
@@ -280,6 +287,8 @@ pub struct InkframeApp {
     toured: bool,
     /// What changed in this version, shown once after an update.
     whats_new: crate::whats_new::WhatsNew,
+    updates: crate::updates::Updates,
+    update_prefs: crate::updates::UpdatePrefs,
     /// The newest version whose What's New has been seen, kept with the
     /// settings: `None` before this one first ran.
     seen_version: Option<String>,
@@ -323,6 +332,7 @@ impl InkframeApp {
             examples: ExamplesWindow::default(),
             scripts: crate::scripts::Scripts::default(),
             lip_sync: LipSyncDialog::default(),
+            sprite_import: Default::default(),
             xsheet: ExposureSheet::default(),
             adjust: AdjustDialog::default(),
             library: LibraryView::default(),
@@ -337,11 +347,14 @@ impl InkframeApp {
             clipboard: None,
             ctx: cc.egui_ctx.clone(),
             finder: Default::default(),
+            held_tool: None,
             tour: Default::default(),
             tour_targets: Default::default(),
             bench: AutoScreenshot::bench().map(|frames| (frames, Vec::new())),
             toured: false,
             whats_new: Default::default(),
+            updates: Default::default(),
+            update_prefs: Default::default(),
             seen_version: None,
             language: None,
         };
@@ -367,6 +380,14 @@ impl InkframeApp {
             }
             app.editor.brushes.picked = prefs.brush_name.clone();
             app.editor.symmetry = prefs.symmetry;
+            app.editor.smoothing = prefs.smoothing.unwrap_or(crate::editor::DEFAULT_SMOOTHING);
+            app.editor.pressure_feel = prefs.pressure_feel;
+            crate::color_picker::set_recent(prefs.recent_colors.clone());
+            app.update_prefs = crate::updates::UpdatePrefs {
+                automatic: !prefs.no_update_check,
+                checked_at: prefs.update_checked_at,
+                skipped: prefs.skipped_version.clone(),
+            };
             app.editor.guides = prefs.guides();
             app.editor.draw_into_layer = !prefs.shape_per_layer;
             app.editor.show_rulers = prefs.show_rulers;
@@ -845,6 +866,22 @@ impl InkframeApp {
                     app.vectorise.apply(&mut app.editor);
                 }
             }
+            if AutoScreenshot::update_available() {
+                app.updates.found(crate::updates::Release {
+                    version: "9.9.0".into(),
+                    page: "https://github.com/WhateverTrevor/inkframe/releases".into(),
+                    installer: None,
+                    notes: "A colour wheel for painting, tools that come back when their key is let go, \
+                            sprite sheets imported to edit, and this: Inkframe telling you when there's \
+                            a new version."
+                        .into(),
+                });
+            }
+            if let Some(sheet) = AutoScreenshot::sprite_sheet()
+                && let Err(message) = app.sprite_import.open(&sheet, &app.editor)
+            {
+                eprintln!("INKFRAME_SCREENSHOT_SPRITES: {message}");
+            }
             if AutoScreenshot::lip_sync() {
                 crate::screenshot::add_dialogue(&mut app.editor);
                 app.lip_sync.open(&app.editor);
@@ -1028,6 +1065,7 @@ impl InkframeApp {
         self.editor.font_problems =
             inkframe_render::sync_project_fonts(&self.editor.doc, project_dir.as_deref());
         self.editor.remeasure_text();
+        crate::tablet::set_feel(self.editor.pressure_feel);
 
         egui::Panel::top("menu_bar").show(ui, |ui| self.menu_bar(ui));
         if let Some(command) = self.finder.show(&ctx, &self.editor) {
@@ -1066,6 +1104,11 @@ impl InkframeApp {
             autosave.tick(&self.editor);
         }
         self.recovery_window(&ctx);
+        // Screenshot runs stay off the network.
+        if self.screenshot.is_none() {
+            self.updates.check_if_due(&mut self.update_prefs);
+        }
+        self.updates.show(&ctx, &mut self.update_prefs);
         let prefs = self.current_prefs();
         if prefs != self.saved_prefs && !ctx.input(|i| i.pointer.any_down()) && self.screenshot.is_none() {
             prefs.save();
@@ -1077,6 +1120,7 @@ impl InkframeApp {
         let unsaved = self.editor.has_unsaved_changes();
         self.batch.show(&ctx, self.editor.path.as_deref().map(|path| (path, unsaved)));
         self.lip_sync.show(&ctx, &mut self.editor, &mut self.audio);
+        self.sprite_import.show(&ctx, &mut self.editor);
         self.xsheet.show(&ctx, &mut self.editor, &mut self.audio);
         self.adjust.show(&ctx, &mut self.editor);
         self.vectorise.show(&ctx, &mut self.editor);

@@ -32,6 +32,15 @@ pub fn notes(version: &str) -> Option<Vec<Part>> {
 fn notes_in(changelog: &str, version: &str) -> Option<Vec<Part>> {
     let heading = format!("## [{version}]");
     let start = changelog.lines().position(|line| line.trim() == heading)? + 1;
+    let section: Vec<&str> =
+        changelog.lines().skip(start).take_while(|line| !line.trim().starts_with("## ")).collect();
+    let parts = parts_of(&section.join("\n"));
+    (!parts.is_empty()).then_some(parts)
+}
+
+/// A version's notes, written as the changelog writes them (as its release
+/// notes are too), in parts to show.
+pub fn parts_of(notes: &str) -> Vec<Part> {
     let mut parts = Vec::new();
     let mut paragraph = String::new();
     let flush = |paragraph: &mut String, parts: &mut Vec<Part>, bullet: bool| {
@@ -42,12 +51,9 @@ fn notes_in(changelog: &str, version: &str) -> Option<Vec<Part>> {
         paragraph.clear();
     };
     let mut in_bullet = false;
-    for line in changelog.lines().skip(start) {
+    for line in notes.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("## ") {
-            break;
-        }
-        if let Some(title) = trimmed.strip_prefix("### ") {
+        if let Some(title) = trimmed.strip_prefix("### ").or_else(|| trimmed.strip_prefix("## ")) {
             flush(&mut paragraph, &mut parts, in_bullet);
             parts.push(Part::Heading(plain(title)));
             in_bullet = false;
@@ -64,7 +70,30 @@ fn notes_in(changelog: &str, version: &str) -> Option<Vec<Part>> {
         }
     }
     flush(&mut paragraph, &mut parts, in_bullet);
-    (!parts.is_empty()).then_some(parts)
+    parts
+}
+
+/// Shows notes' parts: the intro, headings, and bullets with a hanging
+/// indent.
+pub fn show_parts(ui: &mut egui::Ui, parts: &[Part]) {
+    for part in parts {
+        match part {
+            Part::Intro(text) => {
+                ui.label(RichText::new(text).color(theme::TEXT));
+            }
+            Part::Heading(text) => {
+                ui.add_space(8.0);
+                ui.label(RichText::new(text).strong().size(14.0).color(theme::TEXT));
+            }
+            Part::Bullet(text) => {
+                // A hanging indent: wrapped lines line up with the text.
+                ui.horizontal_top(|ui| {
+                    ui.label("•");
+                    ui.add(egui::Label::new(text.as_str()).wrap());
+                });
+            }
+        }
+    }
 }
 
 /// Markdown's marks taken out: bold, code and links' brackets.
@@ -110,26 +139,9 @@ impl WhatsNew {
             .default_width(460.0)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical().max_height(ctx.content_rect().height() * 0.6).show(ui, |ui| {
-                    for part in parts {
-                        match part {
-                            Part::Intro(text) => {
-                                ui.label(RichText::new(text).color(theme::TEXT));
-                            }
-                            Part::Heading(text) => {
-                                ui.add_space(8.0);
-                                ui.label(RichText::new(text).strong().size(14.0).color(theme::TEXT));
-                            }
-                            Part::Bullet(text) => {
-                                // A hanging indent: wrapped lines line up with the text.
-                                ui.horizontal_top(|ui| {
-                                    ui.label("•");
-                                    ui.add(egui::Label::new(text.as_str()).wrap());
-                                });
-                            }
-                        }
-                    }
-                });
+                egui::ScrollArea::vertical()
+                    .max_height(ctx.content_rect().height() * 0.6)
+                    .show(ui, |ui| show_parts(ui, parts));
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui.add(egui::Button::new(tr("Got it")).fill(theme::ACCENT_DIM)).clicked() {

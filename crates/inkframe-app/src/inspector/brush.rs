@@ -163,6 +163,17 @@ pub(super) fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
                 .on_hover_text(tr("Steadies the line by letting it trail behind the pen"));
             ui.add(percent(&mut editor.smoothing));
             ui.end_row();
+            ui.label(tr("Pen feel")).on_hover_text(tr(
+                "How pressing the pen feels: soft paints fully with a light touch, firm takes pressing hard",
+            ));
+            ui.horizontal(|ui| {
+                // Narrow enough that the words either side fit beside it.
+                ui.spacing_mut().slider_width = 110.0;
+                ui.weak(tr("Soft"));
+                ui.add(egui::Slider::new(&mut editor.pressure_feel, -1.0..=1.0).show_value(false));
+                ui.weak(tr("Firm"));
+            });
+            ui.end_row();
         }
     });
     let hint = match tool {

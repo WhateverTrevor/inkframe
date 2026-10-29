@@ -103,6 +103,11 @@ impl InkframeApp {
                     .id_salt(("document", area))
                     .show(ui, |ui| inspector::document(ui, &mut self.editor));
             }
+            Kind::Colour => {
+                egui::ScrollArea::vertical()
+                    .id_salt(("colour", area))
+                    .show(ui, |ui| crate::color_picker::panel(ui, &mut self.editor));
+            }
             Kind::Swatches => {
                 egui::ScrollArea::vertical()
                     .id_salt(("swatches", area))

@@ -28,6 +28,10 @@ impl StageView {
         {
             return;
         }
+        // On a drawn layer, the Eraser cuts shapes rather than pixels.
+        if editor.tool == Tool::Eraser && self.erase_shapes(ui, response, editor, view) {
+            return;
+        }
         if self.painting.is_none() && self.move_symmetry_centre(ui, response, editor, view) {
             return;
         }
@@ -334,6 +338,10 @@ pub(super) fn draw_brush_outline(painter: &egui::Painter, editor: &Editor, view:
 /// layer if the selected layer isn't one (as Photoshop would ask for).
 pub(super) fn start_painting(editor: &mut Editor, view: View, press: Pos2) -> Option<Painting> {
     if editor.paint_target().is_none() {
+        // A new, empty layer has nothing to erase.
+        if editor.tool == Tool::Eraser {
+            return None;
+        }
         editor.add_paint_layer();
     }
     let (layer, canvas, width, height) = editor.paint_target()?;

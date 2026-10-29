@@ -282,6 +282,20 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                 );
             }
         }
+        // On a drawn layer, the Eraser cuts lines and fills, as Animate's.
+        Tool::Eraser if editor.vector_erase_target().is_some() => {
+            ui.label(tr("Erase"));
+            egui::ComboBox::from_id_salt("erase mode")
+                .selected_text(tr(editor.erase_mode.label()))
+                .show_ui(ui, |ui| {
+                    for mode in inkframe_core::EraseMode::ALL {
+                        ui.selectable_value(&mut editor.erase_mode, mode, tr(mode.label()));
+                    }
+                })
+                .response
+                .on_hover_text(tr("What rubbing takes away: Whole shapes takes every shape it touches"));
+            ui.weak(tr("Eraser size: Properties › Tool"));
+        }
         tool if tool.paints() || tool.selects() => {
             if editor.paint_target().is_none() {
                 act(
@@ -296,7 +310,23 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
             if matches!(tool, Tool::Brush | Tool::Eraser | Tool::PatternStamp) {
                 symmetry_menu(ui, &mut editor.symmetry, &mut editor.symmetry_centre);
             }
-            ui.weak(tr("Brush size and the like: Properties › Tool"));
+            // What the pen is sending, so it's plain whether pressure and
+            // tilt arrive (and how the Pressure setting shapes them).
+            match crate::tablet::current() {
+                Some(pen) => {
+                    let lean = pen.tilt.0.hypot(pen.tilt.1).min(1.0) * 90.0;
+                    ui.weak(crate::i18n::tr_args(
+                        "Pen: {pressure}% pressure, leaning {tilt}°",
+                        &[
+                            ("pressure", &format!("{:.0}", pen.pressure * 100.0)),
+                            ("tilt", &format!("{lean:.0}")),
+                        ],
+                    ));
+                }
+                None => {
+                    ui.weak(tr("Brush size and the like: Properties › Tool"));
+                }
+            }
         }
         _ => {}
     }

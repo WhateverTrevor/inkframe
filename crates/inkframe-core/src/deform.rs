@@ -383,7 +383,7 @@ pub(crate) fn subdivide(anchors: &[Anchor], closed: bool, piece: f32) -> Vec<Anc
     out
 }
 
-fn split_cubic(c: [Point; 4], t: f32) -> ([Point; 4], [Point; 4]) {
+pub(crate) fn split_cubic(c: [Point; 4], t: f32) -> ([Point; 4], [Point; 4]) {
     let ab = c[0].lerp(c[1], t);
     let bc = c[1].lerp(c[2], t);
     let cd = c[2].lerp(c[3], t);

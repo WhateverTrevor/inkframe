@@ -28,6 +28,12 @@ impl InkframeApp {
             eraser: Some(self.editor.eraser.clone()),
             brush_name: self.editor.brushes.picked.clone(),
             symmetry: self.editor.symmetry,
+            smoothing: Some(self.editor.smoothing),
+            pressure_feel: self.editor.pressure_feel,
+            recent_colors: crate::color_picker::recent(),
+            no_update_check: !self.update_prefs.automatic,
+            update_checked_at: self.update_prefs.checked_at,
+            skipped_version: self.update_prefs.skipped.clone(),
             folded_sections: self.editor.folded_sections.iter().cloned().collect(),
             ..Prefs::gather(self.editor.guides, self.batch.jobs(), self.batch.chosen_folder())
         }
@@ -85,6 +91,23 @@ impl InkframeApp {
         };
         if let Err(message) = self.editor.import_image(&path) {
             show_error(tr("Couldn't import the image"), &message);
+        }
+    }
+
+    /// File › Import Sprite Sheet…: its picture or its data file.
+    pub(super) fn import_sprite_sheet(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title(tr("Import a sprite sheet"))
+            .add_filter(
+                tr("Sprite sheets and their data files"),
+                &[&IMAGE_EXTENSIONS[..], &["json"]].concat(),
+            )
+            .pick_file()
+        else {
+            return;
+        };
+        if let Err(message) = self.sprite_import.open(&path, &self.editor) {
+            show_error(tr("Couldn't read the sprite sheet"), &message);
         }
     }
 
