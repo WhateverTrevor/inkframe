@@ -343,6 +343,9 @@ impl InkframeApp {
                 item(ui, tr("Rotate View Right (6)"), None, Command::RotateViewRight, true);
                 item(ui, tr("Reset Rotation (5)"), None, Command::ResetRotation, true);
                 ui.weak(tr("Or Shift+Space and drag to turn it freely."));
+                let flipped = self.views.stage().is_flipped();
+                let flip = if flipped { tr("Unflip View (H)") } else { tr("Flip View Horizontally (H)") };
+                item(ui, flip, None, Command::FlipView, true);
                 ui.separator();
                 ui.checkbox(&mut self.editor.onion.enabled, tr("Onion Skin"));
                 ui.checkbox(&mut self.editor.light_table, tr("Light Table"))

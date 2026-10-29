@@ -328,6 +328,21 @@ pub(crate) fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) 
             painter.circle_filled(at(0.12, 0.7), r.width() * 0.09, stroke.color);
             painter.line_segment([at(0.2, 0.35), at(0.12, 0.62)], stroke);
         }
+        Tool::LassoFill => {
+            // A lasso's loop, filled, with its tail trailing off below.
+            let lasso: Vec<Pos2> = (0..24)
+                .map(|i| {
+                    let a = i as f32 / 24.0 * std::f32::consts::TAU;
+                    at(0.5 + 0.42 * a.cos(), 0.42 + 0.3 * a.sin())
+                })
+                .collect();
+            painter.add(egui::Shape::convex_polygon(
+                lasso.clone(),
+                stroke.color.gamma_multiply(0.45),
+                stroke,
+            ));
+            painter.line_segment([at(0.3, 0.66), at(0.18, 0.95)], stroke);
+        }
         Tool::Gradient => {
             // A swatch fading from solid on the left to clear on the right.
             let strips = 8;

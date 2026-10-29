@@ -47,6 +47,8 @@ pub enum Tool {
     Eyedropper,
     PaintBucket,
     Gradient,
+    /// Draw round an area to fill it (see `stage/lasso_fill.rs`).
+    LassoFill,
     Smudge,
     Blur,
     Sharpen,
@@ -82,7 +84,7 @@ impl Tool {
         &[Tool::MagicWand],
         &[Tool::Brush, Tool::Mixer],
         &[Tool::Eraser],
-        &[Tool::PaintBucket, Tool::Gradient],
+        &[Tool::PaintBucket, Tool::Gradient, Tool::LassoFill],
         &[Tool::Smudge, Tool::Blur, Tool::Sharpen],
         &[Tool::Dodge, Tool::Burn],
         &[Tool::CloneStamp, Tool::PatternStamp],
@@ -118,6 +120,7 @@ impl Tool {
             Tool::Eyedropper => tr_later("Eyedropper"),
             Tool::PaintBucket => tr_later("Paint Bucket"),
             Tool::Gradient => tr_later("Gradient"),
+            Tool::LassoFill => tr_later("Lasso Fill"),
             Tool::Smudge => tr_later("Smudge"),
             Tool::Blur => tr_later("Blur"),
             Tool::Sharpen => tr_later("Sharpen"),
@@ -174,6 +177,7 @@ impl Tool {
                 tr_later("Fill an area with colour; on drawn lines, fills what they enclose")
             }
             Tool::Gradient => tr_later("Drag to lay a gradient across the selection or the canvas"),
+            Tool::LassoFill => tr_later("Draw round an area to fill it with the paint colour"),
             Tool::Smudge => tr_later("Push paint around, as with a finger"),
             Tool::Blur => tr_later("Soften the paint under the brush"),
             Tool::Sharpen => tr_later("Crisp up the paint under the brush"),

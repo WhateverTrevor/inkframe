@@ -15,7 +15,7 @@ use inkframe_core::{Layer, LayerId, Playback, SymbolId};
 
 use crate::audio_engine::AudioEngine;
 use crate::convert::color_button;
-use crate::editor::Editor;
+use crate::editor::{Editor, Tool};
 use crate::i18n::{tr, tr_args};
 use crate::icons::Icon;
 use animation::{easing_section, shape_tween_controls, transform_section};
@@ -62,7 +62,7 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) -> 
         // A painting or selecting tool newly picked (or picked when the
         // panel first shows) wants its settings at hand.
         let tool_changed = seen.is_none_or(|s| s.tool != now.tool);
-        if tool_changed && (now.tool.paints() || now.tool.selects()) {
+        if tool_changed && (now.tool.paints() || now.tool.selects() || now.tool == Tool::LassoFill) {
             tab = Tab::Tool;
         } else if seen.is_some_and(|s| s.selection != now.selection) {
             tab = if now.selection.is_some() { Tab::Layer } else { Tab::Document };
@@ -133,7 +133,7 @@ fn layer_tab(ui: &mut egui::Ui, editor: &mut Editor) {
 /// colours and line width new shapes get.
 pub fn tool_settings(ui: &mut egui::Ui, editor: &mut Editor) {
     use crate::editor::Tool;
-    if editor.tool.paints() {
+    if editor.tool.paints() || editor.tool == Tool::LassoFill {
         brush_section(ui, editor);
     } else if editor.tool.selects() {
         selection_section(ui, editor);

@@ -279,6 +279,7 @@ impl InkframeApp {
             Command::RotateViewLeft => self.views.stage().rotate_view(-15.0),
             Command::RotateViewRight => self.views.stage().rotate_view(15.0),
             Command::ResetRotation => self.views.stage().reset_rotation(),
+            Command::FlipView => self.views.stage().flip_view(),
             Command::UseSlot { group, cycle } => editor.use_slot(group, cycle),
             Command::FinishPath => self.views.stage().finish_path(editor, false),
             Command::RemovePathPoint => self.views.stage().remove_last_path_point(),

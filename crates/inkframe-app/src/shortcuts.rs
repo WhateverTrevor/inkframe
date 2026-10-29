@@ -103,7 +103,7 @@ pub const NEXT_DRAWING: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE
 /// share its key; Shift with it steps through them.
 pub fn tool_key(tool: Tool) -> Key {
     match tool {
-        Tool::PaintBucket | Tool::Gradient => Key::G,
+        Tool::PaintBucket | Tool::Gradient | Tool::LassoFill => Key::G,
         // Photoshop has no key for these by default; U is free and near.
         Tool::Smudge | Tool::Blur | Tool::Sharpen => Key::U,
         // O, Photoshop's, is the Oval here.

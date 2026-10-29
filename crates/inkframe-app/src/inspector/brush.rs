@@ -31,6 +31,7 @@ pub(super) fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
                 | Tool::PatternStamp
                 | Tool::PaintBucket
                 | Tool::Gradient
+                | Tool::LassoFill
                 | Tool::Eyedropper
         ) {
             ui.label(tr("Colour"));

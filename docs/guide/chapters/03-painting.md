@@ -30,6 +30,8 @@ While a painting tool is in use, its settings show in the **Tool** tab of Proper
 
 [[[]] and [[]]] shrink and grow the brush as you paint, and [[⇧[]] and [[⇧]]] make it softer and harder. The **Eraser** ([[E]]) rubs paint away (on a drawn layer it cuts lines and fills instead; see the previous chapter), and the **Eyedropper** ([[I]]), or [[⌥]]-click with the brush, picks up a colour from the stage.
 
+Painters flip the canvas to see a drawing afresh: mistakes in proportion jump out mirrored. **View › Flip View Horizontally** ([[H]]) mirrors the view, not the painting, and [[H]] again puts it back; the stage says **Flipped** meanwhile.
+
 ![Strokes painted with a few brush presets, each pressed harder through its middle](paint){crop=0.095,0.14,0.664,0.558}
 
 > Tip: For frame-by-frame painting, give the paint layer a new drawing on each frame (**Modify › New Drawing**). *Chapter 5* covers drawings in detail.
@@ -80,6 +82,7 @@ The rest of the painting tools work as they do in Photoshop:
 |---|---|---|
 | **Paint Bucket** | [[G]] | Fills the area of similar colour you click. **Tolerance** sets how similar; **Contiguous** keeps the fill to connected pixels. |
 | **Gradient** | [[⇧G]] | Drag to blend from the paint colour to a second colour (or to transparent), linear or radial. |
+| **Lasso Fill** | [[⇧G]] | Draw round an area; it fills with the paint colour when you let go, the quickest way to block in colour. On a drawn layer it adds a fill under the lines. |
 | **Mixer Brush** | [[⇧B]] | Paints wet, as Photoshop's does: **Wet** picks up and smears the paint under the brush, **Load** is how much paint it holds before running dry, and **Mix** how much of what it picks up blends into its paint. **Sample All Layers** picks colour up from everything as seen. |
 | **Smudge** | [[U]] | Pushes paint around, as with a finger. |
 | **Blur** and **Sharpen** | [[⇧U]] | Soften or crisp up the paint under the brush. |

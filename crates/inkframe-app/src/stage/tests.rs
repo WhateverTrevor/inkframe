@@ -58,9 +58,11 @@ fn a_drawing_that_stays_put_leaves_no_ghost_but_a_moving_one_does() {
 #[test]
 fn view_round_trips() {
     for rotation in [0.0, 0.7, -2.0] {
-        let view = View::stage(pos2(100.0, 50.0), vec2(640.0, 480.0), 0.5, rotation);
-        let p = Point::new(300.0, 200.0);
-        assert!(view.to_local(view.to_screen(p)).distance(p) < 1e-3);
+        for flipped in [false, true] {
+            let view = View::stage(pos2(100.0, 50.0), vec2(640.0, 480.0), 0.5, rotation, flipped);
+            let p = Point::new(300.0, 200.0);
+            assert!(view.to_local(view.to_screen(p)).distance(p) < 1e-3);
+        }
     }
 }
 
@@ -926,6 +928,51 @@ fn a_tap_with_the_brush_leaves_a_dot() {
     let at = screen(&h, 400.0, 300.0);
     click(&mut h, at);
     assert_eq!(painted_at(&h, 400, 300)[3], 255);
+}
+
+#[test]
+fn painting_in_a_flipped_view_lands_where_it_shows() {
+    let mut editor = Editor::new(Document::default());
+    editor.tool = Tool::Brush;
+    editor.smoothing = 0.0;
+    let mut h = harness(editor);
+    h.state_mut().0.flip_view();
+    h.run();
+    let (from, to) = (screen(&h, 300.0, 500.0), screen(&h, 500.0, 500.0));
+    assert!(from.x > to.x, "mirrored: the stage's left is on the screen's right");
+    drag(&mut h, from, &[to]);
+    assert_eq!(painted_at(&h, 400, 500)[3], 255, "painted where it was drawn on the stage");
+    assert_eq!(painted_at(&h, 1520, 500)[3], 0, "not at its mirror image");
+}
+
+#[test]
+fn lasso_fill_fills_inside_its_outline() {
+    let mut editor = Editor::new(Document::default());
+    editor.tool = Tool::LassoFill;
+    editor.paint_color = Color::rgb(30, 160, 60);
+    let mut h = harness(editor);
+    // Round a square from (300, 300) to (600, 600).
+    let corners = [(300.0, 300.0), (600.0, 300.0), (600.0, 600.0), (300.0, 600.0), (300.0, 310.0)];
+    let path: Vec<Pos2> = corners.iter().map(|&(x, y)| screen(&h, x, y)).collect();
+    drag(&mut h, path[0], &path[1..]);
+    assert_eq!(painted_at(&h, 450, 450), [30, 160, 60, 255], "a new paint layer, filled inside");
+    assert_eq!(painted_at(&h, 700, 450)[3], 0, "and nothing outside");
+}
+
+#[test]
+fn lasso_fill_on_a_drawn_layer_adds_colour_art_under_the_lines() {
+    let (mut editor, id) = editor_with_selected_box();
+    editor.tool = Tool::LassoFill;
+    let lines = editor.doc.layer(id).unwrap().elements_at(0).len();
+    let mut h = harness(editor);
+    let corners = [(200.0, 200.0), (500.0, 200.0), (500.0, 500.0), (200.0, 500.0), (200.0, 210.0)];
+    let path: Vec<Pos2> = corners.iter().map(|&(x, y)| screen(&h, x, y)).collect();
+    drag(&mut h, path[0], &path[1..]);
+    let editor = &h.state().1;
+    let drawing = &editor.doc.layer(id).unwrap().drawings[0];
+    assert_eq!(drawing.elements.len(), lines, "the line art is as it was");
+    assert_eq!(drawing.colour_art.len(), 1);
+    assert_eq!(drawing.colour_art[0].style.fill, Some(editor.paint_color));
 }
 
 #[test]
