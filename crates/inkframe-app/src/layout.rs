@@ -71,6 +71,8 @@ pub enum Kind {
     Brushes,
     /// Every setting of the brush, Photoshop's way (see `brush_panel.rs`).
     BrushSettings,
+    /// The colour picker kept open (see `color_picker.rs`).
+    Colour,
 }
 
 impl Kind {
@@ -92,7 +94,7 @@ impl Kind {
                 Kind::MotionPresets,
             ],
         ),
-        (tr_later("Design"), &[Kind::Swatches, Kind::Align]),
+        (tr_later("Design"), &[Kind::Colour, Kind::Swatches, Kind::Align]),
         (tr_later("Paint"), &[Kind::Brushes, Kind::BrushSettings]),
         (
             tr_later("Project"),
@@ -131,6 +133,7 @@ impl Kind {
             Kind::ScriptConsole => tr_later("Script Console"),
             Kind::Brushes => tr_later("Brushes"),
             Kind::BrushSettings => tr_later("Brush Settings"),
+            Kind::Colour => tr_later("Colour"),
         }
     }
 
@@ -163,6 +166,7 @@ impl Kind {
             Kind::ScriptConsole => Icon::Console,
             Kind::Brushes => Icon::Brushes,
             Kind::BrushSettings => Icon::BrushSettings,
+            Kind::Colour => Icon::Swatches,
         }
     }
 
@@ -185,6 +189,7 @@ impl Kind {
                 | Kind::Bones
                 | Kind::Brushes
                 | Kind::BrushSettings
+                | Kind::Colour
         )
     }
 
@@ -357,7 +362,7 @@ impl Layout {
             }
             Workspace::Painter => {
                 let (tools, stage) = (b.single(Kind::Tools), b.single(Kind::Stage));
-                let upper = b.area(&[Kind::Brushes, Kind::ToolSettings, Kind::Swatches]);
+                let upper = b.area(&[Kind::Colour, Kind::Brushes, Kind::ToolSettings, Kind::Swatches]);
                 let lower = b.area(&[Kind::BrushSettings, Kind::Properties, Kind::History, Kind::Library]);
                 let timeline = b.single(Kind::Timeline);
                 down(0.82, across(TOOLS, tools, across(0.74, stage, down(0.5, upper, lower))), timeline)
@@ -1299,7 +1304,7 @@ mod tests {
         let listed: Vec<Kind> = Kind::GROUPS.iter().flat_map(|(_, kinds)| kinds.iter().copied()).collect();
         let unique: std::collections::HashSet<Kind> = listed.iter().copied().collect();
         assert_eq!(listed.len(), unique.len());
-        assert_eq!(listed.len(), 22);
+        assert_eq!(listed.len(), 23);
     }
 
     #[test]

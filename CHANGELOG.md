@@ -24,6 +24,57 @@ notes on GitHub are its section here.
   both ways.
 - Scripts can read and set a layer's `clipped`.
 
+### Drawing
+
+- The Eraser erases drawings, as Animate's does: on a drawn layer,
+  rubbing across Pencil and Pen lines cuts them (keeping their curves,
+  and a pencil line's widths, either side), and rubbing across a fill
+  takes a bite out of it. The bar above the stage picks what it takes:
+  lines and fills, lines only, fills only, or whole shapes. Before, it
+  made a new paint layer and erased nothing.
+
+### Colour
+
+- A painter's colour picker for every colour: a hue ring round a square
+  of saturation and brightness, Hue, Saturation, Brightness and Opacity
+  sliders, the colour as hex, and the colours used lately (kept for next
+  time).
+- The Colour editor (area menu › Design, and in the Painter workspace)
+  keeps the picker open for the current tool's colour, with the second
+  colour beside it to swap.
+
+### Tools
+
+- Hold a tool's key to use it for a moment: let go and the tool before
+  comes back, as Photoshop's spring-loaded tools. A tap picks the tool as
+  before.
+
+### Import
+
+- File › Import Sprite Sheet… brings a sprite sheet back in to edit, as a
+  paint layer with a drawing per frame. Its data file (Inkframe's,
+  Aseprite's, TexturePacker's) says where each frame is, trimmed or
+  rotated, and how long it shows, across every sheet of a multipack set;
+  a picture on its own is cut into a grid set over a preview.
+
+### Updates
+
+- Inkframe checks once a day for a newer version and, when there is one,
+  shows what's new and offers to download it, remind you later or skip
+  it. Help › Check for Updates… checks at once, and the daily check can
+  be turned off in the Help menu. It asks GitHub for the latest release
+  and sends nothing else.
+
+### Pen tablets
+
+- Pen feel, under Smoothing in a painting tool's settings, sets how
+  pressing the pen feels, from soft (a light touch paints fully) to firm,
+  for every tool that uses pressure. It and Smoothing are remembered.
+- While a painting tool is picked, the bar above the stage shows the
+  pressure and lean the pen is sending.
+- Properties shows the tool's settings when Inkframe starts with a
+  painting tool picked.
+
 File format 40: older versions can't open projects saved with this one.
 
 ## [0.8.0]

@@ -126,6 +126,11 @@
 //! * `INKFRAME_SCREENSHOT_MASKS=1`, with `examples/painted-landscape.inkf` open, masks the
 //!   trees on the right out of the Trees layer and paints shade on a layer clipped to the
 //!   Hills, then leaves the Trees mask picked to paint with the Brush.
+//! * `INKFRAME_SCREENSHOT_ERASE=1`, with `examples/ink-and-paint.inkf` open, rubs the
+//!   Eraser across the flower's lines and fills, and leaves it picked.
+//! * `INKFRAME_SCREENSHOT_SPRITES=walk.json` opens File › Import Sprite Sheet on that sheet
+//!   (its data file or its picture).
+//! * `INKFRAME_SCREENSHOT_UPDATE=1` shows the Update Available window for a made-up release.
 //! * `INKFRAME_SCREENSHOT_PAINT=1` paints a few strokes on a new paint layer, as a pen
 //!   would (pressing harder through the middle of each), to show the brushes; `=tools`
 //!   also uses the bucket, gradient and retouching tools on them; `=select` then selects
@@ -251,6 +256,9 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_MASKS").is_some() {
             masks_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_ERASE").is_some() {
+            erase_demo(editor);
         }
         if var("INKFRAME_SCREENSHOT_BRUSH_SHEET").is_some() {
             brush_sheet_demo(editor);
@@ -426,6 +434,16 @@ impl AutoScreenshot {
     /// Whether to open Batch Export and start a batch.
     pub fn batch() -> bool {
         std::env::var_os("INKFRAME_SCREENSHOT_BATCH").is_some()
+    }
+
+    /// A sprite sheet to open the Import Sprite Sheet window on.
+    pub fn sprite_sheet() -> Option<PathBuf> {
+        std::env::var_os("INKFRAME_SCREENSHOT_SPRITES").map(PathBuf::from)
+    }
+
+    /// Whether to show the Update Available window, for a made-up release.
+    pub fn update_available() -> bool {
+        std::env::var_os("INKFRAME_SCREENSHOT_UPDATE").is_some()
     }
 
     /// Whether to open the Lip Sync window.
@@ -647,6 +665,32 @@ fn masks_demo(editor: &mut Editor) {
         }
     }
     editor.tool = Tool::Brush;
+}
+
+/// The Ink and Paint flower with the Eraser rubbed down through two petals
+/// and across the stem: the lines are cut and the fills bitten into.
+fn erase_demo(editor: &mut Editor) {
+    use inkframe_core::{Point, Rub};
+    let Some(flower) = editor.layers().iter().find(|l| l.name == "Flower").map(|l| l.id) else {
+        eprintln!("INKFRAME_SCREENSHOT_ERASE wants examples/ink-and-paint.inkf open");
+        return;
+    };
+    editor.select(Some(flower));
+    editor.tool = Tool::Eraser;
+    let Some(to_local) =
+        editor.doc.layer(flower).and_then(|l| editor.doc.layer_matrix(l, editor.frame).inverse())
+    else {
+        return;
+    };
+    // Stage points the eraser passes through, a stroke at a time.
+    let strokes: [&[(f32, f32)]; 2] =
+        [&[(1070.0, 470.0), (1085.0, 580.0), (1100.0, 690.0)], &[(900.0, 830.0), (1020.0, 810.0)]];
+    for stroke in strokes {
+        for pair in stroke.windows(2) {
+            let [from, to] = [pair[0], pair[1]].map(|(x, y)| to_local.apply(Point::new(x, y)));
+            editor.rub_shapes(flower, Rub { from, to, radius: 26.0 });
+        }
+    }
 }
 
 fn symmetry_demo(editor: &mut Editor) {

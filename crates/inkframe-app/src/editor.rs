@@ -168,7 +168,7 @@ impl Tool {
             Tool::Mixer => {
                 tr_later("Paint wet, blending with the paint under the brush; Alt-click picks a colour")
             }
-            Tool::Eraser => tr_later("Rub paint away"),
+            Tool::Eraser => tr_later("Rub paint away, or lines and fills on a drawn layer"),
             Tool::Eyedropper => tr_later("Click to pick a colour from the stage"),
             Tool::PaintBucket => {
                 tr_later("Fill an area with colour; on drawn lines, fills what they enclose")
@@ -295,6 +295,9 @@ pub struct Surrounding {
     pub skip: LayerId,
 }
 
+/// How much a brush stroke trails behind the pen to start with.
+pub const DEFAULT_SMOOTHING: f32 = 0.3;
+
 pub struct Editor {
     pub doc: Document,
     pub history: History,
@@ -330,6 +333,9 @@ pub struct Editor {
     /// How much a stroke's path is smoothed, 0 to 1: it trails behind the
     /// pen, steadying a shaky hand.
     pub smoothing: f32,
+    /// How pressing the pen feels, −1 (soft) to 1 (firm); see
+    /// `tablet::set_feel`.
+    pub pressure_feel: f32,
     /// The gradient's other colour (Photoshop's background colour).
     pub second_color: Color,
     /// Strokes painted so far, which seeds each one's chance (scatter,
@@ -451,6 +457,8 @@ pub struct Editor {
     /// The painting tools paint the selected layer's mask rather than the
     /// layer (see `layer_masks.rs`). Choosing another layer stops it.
     pub editing_mask: bool,
+    /// What the Eraser takes on a drawn layer (see `erase.rs` in the core).
+    pub erase_mode: inkframe_core::EraseMode,
     /// The Magic Wand's tolerance and whether it selects only connected
     /// pixels.
     pub wand_tolerance: u8,
@@ -520,8 +528,10 @@ impl Editor {
                 shape: Default::default(),
                 ..BrushSettings::default()
             },
-            smoothing: 0.3,
+            smoothing: DEFAULT_SMOOTHING,
+            pressure_feel: 0.0,
             editing_mask: false,
+            erase_mode: inkframe_core::EraseMode::Normal,
             second_color: Color::WHITE,
             strokes_painted: 0,
             symmetry: inkframe_core::Symmetry::Off,
@@ -1136,6 +1146,36 @@ impl Editor {
             Shape::Paint { canvas, width, height } => Some((layer.id, canvas, width, height)),
             _ => None,
         })
+    }
+
+    /// The drawn layer the Eraser cuts shapes on: the selected layer, if it
+    /// can be drawn on now and holds shapes rather than paint.
+    pub fn vector_erase_target(&self) -> Option<LayerId> {
+        if self.paint_target().is_some() {
+            return None;
+        }
+        let layer = self.selected_layer().filter(|l| !l.locked && l.is_shown_at(self.frame))?;
+        (layer.draws_vectors() && layer.particles.is_none()).then_some(layer.id)
+    }
+
+    /// Rubs the Eraser over the drawing `layer` shows now (see `erase.rs` in
+    /// the core): its line art, and its colour art unless only lines are
+    /// being erased. Shapes pinned to bones stay pinned to the same shapes.
+    pub fn rub_shapes(&mut self, layer: LayerId, rub: inkframe_core::Rub) {
+        let (frame, mode) = (self.frame, self.erase_mode);
+        let Some(layer) = self.doc.layer_mut(layer) else { return };
+        let index = layer.drawing_index_at(frame);
+        let Some(drawing) = layer.drawings.get_mut(index) else { return };
+        for colour_art in [false, true] {
+            let shapes = if colour_art { &drawing.colour_art } else { &drawing.elements };
+            let Some((left, counts)) = inkframe_core::erase(shapes, rub, mode) else { continue };
+            // Back to front, so each shape's place is still its own.
+            for (i, &count) in counts.iter().enumerate().rev().filter(|(_, count)| **count != 1) {
+                drawing.shape_removed(colour_art, i);
+                drawing.shapes_inserted(colour_art, i, count);
+            }
+            *(if colour_art { &mut drawing.colour_art } else { &mut drawing.elements }) = left;
+        }
     }
 
     /// The selection on `canvas`, if there's one (on another canvas doesn't

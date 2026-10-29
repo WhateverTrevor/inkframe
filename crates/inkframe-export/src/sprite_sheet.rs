@@ -513,6 +513,50 @@ mod tests {
             assert!(sheet.width() <= 80 && sheet.height() <= 80);
             assert_eq!(data["meta"]["size"]["w"], sheet.width());
         }
+
+        // Imported again (see `sprite_sheet.rs` in the core): the same
+        // frames, each where it was on the stage, the held one sharing its
+        // drawing.
+        let sheets: Vec<inkframe_core::SheetData> = ["walk-0.json", "walk-1.json"]
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                inkframe_core::read_sheet_data(&std::fs::read_to_string(dir.join(name)).unwrap(), i).unwrap()
+            })
+            .collect();
+        let data = inkframe_core::merge_sheets(sheets);
+        let images: Vec<inkframe_core::SheetImage> = ["walk-0.png", "walk-1.png"]
+            .iter()
+            .map(|name| {
+                let sheet = Pixmap::load_png(dir.join(name)).unwrap();
+                let pixels = sheet.pixels().iter().flat_map(|p| {
+                    let c = p.demultiply();
+                    [c.red(), c.green(), c.blue(), c.alpha()]
+                });
+                inkframe_core::SheetImage {
+                    width: sheet.width(),
+                    height: sheet.height(),
+                    pixels: pixels.collect(),
+                }
+            })
+            .collect();
+        let mut back = Document::default();
+        let holds = vec![1; data.frames.len()];
+        let id = back
+            .add_sprite_layer(inkframe_core::TimelineId::Main, "Walk", 0, &images, &data.frames, &holds)
+            .unwrap();
+        assert_eq!(back.layer(id).unwrap().drawings.len(), 3, "the held frame is drawn once");
+        // The black square, over the stage's white (exported opaque).
+        let black_at = |frame: u32, x: i64, y: i64| {
+            let (canvas, ..) = back.paint_canvas_at(id, frame).unwrap();
+            back.canvas(canvas).unwrap().pixel(x, y) == [0, 0, 0, 255]
+        };
+        assert_eq!(
+            (black_at(0, 10, 18), black_at(0, 54, 18)),
+            (true, false),
+            "the square starts on the left"
+        );
+        assert_eq!((black_at(3, 10, 18), black_at(3, 54, 18)), (false, true), "and ends on the right");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

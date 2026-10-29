@@ -94,6 +94,10 @@ pub(crate) fn entries() -> Vec<Entry> {
         entry(tr_later("Import to Stage…"), tr_later("File"), Command::ImportImage)
             .keys(shortcuts::IMPORT)
             .also(tr_later("picture image photo psd")),
+        entry(tr_later("Check for Updates…"), tr_later("Help"), Command::CheckForUpdates)
+            .also(tr_later("new version upgrade download")),
+        entry(tr_later("Import Sprite Sheet…"), tr_later("File"), Command::ImportSpriteSheet)
+            .also(tr_later("sprites game frames texturepacker aseprite json")),
         entry(tr_later("Import Audio…"), tr_later("File"), Command::ImportAudio)
             .icon(Icon::Speaker)
             .also(tr_later("sound music voice")),

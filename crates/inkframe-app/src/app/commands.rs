@@ -20,6 +20,7 @@ impl InkframeApp {
             }
             Command::Open => self.open(),
             Command::ImportImage => self.import_image(),
+            Command::ImportSpriteSheet => self.import_sprite_sheet(),
             Command::ImportAudio => self.import_audio(),
             Command::ImportFont => self.import_fonts(),
             Command::Save => {
@@ -32,6 +33,7 @@ impl InkframeApp {
             Command::BatchExport => self.batch.open(),
             Command::OpenExample => self.examples.open(&self.ctx),
             Command::StartTour => self.tour.start(),
+            Command::CheckForUpdates => self.updates.check(true),
             Command::WhatsNew => {
                 if !self.whats_new.open() {
                     show_error(tr("What's New"), tr("This build has no notes yet: it's between releases."));

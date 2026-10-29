@@ -27,6 +27,7 @@ brushes          | -                           | BRUSHES=1
 textures         | -                           | TEXTURES=1
 rulers           | examples/bouncing-ball.inkf | RULERS=1
 perspective      | -                           | PERSPECTIVE=1
+erase            | examples/ink-and-paint.inkf | ERASE=1
 
 # Chapter 3: Painting and colour
 paint            | -                           | PAINT=1

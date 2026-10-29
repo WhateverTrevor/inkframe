@@ -47,6 +47,8 @@ A sprite sheet crops each frame to what's drawn, and packs frames that are the s
 
 ![The Export window set to a sprite sheet, with transparency](export-sprite){crop=0,0,0.4,0.36}
 
+Sprite sheets come back in too, to edit: **File › Import Sprite Sheet…** takes a sheet's picture or its data file and makes a paint layer of its frames, a drawing for each, timed as the sheet says. Sheets from Inkframe, Aseprite and TexturePacker carry data saying where each frame is (trimmed or turned to pack tighter, which is undone); a picture on its own is cut into the grid you set, over a preview, leaving out empty cells. Into an empty project, it also makes the stage the size of a frame.
+
 > Tip: **File › Export PSD…** saves the current frame as a layered Photoshop file, for painting over or printing.
 
 ## Interactive web pages

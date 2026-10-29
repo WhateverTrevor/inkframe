@@ -51,6 +51,18 @@ pub struct Prefs {
     pub brush_name: Option<String>,
     /// Symmetry painting, as last left.
     pub symmetry: inkframe_core::Symmetry,
+    /// The brushes' Smoothing (none for the default) and how pressing the
+    /// pen feels (see `tablet::set_feel`), as last left.
+    pub smoothing: Option<f32>,
+    pub pressure_feel: f32,
+    /// The colour picker's recent colours, newest first.
+    pub recent_colors: Vec<inkframe_core::Color>,
+    /// Checking for updates (see `updates.rs`): whether the automatic
+    /// check was turned off (saved this way round so a missing value means
+    /// on), when it last ran, and a version chosen to be skipped.
+    pub no_update_check: bool,
+    pub update_checked_at: Option<u64>,
+    pub skipped_version: Option<String>,
 }
 
 /// A Batch Export job as saved: the format by its short name, the same
@@ -93,6 +105,12 @@ impl Prefs {
             eraser: None,
             brush_name: None,
             symmetry: inkframe_core::Symmetry::Off,
+            smoothing: None,
+            pressure_feel: 0.0,
+            recent_colors: Vec::new(),
+            no_update_check: false,
+            update_checked_at: None,
+            skipped_version: None,
         }
     }
 

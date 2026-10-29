@@ -59,7 +59,10 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor, audio: &mut AudioEngine) -> 
     let mut tab = ui.data(|d| d.get_temp::<Tab>(tab_id)).unwrap_or(Tab::Layer);
     let seen = ui.data(|d| d.get_temp::<Seen>(seen_id));
     if seen != Some(now) {
-        if seen.is_some_and(|s| s.tool != now.tool) && (now.tool.paints() || now.tool.selects()) {
+        // A painting or selecting tool newly picked (or picked when the
+        // panel first shows) wants its settings at hand.
+        let tool_changed = seen.is_none_or(|s| s.tool != now.tool);
+        if tool_changed && (now.tool.paints() || now.tool.selects()) {
             tab = Tab::Tool;
         } else if seen.is_some_and(|s| s.selection != now.selection) {
             tab = if now.selection.is_some() { Tab::Layer } else { Tab::Document };

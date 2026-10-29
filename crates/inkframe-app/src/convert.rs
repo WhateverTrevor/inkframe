@@ -10,16 +10,8 @@ pub fn to_color32(c: Color) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(c.r, c.g, c.b, c.a)
 }
 
-/// Shows a color button that edits `color` in place, returning true when it
-/// changed. Works with straight alpha so low-opacity colors don't lose
-/// precision the way a round trip through egui's premultiplied `Color32` would.
+/// A colour button that edits `color` in place through the colour picker
+/// (see `color_picker.rs`), returning true when it changed.
 pub fn color_button(ui: &mut egui::Ui, color: &mut Color) -> bool {
-    let mut rgba = [color.r, color.g, color.b, color.a];
-    if ui.color_edit_button_srgba_unmultiplied(&mut rgba).changed() {
-        let [r, g, b, a] = rgba;
-        *color = Color::rgba(r, g, b, a);
-        true
-    } else {
-        false
-    }
+    crate::color_picker::color_button(ui, color)
 }

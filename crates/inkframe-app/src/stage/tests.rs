@@ -21,6 +21,41 @@ fn ghosts_are_painted_from_coverage_in_their_tint() {
 }
 
 #[test]
+fn a_drawing_that_stays_put_leaves_no_ghost_but_a_moving_one_does() {
+    let mut doc = Document::default();
+    (doc.width, doc.height) = (60, 30);
+    // A soft-edged disc: its anti-aliased rim is where a ghost of itself
+    // would show through.
+    let disc = Element {
+        shape: Shape::Ellipse { radius_x: 8.0, radius_y: 8.0 },
+        style: Style { fill: Some(Color::WHITE), stroke: None, gradient: None },
+    };
+    let id = doc.add_layer("Disc", vec![disc], 0, Transform::at(Point::new(15.0, 15.0)));
+    doc.layer_mut(id).unwrap().track.set_pose(2, Transform::at(Point::new(15.0, 15.0)));
+    let mut editor = Editor::new(doc);
+    editor.set_frame(1);
+    let onion = OnionSkin { enabled: true, before: 1, after: 1 };
+    let ghosts_over_black = |editor: &Editor| {
+        let mut pixmap = tiny_skia::Pixmap::new(60, 30).unwrap();
+        pixmap.fill(tiny_skia::Color::BLACK);
+        draw_onion_skins(&mut pixmap, editor, onion, 1.0, &mut GhostCache::default());
+        pixmap
+    };
+    let still = ghosts_over_black(&editor);
+    assert!(still.pixels().iter().all(|p| (p.red(), p.green(), p.blue()) == (0, 0, 0)), "no rim of ghost");
+
+    // Moved on the next frame (and held till then): its ghost shows where
+    // it's going, and none of the frame before, which is the same.
+    let track = &mut editor.doc.layer_mut(id).unwrap().track;
+    track.set_pose(2, Transform::at(Point::new(45.0, 15.0)));
+    track.set_pose(1, Transform::at(Point::new(15.0, 15.0)));
+    let moving = ghosts_over_black(&editor);
+    let ghost = moving.pixel(45, 15).unwrap();
+    assert!(ghost.green() > 30, "a green ghost ahead: {ghost:?}");
+    assert_eq!(moving.pixel(15, 15).unwrap().green(), 0, "none under the drawing itself");
+}
+
+#[test]
 fn view_round_trips() {
     for rotation in [0.0, 0.7, -2.0] {
         let view = View::stage(pos2(100.0, 50.0), vec2(640.0, 480.0), 0.5, rotation);
@@ -906,6 +941,30 @@ fn the_eraser_takes_paint_away() {
     drag(&mut h, from, &[to]);
     assert_eq!(painted_at(&h, 600, 500), [0; 4]);
     assert_eq!(painted_at(&h, 400, 500)[3], 255);
+}
+
+#[test]
+fn the_eraser_cuts_a_pencil_line_on_a_drawn_layer() {
+    let mut editor = Editor::new(Document::default());
+    editor.tool = Tool::Pencil;
+    let mut h = harness(editor);
+    let (from, to) = (screen(&h, 300.0, 500.0), screen(&h, 900.0, 500.0));
+    drag(&mut h, from, &[to]);
+    let layers = h.state().1.layers().len();
+    let line = h.state().1.selection.expect("the pencil's layer is selected");
+    h.state_mut().1.tool = Tool::Eraser;
+    let (from, to) = (screen(&h, 600.0, 400.0), screen(&h, 600.0, 600.0));
+    drag(&mut h, from, &[to]);
+
+    let editor = &h.state().1;
+    assert_eq!(editor.layers().len(), layers, "no paint layer was made to erase on");
+    let layer = editor.doc.layer(line).unwrap();
+    let pieces = layer.elements_at(editor.frame);
+    assert_eq!(pieces.len(), 2, "cut in two");
+    // Nothing is left where the eraser went, in the layer's own coordinates.
+    let middle =
+        editor.doc.layer_matrix(layer, editor.frame).inverse().unwrap().apply(Point::new(600.0, 500.0));
+    assert!(pieces.iter().all(|e| !e.shape.hit_test(middle, &e.style, 0.0)));
 }
 
 #[test]

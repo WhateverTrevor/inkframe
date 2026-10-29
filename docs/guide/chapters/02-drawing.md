@@ -37,7 +37,13 @@ Some useful things to know about layers:
 
 The simplest drawing tools are the **Rectangle** ([[R]]) and **Oval** ([[O]]): drag on the stage to draw one, holding [[⇧]] for a square or a circle. They're drawn in the **Fill** and **Stroke** colours under the toolbar; click either to pick a colour, or ⊘ beside it for none.
 
+Every colour in Inkframe is picked the same way: a hue ring round a square of saturation and brightness, with sliders for **Hue**, **Saturation**, **Brightness** and **Opacity**, the colour as **Hex** to copy or type, and the colours you've used lately. The **Colour** editor (in any area's menu, under Design, and in the Painter workspace) keeps the picker open for the colour the current tool uses.
+
 The **Pencil** ([[Y]]) draws freehand lines. With a pen tablet, pressing harder draws a thicker line, and its ends taper as a brush's would. Both are options in its settings; with both off, it draws even strokes.
+
+The **Eraser** ([[E]]) works on drawings too, as Animate's does: rub across lines and they're cut, leaving the pieces either side as smooth as they were; rub across a fill and it takes a bite out of it. The bar above the stage sets what it takes: **Lines and fills**, **Lines only**, **Fills only**, or **Whole shapes**, which takes every shape it touches. Its size is in Properties, as for painting. In {{fig:erase}}, it's been rubbed down through the flower's right-hand petals and across its stem.
+
+![The Eraser rubbed through a flower's petals and stem, cutting its lines and fills](erase){crop=0.36,0.28,0.32,0.46}
 
 The **Text** tool ([[T]]) types on the stage: click and type, and press [[Esc]] when you're done. Text is real vector outlines, so it stays sharp at any size and animates like any other layer.
 

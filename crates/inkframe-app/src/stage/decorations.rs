@@ -159,6 +159,17 @@ pub(super) fn draw_onion_skins(
         tint: None,
         opacity: 1.0,
     };
+    // What this frame covers itself. A ghost only shows where its frame
+    // differs from this one: a drawing that stays put would otherwise sit
+    // under itself, and its soft edges would let a tinted copy show through
+    // as a coloured rim.
+    let current: Vec<u8> = match tiny_skia::Pixmap::new(width, height) {
+        Some(mut alone) => {
+            render_timeline_into(&mut alone, doc, timeline, frame, to_stage, None, &options);
+            alone.pixels().iter().map(|p| p.alpha()).collect()
+        }
+        None => Vec::new(),
+    };
     let mut wanted = Vec::new();
     // Farthest first, so nearer ghosts paint on top.
     for distance in (1..=onion.before).rev() {
@@ -181,7 +192,9 @@ pub(super) fn draw_onion_skins(
             alone.pixels().iter().map(|p| p.alpha()).collect()
         });
         let opacity = 0.45 * (count - distance + 1) as f32 / count as f32;
-        paint_coverage(pixmap, coverage, tint, opacity);
+        let differs: Vec<u8> =
+            coverage.iter().zip(&current).map(|(&ghost, &now)| ghost.saturating_sub(now)).collect();
+        paint_coverage(pixmap, &differs, tint, opacity);
     }
 }
 

@@ -7,6 +7,23 @@ use super::{Command, InkframeApp};
 use crate::editor::Tool;
 use crate::shortcuts;
 
+/// A tool picked by its key, which may only be held for a moment, as
+/// Photoshop's spring-loaded tools: hold E, rub something out, let go, and
+/// the brush is back. A quick tap picks the tool for good.
+pub(super) struct HeldTool {
+    key: Key,
+    /// The tool to go back to.
+    back_to: Tool,
+    /// When the key went down.
+    since: f64,
+    /// Whether the tool was used while the key was held.
+    used: bool,
+}
+
+/// How long a tool's key must be held for letting go to bring back the
+/// tool before, if the tool wasn't used meanwhile.
+const HOLD_SECONDS: f64 = 0.35;
+
 impl InkframeApp {
     pub(super) fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         use shortcuts::*;
@@ -14,6 +31,9 @@ impl InkframeApp {
         if self.finder.is_open() {
             return;
         }
+        self.release_held_tool(ctx);
+        let (held_key, tool_before) = (self.held_tool.as_ref().map(|h| h.key), self.editor.tool);
+        let mut tool_key_pressed = None;
 
         // `consume_shortcut` ignores extra Shift, so ⌘⇧S would also match ⌘S.
         // Check the shifted variants first so they win.
@@ -217,8 +237,12 @@ impl InkframeApp {
                 let key = tool_key(group[0]);
                 if input.consume_key(Modifiers::SHIFT, key) {
                     commands.push(Command::UseSlot { group, cycle: true });
+                } else if held_key == Some(key) {
+                    // The key repeating while it's held picks nothing new.
+                    input.consume_key(Modifiers::NONE, key);
                 } else if input.consume_key(Modifiers::NONE, key) {
                     commands.push(Command::UseSlot { group, cycle: false });
+                    tool_key_pressed = Some(key);
                 }
             }
         });
@@ -226,9 +250,31 @@ impl InkframeApp {
         for command in commands {
             self.execute(command);
         }
+        if let Some(key) = tool_key_pressed
+            && self.editor.tool != tool_before
+        {
+            let since = ctx.input(|i| i.time);
+            self.held_tool = Some(HeldTool { key, back_to: tool_before, since, used: false });
+        }
         if let Some(text) = pasted_text {
             let center = self.views.stage().visible_center(&self.editor);
             self.editor.paste_text(&text, center);
+        }
+    }
+
+    /// Once a held tool's key is let go: the tool before comes back if the
+    /// key was held a while or the tool used, and stays otherwise.
+    fn release_held_tool(&mut self, ctx: &egui::Context) {
+        let Some(held) = &mut self.held_tool else { return };
+        let (down, pressed, now) = ctx.input(|i| (i.key_down(held.key), i.pointer.any_pressed(), i.time));
+        held.used |= pressed;
+        if down {
+            return;
+        }
+        if let Some(held) = self.held_tool.take()
+            && (held.used || now - held.since >= HOLD_SECONDS)
+        {
+            self.editor.use_tool(held.back_to);
         }
     }
 }

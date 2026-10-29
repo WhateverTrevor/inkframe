@@ -21,6 +21,7 @@ mod rulers;
 mod selecting;
 mod text_editing;
 mod transform_handles;
+mod vector_eraser;
 mod width_tool;
 
 use std::collections::HashMap;
@@ -353,6 +354,9 @@ pub struct StageView {
     text_editing: Option<TextEditing>,
     /// A brush or eraser stroke in progress.
     painting: Option<Painting>,
+    /// The Eraser rubbing shapes on a drawn layer: where it was last, in
+    /// the layer's coordinates (see `vector_eraser.rs`).
+    erasing: Option<Point>,
     /// Ctrl+Option-dragging (Alt+right-dragging on Windows) the brush's
     /// size and hardness on the canvas, as in Photoshop: where it began, and
     /// the size and hardness then.
@@ -403,6 +407,7 @@ impl Default for StageView {
             anchor_selection: None,
             text_editing: None,
             painting: None,
+            erasing: None,
             sizing_brush: None,
             moving_symmetry: false,
             selecting: None,

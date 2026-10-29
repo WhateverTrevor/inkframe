@@ -41,6 +41,7 @@ impl InkframeApp {
                 item(ui, tr("Open…"), Some(shortcuts::OPEN), Command::Open, true);
                 item(ui, tr("Open Example…"), None, Command::OpenExample, true);
                 item(ui, tr("Import to Stage…"), Some(shortcuts::IMPORT), Command::ImportImage, true);
+                item(ui, tr("Import Sprite Sheet…"), None, Command::ImportSpriteSheet, true);
                 item(ui, tr("Import Audio…"), None, Command::ImportAudio, true);
                 item(ui, tr("Import Font…"), None, Command::ImportFont, true);
                 ui.separator();
@@ -431,6 +432,10 @@ impl InkframeApp {
                 item(ui, tr("Find a Command…"), Some(shortcuts::FIND_COMMAND), Command::OpenFinder, true);
                 item(ui, tr("Take the Tour"), None, Command::StartTour, true);
                 item(ui, tr("What's New"), None, Command::WhatsNew, true);
+                item(ui, tr("Check for Updates…"), None, Command::CheckForUpdates, true);
+                ui.checkbox(&mut self.update_prefs.automatic, tr("Check for Updates Automatically")).on_hover_text(tr(
+                    "Once a day at startup, Inkframe asks GitHub for its latest release; nothing else is sent",
+                ));
                 ui.separator();
                 if ui.button(tr("Inkframe for Artists (Guidebook)")).clicked() {
                     open_in_browser(GUIDEBOOK_URL);

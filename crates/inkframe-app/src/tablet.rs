@@ -16,6 +16,7 @@
 //! A mouse reports no pressure and paints at full strength.
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use egui::Pos2;
 
@@ -31,9 +32,32 @@ pub struct Pen {
 /// What the macOS monitor saw last: `None` once a mouse moves instead.
 static LATEST: Mutex<Option<Pen>> = Mutex::new(None);
 
+/// The Pressure setting (see [`set_feel`]), as an `f32`'s bits.
+static FEEL: AtomicU32 = AtomicU32::new(0);
+
+/// How pressing the pen feels, from −1 (soft: a light touch paints fully)
+/// through 0 (as the pen reports it) to 1 (firm: it takes pressing hard),
+/// as the pressure curves of Krita and Clip Studio set. Every tool reads
+/// pressure through here, so it applies to them all.
+pub fn set_feel(feel: f32) {
+    FEEL.store(feel.clamp(-1.0, 1.0).to_bits(), Ordering::Relaxed);
+}
+
+/// A pen's pressure as the Pressure setting shapes it.
+fn felt(pressure: f32) -> f32 {
+    shaped(pressure, f32::from_bits(FEEL.load(Ordering::Relaxed)))
+}
+
+/// `pressure` raised to a power from ½ (soft) to 2 (firm) as `feel` goes
+/// from −1 to 1, which bends the curve but keeps 0 and 1 where they are.
+fn shaped(pressure: f32, feel: f32) -> f32 {
+    pressure.clamp(0.0, 1.0).powf(2f32.powf(feel))
+}
+
 /// The pen's state, if a pen (rather than a mouse) is in use.
 pub fn current() -> Option<Pen> {
-    *LATEST.lock().expect("not poisoned")
+    let pen = (*LATEST.lock().expect("not poisoned"))?;
+    Some(Pen { pressure: felt(pen.pressure), ..pen })
 }
 
 /// Starts listening for pen events. Call once, at startup.
@@ -81,7 +105,7 @@ pub fn samples(input: &egui::InputState) -> Vec<Sample> {
         .iter()
         .filter_map(|event| match event {
             egui::Event::Touch { pos, force: Some(force), .. } => {
-                Some(Sample { pos: *pos, pressure: *force, tilt: (0.0, 0.0), stylus: true })
+                Some(Sample { pos: *pos, pressure: felt(*force), tilt: (0.0, 0.0), stylus: true })
             }
             _ => None,
         })
@@ -155,6 +179,16 @@ mod tests {
     fn input(events: Vec<egui::Event>) -> egui::InputState {
         let raw = egui::RawInput { events, ..Default::default() };
         egui::InputState::default().begin_pass(raw, false, 1.0, egui::InputOptions::default())
+    }
+
+    #[test]
+    fn the_pressure_setting_bends_the_curve_but_not_its_ends() {
+        for feel in [-1.0, 0.0, 1.0] {
+            assert_eq!((shaped(0.0, feel), shaped(1.0, feel)), (0.0, 1.0));
+        }
+        assert!((shaped(0.25, -1.0) - 0.5).abs() < 1e-5, "soft: a quarter press paints half");
+        assert!((shaped(0.5, 1.0) - 0.25).abs() < 1e-5, "firm: half a press paints a quarter");
+        assert_eq!(shaped(0.4, 0.0), 0.4);
     }
 
     #[test]
