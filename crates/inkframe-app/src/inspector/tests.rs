@@ -65,7 +65,7 @@ fn a_section_folds_away_and_opens_again() {
 }
 
 #[test]
-fn with_several_layers_selected_effects_can_be_given_to_them_all() {
+fn with_several_layers_selected_effects_are_left_alone_until_changed() {
     let mut editor = Editor::new(Document::default());
     let ids: Vec<LayerId> = (0..3)
         .map(|i| {
@@ -87,9 +87,10 @@ fn with_several_layers_selected_effects_can_be_given_to_them_all() {
     h.set_size(vec2(360.0, 3000.0));
     h.run();
     assert!(h.query_by_label("3 layers selected").is_some());
-    h.get_by_label("Apply to the other 2 selected layers").click();
-    h.run();
-    for &id in &ids {
-        assert_eq!(h.state().doc.layer(id).unwrap().track.effects_at(0.0), fx);
+    // Showing the panel carries nothing; a change in it would (see
+    // `multi_edit.rs`), as every setting's does.
+    for &id in &ids[..2] {
+        assert_ne!(h.state().doc.layer(id).unwrap().track.effects_at(0.0), fx);
     }
+    assert_eq!(h.state().doc.layer(last).unwrap().track.effects_at(0.0), fx);
 }

@@ -86,6 +86,7 @@ The rest of the painting tools work as they do in Photoshop:
 | **Mixer Brush** | [[⇧B]] | Paints wet, as Photoshop's does: **Wet** picks up and smears the paint under the brush, **Load** is how much paint it holds before running dry, and **Mix** how much of what it picks up blends into its paint. **Sample All Layers** picks colour up from everything as seen. |
 | **Smudge** | [[U]] | Pushes paint around, as with a finger. |
 | **Blur** and **Sharpen** | [[⇧U]] | Soften or crisp up the paint under the brush. |
+| **Liquify** | [[⇧U]] | Moves the paint rather than adding any, as Photoshop's Liquify: **Push** drags it along the stroke, and **Bloat**, **Pucker** and the two **Twirls** swell it, shrink it or turn it round the brush's middle, working on while the brush is held still. |
 | **Dodge** and **Burn** | [[D]], [[⇧D]] | Lighten or darken it. **Range** picks the shadows, midtones or highlights. |
 | **Clone Stamp** | [[S]] | [[⌥]]-click where to copy from, then paint a copy elsewhere. |
 | **Pattern Stamp** | [[⇧S]] | Paints a pattern with the whole brush: its dark parts in the paint colour, its light parts in the **Light colour**. Pick the pattern, or **Import…** a picture, in the Tool tab. |
@@ -100,6 +101,10 @@ Drag inside a selection with the Selection tool to move those pixels. **Select �
 
 **Modify › Adjustments** changes the colours of the selected paint layer (or just the selection): **Brightness/Contrast**, **Hue/Saturation**, **Levels** and **Curves**, each previewed live as you drag.
 
+To grade a whole scene and keep changing your mind, use **Modify › New Adjustment Layer** instead: the same four adjustments as a layer of their own, which change everything beneath it as it's drawn, painting and drawings alike. Its settings stay in its properties, so the grade can be changed, faded with the layer's opacity, kept to part of the picture with a layer mask, or hidden, at any time. Clipped to a layer (see *Clipping masks and layer masks*, below), it changes only that layer. In {{fig:adjustment}}, a Hue/Saturation layer on top warms the whole painted landscape.
+
+![A Hue/Saturation adjustment layer warming the Painted Landscape, its settings in Properties](adjustment)
+
 Every layer also has a **Blend** mode in its properties, which sets how it mixes with what's beneath it: **Multiply** for shading, **Screen** for glows, and the rest of Photoshop's modes. In {{fig:paint-select}}, an elliptical selection's hue has been shifted, and the layer set to Multiply.
 
 ![An elliptical selection, its hue shifted, on a layer blended with Multiply](paint-select)
@@ -110,7 +115,7 @@ Two of Photoshop's ways of keeping paint where it belongs, without erasing anyth
 
 A *clipping mask* shows a layer only where the layer beneath it has paint. Paint a figure, add a layer above it, and choose **Modify › Create Clipping Mask** ([[⌥⌘G]]), or tick **Clipped** in its properties: now shading painted over the figure, however loosely, stays on the figure. Several layers in a row can clip to the same layer, their *base*; the base's opacity and blend mode apply to them all, and hiding it hides them too. The timeline indents a clipped layer with an arrow pointing down to its base.
 
-A *layer mask* hides parts of a layer and keeps them. **Modify › Layer Mask › Add** (or **Add** beside **Layer mask** in the properties) gives the layer a mask, and starts you painting it: the brushes, eraser and other painting tools paint the mask rather than the layer, dark hiding it and light showing it, so a soft brush gives a soft edge and erasing brings the layer back. The mask's picture sits beside the layer's in the timeline; click it to paint the mask, and click the layer's own picture to paint the layer again. The bar above the stage says which you're painting. From the same menu, **Turn Off** shows the whole layer while keeping the mask, **Apply** erases what it hides from a paint layer for good, and **Delete** removes it.
+A *layer mask* hides parts of a layer and keeps them. **Modify › Layer Mask › Add** (or **Add** beside **Layer mask** in the properties) gives the layer a mask, and starts you painting it: the brushes, eraser and other painting tools paint the mask rather than the layer, dark hiding it and light showing it, so a soft brush gives a soft edge and erasing brings the layer back. The mask's picture sits beside the layer's in the timeline; click it to paint the mask, and click the layer's own picture to paint the layer again. The bar above the stage says which you're painting. From the same menu, **Turn Off** shows the whole layer while keeping the mask, **Unlink** leaves the mask where it is on the stage as the layer moves (and **Link** has it move with the layer again), **Apply** erases what it hides from a paint layer for good, and **Delete** removes it.
 
 In {{fig:masks}}, the trees on the right are hidden by the Trees layer's mask, picked for painting, and evening shade painted right across the stage on a layer clipped to the Hills darkens only the hills.
 

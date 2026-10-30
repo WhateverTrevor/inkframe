@@ -976,6 +976,48 @@ fn lasso_fill_on_a_drawn_layer_adds_colour_art_under_the_lines() {
 }
 
 #[test]
+fn liquify_pushes_paint_along() {
+    let mut editor = Editor::new(Document::default());
+    editor.tool = Tool::Brush;
+    editor.smoothing = 0.0;
+    let mut h = harness(editor);
+    // A short vertical stroke at x 600.
+    let (from, to) = (screen(&h, 600.0, 400.0), screen(&h, 600.0, 600.0));
+    drag(&mut h, from, &[to]);
+    assert_eq!(painted_at(&h, 600, 500)[3], 255);
+    // Pushed right across its middle with a big brush.
+    h.state_mut().1.tool = Tool::Liquify;
+    let path: Vec<Pos2> = (0..=10).map(|i| screen(&h, 560.0 + i as f32 * 10.0, 500.0)).collect();
+    drag(&mut h, path[0], &path[1..]);
+    assert!(painted_at(&h, 600, 500)[3] < 255, "pushed off where it was");
+    assert!((630..700).any(|x| painted_at(&h, x, 500)[3] > 200), "and on to the right");
+    assert_eq!(painted_at(&h, 600, 405)[3], 255, "out of reach, untouched");
+}
+
+#[test]
+fn painting_an_unlinked_mask_lands_where_the_pointer_is_on_the_stage() {
+    let mut editor = Editor::new(Document::default());
+    editor.tool = Tool::Brush;
+    editor.smoothing = 0.0;
+    editor.paint_color = Color::BLACK;
+    let layer = editor.add_paint_layer().unwrap();
+    editor.add_layer_mask();
+    editor.doc.set_mask_linked(layer, false, 0);
+    // By frame 10 the layer has moved 100 right; the mask stayed put.
+    let centre = Point::new(960.0, 540.0);
+    editor.doc.layer_mut(layer).unwrap().track.set_pose(10, Transform::at(centre + Point::new(100.0, 0.0)));
+    editor.set_frame(10);
+    editor.set_editing_mask(layer, true);
+    let mut h = harness(editor);
+    let at = screen(&h, 400.0, 500.0);
+    click(&mut h, at);
+    let editor = &h.state().1;
+    let mask = editor.doc.canvas(editor.selected_mask().unwrap().canvas).unwrap();
+    assert!(mask.pixel(400, 500)[3] > 200, "on the mask under the pointer");
+    assert_eq!(mask.pixel(300, 500)[3], 0, "not where the layer has moved it to");
+}
+
+#[test]
 fn the_eraser_takes_paint_away() {
     let mut editor = Editor::new(Document::default());
     editor.tool = Tool::Brush;

@@ -65,6 +65,7 @@ impl InkframeApp {
                 editor.merge_down();
             }
             Command::Adjust(adjustment) => self.adjust.open(editor, adjustment),
+            Command::NewAdjustmentLayer(kind) => editor.add_adjustment_layer(kind),
             Command::Cut => {
                 let copied = self.editor.copy_selection();
                 self.put_on_clipboard(copied);
@@ -139,6 +140,7 @@ impl InkframeApp {
                 editor.apply_layer_mask();
             }
             Command::ToggleLayerMask => editor.toggle_layer_mask(),
+            Command::ToggleMaskLink => editor.toggle_mask_link(),
             Command::EditLayerMask => {
                 if let Some(id) = editor.selection {
                     let painting_mask = editor.painting_mask();

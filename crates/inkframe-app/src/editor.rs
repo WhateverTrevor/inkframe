@@ -52,6 +52,8 @@ pub enum Tool {
     Smudge,
     Blur,
     Sharpen,
+    /// Pushes, bloats, puckers or twirls paint (see `retouch.rs`).
+    Liquify,
     Dodge,
     Burn,
     CloneStamp,
@@ -85,7 +87,7 @@ impl Tool {
         &[Tool::Brush, Tool::Mixer],
         &[Tool::Eraser],
         &[Tool::PaintBucket, Tool::Gradient, Tool::LassoFill],
-        &[Tool::Smudge, Tool::Blur, Tool::Sharpen],
+        &[Tool::Smudge, Tool::Blur, Tool::Sharpen, Tool::Liquify],
         &[Tool::Dodge, Tool::Burn],
         &[Tool::CloneStamp, Tool::PatternStamp],
         &[Tool::Eyedropper],
@@ -124,6 +126,7 @@ impl Tool {
             Tool::Smudge => tr_later("Smudge"),
             Tool::Blur => tr_later("Blur"),
             Tool::Sharpen => tr_later("Sharpen"),
+            Tool::Liquify => tr_later("Liquify"),
             Tool::Dodge => tr_later("Dodge"),
             Tool::Burn => tr_later("Burn"),
             Tool::CloneStamp => tr_later("Clone Stamp"),
@@ -181,6 +184,9 @@ impl Tool {
             Tool::Smudge => tr_later("Push paint around, as with a finger"),
             Tool::Blur => tr_later("Soften the paint under the brush"),
             Tool::Sharpen => tr_later("Crisp up the paint under the brush"),
+            Tool::Liquify => {
+                tr_later("Push paint along, or bloat, pucker or twirl it, as Photoshop's Liquify")
+            }
             Tool::Dodge => tr_later("Lighten the paint under the brush"),
             Tool::Burn => tr_later("Darken the paint under the brush"),
             Tool::CloneStamp => tr_later("Alt-click where to copy from, then paint a copy elsewhere"),
@@ -223,6 +229,7 @@ impl Tool {
                 | Tool::Eraser
                 | Tool::Mixer
                 | Tool::Smudge
+                | Tool::Liquify
                 | Tool::Blur
                 | Tool::Sharpen
                 | Tool::Dodge
@@ -373,6 +380,9 @@ pub struct Editor {
     pub smudge: RetouchBrush,
     pub blur: RetouchBrush,
     pub sharpen: RetouchBrush,
+    pub liquify: RetouchBrush,
+    /// How Liquify moves the paint.
+    pub liquify_mode: inkframe_core::LiquifyMode,
     pub dodge: RetouchBrush,
     pub burn: RetouchBrush,
     /// The Clone Stamp's brush; its strength is the opacity it paints at.
@@ -556,6 +566,8 @@ impl Editor {
             smudge: RetouchBrush::new(40.0, 0.6),
             blur: RetouchBrush::new(40.0, 0.5),
             sharpen: RetouchBrush::new(40.0, 0.5),
+            liquify: RetouchBrush::new(120.0, 0.5),
+            liquify_mode: inkframe_core::LiquifyMode::Push,
             dodge: RetouchBrush::new(60.0, 0.3),
             burn: RetouchBrush::new(60.0, 0.3),
             clone: RetouchBrush::new(50.0, 1.0),
@@ -1389,6 +1401,7 @@ impl Editor {
                 Tool::Smudge => &self.smudge.brush,
                 Tool::Blur => &self.blur.brush,
                 Tool::Sharpen => &self.sharpen.brush,
+                Tool::Liquify => &self.liquify.brush,
                 Tool::Dodge => &self.dodge.brush,
                 Tool::Burn => &self.burn.brush,
                 Tool::CloneStamp => &self.clone.brush,
@@ -1415,6 +1428,7 @@ impl Editor {
             Tool::Smudge => &mut self.smudge,
             Tool::Blur => &mut self.blur,
             Tool::Sharpen => &mut self.sharpen,
+            Tool::Liquify => &mut self.liquify,
             Tool::Dodge => &mut self.dodge,
             Tool::Burn => &mut self.burn,
             Tool::CloneStamp => &mut self.clone,
@@ -2238,9 +2252,9 @@ mod tests {
         assert_eq!(editor.tool, Tool::Gradient);
         let retouch = Tool::Smudge.group();
         editor.use_slot(retouch, false);
-        editor.use_slot(retouch, true);
-        editor.use_slot(retouch, true);
-        editor.use_slot(retouch, true);
+        for _ in 0..retouch.len() {
+            editor.use_slot(retouch, true);
+        }
         assert_eq!(editor.tool, Tool::Smudge, "cycling wraps around");
     }
 

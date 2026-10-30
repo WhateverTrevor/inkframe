@@ -153,7 +153,7 @@ impl Rect {
 ///
 /// The field order matches tiny-skia's `Transform::from_row(sx, ky, kx, sy, tx, ty)`,
 /// so converting between the two is a straight copy.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Affine {
     pub a: f32,
     pub b: f32,

@@ -21,7 +21,7 @@ use crate::icons::Icon;
 use animation::{easing_section, shape_tween_controls, transform_section};
 use brush::brush_section;
 use document::document_section;
-use effects::{apply_to_selected_button, effects_section};
+use effects::effects_section;
 use particles::particles_section;
 use rigging::{deformer_section, rig_section, skeleton_section, switch_controls, warp_section};
 use sections::{search_box, searched_for, section};
@@ -424,6 +424,12 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     if header {
         layer_mask_controls(ui, editor, id);
     }
+    // An adjustment layer's adjustment, to change at any time.
+    if let Some(adjustment) = editor.doc.layer_mut(id).and_then(|l| l.adjustment.as_mut()) {
+        ui.add_space(8.0);
+        ui.heading(tr(adjustment.name()));
+        crate::adjust_dialog::adjustment_controls(ui, adjustment);
+    }
 
     ui.add_space(8.0);
     transform_section(ui, editor, id, frame);
@@ -469,6 +475,14 @@ fn layer_mask_controls(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
         let mut on = mask.enabled;
         if ui.checkbox(&mut on, tr("On")).changed() {
             editor.toggle_layer_mask();
+        }
+        let mut linked = mask.is_linked();
+        if ui
+            .checkbox(&mut linked, tr("Linked"))
+            .on_hover_text(tr("Linked, the mask moves with the layer; unlinked, it stays put on the stage"))
+            .changed()
+        {
+            editor.toggle_mask_link();
         }
         if painting && ui.button(tr("Apply")).on_hover_text(tr("Erase what the mask hides, and remove it")).clicked() {
             editor.apply_layer_mask();

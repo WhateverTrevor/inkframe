@@ -150,38 +150,10 @@ pub(super) fn effects_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerI
     if fx != before
         && let Some(layer) = editor.doc.layer_mut(id)
     {
-        layer.track.set_effects(frame, fx);
-    }
-    apply_to_selected_button(ui, editor, id, tr("these effects"), |editor| {
-        editor.copy_effects_to_selected(id)
-    });
-}
-
-/// With several layers selected, a button that gives the rest what this
-/// layer has (its effects, its easing). A button rather than doing it on
-/// every change, since those are things each layer may have set up itself.
-pub(super) fn apply_to_selected_button(
-    ui: &mut egui::Ui,
-    editor: &mut Editor,
-    id: LayerId,
-    what: &str,
-    apply: impl FnOnce(&mut Editor) -> usize,
-) {
-    let others = editor.also_editing(id).len();
-    if others == 0 {
-        return;
-    }
-    let label = if others == 1 {
-        tr("Apply to the other selected layer").to_owned()
-    } else {
-        tr_args("Apply to the other {count} selected layers", &[("count", &others.to_string())])
-    };
-    if ui
-        .button(label)
-        .on_hover_text(tr_args("Gives them {what}, replacing their own on this frame", &[("what", what)]))
-        .clicked()
-    {
-        apply(editor);
+        layer.track.set_effects(frame, fx.clone());
+        // The other selected layers take the change too, as with every
+        // other setting here.
+        editor.carry_effects(id, &fx);
     }
 }
 

@@ -143,6 +143,19 @@ pub(super) fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
                         .on_hover_text(tr("Pick up colour from everything as seen, not only this layer"));
                     ui.end_row();
                 }
+                if tool == Tool::Liquify {
+                    ui.label(tr("Mode")).on_hover_text(tr(
+                        "Push drags paint along the stroke; the others work round the brush's middle, while it's held still too",
+                    ));
+                    egui::ComboBox::from_id_salt("liquify_mode")
+                        .selected_text(tr(editor.liquify_mode.label()))
+                        .show_ui(ui, |ui| {
+                            for mode in inkframe_core::LiquifyMode::ALL {
+                                ui.selectable_value(&mut editor.liquify_mode, mode, tr(mode.label()));
+                            }
+                        });
+                    ui.end_row();
+                }
                 if matches!(tool, Tool::Dodge | Tool::Burn) {
                     ui.label(tr("Range")).on_hover_text(tr("Which tones it works on most"));
                     egui::ComboBox::from_id_salt("tone_range")

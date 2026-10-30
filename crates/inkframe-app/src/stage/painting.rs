@@ -72,12 +72,14 @@ impl StageView {
             if samples.is_empty() {
                 // Resting: Build-up keeps the paint flowing.
                 let dt = ui.input(|i| i.stable_dt).min(0.1);
-                if let (PaintWork::Brush(stroke), Some(canvas)) =
-                    (&mut painting.work, editor.doc.canvas_mut(painting.canvas))
-                {
-                    stroke.rest(canvas, dt);
+                match (&mut painting.work, editor.doc.canvas_mut(painting.canvas)) {
+                    (PaintWork::Brush(stroke), Some(canvas)) => stroke.rest(canvas, dt),
+                    // Liquify's Bloat, Pucker and Twirl work in place.
+                    (PaintWork::Retouch(stroke), Some(canvas)) => stroke.rest(canvas, dt),
+                    _ => {}
                 }
-                if editor.brush_for(editor.tool).is_some_and(|b| b.build_up) {
+                let in_place = editor.tool == Tool::Liquify && editor.liquify_mode.works_in_place();
+                if in_place || editor.brush_for(editor.tool).is_some_and(|b| b.build_up) {
                     ui.ctx().request_repaint();
                 }
             }
@@ -418,6 +420,7 @@ pub(super) fn retouch_kind(
         Tool::Smudge => Retouch::Smudge { strength },
         Tool::Blur => Retouch::Blur { strength },
         Tool::Sharpen => Retouch::Sharpen { strength },
+        Tool::Liquify => Retouch::Liquify { mode: editor.liquify_mode, strength },
         Tool::Dodge => Retouch::Dodge { exposure: strength, range },
         Tool::Burn => Retouch::Burn { exposure: strength, range },
         Tool::CloneStamp => {
@@ -447,6 +450,13 @@ pub(super) fn canvas_point(
 ) -> Option<Point> {
     let layer = editor.doc.layer(layer)?;
     let mut local = editor.doc.layer_matrix(layer, editor.frame).inverse()?.apply(view.to_local(screen));
+    // A mask being painted lies where it's been placed (see `layer_mask.rs`
+    // in the core), which unlinking may have moved off the layer.
+    if painting_mask_of(editor, layer.id) {
+        let into_mask = editor.doc.mask_placement(layer, editor.frame).inverse()?;
+        let local = into_mask.apply(local);
+        return Some(Point::new(local.x + size.0 as f32 / 2.0, local.y + size.1 as f32 / 2.0));
+    }
     // On a frame where a skeleton bends the painting, the brush lands on
     // the painting where it's seen, not where it was painted at rest.
     if let Some(bend) = editor.doc.layer_bend(layer, editor.frame) {
@@ -456,9 +466,21 @@ pub(super) fn canvas_point(
     Some(Point::new(local.x + size.0 as f32 / 2.0, local.y + size.1 as f32 / 2.0))
 }
 
+/// Whether the brush is painting `layer`'s mask rather than the layer.
+fn painting_mask_of(editor: &Editor, layer: LayerId) -> bool {
+    editor.painting_mask() && editor.selection == Some(layer)
+}
+
 /// The opposite of [`canvas_point`]: a canvas pixel on screen.
 pub(super) fn canvas_to_screen(editor: &Editor, view: View, layer: LayerId, at: Point) -> Option<Pos2> {
     let layer = editor.doc.layer(layer)?;
+    if painting_mask_of(editor, layer.id) {
+        let (_, canvas, ..) = editor.paint_target()?;
+        let canvas = editor.doc.canvas(canvas)?;
+        let local = Point::new(at.x - canvas.width as f32 / 2.0, at.y - canvas.height as f32 / 2.0);
+        let placed = editor.doc.mask_placement(layer, editor.frame).apply(local);
+        return Some(view.to_screen(editor.doc.layer_matrix(layer, editor.frame).apply(placed)));
+    }
     let size = layer.elements_at(editor.frame).iter().find_map(|e| match e.shape {
         Shape::Paint { width, height, .. } => Some((width, height)),
         _ => None,

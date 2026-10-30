@@ -3,6 +3,32 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
+## Unreleased
+
+### Painting
+
+- Adjustment layers, as Photoshop's: Modify › New Adjustment Layer adds
+  Brightness/Contrast, Hue/Saturation, Levels or Curves as a layer that
+  changes everything beneath it, its settings in Properties to change at
+  any time. Its opacity and mask say how much and where; clipped, it
+  changes only the layer beneath.
+
+- Liquify, in the Smudge slot (U): moves paint rather than adding it, as
+  Photoshop's Liquify. Push drags it along the stroke; Bloat, Pucker and
+  Twirl swell, shrink or turn it round the brush's middle, and carry on
+  while the brush is held still.
+- A layer mask can be unlinked (Modify › Layer Mask › Unlink, or Linked
+  in Properties), so it stays put on the stage as the layer moves, and
+  linked again where it is.
+
+### Properties
+
+- With several layers selected, changing effects or a property's easing
+  changes them on all the selected layers, as every other setting does;
+  the separate "Apply to the other selected layers" buttons are gone.
+
+File format 41: older versions can't open projects saved with this one.
+
 ## [0.9.0]
 
 Photoshop's clipping masks and layer masks, an Eraser that cuts drawn

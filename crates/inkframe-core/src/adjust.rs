@@ -9,12 +9,22 @@
 //! [`adjust`] returns a new canvas rather than changing one in place, so
 //! the Adjustments window can preview from the original as sliders move
 //! and put it back on Cancel.
+//!
+//! An *adjustment layer* holds one of these instead of a drawing, and
+//! changes everything drawn beneath it as the picture is drawn, so the
+//! setting can be changed or the layer hidden at any time, as Photoshop's
+//! adjustment layers are. The renderer applies it with
+//! [`Adjustment::apply_premultiplied`].
 
+use serde::{Deserialize, Serialize};
+
+use crate::document::{Document, LayerId};
 use crate::paint::{Canvas, premultiply, unpremultiply};
 use crate::selection::Selection;
 
 /// An adjustment and its settings. The defaults change nothing.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Adjustment {
     /// Both −1 to 1.
     BrightnessContrast { brightness: f32, contrast: f32 },
@@ -85,6 +95,17 @@ impl Adjustment {
         Some(std::array::from_fn(|i| (map(i as f32 / 255.0).clamp(0.0, 1.0) * 255.0).round() as u8))
     }
 
+    /// What a premultiplied pixel becomes, its alpha kept. `table` is
+    /// [`Adjustment::table`], worked out once for a whole picture.
+    pub fn apply_premultiplied(&self, table: Option<&[u8; 256]>, pixel: [u8; 4]) -> [u8; 4] {
+        if pixel[3] == 0 {
+            return pixel;
+        }
+        let [r, g, b, a] = unpremultiply(&pixel);
+        let [r, g, b] = self.apply(table, [r, g, b]);
+        premultiply(&[r, g, b, a])
+    }
+
     /// What a straight colour becomes.
     fn apply(&self, table: Option<&[u8; 256]>, rgb: [u8; 3]) -> [u8; 3] {
         if let Some(table) = table {
@@ -98,6 +119,25 @@ impl Adjustment {
         let s = if saturation >= 0.0 { s + (1.0 - s) * saturation } else { s * (1.0 + saturation) };
         let l = if lightness >= 0.0 { l + (1.0 - l) * lightness } else { l * (1.0 + lightness) };
         from_hsl(h, s.clamp(0.0, 1.0), l.clamp(0.0, 1.0))
+    }
+}
+
+impl Document {
+    /// Adds an adjustment layer to `timeline` from `frame` on, on top of
+    /// its stack. Returns it.
+    pub fn add_adjustment_layer(
+        &mut self,
+        timeline: crate::TimelineId,
+        name: impl Into<String>,
+        adjustment: Adjustment,
+        frame: u32,
+    ) -> Option<LayerId> {
+        let centre = crate::Point::new(self.width as f32 / 2.0, self.height as f32 / 2.0);
+        let id = self.add_layer_to(timeline, name, Vec::new(), frame, crate::Transform::at(centre))?;
+        let layer = self.layer_mut(id)?;
+        layer.start = frame;
+        layer.adjustment = Some(adjustment);
+        Some(id)
     }
 }
 

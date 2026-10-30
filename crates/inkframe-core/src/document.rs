@@ -35,7 +35,7 @@ pub enum TimelineId {
 /// Bumped whenever the file format changes in a way older builds can't read.
 /// Loading a newer file than we understand fails with a clear error instead
 /// of silently dropping data.
-pub const FORMAT_VERSION: u32 = 40;
+pub const FORMAT_VERSION: u32 = 41;
 
 /// A complete animation: stage settings plus a stack of layers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -229,6 +229,10 @@ pub struct Layer {
     /// A painted mask hiding parts of the layer (see `layer_mask.rs`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer_mask: Option<crate::LayerMask>,
+    /// An adjustment layer's adjustment: it draws nothing itself, and
+    /// changes what's drawn beneath it (see `adjust.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adjustment: Option<crate::Adjustment>,
     /// The colour chosen for the layer in the timeline and on the stage;
     /// `None` uses one picked by its id (see `folder.rs`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -481,6 +485,7 @@ impl Document {
             blend: BlendMode::Normal,
             clipped: false,
             layer_mask: None,
+            adjustment: None,
             color: None,
             folder: false,
             in_folder: None,

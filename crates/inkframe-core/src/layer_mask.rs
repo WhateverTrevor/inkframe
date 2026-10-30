@@ -9,22 +9,41 @@
 //! painted on it is read over white, by brightness, so any brush works on
 //! it: black hides, grey half-hides, and erasing brings the layer back.
 //!
+//! A mask can be unlinked from its layer, as Photoshop's chain icon does:
+//! then it stays where it is on the stage while the layer moves under it.
+//! Linked again, it moves with the layer from where it is then.
+//!
 //! Animate-style mask layers (`mask.rs`) are a different thing: a layer of
 //! their own, whose drawing is a window onto the layers under it.
 
 use serde::{Deserialize, Serialize};
 
-use crate::document::{Document, LayerId};
+use crate::document::{Document, Layer, LayerId};
+use crate::geometry::Affine;
 use crate::paint::CanvasId;
 
 /// A layer's mask.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LayerMask {
     pub canvas: CanvasId,
     /// Turned off, the mask is kept but the whole layer shows, as
     /// Shift-clicking a mask does in Photoshop.
     #[serde(default = "on", skip_serializing_if = "is_on")]
     pub enabled: bool,
+    /// Linked to its layer, where it sits in the layer's coordinates, if
+    /// it's been moved off them by unlinking and linking again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<Affine>,
+    /// Unlinked: where it sits in the timeline's coordinates, fixed there
+    /// however the layer moves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixed: Option<Affine>,
+}
+
+impl LayerMask {
+    pub fn is_linked(&self) -> bool {
+        self.fixed.is_none()
+    }
 }
 
 fn on() -> bool {
@@ -55,8 +74,45 @@ impl Document {
             return None;
         }
         let canvas = self.add_canvas(self.width, self.height);
-        self.layer_mut(id)?.layer_mask = Some(LayerMask { canvas, enabled: true });
+        self.layer_mut(id)?.layer_mask = Some(LayerMask { canvas, enabled: true, offset: None, fixed: None });
         Some(canvas)
+    }
+
+    /// Where `layer`'s mask is on `frame`, as a matrix from the mask's own
+    /// coordinates (its canvas centred on the origin) to the layer's. For a
+    /// linked mask that's where it was linked; an unlinked one stays put on
+    /// the stage, so it's wherever that is from the layer now.
+    pub fn mask_placement(&self, layer: &Layer, frame: u32) -> Affine {
+        let Some(mask) = layer.layer_mask else { return Affine::IDENTITY };
+        match mask.fixed {
+            Some(fixed) => {
+                let to_layer = self.layer_matrix(layer, frame).inverse().unwrap_or(Affine::IDENTITY);
+                to_layer.pre_concat(fixed)
+            }
+            None => mask.offset.unwrap_or(Affine::IDENTITY),
+        }
+    }
+
+    /// Links a layer's mask to it, or unlinks it, without moving it: as
+    /// things are on `frame`, it stays where it is. Returns whether it had a
+    /// mask to change.
+    pub fn set_mask_linked(&mut self, id: LayerId, linked: bool, frame: u32) -> bool {
+        let Some(layer) = self.layer(id) else { return false };
+        let Some(mask) = layer.layer_mask else { return false };
+        if mask.is_linked() == linked {
+            return true;
+        }
+        let to_timeline = self.layer_matrix(layer, frame);
+        let placement = self.mask_placement(layer, frame);
+        let Some(mask) = self.layer_mut(id).and_then(|l| l.layer_mask.as_mut()) else { return false };
+        if linked {
+            mask.fixed = None;
+            mask.offset = Some(placement).filter(|p| *p != Affine::IDENTITY);
+        } else {
+            mask.fixed = Some(to_timeline.pre_concat(placement));
+            mask.offset = None;
+        }
+        true
     }
 
     /// Takes a layer's mask away, showing all of it again. Returns whether
@@ -75,15 +131,21 @@ impl Document {
         let Some((painting, width, height)) = self.paint_canvas_at(id, frame) else { return false };
         let Some(mask_canvas) = self.canvas(mask.canvas) else { return false };
         let Some(canvas) = self.canvas(painting) else { return false };
-        // Both are centred on the layer's origin, so a canvas made before
-        // the stage was resized lines up by its middle.
-        let (mask_width, mask_height) = (mask_canvas.width, mask_canvas.height);
-        let dx = (width as i64 - mask_width as i64) / 2;
-        let dy = (height as i64 - mask_height as i64) / 2;
+        let Some(layer) = self.layer(id) else { return false };
+        // Each of the painting's pixels, through the layer's coordinates,
+        // into the mask's. Both canvases are centred on their origin, so a
+        // linked mask made before the stage was resized lines up by its
+        // middle; an unlinked one is wherever it's been left.
+        let Some(into_mask) = self.mask_placement(layer, frame).inverse() else { return false };
+        let (half_w, half_h) = (width as f32 / 2.0, height as f32 / 2.0);
+        let (mask_half_w, mask_half_h) = (mask_canvas.width as f32 / 2.0, mask_canvas.height as f32 / 2.0);
         let mut pixels = canvas.to_pixels();
         for (i, pixel) in pixels.chunks_exact_mut(4).enumerate() {
-            let (x, y) = ((i as u32 % width) as i64, (i as u32 / width) as i64);
-            let coverage = mask_coverage(mask_canvas.pixel(x - dx, y - dy)) as u32;
+            let (x, y) = ((i as u32 % width) as f32 + 0.5, (i as u32 / width) as f32 + 0.5);
+            let on_mask = into_mask.apply(crate::Point::new(x - half_w, y - half_h));
+            let (mx, my) =
+                ((on_mask.x + mask_half_w).floor() as i64, (on_mask.y + mask_half_h).floor() as i64);
+            let coverage = mask_coverage(mask_canvas.pixel(mx, my)) as u32;
             for channel in pixel {
                 *channel = ((*channel as u32 * coverage + 127) / 255) as u8;
             }
@@ -110,6 +172,28 @@ mod tests {
         // Black at half strength, over white: half shows.
         let soft = mask_coverage([0, 0, 0, 128]);
         assert!((126..=128).contains(&soft), "{soft}");
+    }
+
+    #[test]
+    fn an_unlinked_mask_stays_put_while_the_layer_moves() {
+        let mut doc = Document::default();
+        let layer = doc.add_paint_layer(TimelineId::Main, "Paint", 0).unwrap();
+        doc.add_layer_mask(layer).unwrap();
+        let at = |doc: &Document, frame| doc.mask_placement(doc.layer(layer).unwrap(), frame);
+        assert_eq!(at(&doc, 0), crate::Affine::IDENTITY, "linked: with the layer");
+
+        assert!(doc.set_mask_linked(layer, false, 0));
+        // The layer moves 100 right by frame 10; the mask doesn't, so from
+        // the layer it's 100 to the left.
+        let centre = Point::new(doc.width as f32 / 2.0, doc.height as f32 / 2.0);
+        doc.layer_mut(layer).unwrap().track.set_pose(10, Transform::at(centre + Point::new(100.0, 0.0)));
+        let moved = at(&doc, 10).apply(Point::ZERO);
+        assert!(moved.distance(Point::new(-100.0, 0.0)) < 1e-3, "{moved:?}");
+
+        // Linked again on frame 10, it keeps its place and moves with the layer.
+        assert!(doc.set_mask_linked(layer, true, 10));
+        let back = at(&doc, 0).apply(Point::ZERO);
+        assert!(back.distance(Point::new(-100.0, 0.0)) < 1e-3, "keeps its offset: {back:?}");
     }
 
     #[test]

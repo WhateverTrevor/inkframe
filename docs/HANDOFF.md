@@ -15,9 +15,9 @@ and how the work is done.
 - **Branch:** `main`. Each feature is built on its own branch, then
   merged into `main` with a merge commit and pushed.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (906 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (914 tests)
   pass, on macOS locally and on macOS and Windows in CI.
-- **File format:** version 40. Older files load and upgrade automatically
+- **File format:** version 41. Older files load and upgrade automatically
   (`crates/inkframe-core/tests/format_migration.rs`).
 - **Releases:** v0.2.0 to v0.9.0 are tagged. Their GitHub releases are
   drafts (with the .dmg, setup.exe and guidebook PDF) that the user
@@ -81,10 +81,8 @@ real use will show what matters. Open items:
 2. **A first real translation,** checked by someone fluent.
 3. **A GPU stage preview** only if a real project feels slow (the CPU
    renderer is fast; measure with the `stage_benchmark` example first).
-4. Smaller ideas: Properties carries changes to every selected layer
-   (`multi_edit.rs`) but not every section does (easing and effects have
-   their own "apply to the others" buttons); typing on the stage has its
-   own undo, folded into one project step when typing ends.
+4. Smaller ideas: typing on the stage has its own undo, folded into one
+   project step when typing ends.
 
 ## Working conventions
 

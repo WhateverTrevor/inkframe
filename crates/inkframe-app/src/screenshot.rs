@@ -126,6 +126,8 @@
 //! * `INKFRAME_SCREENSHOT_MASKS=1`, with `examples/painted-landscape.inkf` open, masks the
 //!   trees on the right out of the Trees layer and paints shade on a layer clipped to the
 //!   Hills, then leaves the Trees mask picked to paint with the Brush.
+//! * `INKFRAME_SCREENSHOT_ADJUSTMENT=1`, with `examples/painted-landscape.inkf` open, grades
+//!   the scene with a Hue/Saturation adjustment layer on top, picked so its settings show.
 //! * `INKFRAME_SCREENSHOT_ERASE=1`, with `examples/ink-and-paint.inkf` open, rubs the
 //!   Eraser across the flower's lines and fills, and leaves it picked.
 //! * `INKFRAME_SCREENSHOT_SPRITES=walk.json` opens File › Import Sprite Sheet on that sheet
@@ -259,6 +261,19 @@ impl AutoScreenshot {
         }
         if var("INKFRAME_SCREENSHOT_ERASE").is_some() {
             erase_demo(editor);
+        }
+        if var("INKFRAME_SCREENSHOT_ADJUSTMENT").is_some() {
+            // Over the top layer, a warmer, richer evening.
+            let top = editor.layers().last().map(|l| l.id);
+            editor.select(top);
+            editor.add_adjustment_layer(crate::adjust_dialog::AdjustmentKind::HueSaturation);
+            if let Some(adjustment) = editor.selected_layer_mut().and_then(|l| l.adjustment.as_mut()) {
+                *adjustment = inkframe_core::Adjustment::HueSaturation {
+                    hue: -18.0,
+                    saturation: 0.35,
+                    lightness: -0.05,
+                };
+            }
         }
         if var("INKFRAME_SCREENSHOT_BRUSH_SHEET").is_some() {
             brush_sheet_demo(editor);

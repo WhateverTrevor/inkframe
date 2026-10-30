@@ -5,6 +5,9 @@
 //! as it was when the window opened, so dragging a slider back undoes
 //! itself. OK keeps the result (one undo step); Cancel or closing puts the
 //! original back. A selection limits it, as it limits painting.
+//!
+//! The controls are shared with adjustment layers' settings in the
+//! Properties panel ([`adjustment_controls`]).
 
 use egui::{Color32, Pos2, Sense, Stroke, pos2, vec2};
 use inkframe_core::{Adjustment, Canvas, CanvasId, Selection, adjust};
@@ -52,8 +55,6 @@ struct Open {
     selection: Option<Selection>,
     /// The adjustment last shown, so the canvas is only redone on a change.
     shown: Adjustment,
-    /// The Curves point being dragged.
-    dragging: Option<usize>,
 }
 
 impl AdjustDialog {
@@ -63,8 +64,7 @@ impl AdjustDialog {
         let Some((_, canvas, ..)) = editor.paint_target() else { return };
         let Some(original) = editor.doc.canvas(canvas).cloned() else { return };
         let selection = editor.selection_on(canvas).cloned();
-        self.open =
-            Some(Open { shown: adjustment.clone(), adjustment, canvas, original, selection, dragging: None });
+        self.open = Some(Open { shown: adjustment.clone(), adjustment, canvas, original, selection });
     }
 
     #[cfg(test)]
@@ -81,7 +81,7 @@ impl AdjustDialog {
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
-                controls(ui, open);
+                adjustment_controls(ui, &mut open.adjustment);
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui.button(tr("OK")).clicked() {
@@ -123,6 +123,25 @@ impl AdjustDialog {
     }
 }
 
+impl Editor {
+    /// Modify › New Adjustment Layer: an adjustment of `kind`, changing
+    /// nothing yet, as a layer above the selected one (or on top), picked
+    /// so its settings show in Properties.
+    pub fn add_adjustment_layer(&mut self, kind: AdjustmentKind) {
+        let timeline = self.timeline();
+        let name = self.doc.next_layer_name_in(timeline, tr(kind.neutral().name()));
+        let Some(id) = self.doc.add_adjustment_layer(timeline, name, kind.neutral(), self.frame) else {
+            return;
+        };
+        if let Some(selected) = self.selection
+            && let Some(index) = self.doc.layers_of(timeline).iter().position(|l| l.id == selected)
+        {
+            self.doc.move_layer_to(id, index + 1);
+        }
+        self.select(Some(id));
+    }
+}
+
 /// The same kind of adjustment, set to change nothing.
 fn neutral(adjustment: &Adjustment) -> Adjustment {
     match adjustment {
@@ -133,53 +152,52 @@ fn neutral(adjustment: &Adjustment) -> Adjustment {
     }
 }
 
-fn controls(ui: &mut egui::Ui, open: &mut Open) {
-    egui::Grid::new("adjustment").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-        match &mut open.adjustment {
-            Adjustment::BrightnessContrast { brightness, contrast } => {
-                ui.label(tr("Brightness"));
-                ui.add(percent(brightness));
-                ui.end_row();
-                ui.label(tr("Contrast"));
-                ui.add(percent(contrast));
-                ui.end_row();
-            }
-            Adjustment::HueSaturation { hue, saturation, lightness } => {
-                ui.label(tr("Hue"));
-                ui.add(egui::Slider::new(hue, -180.0..=180.0).suffix("°"));
-                ui.end_row();
-                ui.label(tr("Saturation"));
-                ui.add(percent(saturation));
-                ui.end_row();
-                ui.label(tr("Lightness"));
-                ui.add(percent(lightness));
-                ui.end_row();
-            }
-            Adjustment::Levels { black, gamma, white, out_black, out_white } => {
-                ui.label(tr("Input black"))
-                    .on_hover_text(tr("Everything this dark or darker becomes the darkest output"));
-                ui.add(egui::Slider::new(black, 0..=254));
-                ui.end_row();
-                ui.label(tr("Midtones"))
-                    .on_hover_text(tr("Above 1 lightens the middle greys, below 1 darkens them"));
-                ui.add(egui::Slider::new(gamma, 0.1..=9.99).logarithmic(true));
-                ui.end_row();
-                ui.label(tr("Input white"))
-                    .on_hover_text(tr("Everything this light or lighter becomes the lightest output"));
-                ui.add(egui::Slider::new(white, 1..=255));
-                ui.end_row();
-                ui.label(tr("Output black"));
-                ui.add(egui::Slider::new(out_black, 0..=255));
-                ui.end_row();
-                ui.label(tr("Output white"));
-                ui.add(egui::Slider::new(out_white, 0..=255));
-                ui.end_row();
-            }
-            Adjustment::Curves { .. } => {}
+/// The settings of an adjustment, to change in place.
+pub fn adjustment_controls(ui: &mut egui::Ui, adjustment: &mut Adjustment) {
+    egui::Grid::new("adjustment").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| match adjustment {
+        Adjustment::BrightnessContrast { brightness, contrast } => {
+            ui.label(tr("Brightness"));
+            ui.add(percent(brightness));
+            ui.end_row();
+            ui.label(tr("Contrast"));
+            ui.add(percent(contrast));
+            ui.end_row();
         }
+        Adjustment::HueSaturation { hue, saturation, lightness } => {
+            ui.label(tr("Hue"));
+            ui.add(egui::Slider::new(hue, -180.0..=180.0).suffix("°"));
+            ui.end_row();
+            ui.label(tr("Saturation"));
+            ui.add(percent(saturation));
+            ui.end_row();
+            ui.label(tr("Lightness"));
+            ui.add(percent(lightness));
+            ui.end_row();
+        }
+        Adjustment::Levels { black, gamma, white, out_black, out_white } => {
+            ui.label(tr("Input black"))
+                .on_hover_text(tr("Everything this dark or darker becomes the darkest output"));
+            ui.add(egui::Slider::new(black, 0..=254));
+            ui.end_row();
+            ui.label(tr("Midtones"))
+                .on_hover_text(tr("Above 1 lightens the middle greys, below 1 darkens them"));
+            ui.add(egui::Slider::new(gamma, 0.1..=9.99).logarithmic(true));
+            ui.end_row();
+            ui.label(tr("Input white"))
+                .on_hover_text(tr("Everything this light or lighter becomes the lightest output"));
+            ui.add(egui::Slider::new(white, 1..=255));
+            ui.end_row();
+            ui.label(tr("Output black"));
+            ui.add(egui::Slider::new(out_black, 0..=255));
+            ui.end_row();
+            ui.label(tr("Output white"));
+            ui.add(egui::Slider::new(out_white, 0..=255));
+            ui.end_row();
+        }
+        Adjustment::Curves { .. } => {}
     });
-    if matches!(open.adjustment, Adjustment::Curves { .. }) {
-        curves_editor(ui, open);
+    if matches!(adjustment, Adjustment::Curves { .. }) {
+        curves_editor(ui, adjustment);
         ui.weak(tr("Click to add a point, drag to move it, right-click to remove it."));
     }
 }
@@ -191,7 +209,7 @@ fn percent(value: &mut f32) -> egui::Slider<'_> {
 
 /// A square graph of input (across) against output (up), with the curve
 /// and its points.
-fn curves_editor(ui: &mut egui::Ui, open: &mut Open) {
+fn curves_editor(ui: &mut egui::Ui, adjustment: &mut Adjustment) {
     const SIZE: f32 = 220.0;
     let (rect, response) = ui.allocate_exact_size(vec2(SIZE, SIZE), Sense::click_and_drag());
     let painter = ui.painter_at(rect);
@@ -213,26 +231,30 @@ fn curves_editor(ui: &mut egui::Ui, open: &mut Open) {
         )
     };
 
-    let Adjustment::Curves { points } = &mut open.adjustment else { return };
+    let Adjustment::Curves { points } = adjustment else { return };
     let near = |points: &[(f32, f32)], p: Pos2| points.iter().position(|q| to_screen(*q).distance(p) <= 8.0);
+    // The point being dragged, kept between frames.
+    let dragging_id = response.id.with("dragging");
+    let mut dragging: Option<usize> = ui.data(|d| d.get_temp(dragging_id));
     if response.drag_started()
         && let Some(p) = response.interact_pointer_pos()
     {
-        open.dragging = near(points, p).or_else(|| {
+        dragging = near(points, p).or_else(|| {
             points.push(from_screen(p));
             Some(points.len() - 1)
         });
     }
-    if let (Some(i), Some(p)) = (open.dragging, response.interact_pointer_pos())
+    if let (Some(i), Some(p)) = (dragging, response.interact_pointer_pos())
         && response.dragged()
         && i < points.len()
     {
         points[i] = from_screen(p);
     }
     if response.drag_stopped() {
-        open.dragging = None;
+        dragging = None;
         points.sort_by(|a, b| a.0.total_cmp(&b.0));
     }
+    ui.data_mut(|d| d.insert_temp(dragging_id, dragging));
     if response.clicked()
         && let Some(p) = response.interact_pointer_pos()
         && near(points, p).is_none()
@@ -248,12 +270,12 @@ fn curves_editor(ui: &mut egui::Ui, open: &mut Open) {
         points.remove(i);
     }
 
-    if let Some(table) = open.adjustment.table() {
+    if let Some(table) = adjustment.table() {
         let curve: Vec<Pos2> =
             (0..256).map(|i| to_screen((i as f32 / 255.0, table[i] as f32 / 255.0))).collect();
         painter.add(egui::Shape::line(curve, Stroke::new(2.0, ui.visuals().text_color())));
     }
-    if let Adjustment::Curves { points } = &open.adjustment {
+    if let Adjustment::Curves { points } = adjustment {
         for point in points {
             painter.circle(to_screen(*point), 4.0, Color32::WHITE, Stroke::new(1.0, Color32::BLACK));
         }
@@ -264,6 +286,21 @@ fn curves_editor(ui: &mut egui::Ui, open: &mut Open) {
 mod tests {
     use super::*;
     use inkframe_core::{Document, Point};
+
+    #[test]
+    fn an_adjustment_layer_goes_above_the_selected_layer_and_is_picked() {
+        let mut editor = Editor::new(Document::default());
+        let at = inkframe_core::Transform::at(Point::ZERO);
+        let low = editor.doc.add_layer("Low", Vec::new(), 0, at);
+        editor.doc.add_layer("High", Vec::new(), 0, at);
+        editor.select(Some(low));
+        editor.add_adjustment_layer(AdjustmentKind::Curves);
+        let names: Vec<&str> = editor.doc.layers.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, ["Low", "Curves 1", "High"], "bottom first");
+        let picked = editor.selected_layer().unwrap();
+        assert_eq!(picked.adjustment, Some(Adjustment::curves()));
+        assert!(!picked.draws_vectors(), "nothing is drawn into it");
+    }
 
     #[test]
     fn cancelling_puts_the_original_back() {
