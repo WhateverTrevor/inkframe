@@ -129,7 +129,7 @@ pub use particles::{Emitter, EmitterShape, MAX_PARTICLES, Particle, Preset, Spri
 pub use perspective::{Perspective, PerspectiveKind};
 pub use preset::{MotionPreset, PRESET_EXTENSION, PresetKey};
 pub use psd::{Psd, PsdError, PsdLayer};
-pub use retouch::{Retouch, RetouchStroke, ToneRange};
+pub use retouch::{LiquifyMode, Retouch, RetouchStroke, ToneRange};
 pub use ruler_guides::{RulerGuide, snap_box, snap_point, snap_value};
 pub use selection::{Combine, Selection};
 pub use shape::{Dash, GradientStop, LineCap, LineJoin, Path, Segment, Shape, ShapeGradient, Stroke, Style};

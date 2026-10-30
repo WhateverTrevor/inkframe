@@ -18,6 +18,12 @@
 //!   reservoir of paint that the canvas's colours mix into as it goes
 //!   (*Mix*), smears what it passes over (*Wet*), and runs dry over the
 //!   stroke unless it's loaded with plenty (*Load*).
+//! * **Liquify**, as Photoshop's Liquify brushes: each dab moves pixels
+//!   rather than mixing them, every pixel under it taking its colour from
+//!   a little way off: pushed along the stroke (*Push*, Photoshop's
+//!   Forward Warp), out from the brush's middle (*Bloat*) or in toward it
+//!   (*Pucker*), or turned round it (*Twirl*). Away from the middle, a soft
+//!   brush moves pixels less, so the warp fades out smoothly.
 //!
 //! Each dab works on a small square of pixels around itself, read from the
 //! canvas, changed, and written back. Pixels are premultiplied, which is
@@ -29,6 +35,50 @@ use crate::geometry::Point;
 use crate::paint::Canvas;
 use crate::parallel::in_bands;
 use crate::selection::Selection;
+
+/// How Liquify moves pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LiquifyMode {
+    /// Along the stroke, as a finger pushing wet paint.
+    #[default]
+    Push,
+    Bloat,
+    Pucker,
+    TwirlClockwise,
+    TwirlAnticlockwise,
+}
+
+impl LiquifyMode {
+    pub const ALL: [LiquifyMode; 5] = [
+        LiquifyMode::Push,
+        LiquifyMode::Bloat,
+        LiquifyMode::Pucker,
+        LiquifyMode::TwirlClockwise,
+        LiquifyMode::TwirlAnticlockwise,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            LiquifyMode::Push => crate::i18n::tr_later("Push"),
+            LiquifyMode::Bloat => crate::i18n::tr_later("Bloat"),
+            LiquifyMode::Pucker => crate::i18n::tr_later("Pucker"),
+            LiquifyMode::TwirlClockwise => crate::i18n::tr_later("Twirl Clockwise"),
+            LiquifyMode::TwirlAnticlockwise => crate::i18n::tr_later("Twirl Anticlockwise"),
+        }
+    }
+
+    /// Whether it works on its own while the brush is held still, rather
+    /// than by the stroke's moving.
+    pub fn works_in_place(self) -> bool {
+        self != LiquifyMode::Push
+    }
+}
+
+/// How far Bloat and Pucker scale the picture about the brush's middle at
+/// each dab, at full strength.
+const BLOAT_PER_DAB: f32 = 0.06;
+/// How far Twirl turns it at each dab, at full strength, in radians.
+const TWIRL_PER_DAB: f32 = 0.06;
 
 /// Which part of the tonal range Dodge and Burn affect most.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -95,6 +145,11 @@ pub enum Retouch {
         /// How much the picked-up colour mixes into the brush's paint.
         mix: f32,
     },
+    /// Moves pixels as `mode` says, `strength` 0 to 1.
+    Liquify {
+        mode: LiquifyMode,
+        strength: f32,
+    },
 }
 
 /// Pixels picked up by the smudge: a square of premultiplied RGBA, and
@@ -127,6 +182,9 @@ pub struct RetouchStroke {
     source: Canvas,
     /// Where it may change pixels, if not everywhere.
     selection: Option<Selection>,
+    /// Where the last dab was, and how hard: Liquify pushes along the move
+    /// from it, and works there again while the brush rests.
+    last_dab: Option<(Point, f32)>,
 }
 
 impl RetouchStroke {
@@ -142,6 +200,7 @@ impl RetouchStroke {
             sample: None,
             source: canvas.clone(),
             selection: None,
+            last_dab: None,
         }
     }
 
@@ -164,6 +223,17 @@ impl RetouchStroke {
         let mut dabs = Vec::new();
         self.path.advance(&self.settings, at, pressure, |at, pressure| dabs.push((at, pressure)));
         for (at, pressure) in dabs {
+            self.dab(canvas, at, pressure);
+        }
+    }
+
+    /// The brush resting in place for `seconds`: Liquify's Bloat, Pucker
+    /// and Twirl carry on working where it is, as Photoshop's do.
+    pub fn rest(&mut self, canvas: &mut Canvas, seconds: f32) {
+        let Retouch::Liquify { mode, .. } = self.kind else { return };
+        let Some((at, pressure)) = self.last_dab.filter(|_| mode.works_in_place()) else { return };
+        // About a dab every sixtieth of a second, however often it's asked.
+        for _ in 0..(seconds * 60.0).round().clamp(1.0, 4.0) as u32 {
             self.dab(canvas, at, pressure);
         }
     }
@@ -280,6 +350,35 @@ impl RetouchStroke {
                     (amount > 0.0).then(|| mix(pixel, colour(&from[i * 4..]), amount))
                 });
             }
+            Retouch::Liquify { mode, strength } => {
+                let moved = self.last_dab.map_or(Point::ZERO, |(last, _)| at - last);
+                let original = &scratch.original;
+                each(&mut scratch.changed, &|i, _| {
+                    let amount = cover(i) * strength;
+                    if amount <= 0.0 {
+                        return None;
+                    }
+                    let (x, y) = (x0 + (i % row) as i64, y0 + (i / row) as i64);
+                    let p = Point::new(x as f32 + 0.5, y as f32 + 0.5);
+                    let from_middle = p - at;
+                    // Where this pixel's colour comes from: the opposite of
+                    // where its colour is going.
+                    let from = match mode {
+                        LiquifyMode::Push => p - moved * amount,
+                        LiquifyMode::Bloat => at + from_middle * (1.0 - BLOAT_PER_DAB * amount),
+                        LiquifyMode::Pucker => at + from_middle * (1.0 + BLOAT_PER_DAB * amount),
+                        LiquifyMode::TwirlClockwise | LiquifyMode::TwirlAnticlockwise => {
+                            let turn = if mode == LiquifyMode::TwirlClockwise { -1.0 } else { 1.0 };
+                            let (sin, cos) = (turn * TWIRL_PER_DAB * amount).sin_cos();
+                            at + Point::new(
+                                from_middle.x * cos - from_middle.y * sin,
+                                from_middle.x * sin + from_middle.y * cos,
+                            )
+                        }
+                    };
+                    Some(sample(original, row, from.x - x0 as f32 - 0.5, from.y - y0 as f32 - 0.5))
+                });
+            }
             Retouch::Mixer { color, wet, load, mix: mixing } => {
                 let alpha = color.a as f32 / 255.0;
                 let loaded = [color.r, color.g, color.b].map(|v| v as f32 * alpha);
@@ -322,7 +421,21 @@ impl RetouchStroke {
             selection.limit(x0, y0, size, &scratch.original, &mut scratch.changed);
         }
         canvas.write_region(x0, y0, size, size, &scratch.changed);
+        self.last_dab = Some((at, pressure));
     }
+}
+
+/// The colour at `(x, y)` in a square of pixels `size` across, between
+/// pixel centres blended from the four nearest (bilinear), and held at the
+/// nearest edge beyond the square.
+fn sample(pixels: &[u8], size: usize, x: f32, y: f32) -> [f32; 4] {
+    let last = (size - 1) as f32;
+    let (x, y) = (x.clamp(0.0, last), y.clamp(0.0, last));
+    let (left, top) = (x.floor() as usize, y.floor() as usize);
+    let (right, bottom) = ((left + 1).min(size - 1), (top + 1).min(size - 1));
+    let (fx, fy) = (x - left as f32, y - top as f32);
+    let at = |x: usize, y: usize| colour(&pixels[(y * size + x) * 4..]);
+    mix(mix(at(left, top), at(right, top), fx), mix(at(left, bottom), at(right, bottom), fx), fy)
 }
 
 impl Patch {
@@ -542,6 +655,57 @@ mod tests {
         let pixels: Vec<u8> = (0..100 * 40).flat_map(|i| if i % 100 < 50 { left } else { right }).collect();
         canvas.write_region(0, 0, 100, 40, &pixels);
         canvas
+    }
+
+    /// White, with a black stripe two pixels wide down x = 49 and 50, and a
+    /// black dot of radius 4 at (50, 80).
+    fn stripe_and_dot() -> Canvas {
+        let mut canvas = Canvas::new(100, 100);
+        let pixels: Vec<u8> = (0..100 * 100)
+            .flat_map(|i| {
+                let (x, y) = ((i % 100) as f32 + 0.5, (i / 100) as f32 + 0.5);
+                let stripe = (49.0..51.0).contains(&x) && y < 60.0;
+                let dot = Point::new(x, y).distance(Point::new(50.0, 80.0)) < 4.0;
+                if stripe || dot { [0, 0, 0, 255] } else { [255, 255, 255, 255] }
+            })
+            .collect();
+        canvas.write_region(0, 0, 100, 100, &pixels);
+        canvas
+    }
+
+    #[test]
+    fn liquify_pushes_paint_along_the_stroke() {
+        let mut canvas = stripe_and_dot();
+        let push = Retouch::Liquify { mode: LiquifyMode::Push, strength: 1.0 };
+        stroke(push, 30.0, &mut canvas, &[(40.0, 30.0), (50.0, 30.0), (60.0, 30.0)]);
+        // Where the brush passed, the stripe went with it: under the brush
+        // all the way, it moved as far as the brush did.
+        let darkest = (0..100).min_by_key(|&x| canvas.pixel(x, 30)[0]).unwrap();
+        assert!((66..=72).contains(&darkest), "the stripe is at x {darkest}");
+        assert_eq!(canvas.pixel(50, 30), [255, 255, 255, 255], "and isn't where it was");
+        // Out of the brush's reach, it's as it was.
+        assert_eq!(canvas.pixel(49, 2), [0, 0, 0, 255], "untouched out of reach");
+        assert_eq!(canvas.pixel(45, 2), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn liquify_bloats_from_the_middle_while_it_rests() {
+        let mut canvas = stripe_and_dot();
+        let bloat = Retouch::Liquify { mode: LiquifyMode::Bloat, strength: 1.0 };
+        let mut stroke = RetouchStroke::new(settings(30.0), bloat, &canvas);
+        stroke.add_point(&mut canvas, Point::new(50.0, 80.0), 1.0);
+        assert!(canvas.pixel(55, 80)[0] > 200, "just outside the dot at first");
+        for _ in 0..10 {
+            stroke.rest(&mut canvas, 0.1);
+        }
+        assert!(canvas.pixel(55, 80)[0] < 128, "the dot has swollen out to it: {:?}", canvas.pixel(55, 80));
+        // Push does nothing in place.
+        let before = canvas.clone();
+        let push = Retouch::Liquify { mode: LiquifyMode::Push, strength: 1.0 };
+        let mut stroke = RetouchStroke::new(settings(30.0), push, &canvas);
+        stroke.add_point(&mut canvas, Point::new(50.0, 80.0), 1.0);
+        stroke.rest(&mut canvas, 1.0);
+        assert_eq!(canvas, before);
     }
 
     fn stroke(kind: Retouch, size: f32, canvas: &mut Canvas, points: &[(f32, f32)]) {

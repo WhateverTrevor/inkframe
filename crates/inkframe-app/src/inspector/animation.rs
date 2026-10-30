@@ -5,8 +5,8 @@
 use egui::{Color32, DragValue, Sense, Stroke as EguiStroke, vec2};
 use inkframe_core::{Easing, LayerId, Property, Tween};
 
+use super::mask_section;
 use super::sections::section;
-use super::{apply_to_selected_button, mask_section};
 use crate::easing_editor;
 use crate::editor::Editor;
 use crate::i18n::{tr, tr_args};
@@ -316,16 +316,15 @@ pub(super) fn easing_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId
         }
     }
 
-    if let Some(layer) = editor.doc.layer_mut(id) {
-        for (property, easing) in changes {
-            if let Some(e) = layer.track.channel_mut(property).tween_easing_mut(frame) {
-                *e = easing;
-            }
+    for (property, easing) in changes {
+        if let Some(e) =
+            editor.doc.layer_mut(id).and_then(|l| l.track.channel_mut(property).tween_easing_mut(frame))
+        {
+            *e = easing;
         }
+        // The other selected layers' tweens of it take the change too.
+        editor.carry_easing(id, property, easing);
     }
-    apply_to_selected_button(ui, editor, id, tr("this easing, for each property tweening here"), |editor| {
-        editor.copy_easing_to_selected(id)
-    });
 }
 
 /// The easing picker. Returns true when the choice changed.

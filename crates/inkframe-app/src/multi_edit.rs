@@ -4,8 +4,8 @@
 //! carried to the other selected layers, the way Animate and Figma do it:
 //! position moves them all by the same amount (so a group keeps its shape),
 //! and everything else (rotation, scale, skew, opacity, depth, blend, the
-//! checkboxes, where the layer starts and ends) is set to the same value on
-//! each. Only what was actually changed is carried over, so setting the
+//! checkboxes, where the layer starts and ends, effects, and a property's
+//! easing where each tweens it) is set to the same value on each. Only what was actually changed is carried over, so setting the
 //! opacity of three layers leaves their different rotations alone.
 
 use inkframe_core::{BlendMode, Layer, LayerId, Property, Transform};
@@ -146,44 +146,30 @@ impl Editor {
         }
     }
 
-    /// Gives every other selected layer `primary`'s effects (colour effect
-    /// and filters) on this frame, keyed there, replacing their own. Done
-    /// from a button, not on every change, since a layer's filters are a
-    /// list it may have built up itself. Returns how many layers changed.
-    pub fn copy_effects_to_selected(&mut self, primary: LayerId) -> usize {
+    /// Gives the other selected layers `effects` (colour effect and
+    /// filters) on this frame, keyed there, as `primary` was just given
+    /// them in the panel.
+    pub fn carry_effects(&mut self, primary: LayerId, effects: &inkframe_core::Effects) {
         let frame = self.frame;
-        let Some(fx) = self.doc.layer(primary).map(|l| l.track.effects_at(frame as f32)) else { return 0 };
-        let mut changed = 0;
         for id in self.also_editing(primary) {
             if let Some(layer) = self.doc.layer_mut(id) {
-                layer.track.set_effects(frame, fx.clone());
-                changed += 1;
+                layer.track.set_effects(frame, effects.clone());
             }
         }
-        changed
     }
 
-    /// Gives the other selected layers' tweens through this frame the same
-    /// easing as `primary`'s, property by property. A layer with no tween
-    /// of that property here is left alone. Returns how many tweens changed.
-    pub fn copy_easing_to_selected(&mut self, primary: LayerId) -> usize {
+    /// Gives the other selected layers' tweens of `property` through this
+    /// frame `easing`, as `primary`'s was just given. A layer with no tween
+    /// of that property here is left alone.
+    pub fn carry_easing(&mut self, primary: LayerId, property: Property, easing: inkframe_core::Easing) {
         let frame = self.frame;
-        let Some(layer) = self.doc.layer(primary) else { return 0 };
-        let easings: Vec<(Property, inkframe_core::Easing)> = Property::ALL
-            .into_iter()
-            .filter_map(|p| layer.track.channel(p).tween_at(frame).map(|t| (p, t.easing)))
-            .collect();
-        let mut changed = 0;
         for id in self.also_editing(primary) {
-            let Some(layer) = self.doc.layer_mut(id) else { continue };
-            for &(property, easing) in &easings {
-                if let Some(e) = layer.track.channel_mut(property).tween_easing_mut(frame) {
-                    *e = easing;
-                    changed += 1;
-                }
+            if let Some(e) =
+                self.doc.layer_mut(id).and_then(|l| l.track.channel_mut(property).tween_easing_mut(frame))
+            {
+                *e = easing;
             }
         }
-        changed
     }
 
     /// Whether some property of the selected layers' poses differs from
@@ -286,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn effects_and_easing_are_copied_on_request() {
+    fn effects_and_easing_changes_are_carried_to_the_others() {
         use inkframe_core::{AnyChannel, ColorEffect, Easing};
         let (mut editor, [a, b, c]) = three_selected();
         // C is faded and tinted; A and B tween their position from frame 0
@@ -299,12 +285,12 @@ mod tests {
         }
         *editor.doc.layer_mut(c).unwrap().track.position.tween_easing_mut(10).unwrap() = Easing::EaseIn;
 
-        assert_eq!(editor.copy_effects_to_selected(c), 2);
+        editor.carry_effects(c, &fx);
         for id in [a, b] {
             assert_eq!(editor.doc.layer(id).unwrap().track.effects_at(0.0), fx);
         }
         editor.set_frame(10);
-        assert_eq!(editor.copy_easing_to_selected(c), 2);
+        editor.carry_easing(c, Property::Position, Easing::EaseIn);
         for id in [a, b] {
             let track = &editor.doc.layer(id).unwrap().track;
             assert_eq!(track.position.tween_at(10).unwrap().easing, Easing::EaseIn);

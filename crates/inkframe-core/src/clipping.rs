@@ -11,10 +11,16 @@
 use crate::document::{Document, Layer, LayerId};
 
 impl Document {
-    /// Whether a layer can be clipped to the one beneath, or be a base:
-    /// only layers that draw something of their own.
+    /// Whether a layer can be clipped to the one beneath: only layers that
+    /// draw something of their own, or adjust what's beneath.
     pub fn can_clip(layer: &Layer) -> bool {
         !(layer.folder || layer.camera || layer.guide || layer.mask)
+    }
+
+    /// Whether layers can be clipped to this one: it must draw something,
+    /// which an adjustment layer doesn't.
+    pub fn can_be_base(layer: &Layer) -> bool {
+        Self::can_clip(layer) && layer.adjustment.is_none()
     }
 
     /// The layer a clipped layer is clipped to: the nearest under it in its
@@ -27,7 +33,7 @@ impl Document {
         }
         // Layers are stored bottom-first, so "under" is earlier.
         let base = layers[..index].iter().rev().find(|l| !l.clipped)?;
-        Self::can_clip(base).then_some(base.id)
+        Self::can_be_base(base).then_some(base.id)
     }
 
     /// Clips a layer to the one beneath it, or releases it. Returns whether

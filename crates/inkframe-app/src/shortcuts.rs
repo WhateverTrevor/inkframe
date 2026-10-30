@@ -105,7 +105,7 @@ pub fn tool_key(tool: Tool) -> Key {
     match tool {
         Tool::PaintBucket | Tool::Gradient | Tool::LassoFill => Key::G,
         // Photoshop has no key for these by default; U is free and near.
-        Tool::Smudge | Tool::Blur | Tool::Sharpen => Key::U,
+        Tool::Smudge | Tool::Blur | Tool::Sharpen | Tool::Liquify => Key::U,
         // O, Photoshop's, is the Oval here.
         Tool::Dodge | Tool::Burn => Key::D,
         Tool::CloneStamp | Tool::PatternStamp => Key::S,

@@ -80,6 +80,8 @@ pub(crate) enum Command {
     ExportPsd,
     /// Opens the Adjustments window with this adjustment.
     Adjust(AdjustmentKind),
+    /// Adds an adjustment layer of this kind above the selected layer.
+    NewAdjustmentLayer(AdjustmentKind),
     Cut,
     Copy,
     /// Pastes layers in the middle of the view (or a keyframe at the playhead).
@@ -108,6 +110,8 @@ pub(crate) enum Command {
     ApplyLayerMask,
     /// Turns the layer mask off or back on.
     ToggleLayerMask,
+    /// Unlinks the layer mask from its layer, or links it again.
+    ToggleMaskLink,
     /// Paints the layer mask, or the layer again.
     EditLayerMask,
     /// Opens the selected instance's symbol for editing.

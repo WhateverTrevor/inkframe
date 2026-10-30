@@ -472,11 +472,22 @@ fn render_layers(
         }
         // A layer clipped to a base beneath it is drawn with that base, below.
         let clips_to_base =
-            || layers[..index].iter().rev().find(|l| !l.clipped).is_some_and(|b| Document::can_clip(b));
+            || layers[..index].iter().rev().find(|l| !l.clipped).is_some_and(|b| Document::can_be_base(b));
         if layer.clipped && clips_to_base() {
             continue;
         }
-        let clipped: Vec<&Layer> = if Document::can_clip(layer) {
+        // An adjustment layer changes everything drawn beneath it so far.
+        if let Some(adjustment) = &layer.adjustment {
+            let behind = match style.light_table {
+                Some(focus) if depth == 0 && layer.id != focus => LIGHT_TABLE_OPACITY,
+                _ => 1.0,
+            };
+            let amount = (own_opacity(layer) * opacity * behind).clamp(0.0, 1.0);
+            let matrix = parent.pre_concat(doc.layer_matrix(layer, frame));
+            adjust_beneath(pixmap, doc, layer, frame, adjustment, amount, matrix);
+            continue;
+        }
+        let clipped: Vec<&Layer> = if Document::can_be_base(layer) {
             layers[index + 1..].iter().copied().take_while(|l| l.clipped).filter(drawn).collect()
         } else {
             Vec::new()
@@ -552,6 +563,8 @@ fn render_layers(
         let buffer = Buffered { doc, frame, region, filter_scale, style, depth };
         let mut scratch = buffer.draw(layer, &moments, &fx);
 
+        // The scratch buffer's place in the image.
+        let offset = Affine::translate(Point::new(-region.x() as f32, -region.y() as f32));
         // Each layer clipped to this one, drawn as it would be, then kept
         // only where this one has paint and blended into it, so the group
         // fades and blends with this layer's opacity and mode as one.
@@ -561,6 +574,21 @@ fn render_layers(
             for child in clipped {
                 let child_opacity = own_opacity(child).clamp(0.0, 1.0);
                 if child_opacity <= 0.0 {
+                    continue;
+                }
+                // Clipped, an adjustment changes only the base and what's
+                // clipped to it before it.
+                if let Some(adjustment) = &child.adjustment {
+                    let matrix = offset.pre_concat(parent.pre_concat(doc.layer_matrix(child, frame)));
+                    adjust_beneath(
+                        &mut scratch.as_mut(),
+                        doc,
+                        child,
+                        frame,
+                        adjustment,
+                        child_opacity,
+                        matrix,
+                    );
                     continue;
                 }
                 let child_fx = child.track.effects_at(frame as f32);
@@ -575,7 +603,6 @@ fn render_layers(
                 scratch.draw_pixmap(0, 0, drawn.as_ref(), &paint, Transform::identity(), None);
             }
         }
-        let offset = Affine::translate(Point::new(-region.x() as f32, -region.y() as f32));
         if let Some(mask) = mask {
             let stencil = mask_stencil(doc, mask, frame, offset.pre_concat(parent), &scratch, style, depth);
             scratch.apply_mask(&stencil);
@@ -612,7 +639,8 @@ impl Buffered<'_> {
         let draw = |into: &mut Pixmap, matrix: Affine| {
             let matrix = offset.pre_concat(matrix);
             draw_layer(&mut into.as_mut(), doc, layer, frame, matrix, style, depth);
-            if let Some(stencil) = layer_mask_stencil(doc, layer, matrix, into) {
+            if let Some(stencil) = layer_mask_stencil(doc, layer, frame, matrix, into.width(), into.height())
+            {
                 into.apply_mask(&stencil);
             }
         };
@@ -643,14 +671,55 @@ impl Buffered<'_> {
     }
 }
 
+/// An adjustment layer's work: every pixel of `pixmap` (all that's drawn
+/// beneath the layer) adjusted, and mixed in by `amount` (the layer's
+/// opacity) and, where it has one, its mask. `matrix` maps the layer's
+/// coordinates onto `pixmap`, for the mask.
+fn adjust_beneath(
+    pixmap: &mut PixmapMut,
+    doc: &Document,
+    layer: &Layer,
+    frame: u32,
+    adjustment: &inkframe_core::Adjustment,
+    amount: f32,
+    matrix: Affine,
+) {
+    if amount <= 0.0 {
+        return;
+    }
+    let stencil = layer_mask_stencil(doc, layer, frame, matrix, pixmap.width(), pixmap.height());
+    let table = adjustment.table();
+    for (i, pixel) in pixmap.data_mut().chunks_exact_mut(4).enumerate() {
+        let coverage = stencil.as_ref().map_or(1.0, |s| s.data()[i] as f32 / 255.0) * amount;
+        if coverage <= 0.0 || pixel[3] == 0 {
+            continue;
+        }
+        let before: [u8; 4] = (&*pixel).try_into().expect("four bytes");
+        let after = adjustment.apply_premultiplied(table.as_ref(), before);
+        for c in 0..3 {
+            pixel[c] = (before[c] as f32 + (after[c] as f32 - before[c] as f32) * coverage).round() as u8;
+        }
+    }
+}
+
 /// A layer's own mask (see `layer_mask.rs` in the core), if it has one
-/// turned on, as a stencil the size of `buffer`: the mask painted over
-/// white and read by brightness. `matrix` maps the layer's coordinates onto
-/// `buffer`; the mask's canvas is centred on the layer's origin.
-fn layer_mask_stencil(doc: &Document, layer: &Layer, matrix: Affine, buffer: &Pixmap) -> Option<Mask> {
+/// turned on, as a stencil `width`×`height`: the mask painted over white
+/// and read by brightness. `matrix` maps the layer's coordinates onto the
+/// stencil; the mask's canvas is centred on the layer's origin, unless it's
+/// been unlinked (see `layer_mask.rs` in the core).
+fn layer_mask_stencil(
+    doc: &Document,
+    layer: &Layer,
+    frame: u32,
+    matrix: Affine,
+    width: u32,
+    height: u32,
+) -> Option<Mask> {
     let mask = layer.layer_mask.filter(|m| m.enabled)?;
     let canvas = doc.canvas(mask.canvas)?;
-    let mut drawing = Pixmap::new(buffer.width(), buffer.height())?;
+    // Moved off the layer, or left on the stage, by unlinking.
+    let matrix = matrix.pre_concat(doc.mask_placement(layer, frame));
+    let mut drawing = Pixmap::new(width, height)?;
     drawing.fill(tiny_skia::Color::WHITE);
     draw_canvas(&mut drawing.as_mut(), canvas, canvas.width, canvas.height, to_skia_transform(matrix), None);
     Some(Mask::from_pixmap(drawing.as_ref(), MaskType::Luminance))
@@ -681,7 +750,7 @@ pub fn merge_down(doc: &mut Document, upper: LayerId, frame: u32, images: Option
     let style =
         Style { tint: None, images, show_guides: false, show_mask: None, light_table: None, texture: None };
     draw_layer(&mut above.as_mut(), doc, top, frame, matrix, style, 0);
-    if let Some(stencil) = layer_mask_stencil(doc, top, matrix, &above) {
+    if let Some(stencil) = layer_mask_stencil(doc, top, frame, matrix, above.width(), above.height()) {
         above.apply_mask(&stencil);
     }
     // Clipped to the layer it's merging into, it keeps to that layer's paint.
@@ -734,7 +803,9 @@ pub fn export_psd(doc: &Document, frame: u32, images: Option<&ImageLibrary>) -> 
     // Folders hold nothing to draw; their layers are exported one by one,
     // stacked as the frame shows them.
     let stacked = doc.stacking_order(TimelineId::Main, frame);
-    for layer in stacked.into_iter().filter(|l| !l.guide && !l.mask && !l.folder) {
+    // An adjustment layer draws nothing of its own to export as a layer;
+    // what it does shows in the merged image.
+    for layer in stacked.into_iter().filter(|l| !l.guide && !l.mask && !l.folder && l.adjustment.is_none()) {
         // Drawn fully opaque and blending normally: Photoshop applies the
         // layer's own opacity and blend mode, kept as settings.
         let mut alone = layer.clone();
@@ -1663,6 +1734,50 @@ mod tests {
         assert!((120..=135).contains(&r) && b == 255, "half the blue over white: {r}, {b}");
         doc.layer_mut(base).unwrap().visible = false;
         assert_eq!(pixel(&render(&doc), 50, 50), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn an_adjustment_layer_changes_whats_beneath_it_only() {
+        let mut doc = small_stage();
+        doc.background = Color::rgb(200, 200, 200);
+        rect_layer(&mut doc, "Grey", 40.0, 40.0, Color::rgb(100, 100, 100));
+        let darker = inkframe_core::Adjustment::BrightnessContrast { brightness: -0.4, contrast: 0.0 };
+        let id = doc.add_adjustment_layer(inkframe_core::TimelineId::Main, "Darker", darker, 0).unwrap();
+        // Above it: untouched.
+        let top = Element {
+            shape: Shape::Rect { width: 10.0, height: 10.0, corner_radius: 0.0 },
+            style: Style { fill: Some(Color::rgb(100, 100, 100)), stroke: None, gradient: None },
+        };
+        doc.add_layer("Above", vec![top], 0, Pose::at(Point::new(10.0, 10.0)));
+        let render = |doc: &Document| render_frame(doc, 0, &RenderOptions::default()).unwrap();
+        let pixmap = render(&doc);
+        assert!(pixel(&pixmap, 50, 50)[0] < 90, "the grey beneath is darker: {:?}", pixel(&pixmap, 50, 50));
+        assert!(pixel(&pixmap, 90, 90)[0] < 190, "and so is the background");
+        assert_eq!(pixel(&pixmap, 10, 10), [100, 100, 100, 255], "what's above it isn't");
+
+        // At half opacity, half as much; hidden, not at all.
+        doc.layer_mut(id)
+            .unwrap()
+            .track
+            .set_pose(0, Pose { opacity: 0.5, ..Pose::at(Point::new(50.0, 50.0)) });
+        let half = pixel(&render(&doc), 50, 50)[0];
+        // Full strength takes 100 to 49; half, halfway.
+        assert!((72..=78).contains(&half), "{half}");
+        doc.layer_mut(id).unwrap().visible = false;
+        assert_eq!(pixel(&render(&doc), 50, 50), [100, 100, 100, 255]);
+    }
+
+    #[test]
+    fn a_clipped_adjustment_layer_changes_only_its_base() {
+        let mut doc = small_stage();
+        doc.background = Color::rgb(200, 200, 200);
+        rect_layer(&mut doc, "Grey", 40.0, 40.0, Color::rgb(100, 100, 100));
+        let darker = inkframe_core::Adjustment::BrightnessContrast { brightness: -0.4, contrast: 0.0 };
+        let id = doc.add_adjustment_layer(inkframe_core::TimelineId::Main, "Darker", darker, 0).unwrap();
+        doc.set_clipped(id, true);
+        let pixmap = render_frame(&doc, 0, &RenderOptions::default()).unwrap();
+        assert!(pixel(&pixmap, 50, 50)[0] < 90, "the base is darker");
+        assert_eq!(pixel(&pixmap, 90, 90), [200, 200, 200, 255], "the background isn't");
     }
 
     #[test]

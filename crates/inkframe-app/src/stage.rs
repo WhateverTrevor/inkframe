@@ -1352,6 +1352,7 @@ impl StageView {
             | Tool::Gradient
             | Tool::Mixer
             | Tool::Smudge
+            | Tool::Liquify
             | Tool::Blur
             | Tool::Sharpen
             | Tool::Dodge
@@ -1593,6 +1594,7 @@ impl StageView {
                         | Tool::Gradient
                         | Tool::Mixer
                         | Tool::Smudge
+                        | Tool::Liquify
                         | Tool::Blur
                         | Tool::Sharpen
                         | Tool::Dodge

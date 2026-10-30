@@ -38,6 +38,7 @@ brush-settings   | -                           | BRUSH_PANEL=shape BRUSH=Foliage
 quick-brush      | -                           | PAINT=1 QUICK_BRUSH=1
 symmetry         | -                           | SYMMETRY=1
 masks            | examples/painted-landscape.inkf | MASKS=1
+adjustment       | examples/painted-landscape.inkf | ADJUSTMENT=1
 ink              | -                           | INK=1
 palette          | examples/rig.inkf           | PALETTE=1 WORKSPACE=Designer
 vectorise        | -                           | PAINT=1 VECTORISE=ink

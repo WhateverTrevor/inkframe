@@ -9,6 +9,7 @@
 
 use egui::{Align2, Key, KeyboardShortcut, RichText, Sense, vec2};
 
+use crate::adjust_dialog::AdjustmentKind;
 use crate::app::Command;
 use crate::editor::{Editor, Tool};
 use crate::envelope::LatticeKind;
@@ -204,6 +205,30 @@ pub(crate) fn entries() -> Vec<Entry> {
         entry(tr_later("Add Shape Hint"), tr_later("Modify"), Command::AddShapeHint)
             .keys(shortcuts::ADD_SHAPE_HINT)
             .also(tr_later("morph tween")),
+        entry(
+            tr_later("New Adjustment Layer: Curves"),
+            tr_later("Modify"),
+            Command::NewAdjustmentLayer(AdjustmentKind::Curves),
+        )
+        .also(tr_later("grade colour tone non-destructive")),
+        entry(
+            tr_later("New Adjustment Layer: Levels"),
+            tr_later("Modify"),
+            Command::NewAdjustmentLayer(AdjustmentKind::Levels),
+        )
+        .also(tr_later("grade tone non-destructive")),
+        entry(
+            tr_later("New Adjustment Layer: Hue/Saturation"),
+            tr_later("Modify"),
+            Command::NewAdjustmentLayer(AdjustmentKind::HueSaturation),
+        )
+        .also(tr_later("grade colour non-destructive")),
+        entry(
+            tr_later("New Adjustment Layer: Brightness/Contrast"),
+            tr_later("Modify"),
+            Command::NewAdjustmentLayer(AdjustmentKind::BrightnessContrast),
+        )
+        .also(tr_later("grade tone non-destructive")),
         entry(tr_later("Merge Down"), tr_later("Modify"), Command::MergeDown)
             .also(tr_later("paint layers flatten")),
         entry(tr_later("New Drawing"), tr_later("Modify"), Command::NewDrawing)

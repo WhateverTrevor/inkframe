@@ -79,6 +79,14 @@ impl Editor {
         }
     }
 
+    /// Unlinks the selected layer's mask, so it stays put on the stage as
+    /// the layer moves, or links it again, as Photoshop's chain icon does.
+    pub fn toggle_mask_link(&mut self) {
+        let Some(id) = self.selection else { return };
+        let Some(linked) = self.selected_mask().map(|m| m.is_linked()) else { return };
+        self.doc.set_mask_linked(id, !linked, self.frame);
+    }
+
     /// Paints the layer's mask (true) or the layer itself.
     pub fn set_editing_mask(&mut self, layer: LayerId, mask: bool) {
         self.select(Some(layer));

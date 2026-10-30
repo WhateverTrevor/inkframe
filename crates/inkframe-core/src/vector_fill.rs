@@ -47,6 +47,7 @@ impl Layer {
         self.instance.is_none()
             && !self.folder
             && !self.camera
+            && self.adjustment.is_none()
             && !self.all_elements().any(|e| matches!(e.shape, Shape::Paint { .. }))
     }
 

@@ -1032,6 +1032,8 @@ impl TimelineView {
                         Some(Icon::Camera)
                     } else if layer.folder {
                         Some(if self.collapsed.contains(&layer.id) { Icon::Folder } else { Icon::FolderOpen })
+                    } else if layer.adjustment.is_some() {
+                        Some(Icon::Graph)
                     } else {
                         None
                     };

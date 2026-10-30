@@ -148,6 +148,8 @@ impl InkframeApp {
                     item(ui, paint, None, Command::EditLayerMask, mask.is_some());
                     let off = if mask.is_some_and(|m| !m.enabled) { tr("Turn On") } else { tr("Turn Off") };
                     item(ui, off, None, Command::ToggleLayerMask, mask.is_some());
+                    let link = if mask.is_some_and(|m| !m.is_linked()) { tr("Link") } else { tr("Unlink") };
+                    item(ui, link, None, Command::ToggleMaskLink, mask.is_some());
                     // Only a painting can have the mask erased into it.
                     let painting = self.editor.selection.is_some_and(|id| {
                         self.editor.doc.paint_canvas_at(id, self.editor.frame).is_some()
@@ -185,6 +187,12 @@ impl InkframeApp {
                     for kind in AdjustmentKind::ALL {
                         let label = format!("{}…", tr(kind.neutral().name()));
                         item(ui, &label, None, Command::Adjust(kind), paint);
+                    }
+                });
+                // The same, as a layer that can be changed or hidden later.
+                ui.menu_button(tr("New Adjustment Layer"), |ui| {
+                    for kind in AdjustmentKind::ALL {
+                        item(ui, tr(kind.neutral().name()), None, Command::NewAdjustmentLayer(kind), true);
                     }
                 });
                 // Drawing substitution: only for layers with their own

@@ -380,6 +380,17 @@ pub(crate) fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) 
                 .collect();
             painter.add(egui::Shape::closed_line(drop, stroke));
         }
+        Tool::Liquify => {
+            // A finger pushing a wavy line out of true.
+            let wave: Vec<Pos2> = (0..=16)
+                .map(|i| {
+                    let t = i as f32 / 16.0;
+                    at(t, 0.62 - 0.22 * (std::f32::consts::PI * t).sin().powi(2))
+                })
+                .collect();
+            painter.add(egui::Shape::line(wave, stroke));
+            painter.circle_stroke(at(0.5, 0.82), r.width() * 0.12, stroke);
+        }
         Tool::Sharpen => {
             // A sharp point.
             let point = [(0.5, 0.0), (0.82, 1.0), (0.18, 1.0)];
