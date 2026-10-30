@@ -3,7 +3,14 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
-## Unreleased
+## [0.9.0]
+
+Photoshop's clipping masks and layer masks, an Eraser that cuts drawn
+lines and fills, a painter's colour wheel, Lasso Fill, a flipped view
+and tools held for a moment. Sprite sheets come back in to edit, the pen
+feels the way you set it, and Inkframe tells you when there's a newer
+version. Projects saved in 0.9.0 use file format 40, which older
+versions can't open; 0.9.0 opens everything they saved.
 
 ### Painting
 
@@ -81,7 +88,11 @@ notes on GitHub are its section here.
 - Properties shows the tool's settings when Inkframe starts with a
   painting tool picked.
 
-File format 40: older versions can't open projects saved with this one.
+### Fixes
+
+- Onion skin no longer shows a tinted rim round a drawing that stays put
+  (the green edge round light colours): a ghost shows only where its
+  frame differs from this one.
 
 ## [0.8.0]
 

@@ -19,7 +19,7 @@ and how the work is done.
   pass, on macOS locally and on macOS and Windows in CI.
 - **File format:** version 40. Older files load and upgrade automatically
   (`crates/inkframe-core/tests/format_migration.rs`).
-- **Releases:** v0.2.0 to v0.8.0 are tagged. Their GitHub releases are
+- **Releases:** v0.2.0 to v0.9.0 are tagged. Their GitHub releases are
   drafts (with the .dmg, setup.exe and guidebook PDF) that the user
   publishes. Unreleased work is under *Unreleased* in the changelog.
 - **Remote:** https://github.com/WhateverTrevor/inkframe (public). CI runs
