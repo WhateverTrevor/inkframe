@@ -157,21 +157,28 @@ mod tests {
         );
     }
 
+    /// A full path on this computer: Windows doesn't count `/music` as
+    /// one, without a drive.
+    fn full(path: &str) -> std::path::PathBuf {
+        let root = if cfg!(windows) { "C:/" } else { "/" };
+        Path::new(root).join(path)
+    }
+
     #[test]
     fn saving_relinks_files_for_the_projects_new_folder() {
         let mut doc = Document::default();
         // Imported before the project was ever saved: linked in full.
-        let sound = doc.add_audio(Path::new("/projects/walk/sound/voice.wav"), None, 0);
-        let song = doc.add_audio(Path::new("/music/song.mp3"), None, 0);
-        doc.relink(None, Path::new("/projects/walk"));
+        let sound = doc.add_audio(&full("projects/walk/sound/voice.wav"), None, 0);
+        let song = doc.add_audio(&full("music/song.mp3"), None, 0);
+        doc.relink(None, &full("projects/walk"));
         assert_eq!(doc.audio_track(sound).unwrap().path, Path::new("sound/voice.wav"));
-        assert_eq!(doc.audio_track(song).unwrap().path, Path::new("/music/song.mp3"));
+        assert_eq!(doc.audio_track(song).unwrap().path, full("music/song.mp3"));
 
         // Saved as into another folder: the sound is still the one beside
         // the first project.
-        doc.relink(Some(Path::new("/projects/walk")), Path::new("/backup"));
-        assert_eq!(doc.audio_track(sound).unwrap().path, Path::new("/projects/walk/sound/voice.wav"));
-        assert_eq!(doc.audio_track(song).unwrap().path, Path::new("/music/song.mp3"));
+        doc.relink(Some(&full("projects/walk")), &full("backup"));
+        assert_eq!(doc.audio_track(sound).unwrap().path, full("projects/walk/sound/voice.wav"));
+        assert_eq!(doc.audio_track(song).unwrap().path, full("music/song.mp3"));
     }
 
     #[test]
