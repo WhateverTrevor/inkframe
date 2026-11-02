@@ -136,8 +136,9 @@ fn find_appimagetool() -> Result<PathBuf, String> {
 /// A distribution's own ffmpeg is split into libavcodec and friends, which
 /// come and go with that distribution's packages: copied into the AppImage
 /// it would run here and fail on a computer without them. `ldd` lists what
-/// a program loads; a static build loads nothing, or (as most do) only the
-/// C library's own pieces, which every Linux has.
+/// a program loads; a static build loads nothing, or only the C library's
+/// own pieces and the C++ and GCC runtimes, which every desktop has (nearly
+/// everything on it needs them).
 fn check_self_contained(ffmpeg: &Path) -> Result<(), String> {
     if !ffmpeg.is_file() {
         return Err(format!("no ffmpeg at {}", ffmpeg.display()));
@@ -149,7 +150,18 @@ fn check_self_contained(ffmpeg: &Path) -> Result<(), String> {
         return Ok(());
     }
     let listing = output(Command::new("ldd").arg(ffmpeg))?;
-    let base = ["linux-vdso", "libc.so", "libm.so", "libdl.so", "libpthread.so", "librt.so", "ld-linux"];
+    let base = [
+        "linux-vdso",
+        "ld-linux",
+        "libc.so",
+        "libm.so",
+        "libmvec.so",
+        "libdl.so",
+        "libpthread.so",
+        "librt.so",
+        "libgcc_s.so",
+        "libstdc++.so",
+    ];
     let outside: Vec<&str> = listing
         .lines()
         .filter_map(|line| line.split_whitespace().next())

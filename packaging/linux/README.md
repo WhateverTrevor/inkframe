@@ -41,7 +41,8 @@ built on: Ubuntu 22.04 for CI's builds.
 Use a **static** build, such as
 [martin-riedl.de's](https://ffmpeg.martin-riedl.de), which CI uses. A distribution's
 own ffmpeg is split into libraries that come and go with its packages, so
-the packaging task refuses one that loads anything beyond the C library.
+the packaging task refuses one that loads anything beyond the C library and
+the C++ and GCC runtimes.
 It needs the `prores_ks` and `libx264` encoders (HEVC with alpha is
 macOS-only). Licensing works the same way as on macOS; see
 [../macos/README.md](../macos/README.md#licensing).
