@@ -1,4 +1,4 @@
-//! The vertical tool strip on the left, plus the colors new shapes get.
+//! The vertical tool strip on the left, plus the colours the tools use.
 //!
 //! Tool icons are drawn with vector shapes instead of an icon font. That
 //! keeps them crisp at any display scale and avoids depending on which
@@ -6,10 +6,7 @@
 
 use egui::{Color32, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2, pos2, vec2};
 
-use crate::convert::color_button;
 use crate::editor::{Editor, Tool};
-use crate::i18n::tr;
-use crate::icons::{Icon, IconButton};
 use crate::shortcuts;
 
 const BUTTON_SIZE: f32 = 36.0;
@@ -44,26 +41,10 @@ pub fn show(ui: &mut egui::Ui, editor: &mut Editor) {
         ui.separator();
         ui.add_space(4.0);
 
-        // Colors for new shapes. Pencil strokes have their own color, since a
-        // filled pencil line rarely makes sense.
-        if editor.tool == Tool::Pencil {
-            ui.weak(tr("Line"));
-            color_button(ui, &mut editor.pencil_stroke.color);
-            ui.add(egui::DragValue::new(&mut editor.pencil_stroke.width).range(0.5..=100.0).speed(0.1))
-                .on_hover_text(tr("Line width"));
-        } else {
-            ui.weak(tr("Fill"));
-            swatch(ui, &mut editor.draw_style.fill);
-            ui.weak(tr("Stroke"));
-            let mut stroke_color = editor.draw_style.stroke.map(|s| s.color);
-            if swatch(ui, &mut stroke_color) {
-                // A new colour keeps the line's width, ends and dashes.
-                let previous = editor.draw_style.stroke;
-                editor.draw_style.stroke = stroke_color.map(|color| inkframe_core::Stroke {
-                    color,
-                    ..previous.unwrap_or(inkframe_core::Stroke::new(color, 2.0))
-                });
-            }
+        // The current tool's colours (see `colour_well.rs`); clicking one
+        // brings up the Colour tab to change it.
+        if crate::colour_well::show(ui, editor) {
+            editor.brush_request = Some(crate::brush_panel::Asked::ShowColour);
         }
     });
 }
@@ -103,40 +84,6 @@ fn group_button(ui: &mut egui::Ui, editor: &mut Editor, group: &'static [Tool]) 
     }
 }
 
-/// A color button and, beside it, a button to switch to no colour. With
-/// no colour, the swatch shows Animate's red slash; clicking it brings a
-/// colour back. Returns true on change.
-fn swatch(ui: &mut egui::Ui, color: &mut Option<inkframe_core::Color>) -> bool {
-    let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
-        let size = ui.spacing().interact_size;
-        // Centred under the label, the pair taking a swatch and a button.
-        ui.add_space(((ui.available_width() - size.x - 26.0) / 2.0).max(0.0));
-        match color {
-            Some(c) => changed |= color_button(ui, c),
-            None => {
-                let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-                ui.painter().rect_filled(rect, 2.0, Color32::WHITE);
-                ui.painter().line_segment(
-                    [rect.left_bottom(), rect.right_top()],
-                    Stroke::new(2.0, Color32::from_rgb(0xe0, 0x30, 0x30)),
-                );
-                if response.on_hover_text(tr("No colour. Click to use one")).clicked() {
-                    *color = Some(inkframe_core::Color::BLACK);
-                    changed = true;
-                }
-            }
-        }
-        let none = IconButton::new(Icon::NoColor, tr("No colour")).selected(color.is_none());
-        if ui.add(none).clicked() && color.is_some() {
-            *color = None;
-            changed = true;
-        }
-    });
-    changed
-}
-
 /// A toolbar button. `grouped` adds the small corner triangle that marks a
 /// slot holding more than one tool, as Photoshop's do.
 fn tool_button(ui: &mut egui::Ui, tool: Tool, selected: bool, grouped: bool) -> egui::Response {
@@ -171,6 +118,17 @@ fn arrow_outline(at: impl Fn(f32, f32) -> Pos2) -> Vec<Pos2> {
         .iter()
         .map(|&(x, y)| at(x, y))
         .collect()
+}
+
+/// A fountain-pen nib, point down, with its slit and breather hole.
+fn pen_nib(painter: &Painter, r: Rect, stroke: Stroke) {
+    let at = |x: f32, y: f32| pos2(r.left() + x * r.width(), r.top() + y * r.height());
+    let nib = [(0.5, 1.0), (0.18, 0.5), (0.32, 0.12), (0.68, 0.12), (0.82, 0.5)];
+    let points: Vec<Pos2> = nib.iter().map(|&(x, y)| at(x, y)).collect();
+    painter.add(egui::Shape::closed_line(points, stroke));
+    painter.line_segment([at(0.5, 1.0), at(0.5, 0.55)], stroke);
+    painter.circle_stroke(at(0.5, 0.48), 1.5, stroke);
+    painter.line_segment([at(0.25, 0.0), at(0.75, 0.0)], stroke);
 }
 
 pub(crate) fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) {
@@ -212,14 +170,36 @@ pub(crate) fn draw_icon(painter: &Painter, tool: Tool, r: Rect, stroke: Stroke) 
             painter.line_segment([at(0.5, 0.42), at(0.5, 0.05)], stroke);
             painter.circle_filled(at(0.5, 0.05), 2.5, stroke.color);
         }
-        Tool::Pen => {
-            // A fountain-pen nib, point down, with its slit and breather hole.
-            let nib = [(0.5, 1.0), (0.18, 0.5), (0.32, 0.12), (0.68, 0.12), (0.82, 0.5)];
-            let points: Vec<Pos2> = nib.iter().map(|&(x, y)| at(x, y)).collect();
-            painter.add(egui::Shape::closed_line(points, stroke));
-            painter.line_segment([at(0.5, 1.0), at(0.5, 0.55)], stroke);
-            painter.circle_stroke(at(0.5, 0.48), 1.5, stroke);
-            painter.line_segment([at(0.25, 0.0), at(0.75, 0.0)], stroke);
+        Tool::Pen => pen_nib(painter, r, stroke),
+        // The nib, smaller, with the badge Adobe's tools have: a plus, a
+        // minus, or the caret of a point turning.
+        Tool::AddAnchor | Tool::DeleteAnchor => {
+            pen_nib(painter, Rect::from_min_size(r.min, r.size() * 0.78), stroke);
+            painter.line_segment([at(0.66, 0.85), at(1.0, 0.85)], stroke);
+            if tool == Tool::AddAnchor {
+                painter.line_segment([at(0.83, 0.68), at(0.83, 1.02)], stroke);
+            }
+        }
+        Tool::Curvature => {
+            // A wave flowing through three points.
+            let wave: Vec<Pos2> = (0..=16)
+                .map(|i| {
+                    let t = i as f32 / 16.0;
+                    at(0.05 + 0.9 * t, 0.5 - 0.32 * (t * std::f32::consts::TAU).sin())
+                })
+                .collect();
+            painter.add(egui::Shape::line(wave, stroke));
+            for (x, y) in [(0.05, 0.5), (0.275, 0.18), (0.725, 0.82)] {
+                painter.rect_filled(Rect::from_center_size(at(x, y), Vec2::splat(4.0)), 0.0, stroke.color);
+            }
+        }
+        Tool::ConvertAnchor => {
+            // A point with handles, bent at a corner: Animate's caret.
+            painter.add(egui::Shape::line(vec![at(0.05, 0.9), at(0.5, 0.15), at(0.95, 0.9)], stroke));
+            painter.rect_filled(Rect::from_center_size(at(0.5, 0.15), Vec2::splat(4.0)), 0.0, stroke.color);
+            for end in [at(0.05, 0.9), at(0.95, 0.9)] {
+                painter.circle_filled(end, 2.0, stroke.color);
+            }
         }
         Tool::Rectangle => {
             painter.rect_stroke(r.shrink2(vec2(0.0, 3.0)), 1.0, stroke, StrokeKind::Middle);

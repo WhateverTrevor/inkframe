@@ -35,9 +35,20 @@ Some useful things to know about layers:
 
 ## Shapes, the Pencil and the Pen
 
-The simplest drawing tools are the **Rectangle** ([[R]]) and **Oval** ([[O]]): drag on the stage to draw one, holding [[⇧]] for a square or a circle. They're drawn in the **Fill** and **Stroke** colours under the toolbar; click either to pick a colour, or ⊘ beside it for none.
+The simplest drawing tools are the **Rectangle** ([[R]]) and **Oval** ([[O]]): drag on the stage to draw one, holding [[⇧]] for a square or a circle. They're drawn in the **Fill** and **Stroke** colours in the *colour well* under the toolbar, as in Illustrator: the fill a solid square, the stroke a hollow one, the one you're changing in front. Click either to bring it to the front and change it in the **Colour** tab, beside Properties. [[X]] brings the other one to the front, [[⇧X]] swaps the two colours, and under the well are buttons to swap them, go back to the default colours, and ⊘ for no colour at all.
 
-Every colour in Inkframe is picked the same way: a hue ring round a square of saturation and brightness, with sliders for **Hue**, **Saturation**, **Brightness** and **Opacity**, the colour as **Hex** to copy or type, and the colours you've used lately. The **Colour** editor (in any area's menu, under Design, and in the Painter workspace) keeps the picker open for the colour the current tool uses.
+The well holds what the current tool uses: a fill and stroke for the shape tools, the line's stroke (and its width) for the Pencil, and for the painting tools the **Colour** they paint with, with a **Second colour** behind it, as Photoshop's foreground and background colours are (there, [[X]] swaps them).
+
+The Colour tab picks colours in the style you like, and remembers it:
+
+| Style | Picks |
+|---|---|
+| **Wheel** | A hue ring round a square of saturation and brightness, with sliders for each |
+| **Triangle** | A hue ring round a triangle that runs from the pure hue to white and black |
+| **HSL** | Hue, saturation and lightness sliders, each showing the colours it runs through, and red, green and blue as numbers |
+| **Swatches** | The project's swatches, a standard set (greys, and twelve hues from dark to light), and the colours you've used lately |
+
+Every style has **Opacity**, and the colour as **Hex** to copy or type. Colour buttons elsewhere, in Properties, open the same picker.
 
 The **Pencil** ([[Y]]) draws freehand lines. With a pen tablet, pressing harder draws a thicker line, and its ends taper as a brush's would. Both are options in its settings; with both off, it draws even strokes.
 
@@ -49,21 +60,64 @@ The **Text** tool ([[T]]) types on the stage: click and type, and press [[Esc]] 
 
 ### The Pen
 
-The **Pen** ([[P]]) draws precise paths, point by point:
+The **Pen** ([[P]]) draws precise paths, point by point, as Animate's and Illustrator's do:
 
 1. **Click** to put down a corner point.
 2. **Click and drag** to put down a smooth point, pulling out its curve handles as you drag.
-3. To close the shape, click the first point. To leave the line open, press [[Enter]] or [[Esc]], or click the last point again.
+3. To close the shape, click the first point; drag there instead to curve the closing segment. To leave the line open, press [[Enter]] or [[Esc]], [[⌘]]-click away from it, or double-click the last point.
 
-While drawing, [[Backspace]] removes the last point and [[⇧]] keeps each segment at a 45° angle.
+While you drag out a point's handles:
 
-Between paths, the Pen also edits the selected shape's points, as in Animate. Click a point to show its handles, and drag the point or its handles. [[⌥]]-drag a corner point to pull curve handles out of it, turning the corner into a curve; [[⌥]]-click a point to switch it between corner and smooth. Click the outline between two points to add a point without changing the curve.
+| Hold | And the handle |
+|---|---|
+| [[⌥]] | Moves on its own, leaving the handle on the other side where it was: a corner between two curves |
+| [[⇧]] | Keeps to 45° steps |
+| [[Space]] | Stays as it is while the point itself moves, to put the point somewhere better |
+
+Hold [[⌘]] while drawing to drag a point you've already placed, or the handles showing, without ending the path; let go of [[⌘]] and carry on. Click the last point to take back its outgoing handle, so the next segment starts straight; drag from it to pull out a new one, leaving the curve that arrives alone. [[Backspace]] removes the last point, and [[⇧]] keeps each new segment at a 45° angle.
+
+Over the selected shape, the Pen changes to suit what's under it, with a small sign beside the pointer:
+
+| Sign | Over | A click |
+|---|---|---|
+| **+** | The outline | Adds a point there, without changing the curve |
+| **−** | A point | Deletes it |
+| **/** | The end of an open line | Carries on drawing from it |
+| **o** | The first point, while drawing | Closes the shape |
+| **^** | Any point, with [[⌥]] held | Converts it (see below) |
+
+Hold [[⌘]] and the Pen becomes the Subselection tool for as long as you hold it, to drag points and handles; hold [[⌥]] and it becomes Convert Anchor Point.
+
+The Pen shares its slot in the toolbar with three tools that do one job each. Press [[⇧P]] to step through them, or use their own keys:
+
+| Tool | Key | Does |
+|---|---|---|
+| **Add Anchor Point** | [[=]] | Click the selected shape's outline to add a point |
+| **Delete Anchor Point** | [[-]] | Click a point to delete it |
+| **Curvature** | [[⇧~]] | Draws without handles: click points and the curve flows smoothly through them, each new point bending the curve before it. [[⌥]]-click for a corner. Close and finish as with the Pen. On a selected shape, drag a point and the curve re-flows around it; double-click a point to switch it between a corner and a smooth one |
+| **Convert Anchor Point** | [[⇧C]] | Click a curve's point to make it a corner; drag a point to pull curve handles out of it; drag a handle to move it alone. It shows every point's handles, so any can be dragged |
+
+### Picking several points
+
+With the Subselection tool (or the Pen with [[⌘]]), drag a box over empty stage around some of the selected shape's points to pick them all, and [[⇧]]-click a point to add it to those picked or let it go. Dragging any picked point moves them all, handles and all, and [[Delete]] deletes them (each shape keeps enough points to stay one). The point you picked last is the *key* point: its handles show, and Properties › Point shows it.
+
+### Shaping each point
+
+With a point picked (by the Subselection tool, or the Pen with [[⌘]]), the **Point** section at the top of Properties shapes its curve with numbers:
+
+- **Position** moves the point, its handles coming along.
+- **Type** (for every point picked) makes it a **Corner** (no handles), **Smooth** (handles in line, so the curve flows through it, each its own length so the curve can be tighter on one side) or **Symmetric** (in line and the same length). A point whose handles were moved apart is *broken*, as Illustrator calls it, and says so.
+- **Handle in** and **Handle out** set how far each handle reaches (how strongly the curve leans its way) and its angle. On a smooth point, turning one handle turns the other with it.
+
+Positions, lengths and angles are as the point looks on the stage, however the layer is moved, turned or scaled.
 
 ![A hill drawn with the Pen: its top corner turned into a curve by Alt-dragging handles out of it](pen-handles){crop=0.3,0.28,0.25,0.3}
 
+![The Point section for that top point: a symmetric point, its handles 140 pixels long, level](pen-handles){crop=0.78,0.42,0.22,0.2}
+
 ## Reshaping with the Subselection and Width tools
 
-The **Subselection** tool ([[A]]) edits the points of any shape, whichever tool drew it. Click a shape to see its points, then drag a point to move it, or drag a selected point's handles to change its curves. As with the Pen, [[⌥]]-drag a point to pull out new curve handles, [[⌥]]-click it to switch between corner and smooth, and hold [[⌥]] while dragging a handle to move it alone, for a sharp corner. [[Delete]] removes the selected point. Rectangles and ovals become ordinary paths the first time you edit their points.
+The **Subselection** tool ([[A]]) edits the points of any shape, whichever tool drew it. Click a shape to see its points, then drag a point to move it, or drag a selected point's handles to change its curves. As with the Pen (or Convert Anchor Point), [[⌥]]-drag a point to pull out new curve handles, [[⌥]]-click it to switch between corner and smooth, and hold [[⌥]] while dragging a handle to move it alone, for a sharp corner. [[Delete]] removes the selected point. Rectangles and ovals become ordinary paths the first time you edit their points.
 
 The **Width** tool ([[⇧A]], sharing a slot with Subselection) shapes Pencil lines: drag sideways from any point on a line to make it wider or narrower there, for an ink line that swells and thins.
 

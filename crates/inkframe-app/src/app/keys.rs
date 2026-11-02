@@ -223,8 +223,15 @@ impl InkframeApp {
                 (Key::Num5, Command::ResetRotation),
                 // Mirror the view, to see a drawing afresh.
                 (Key::H, Command::FlipView),
+                // Illustrator's and Photoshop's: the other colour, or swap.
+                (Key::X, Command::SwitchColour),
                 (Key::Backspace, Command::DeleteLayer),
             ];
+            // Shift+X swaps the colours, as in Illustrator. Before the plain
+            // keys, which would take it as X.
+            if input.consume_key(Modifiers::SHIFT, Key::X) {
+                commands.push(Command::SwapColours);
+            }
             // Ctrl+Space: the area under the pointer fills the window, or
             // goes back, as in Blender.
             if input.consume_key(Modifiers::CTRL, Key::Space) {
@@ -233,6 +240,13 @@ impl InkframeApp {
             for (key, command) in plain_keys {
                 if input.consume_key(Modifiers::NONE, key) {
                     commands.push(command);
+                }
+            }
+            // Before the slots, since Shift+C would otherwise step through
+            // the Camera's.
+            for (modifiers, key, tool) in ANCHOR_TOOL_KEYS {
+                if input.consume_key(modifiers, key) {
+                    commands.push(Command::UseTool(tool));
                 }
             }
             for group in Tool::GROUPS {

@@ -343,20 +343,20 @@ impl Layout {
         let root = match workspace {
             Workspace::Essentials => {
                 let (tools, stage) = (b.single(Kind::Tools), b.single(Kind::Stage));
-                let right = b.area(&[Kind::Properties, Kind::Library]);
+                let right = b.area(&[Kind::Properties, Kind::Colour, Kind::Library]);
                 let timeline = b.single(Kind::Timeline);
                 down(0.72, across(TOOLS, tools, across(0.76, stage, right)), timeline)
             }
             Workspace::Animator => {
                 let (tools, stage) = (b.single(Kind::Tools), b.single(Kind::Stage));
-                let right = b.area(&[Kind::Properties, Kind::Library, Kind::Swatches]);
+                let right = b.area(&[Kind::Properties, Kind::Colour, Kind::Library, Kind::Swatches]);
                 let timeline = b.area(&[Kind::Timeline, Kind::GraphEditor, Kind::ExposureSheet]);
                 down(0.6, across(TOOLS, tools, across(0.76, stage, right)), timeline)
             }
             Workspace::Designer => {
                 let (tools, stage) = (b.single(Kind::Tools), b.single(Kind::Stage));
                 let upper = b.area(&[Kind::Properties, Kind::Library]);
-                let lower = b.area(&[Kind::Swatches, Kind::Align]);
+                let lower = b.area(&[Kind::Colour, Kind::Swatches, Kind::Align]);
                 let timeline = b.single(Kind::Timeline);
                 down(0.8, across(TOOLS, tools, across(0.74, stage, down(0.6, upper, lower))), timeline)
             }
@@ -1434,11 +1434,11 @@ mod tests {
     fn changing_a_tab_to_a_kind_the_area_has_shows_that_tab() {
         let mut layout = Layout::default();
         let right = id_of(&layout, Kind::Properties);
-        assert_eq!(layout.tabs_of(right), [Kind::Properties, Kind::Library]);
+        assert_eq!(layout.tabs_of(right), [Kind::Properties, Kind::Colour, Kind::Library]);
         layout.set_kind(right, Kind::Library);
-        assert_eq!(layout.tabs_of(right), [Kind::Properties, Kind::Library]);
+        assert_eq!(layout.tabs_of(right), [Kind::Properties, Kind::Colour, Kind::Library]);
         layout.set_kind(right, Kind::Swatches);
-        assert_eq!(layout.tabs_of(right), [Kind::Properties, Kind::Swatches]);
+        assert_eq!(layout.tabs_of(right), [Kind::Properties, Kind::Colour, Kind::Swatches]);
     }
 
     #[test]
@@ -1470,7 +1470,7 @@ mod tests {
         let right = id_of(&old, Kind::Properties);
         old.close_tab(right, Kind::Library);
         let upgraded = old.upgraded();
-        assert_eq!(upgraded.tabs_of(right), [Kind::Properties, Kind::Library]);
+        assert_eq!(upgraded.tabs_of(right), [Kind::Properties, Kind::Colour, Kind::Library]);
         assert_eq!(upgraded.kind_of(right), Some(Kind::Properties));
     }
 }

@@ -16,6 +16,7 @@ mod lattice;
 mod motion;
 mod painting;
 mod pen_tool;
+use pen_tool::PenAction;
 mod perspective;
 mod rigs;
 mod rulers;
@@ -39,10 +40,10 @@ use crate::editor::{Editor, OnionSkin, Surrounding, Tool};
 use crate::handles::{RotateDrag, ScaleHandle, ScaleOptions, scale_pose, skew_pose};
 use crate::i18n::tr;
 use crate::pen::PenPath;
-use crate::subselect::{AnchorPart, move_part, pull_handles, remove_anchor};
+use crate::subselect::{AnchorPart, move_part, pull_handles, reflow_around, remove_anchor};
 use crate::text_edit::TypingHistory;
 use crate::{library, motion_path, tablet};
-use anchors::{AnchorRef, convert_point, insert_point};
+use anchors::{AnchorRef, by_element, convert_point, insert_point, make_corner};
 use decorations::{
     draw_camera_frame, draw_checkerboard, draw_emitters, draw_empty_stage_hint, draw_guides,
     draw_onion_skins, draw_registration_point, draw_stage_shadow,
@@ -232,6 +233,9 @@ enum Gesture {
     /// Dragging a selection box over empty stage. `adding` keeps what was
     /// already selected (Shift held).
     Marquee { start: Point, current: Point, adding: bool },
+    /// Dragging a box round a shape's points to pick them, with the
+    /// Subselection tool: on screen, as the points are seen.
+    PointMarquee { start: Pos2, current: Pos2, adding: bool },
     /// Dragging out a new rectangle or ellipse.
     DrawShape { tool: Tool, start: Point, current: Point },
     /// Drawing a freehand stroke.
@@ -296,15 +300,18 @@ enum Gesture {
         grab: Point,
     },
     /// Dragging an anchor point or one of its handles with the Subselection
-    /// tool (or the Pen, between paths). `start` holds the shape's anchors
-    /// from when the drag began, and the pointer is converted into the
-    /// layer's local space with `to_local`.
+    /// tool (or the Pen with ⌘ or Alt held, or Convert Anchor Point).
+    /// `start` holds the shape's anchors from when the drag began, and the
+    /// pointer is converted into the layer's local space with `to_local`.
     EditAnchor {
         target: AnchorRef,
         part: AnchorPart,
         /// Pulling new handles out of the point (Alt-dragging it) rather
         /// than moving it.
         pull: bool,
+        /// Convert Anchor Point's drag: a handle moves alone, breaking a
+        /// curve's point into a corner, as Alt-dragging one does.
+        convert: bool,
         start: Vec<Anchor>,
         closed: bool,
         /// The points of other shapes welded to a point being moved (see
@@ -312,6 +319,13 @@ enum Gesture {
         /// point's place in it, and the shape's points and closedness as
         /// they were when the drag began.
         welds: Vec<(usize, usize, Vec<Anchor>, bool)>,
+        /// With several points picked and one of them dragged, all of them:
+        /// each shape's place, its picked points, and its points and
+        /// closedness as they were. Empty for a single point.
+        group: Vec<(usize, Vec<usize>, Vec<Anchor>, bool)>,
+        /// The Curvature tool's drag: the curve re-flows through the moved
+        /// point and its neighbours (see `subselect::reflow_around`).
+        reflow: bool,
         /// Points of other shapes the dragged point snaps onto, welding to
         /// them, in local coordinates.
         snaps: Vec<Point>,
@@ -367,8 +381,12 @@ pub struct StageView {
     gesture: Option<Gesture>,
     /// The path being drawn with the Pen tool, which lasts across many clicks.
     pen: Option<PenPath>,
-    /// The anchor picked with the Subselection tool, whose handles are shown.
+    /// The anchor picked with the Subselection tool, whose handles are shown
+    /// and whose curve Properties › Point edits: the *key* point.
     anchor_selection: Option<AnchorRef>,
+    /// Points picked along with it (Shift-clicked, or boxed with a drag),
+    /// which move, change type and delete with it.
+    more_anchors: Vec<AnchorRef>,
     /// Text being typed into on the stage.
     text_editing: Option<TextEditing>,
     /// A brush or eraser stroke in progress.
@@ -427,6 +445,7 @@ impl Default for StageView {
             gesture: None,
             pen: None,
             anchor_selection: None,
+            more_anchors: Vec::new(),
             text_editing: None,
             painting: None,
             erasing: None,
@@ -467,18 +486,25 @@ impl StageView {
         self.anchor_selection.is_some()
     }
 
-    /// Deletes the anchor picked with the Subselection tool, if the shape
-    /// would still have enough points left.
+    /// Deletes the anchors picked with the Subselection tool, each shape
+    /// keeping enough points to stay one (a line two, a closed shape three).
     pub fn delete_selected_anchor(&mut self, editor: &mut Editor) {
-        let Some(target) = self.anchor_selection.take() else { return };
-        let Some(element) = editor.element_mut(target.layer, target.element) else {
-            return;
-        };
-        let (anchors, closed) = element.shape.to_anchors();
-        if let Some(path) =
-            remove_anchor(&anchors, target.index, closed).and_then(|a| path_from_anchors(&a, closed))
-        {
-            element.shape = Shape::Path(path);
+        let picked = self.picked_points();
+        self.clear_picked();
+        for (element, mut indices) in by_element(&picked) {
+            let Some(layer) = picked.first().map(|t| t.layer) else { return };
+            let Some(element) = editor.element_mut(layer, element) else { continue };
+            let (mut anchors, closed) = element.shape.to_anchors();
+            // From the last, so the indices still to go stay put.
+            indices.sort_unstable_by(|a, b| b.cmp(a));
+            for index in indices {
+                if let Some(fewer) = remove_anchor(&anchors, index, closed) {
+                    anchors = fewer;
+                }
+            }
+            if let Some(path) = path_from_anchors(&anchors, closed) {
+                element.shape = Shape::Path(path);
+            }
         }
     }
 
@@ -580,7 +606,7 @@ impl StageView {
 
         // Switching away from the pen (or anything else that changes the tool)
         // finishes the path in progress rather than silently dropping it.
-        if editor.tool != Tool::Pen && self.pen.is_some() {
+        if !editor.tool.edits_points() && self.pen.is_some() {
             self.finish_path(editor, false);
         }
         self.validate_anchor_selection(editor);
@@ -605,7 +631,7 @@ impl StageView {
         if !pointer_on_text && !inside_layer && !on_gradient {
             self.handle_tools(ui, &response, editor, view);
         }
-        if editor.tool == Tool::Pen {
+        if editor.tool.edits_points() {
             self.handle_pen(ui, &response, editor, view);
         }
         if editor.tool == Tool::LassoFill {
@@ -644,6 +670,12 @@ impl StageView {
         }
         self.draw_text_editing(ui, &overlay, editor, view);
         self.draw_pen_preview(&overlay, view, response.hover_pos());
+        if editor.tool.edits_points()
+            && self.gesture.is_none()
+            && let Some(hover) = response.hover_pos()
+        {
+            self.draw_pen_badge(&overlay, editor, view, hover);
+        }
         self.draw_lasso_fill(&overlay, editor);
         // While sizing, the outline stays where the drag began.
         if editor.tool.uses_brush()
@@ -787,6 +819,7 @@ impl StageView {
                     }
                 }
                 Some(Gesture::Marquee { current, .. }) => *current = p,
+                Some(Gesture::PointMarquee { current, .. }) => *current = pointer,
                 Some(Gesture::Scale { layer, handle, start, bounds, group, into_space }) => {
                     let options = ScaleOptions { proportional: shift, from_pivot: alt };
                     let pose = scale_pose(start, *bounds, *handle, into_space.apply(p), options);
@@ -943,16 +976,39 @@ impl StageView {
                     target,
                     part,
                     pull,
+                    convert,
                     start,
                     closed,
                     welds,
                     snaps,
+                    group,
+                    reflow,
                     grab,
                     to_local,
-                }) => {
+                }) => 'edit: {
                     // Move the part by however far the pointer has moved, so
                     // grabbing slightly off-center doesn't make it jump.
                     let local = to_local.apply(p);
+                    // Several points picked: they all go the same way, handles
+                    // and all (no snapping: whose point would snap?).
+                    if !group.is_empty() {
+                        let delta = local - *grab;
+                        for (element, indices, anchors, closed) in group.iter() {
+                            let mut moved = anchors.clone();
+                            for &index in indices {
+                                let a = &mut moved[index];
+                                (a.point, a.handle_in, a.handle_out) =
+                                    (a.point + delta, a.handle_in + delta, a.handle_out + delta);
+                            }
+                            if let (Some(shape), Some(path)) = (
+                                editor.element_mut(target.layer, *element),
+                                path_from_anchors(&moved, *closed),
+                            ) {
+                                shape.shape = Shape::Path(path);
+                            }
+                        }
+                        break 'edit;
+                    }
                     let mut goal = part.position(&start[target.index]) + (local - *grab);
                     // A point dragged onto another shape's point lands
                     // exactly on it, welding them.
@@ -988,7 +1044,12 @@ impl StageView {
                     let anchors = if *pull {
                         pull_handles(start, target.index, goal)
                     } else {
-                        move_part(start, target.index, *part, goal, alt)
+                        move_part(start, target.index, *part, goal, alt || *convert)
+                    };
+                    let anchors = if *reflow && *part == AnchorPart::Point {
+                        reflow_around(&anchors, target.index, *closed)
+                    } else {
+                        anchors
                     };
                     let element = editor.element_mut(target.layer, target.element);
                     if let (Some(element), Some(path)) = (element, path_from_anchors(&anchors, *closed)) {
@@ -1038,9 +1099,24 @@ impl StageView {
         }
 
         if response.drag_stopped() {
-            if let Some(gesture) = self.gesture.take() {
-                finish_gesture(gesture, editor, view);
+            match self.gesture.take() {
+                Some(Gesture::PointMarquee { start, current, adding }) => {
+                    self.finish_point_marquee(editor, view, Rect::from_two_pos(start, current), adding);
+                }
+                Some(gesture) => finish_gesture(gesture, editor, view),
+                None => {}
             }
+        }
+
+        // Double-clicking a point with the Curvature tool switches it between
+        // a corner and a point the curve flows through, as Illustrator's does.
+        if response.double_clicked()
+            && editor.tool == Tool::Curvature
+            && self.pen.is_none()
+            && let Some(pointer) = response.interact_pointer_pos()
+            && let Some((target, AnchorPart::Point)) = self.anchor_hit(editor, view, pointer)
+        {
+            convert_point(editor, target);
         }
 
         // Double-clicking a symbol instance opens the symbol for editing.
@@ -1097,26 +1173,54 @@ impl StageView {
 
         // A click without dragging selects whatever is under the pointer.
         // Clicks on a handle (which may be outside the shape) keep the selection.
-        // The Pen, between paths, picks points the same way (see `handle_pen`
-        // for clicks off them).
-        let pen_on_anchor = editor.tool == Tool::Pen
-            && self.pen.is_none()
-            && response.interact_pointer_pos().is_some_and(|p| self.anchor_hit(editor, view, p).is_some());
-        if response.clicked() && (editor.tool == Tool::Subselect || pen_on_anchor) {
+        // The Pen's slot-mates pick points and layers the same way, as does
+        // the Pen with ⌘ or Alt held; its plain clicks are its own (see
+        // `handle_pen`).
+        let pen_action = response
+            .interact_pointer_pos()
+            .filter(|_| matches!(editor.tool, Tool::Pen | Tool::Curvature))
+            .map(|p| {
+                let modifiers = ui.input(|i| i.modifiers);
+                self.pen_action(editor, view, p, modifiers)
+            });
+        let converting = editor.tool == Tool::ConvertAnchor || matches!(pen_action, Some(PenAction::Convert));
+        let picks = matches!(
+            editor.tool,
+            Tool::Subselect | Tool::AddAnchor | Tool::DeleteAnchor | Tool::ConvertAnchor
+        ) || matches!(pen_action, Some(PenAction::Subselect | PenAction::Convert));
+        if response.clicked() && picks {
             if let Some(pointer) = response.interact_pointer_pos() {
                 match self.anchor_hit(editor, view, pointer) {
                     Some((target, part)) => {
-                        // Alt/Option-click converts between corner and smooth,
-                        // as in Animate.
-                        if alt && part == AnchorPart::Point {
+                        // Convert Anchor Point makes a curve's point a
+                        // corner, as Illustrator's does; Alt-click with the
+                        // Subselection tool switches it either way, as in
+                        // Animate.
+                        if converting && part == AnchorPart::Point {
+                            make_corner(editor, target);
+                        } else if alt && part == AnchorPart::Point {
                             convert_point(editor, target);
                         }
-                        self.anchor_selection = Some(target);
+                        // Shift-click adds a point to those picked, or lets
+                        // one go, as in Illustrator.
+                        // A plain click picks just that point; a click on a
+                        // handle keeps the points picked.
+                        match part {
+                            AnchorPart::Point if shift => self.toggle_picked(target),
+                            AnchorPart::Point => self.pick_only(target),
+                            _ => self.make_key(target),
+                        }
                     }
                     None => {
                         let tolerance = HIT_TOLERANCE / view.zoom;
-                        editor.selection = editor.hit_test(view.to_local(pointer), tolerance);
-                        self.anchor_selection = None;
+                        let hit = editor.hit_test(view.to_local(pointer), tolerance);
+                        // Adding and deleting points keep the shape they
+                        // work on chosen through a miss, as Illustrator's
+                        // do; the others choose what's clicked, or nothing.
+                        if hit.is_some() || !matches!(editor.tool, Tool::AddAnchor | Tool::DeleteAnchor) {
+                            editor.selection = hit;
+                        }
+                        self.clear_picked();
                     }
                 }
             }
@@ -1340,11 +1444,38 @@ impl StageView {
             // The pen and the painting tools handle their own presses and
             // drags; see `handle_pen` and `handle_painting`. The Text tool
             // only clicks.
-            // Between paths, the Pen drags existing points as the
-            // Subselection tool does.
-            Tool::Pen if self.pen.is_none() => self.begin_anchor_edit(editor, view, press, p, alt),
+            // Between paths, ⌘ makes the Pen the Subselection tool for as
+            // long as it's held, and Alt the Convert Anchor Point tool.
+            Tool::Pen | Tool::Curvature if self.pen.is_none() => {
+                let modifiers = egui::Modifiers { alt, command: self.unweld, ..Default::default() };
+                match self.pen_action(editor, view, press, modifiers) {
+                    PenAction::Subselect => {
+                        // ⌘ is taken by the Pen to mean this; it can't also
+                        // mean parting welded points.
+                        self.unweld = false;
+                        let mut gesture = self.subselect_press(editor, view, press, p, false, shift);
+                        // The Curvature tool's moved point takes the curve
+                        // with it, its neighbours re-flowing.
+                        if editor.tool == Tool::Curvature
+                            && let Some(Gesture::EditAnchor { reflow, .. }) = &mut gesture
+                        {
+                            *reflow = true;
+                        }
+                        gesture
+                    }
+                    PenAction::Convert => self.convert_press(editor, view, press, p),
+                    _ => None,
+                }
+            }
+            Tool::ConvertAnchor => self.convert_press(editor, view, press, p),
             // Add Bone handles its own presses; see `bones.rs`.
-            Tool::Pen | Tool::Text | Tool::AddBone | Tool::LassoFill => None,
+            Tool::Pen
+            | Tool::Curvature
+            | Tool::AddAnchor
+            | Tool::DeleteAnchor
+            | Tool::Text
+            | Tool::AddBone
+            | Tool::LassoFill => None,
             Tool::Brush
             | Tool::Eraser
             | Tool::Eyedropper
@@ -1364,17 +1495,59 @@ impl StageView {
             | Tool::Lasso
             | Tool::PolygonLasso
             | Tool::MagicWand => None,
-            Tool::Subselect => {
-                if self.anchor_hit(editor, view, press).is_none() {
-                    // Dragging off the anchors selects a layer, but doesn't move it.
-                    let tolerance = HIT_TOLERANCE / view.zoom;
-                    editor.selection = editor.hit_test(p, tolerance);
-                    self.anchor_selection = None;
-                    return None;
-                }
-                self.begin_anchor_edit(editor, view, press, p, alt)
-            }
+            Tool::Subselect => self.subselect_press(editor, view, press, p, alt, shift),
         }
+    }
+
+    /// A drag starting with the Subselection tool (or the Pen with ⌘): on
+    /// a point or handle, it drags that.
+    fn subselect_press(
+        &mut self,
+        editor: &mut Editor,
+        view: View,
+        press: Pos2,
+        p: Point,
+        alt: bool,
+        shift: bool,
+    ) -> Option<Gesture> {
+        if self.anchor_hit(editor, view, press).is_none() {
+            // Dragging from another layer picks it (without moving it).
+            // Anywhere else, the drag boxes the selected layer's points to
+            // pick them, as Illustrator's Direct Selection does.
+            let hit = editor.hit_test(p, HIT_TOLERANCE / view.zoom);
+            if hit.is_some() && hit != editor.selection {
+                editor.selection = hit;
+                self.clear_picked();
+                return None;
+            }
+            return Some(Gesture::PointMarquee { start: press, current: press, adding: shift });
+        }
+        self.begin_anchor_edit(editor, view, press, p, alt, false)
+    }
+
+    /// Picks the selected layer's points inside a box dragged on screen,
+    /// with those already picked if `adding`.
+    fn finish_point_marquee(&mut self, editor: &Editor, view: View, area: Rect, adding: bool) {
+        let mut points = if adding { self.picked_points() } else { Vec::new() };
+        let inside = self
+            .anchor_targets(editor, view)
+            .into_iter()
+            .filter(|(target, part, at)| {
+                *part == AnchorPart::Point && area.contains(*at) && !points.contains(target)
+            })
+            .map(|(target, ..)| target)
+            .collect::<Vec<_>>();
+        // The new ones before the old key point, so it stays the key one.
+        let key = points.pop();
+        points.extend(inside);
+        points.extend(key);
+        self.set_picked(points);
+    }
+
+    /// A drag starting with Convert Anchor Point (or the Pen with Alt): a
+    /// point pulls new curve handles out, a handle moves alone.
+    fn convert_press(&mut self, editor: &mut Editor, view: View, press: Pos2, p: Point) -> Option<Gesture> {
+        self.begin_anchor_edit(editor, view, press, p, false, true)
     }
 
     fn draw_overlays(&self, painter: &egui::Painter, editor: &Editor, view: View, handles: Option<&Handles>) {
@@ -1392,7 +1565,7 @@ impl StageView {
         }
         // The path tools show the selected shape's own outline and points;
         // the others outline the layer's bounds, following its rotation and scale.
-        let shows_points = matches!(editor.tool, Tool::Subselect | Tool::Pen);
+        let shows_points = editor.tool == Tool::Subselect || editor.tool.edits_points();
         if shows_points {
             self.draw_anchor_overlay(painter, editor, view);
         }
@@ -1448,8 +1621,14 @@ impl StageView {
         }
 
         let preview = (1.0, SELECTION);
-        if let Some(Gesture::Marquee { start, current, .. }) = &self.gesture {
-            let area = Rect::from_two_pos(view.to_screen(*start), view.to_screen(*current));
+        let marquee = match &self.gesture {
+            Some(Gesture::Marquee { start, current, .. }) => {
+                Some(Rect::from_two_pos(view.to_screen(*start), view.to_screen(*current)))
+            }
+            Some(Gesture::PointMarquee { start, current, .. }) => Some(Rect::from_two_pos(*start, *current)),
+            _ => None,
+        };
+        if let Some(area) = marquee {
             painter.rect_filled(area, 0.0, SELECTION.gamma_multiply(0.12));
             painter.rect_stroke(area, 0.0, (1.0, SELECTION), StrokeKind::Middle);
         }
@@ -1517,7 +1696,7 @@ impl StageView {
             Some(Gesture::Pan | Gesture::RotateView { .. }) => CursorIcon::Grabbing,
             _ if space_held => CursorIcon::Grab,
             Some(Gesture::Move { .. } | Gesture::MovePixels { .. }) => CursorIcon::Move,
-            Some(Gesture::Marquee { .. }) => CursorIcon::Crosshair,
+            Some(Gesture::Marquee { .. } | Gesture::PointMarquee { .. }) => CursorIcon::Crosshair,
             Some(Gesture::Rotate { .. }) => CursorIcon::Grabbing,
             Some(Gesture::Pivot { .. } | Gesture::Hint { .. }) => CursorIcon::Crosshair,
             Some(Gesture::Camera { .. }) => CursorIcon::Grabbing,
@@ -1557,25 +1736,32 @@ impl StageView {
                             response.hover_pos().is_some_and(|p| self.anchor_hit(editor, view, p).is_some());
                         if on_anchor { CursorIcon::PointingHand } else { CursorIcon::Default }
                     }
-                    (None, Tool::Pen) => {
-                        let can_close =
-                            self.pen.as_ref().zip(response.hover_pos()).is_some_and(|(pen, p)| {
-                                pen.can_close_at(view.to_local(p), ANCHOR_HIT / view.zoom)
-                            });
-                        let on_outline =
-                            response.hover_pos().is_some_and(|p| self.outline_hit(editor, view, p).is_some());
-                        let on_anchor = self.pen.is_none()
-                            && response
-                                .hover_pos()
-                                .is_some_and(|p| self.anchor_hit(editor, view, p).is_some());
-                        if can_close || on_anchor {
-                            CursorIcon::PointingHand
-                        } else if on_outline {
-                            // The "copy" cursor shows a plus on every
-                            // platform, the closest standard match for "add point".
-                            CursorIcon::Copy
-                        } else {
-                            CursorIcon::Crosshair
+                    // The pen tools: a crosshair to place points precisely,
+                    // with a badge saying what a press does (see
+                    // `draw_pen_badge`); a hand over points when they're
+                    // dragged rather than drawn from.
+                    (
+                        None,
+                        Tool::Pen
+                        | Tool::Curvature
+                        | Tool::AddAnchor
+                        | Tool::DeleteAnchor
+                        | Tool::ConvertAnchor,
+                    ) => {
+                        let modifiers = ui.input(|i| i.modifiers);
+                        let action =
+                            response.hover_pos().map(|p| (p, self.pen_action(editor, view, p, modifiers)));
+                        match action {
+                            Some((_, PenAction::Adjust(..))) => CursorIcon::PointingHand,
+                            Some((p, PenAction::Subselect | PenAction::Convert)) => {
+                                if self.anchor_hit(editor, view, p).is_some() {
+                                    CursorIcon::PointingHand
+                                } else {
+                                    CursorIcon::Default
+                                }
+                            }
+                            Some((_, PenAction::Nothing)) => CursorIcon::Default,
+                            _ => CursorIcon::Crosshair,
                         }
                     }
                     (None, Tool::Rectangle | Tool::Ellipse | Tool::Pencil | Tool::LassoFill) => {
@@ -1862,6 +2048,8 @@ fn finish_gesture(gesture: Gesture, editor: &mut Editor, view: View) {
         | Gesture::EditAnchor { .. }
         | Gesture::BendPath { .. }
         | Gesture::PathHandle { .. }
+        // The stage picks the points itself (`finish_point_marquee`).
+        | Gesture::PointMarquee { .. }
         | Gesture::Pan
         | Gesture::RotateView { .. } => {}
     }

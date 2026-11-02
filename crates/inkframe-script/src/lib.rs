@@ -414,6 +414,23 @@ mod round_two {
     }
 
     #[test]
+    fn a_symbol_made_in_a_long_scene_can_be_shortened_to_loop() {
+        let out = run_on(
+            r##"
+            const doc = inkframe.document;
+            doc.duration = 144;
+            const name = doc.addLayer("Step", { rect: [10, 10] }).convertToSymbol();
+            const before = doc.symbols[0].duration;
+            doc.setSymbolLength(name, 24);
+            let refused = "";
+            try { doc.setSymbolLength(name, 0); } catch (e) { refused = "refused"; }
+            console.log(before, doc.symbols[0].duration, refused);
+        "##,
+        );
+        assert_eq!(out.log, ["144 24 refused"]);
+    }
+
+    #[test]
     fn effects_read_and_key_in_javascript_style() {
         let out = run_on(
             r##"

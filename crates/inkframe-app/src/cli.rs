@@ -18,8 +18,8 @@ Exports each project, as last saved, into one folder.
 
 Options:
   --format LIST   Formats, separated by commas (default: prores4444):
-                  png, sheet, prores4444, prores4444xq, prores422hq, h264,
-                  hevc-alpha (macOS only)
+                  png, sheet, gif, svg, lottie, html, prores4444,
+                  prores4444xq, prores422hq, h264, hevc-alpha (macOS only)
   --to FOLDER     Where to write the exports (default: the current folder)
   --scale N       Resolution multiplier, e.g. 0.5 for half size (default: 1)
   --opaque        Draw the stage colour instead of leaving it transparent
@@ -126,6 +126,34 @@ fn parse(args: Vec<String>) -> Result<Option<Request>, String> {
         })
         .collect();
     Ok(Some(Request { jobs, folder }))
+}
+
+const OVERVIEW: &str = "\
+Usage: inkframe [PROJECT]
+       inkframe --export PROJECT... [options]
+       inkframe --script SCRIPT.js [PROJECT...] [--save]
+
+With a project, or nothing, opens the editor. --export and --script work
+without a window; add --help after either for its options.
+
+  --version   Show which version this is
+  --help      Show this message";
+
+/// Any other option given first: `--help`, `--version`, or a mistake.
+/// Answered in the terminal, since that's where it was typed; left to the
+/// editor, a mistyped option would be taken for a file to open and fail
+/// in a window. Returns the process's exit code.
+pub fn other_option(flag: &str) -> i32 {
+    attach_console();
+    match flag {
+        "--help" | "-h" => println!("{OVERVIEW}"),
+        "--version" | "-V" => println!("Inkframe {}", env!("CARGO_PKG_VERSION")),
+        _ => {
+            eprintln!("inkframe: unknown option {flag}\n\n{OVERVIEW}");
+            return 2;
+        }
+    }
+    0
 }
 
 /// Release builds on Windows are GUI programs with no console of their

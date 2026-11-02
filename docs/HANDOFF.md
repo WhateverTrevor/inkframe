@@ -15,7 +15,7 @@ and how the work is done.
 - **Branch:** `main`. Each feature is built on its own branch, then
   merged into `main` with a merge commit and pushed.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
-  --all-targets -- -D warnings` and `cargo test --workspace` (914 tests)
+  --all-targets -- -D warnings` and `cargo test --workspace` (943 tests)
   pass, on macOS locally and on macOS and Windows in CI.
 - **File format:** version 41. Older files load and upgrade automatically
   (`crates/inkframe-core/tests/format_migration.rs`).
@@ -72,8 +72,11 @@ and Moho's main features, and more:
 
 ## Next up
 
-The user hasn't yet made a real animation end to end; suggest that, since
-real use will show what matters. Open items:
+A first real scene was built end to end through scripts and the command
+line (a rigged walker as a looping symbol, multiplane hills, a tracking
+camera, particles, sound, H.264 out); its findings are in the changelog's
+*Fixes* and *Scripting*. The user making one by hand in the app is still
+the best next test. Open items:
 
 1. **Signing:** a Developer ID (hardened runtime) and notarizing on macOS,
    replacing `codesign` in `xtask/src/macos.rs`, and a Windows

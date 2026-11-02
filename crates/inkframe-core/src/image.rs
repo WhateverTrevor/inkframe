@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::audio::resolve_linked;
+use crate::audio::{resolve_linked, store_linked};
 use crate::document::Document;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -23,8 +23,8 @@ pub struct ImageId(pub(crate) u64);
 pub struct ImageAsset {
     pub id: ImageId,
     pub name: String,
-    /// The image file, relative to the project file's folder if it was
-    /// inside it when imported, otherwise absolute.
+    /// The image file, relative to the project file's folder when it's
+    /// inside it, otherwise in full (see [`Document::relink`]).
     pub path: PathBuf,
     /// Size in pixels when imported. Kept in the document so layouts and
     /// selection work even while the file is missing or still loading.
@@ -56,9 +56,7 @@ impl Document {
         project_dir: Option<&Path>,
         (width, height): (u32, u32),
     ) -> ImageId {
-        let stored = project_dir
-            .and_then(|dir| path.strip_prefix(dir).ok())
-            .map_or_else(|| path.to_path_buf(), Path::to_path_buf);
+        let stored = store_linked(path, project_dir);
         if let Some(existing) = self.images.iter_mut().find(|i| i.path == stored) {
             // The file may have been edited since; trust its current size.
             (existing.width, existing.height) = (width, height);

@@ -6,6 +6,7 @@ mod brush;
 mod document;
 mod effects;
 mod particles;
+mod point;
 mod rigging;
 mod sections;
 mod shapes;
@@ -23,6 +24,7 @@ use brush::brush_section;
 use document::document_section;
 use effects::effects_section;
 use particles::particles_section;
+use point::point_section;
 use rigging::{deformer_section, rig_section, skeleton_section, switch_controls, warp_section};
 use sections::{search_box, searched_for, section};
 use shapes::{choice, shapes_section, style_editor};
@@ -155,7 +157,10 @@ pub fn tool_settings(ui: &mut egui::Ui, editor: &mut Editor) {
             ui.weak(tr("Shape a line's thickness afterwards with the Width tool (Shift+A)."));
         }
         drawing_target(ui, editor);
-    } else if matches!(editor.tool, Tool::Rectangle | Tool::Ellipse | Tool::Pen | Tool::Text) {
+    } else if matches!(
+        editor.tool,
+        Tool::Rectangle | Tool::Ellipse | Tool::Pen | Tool::Curvature | Tool::Text
+    ) {
         ui.heading(editor.tool.label());
         shape_style(ui, editor);
         if editor.tool != Tool::Text {
@@ -432,6 +437,8 @@ fn layer_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId) {
     }
 
     ui.add_space(8.0);
+    // The point picked on the outline, first: it's what's being worked on.
+    point_section(ui, editor, id);
     transform_section(ui, editor, id, frame);
     rig_section(ui, editor, id, frame);
     skeleton_section(ui, editor, id);

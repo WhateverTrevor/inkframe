@@ -24,20 +24,7 @@ pub(super) fn brush_section(ui: &mut egui::Ui, editor: &mut Editor) {
         _ => {}
     }
     egui::Grid::new("paint_tool").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-        if matches!(
-            tool,
-            Tool::Brush
-                | Tool::Mixer
-                | Tool::PatternStamp
-                | Tool::PaintBucket
-                | Tool::Gradient
-                | Tool::LassoFill
-                | Tool::Eyedropper
-        ) {
-            ui.label(tr("Colour"));
-            color_button(ui, &mut editor.paint_color);
-            ui.end_row();
-        }
+        // The colour itself is in the toolbar's well and the Colour tab.
         match tool {
             Tool::Brush | Tool::Eraser => {
                 ui.label(tr("Brush"));

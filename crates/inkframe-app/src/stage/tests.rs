@@ -1502,15 +1502,26 @@ fn pen_click_away_from_the_outline_starts_a_new_path() {
 }
 
 #[test]
-fn pen_click_on_an_existing_point_does_not_add_another() {
+fn pen_click_on_an_existing_point_deletes_it() {
     let (mut h, id) = pen_on_box_harness();
     let corner = screen(&h, 300.0, 300.0);
     click(&mut h, corner);
 
-    assert!(matches!(shape(&h, id), Shape::Rect { .. }), "no point should be added on top of a corner");
-    let (stage, _) = h.state();
-    assert!(!stage.is_drawing_path(), "nor a new path started there");
-    assert!(stage.has_anchor_selection(), "the point is picked, showing its handles");
+    // As Illustrator's Pen does over a selected path's point.
+    assert_eq!(shape(&h, id).to_anchors().0.len(), 3);
+    assert!(!h.state().0.is_drawing_path(), "no new path started there");
+}
+
+/// Clicks or drags with ⌘ (Ctrl on Windows) held the whole way.
+fn command_drag(harness: &mut Harness<'_, State>, from: Pos2, path: &[Pos2]) {
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
+    if path.is_empty() {
+        click(harness, from);
+    } else {
+        drag(harness, from, path);
+    }
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    harness.run();
 }
 
 /// Drags with Alt/Option held the whole way.
@@ -1522,11 +1533,11 @@ fn alt_drag(harness: &mut Harness<'_, State>, from: Pos2, path: &[Pos2]) {
 }
 
 #[test]
-fn the_pen_drags_existing_points_between_paths() {
+fn command_drag_with_the_pen_moves_existing_points() {
     let (mut h, id) = pen_on_box_harness();
     let corner = screen(&h, 500.0, 500.0);
     let target = screen(&h, 540.0, 560.0);
-    drag(&mut h, corner, &[corner + vec2(5.0, 5.0), target]);
+    command_drag(&mut h, corner, &[corner + vec2(5.0, 5.0), target]);
 
     assert!(!h.state().0.is_drawing_path());
     let (anchors, _) = shape(&h, id).to_anchors();
@@ -1563,7 +1574,7 @@ fn alt_dragging_a_point_with_the_subselection_tool_pulls_handles_too() {
 }
 
 #[test]
-fn with_a_point_picked_the_pen_drags_its_handles() {
+fn with_a_point_picked_the_pen_with_command_drags_its_handles() {
     let (mut editor, id) = editor_with_selected_box();
     editor.doc.layer_mut(id).unwrap().drawings[0].elements[0].shape =
         Shape::Ellipse { radius_x: 100.0, radius_y: 100.0 };
@@ -1571,10 +1582,10 @@ fn with_a_point_picked_the_pen_drags_its_handles() {
     let mut h = harness(editor);
 
     let top = screen(&h, 400.0, 300.0);
-    click(&mut h, top);
+    command_drag(&mut h, top, &[]);
     let handle = screen(&h, 400.0 + 100.0 * inkframe_core::KAPPA, 300.0);
     let target = screen(&h, 520.0, 260.0);
-    drag(&mut h, handle, &[handle + vec2(5.0, 0.0), target]);
+    command_drag(&mut h, handle, &[handle + vec2(5.0, 0.0), target]);
 
     assert!(!h.state().0.is_drawing_path());
     let (anchors, _) = shape(&h, id).to_anchors();
@@ -1585,12 +1596,87 @@ fn with_a_point_picked_the_pen_drags_its_handles() {
 fn starting_a_new_path_lets_go_of_the_picked_point() {
     let (mut h, _) = pen_on_box_harness();
     let (corner, elsewhere) = (screen(&h, 300.0, 300.0), screen(&h, 1200.0, 700.0));
-    click(&mut h, corner);
+    command_drag(&mut h, corner, &[]);
     assert!(h.state().0.has_anchor_selection());
     click(&mut h, elsewhere);
     let (stage, _) = h.state();
     assert!(stage.is_drawing_path());
     assert!(!stage.has_anchor_selection());
+}
+
+#[test]
+fn the_convert_tool_makes_a_curve_a_corner_and_breaks_handles() {
+    let (mut editor, id) = editor_with_selected_box();
+    editor.doc.layer_mut(id).unwrap().drawings[0].elements[0].shape =
+        Shape::Ellipse { radius_x: 100.0, radius_y: 100.0 };
+    editor.tool = Tool::ConvertAnchor;
+    let mut h = harness(editor);
+
+    // Dragging a handle moves it alone: the other stays where it was.
+    let (before, _) = shape(&h, id).to_anchors();
+    let handle = screen(&h, 400.0 + 100.0 * inkframe_core::KAPPA, 300.0);
+    let target = screen(&h, 520.0, 260.0);
+    drag(&mut h, handle, &[handle + vec2(5.0, 0.0), target]);
+    let (after, _) = shape(&h, id).to_anchors();
+    assert!(after[0].handle_out.distance(Point::new(120.0, -140.0)) < 3.0, "{:?}", after[0]);
+    assert!(after[0].handle_in.distance(before[0].handle_in) < 1e-3, "broken, not mirrored: {:?}", after[0]);
+
+    // A click on a curve's point takes its handles in.
+    let right = screen(&h, 500.0, 400.0);
+    click(&mut h, right);
+    let (anchors, _) = shape(&h, id).to_anchors();
+    let a = anchors.iter().find(|a| a.point.distance(Point::new(100.0, 0.0)) < 1e-3).expect("right point");
+    assert_eq!(*a, inkframe_core::Anchor::corner(a.point));
+}
+
+#[test]
+fn the_add_and_delete_anchor_tools_only_add_and_delete() {
+    let (mut editor, id) = editor_with_selected_box();
+    editor.tool = Tool::AddAnchor;
+    let mut h = harness(editor);
+    let (edge, empty) = (screen(&h, 400.0, 300.0), screen(&h, 1200.0, 700.0));
+    click(&mut h, edge);
+    click(&mut h, empty);
+    assert_eq!(shape(&h, id).to_anchors().0.len(), 5);
+    assert!(!h.state().0.is_drawing_path(), "no paths drawn with it");
+
+    h.state_mut().1.tool = Tool::DeleteAnchor;
+    let corner = screen(&h, 300.0, 300.0);
+    assert_eq!(h.state().1.selection, Some(id), "a miss keeps the shape chosen");
+    click(&mut h, corner);
+    click(&mut h, edge + vec2(0.0, 1.0));
+    assert_eq!(shape(&h, id).to_anchors().0.len(), 3);
+}
+
+#[test]
+fn the_pen_carries_on_from_the_end_of_an_open_path() {
+    let mut h = pen_harness();
+    for (x, y) in [(200.0, 200.0), (600.0, 200.0)] {
+        let at = screen(&h, x, y);
+        click(&mut h, at);
+    }
+    let (stage, editor) = h.state_mut();
+    stage.finish_path(editor, false);
+    h.run();
+    let id = h.state().1.doc.layers[0].id;
+    h.state_mut().1.selection = Some(id);
+    h.run();
+
+    // Over the end: `/`, carry on.
+    let end = screen(&h, 600.0, 200.0);
+    click(&mut h, end);
+    assert!(h.state().0.is_drawing_path());
+    let next = screen(&h, 600.0, 500.0);
+    click(&mut h, next);
+    let (stage, editor) = h.state_mut();
+    stage.finish_path(editor, false);
+    h.run();
+
+    let editor = &h.state().1;
+    assert_eq!(editor.doc.layers.len(), 1, "the same shape grew; no new layer");
+    let (anchors, closed) = shape(&h, id).to_anchors();
+    assert!(!closed);
+    assert_eq!(anchors.len(), 3);
 }
 
 /// Clicks with Alt/Option held for the whole click.
@@ -2111,4 +2197,101 @@ fn shift_with_the_pen_snaps_to_the_perspective_guide() {
     let (a, b) = (next - start, vp - start);
     let sine = (a.x * b.y - a.y * b.x) / (a.length() * b.length());
     assert!(sine.abs() < 1e-3, "toward the vanishing point: {next:?}");
+}
+
+#[test]
+fn boxing_points_picks_them_and_dragging_one_moves_them_all() {
+    let (mut h, id) = subselect_harness();
+    // A box round the top two corners, dragged from empty stage.
+    let (from, to) = (screen(&h, 250.0, 250.0), screen(&h, 560.0, 340.0));
+    drag(&mut h, from, &[from + vec2(10.0, 10.0), to]);
+    assert_eq!(h.state().0.picked_points().len(), 2);
+
+    let corner = screen(&h, 300.0, 300.0);
+    let lower = screen(&h, 300.0, 340.0);
+    drag(&mut h, corner, &[corner + vec2(0.0, 5.0), lower]);
+    let (anchors, _) = shape(&h, id).to_anchors();
+    let tops: Vec<f32> = anchors.iter().map(|a| a.point.y).filter(|y| *y < 0.0).collect();
+    assert_eq!(tops.len(), 2, "{anchors:?}");
+    assert!(tops.iter().all(|y| (y + 60.0).abs() < 3.0), "both came down 40: {anchors:?}");
+    assert!(anchors.iter().filter(|a| (a.point.y - 100.0).abs() < 1e-3).count() == 2, "the bottom stays");
+}
+
+/// Clicks with Shift held for the whole click.
+fn shift_click(harness: &mut Harness<'_, State>, at: Pos2) {
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+    click(harness, at);
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    harness.run();
+}
+
+#[test]
+fn shift_click_picks_more_points_and_delete_takes_what_it_can() {
+    let (mut h, id) = subselect_harness();
+    let (a, b) = (screen(&h, 300.0, 300.0), screen(&h, 500.0, 500.0));
+    click(&mut h, a);
+    shift_click(&mut h, b);
+    assert_eq!(h.state().0.picked_points().len(), 2);
+    shift_click(&mut h, b);
+    assert_eq!(h.state().0.picked_points().len(), 1, "Shift-clicking one again lets it go");
+    shift_click(&mut h, b);
+
+    let (stage, editor) = h.state_mut();
+    stage.delete_selected_anchor(editor);
+    h.run();
+    // A closed shape keeps three points, so only one of the two could go.
+    assert_eq!(shape(&h, id).to_anchors().0.len(), 3);
+    assert!(!h.state().0.has_anchor_selection());
+}
+
+#[test]
+fn command_dragging_a_placed_point_while_drawing_moves_it_and_drawing_carries_on() {
+    let mut h = pen_harness();
+    for (x, y) in [(200.0, 200.0), (600.0, 200.0), (600.0, 500.0)] {
+        let at = screen(&h, x, y);
+        click(&mut h, at);
+    }
+    let (middle, moved) = (screen(&h, 600.0, 200.0), screen(&h, 650.0, 150.0));
+    command_drag(&mut h, middle, &[middle + vec2(5.0, -5.0), moved]);
+
+    let stage = &h.state().0;
+    assert!(stage.is_drawing_path(), "still drawing");
+    let anchors = stage.pen.as_ref().unwrap().anchors().to_vec();
+    assert_eq!(anchors.len(), 3, "no point added by the drag");
+    assert!(anchors[1].point.distance(Point::new(650.0, 150.0)) < 3.0, "{:?}", anchors[1]);
+}
+
+#[test]
+fn the_curvature_tool_draws_through_its_points_and_reflows_as_one_moves() {
+    let mut editor = Editor::new(Document::default());
+    editor.tool = Tool::Curvature;
+    let mut h = harness(editor);
+    for (x, y) in [(200.0, 400.0), (400.0, 200.0), (600.0, 400.0)] {
+        let at = screen(&h, x, y);
+        click(&mut h, at);
+    }
+    let (stage, editor) = h.state_mut();
+    stage.finish_path(editor, false);
+    h.run();
+    let id = h.state().1.doc.layers[0].id;
+    h.state_mut().1.selection = Some(id);
+    h.run();
+
+    let (anchors, _) = shape(&h, id).to_anchors();
+    assert_eq!(anchors.len(), 3);
+    let top = anchors[1];
+    assert!((top.handle_out.y - top.point.y).abs() < 1e-2, "level at the top: {top:?}");
+    assert!(top.handle_out.x > top.point.x + 10.0, "a curve, not a corner: {top:?}");
+
+    // Dragging the last point up: the curve re-flows through the top, which
+    // tips toward it.
+    let (end, raised) = (screen(&h, 600.0, 400.0), screen(&h, 600.0, 100.0));
+    drag(&mut h, end, &[end + vec2(0.0, -5.0), raised]);
+    let (anchors, _) = shape(&h, id).to_anchors();
+    assert!(
+        (anchors[2].point.y - (anchors[0].point.y - 300.0)).abs() < 3.0,
+        "the end went up 300: {anchors:?}"
+    );
+    let top = anchors[1];
+    assert!(top.handle_out.y < top.point.y - 5.0, "the top tips up toward the raised end: {top:?}");
 }

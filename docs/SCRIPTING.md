@@ -49,7 +49,9 @@ for a new project, the current folder). `~/` means your home folder.
 - **Positions, scales and skews** are `[x, y]` pairs. **Scale** is a factor:
   1 is the original size, `[1.2, 0.8]` is squashed. **Rotation** and
   **skew** are in degrees. **Opacity** runs from 0 to 1. **Depth** is in
-  stage pixels.
+  stage pixels, further away the larger: a layer at depth 1000 is far
+  behind one at 0, drawn smaller, and moves less as the camera does.
+  Negative depths come toward the camera.
 - **Colours** are text: `"#ff6633"`, `"#f63"`, or with transparency
   `"#ff663380"`.
 - **Easing** is `"linear"`, `"ease-in"`, `"ease-out"`, `"ease-in-out"`,
@@ -78,6 +80,7 @@ for a new project, the current folder). `~/` means your home folder.
 | `selectedLayers` | The layers selected in the editor |
 | `select(layers)` | Selects these layers when the script finishes |
 | `symbols` | The symbol library: `[{ name, duration, layers, uses }]` |
+| `setSymbolLength(symbol, frames)` | Sets how long a symbol's own timeline is (below) |
 | `addInstance(symbol, options)` | Adds an instance of a symbol (by name); options `at` and `frame` |
 | `addParticleLayer(preset, options)` | Adds particles: `"sparks"`, `"snow"`, `"smoke"` or `"fire"`; options `at` and `frame` |
 | `addSkeleton(layers, name)` | Puts layers in a new folder with an empty skeleton, as Modify › New Skeleton does, and returns the folder |
@@ -98,8 +101,9 @@ for a new project, the current folder). `~/` means your home folder.
 with `radius` for rounded corners, `ellipse: [width, height]`, `text`
 with a font `size` and an `align` of `"left"` (the default, starting at
 `at`), `"center"` or `"right"`, or
-`polygon: [[x, y], ...]`), `fill`, `stroke`, `strokeWidth`, `at: [x, y]`
-on the stage (the middle if left out), and the first `frame` it shows on.
+`polygon: [[x, y], ...]`, its points measured from `at`), `fill`,
+`stroke`, `strokeWidth`, `at: [x, y]` on the stage (the middle if left
+out), and the first `frame` it shows on.
 A layer with no shape is empty, ready to animate or parent things to.
 
 ```js
@@ -109,7 +113,7 @@ const ball = inkframe.document.addLayer("Ball", {
 ```
 
 **`export` options:** `format` (`"png"`, `"sheet"`, `"gif"`, `"svg"`,
-`"lottie"`, `"prores4444"`, `"prores4444xq"`, `"prores422hq"`, `"h264"`, or
+`"lottie"`, `"html"`, `"prores4444"`, `"prores4444xq"`, `"prores422hq"`, `"h264"`, or
 `"hevc-alpha"` on macOS) and
 `to`, the file to write, ending in the format's extension. Optional:
 `scale` (0.5 for half size), `transparent` (default `true`) and
@@ -131,7 +135,7 @@ doc.export({ format: "h264", to: `renders/${doc.name}_v001.mp4`, scale: 0.5 });
 | `children` | The layers attached to it |
 | `pivot` | The point it turns and scales around, in its own coordinates; can be set |
 | `symbol`, `playback`, `firstFrame` | For an instance: its symbol's name, how it plays (`"loop"`, `"play-once"`, `"single-frame"`) and the symbol frame it starts on; the last two can be set |
-| `convertToSymbol(frame)` | Turns the layer (a folder with everything in it, skeleton and all) into a symbol, the layer becoming its instance; returns the symbol's name |
+| `convertToSymbol(frame)` | Turns the layer (a folder with everything in it, skeleton and all) into a symbol, the layer becoming its instance; returns the symbol's name. Nothing moves: the instance's `position` is the middle of what the layer showed on `frame`, and the symbol is as long as the timeline (below) |
 | `effectsAt(frame)`, `setEffects(frame, effects)` | Its colour effect and filters on a frame (below) |
 | `particles` | A particle layer's emitter settings (below); set some to change just those |
 | `setKey(frame, values, { easing })` | Keys some properties: `setKey(12, { position: [960, 880], rotation: 15 })` |
@@ -187,6 +191,17 @@ const ball = doc.addLayer("Ball", { ellipse: [120, 120], fill: "#e8543c" });
 ball.setKey(1,  { position: [960, 200] }, { easing: "ease-in" });   // falls, speeding up
 ball.setKey(12, { position: [960, 880], scale: [1.2, 0.8] }, { easing: "ease-out" });
 ball.setKey(24, { position: [960, 200], scale: [1, 1] });
+```
+
+**A symbol's length** is how many frames its own timeline has. A symbol
+made with `convertToSymbol` is as long as the timeline it was made in, so
+nothing changes. Instances play on Loop, repeating every that many
+frames, so to loop a 24-frame walk made in a 144-frame scene, set its
+symbol to 24 frames:
+
+```js
+const name = walker.convertToSymbol(1);
+doc.setSymbolLength(name, 24);   // the walk now repeats for as long as the scene
 ```
 
 **Web actions**, for `button` and `setFrameAction`, are `"play"`, `"stop"`,

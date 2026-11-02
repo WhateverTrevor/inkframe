@@ -27,6 +27,67 @@ notes on GitHub are its section here.
   changes them on all the selected layers, as every other setting does;
   the separate "Apply to the other selected layers" buttons are gone.
 
+### Drawing
+
+- The Pen works as Animate's and Illustrator's do. While dragging out a
+  point's handles, Alt breaks them (only the way out moves), Shift keeps
+  them to 45° and Space moves the point. Click the last point to take
+  back its way out, or drag from it for a new one; drag on the first
+  point to curve the closing segment; ⌘-click away or double-click the
+  last point to end an open line. Over the selected shape, a sign by the
+  pointer says what a click does: **+** adds a point, **−** deletes one
+  (it used to pick it), **/** carries on drawing from an open line's end.
+  Hold ⌘ for the Subselection tool (to drag points, as plain clicks used
+  to), Alt for Convert Anchor Point.
+- Add Anchor Point (`=`), Delete Anchor Point (`-`) and Convert Anchor
+  Point (`Shift+C`) share the Pen's slot. Convert makes a curve's point a
+  corner with a click, pulls handles out of a point with a drag, and
+  moves one handle alone with a drag on it; it shows every point's
+  handles.
+- The Curvature tool (`Shift+~`), in the Pen's slot, as Illustrator's:
+  click points and the curve flows smoothly through them (Alt-click for
+  a corner). Dragging a selected shape's point with it re-flows the curve
+  round it; double-clicking a point switches it between corner and smooth.
+- Several points at once: drag a box round them with the Subselection
+  tool (or the Pen with ⌘), or Shift-click them. They move, delete and
+  change type together.
+- While drawing with the Pen, ⌘-drag a point already placed, or its
+  handles, to adjust it without ending the path.
+- Properties › Point, for a picked point: its position, its type
+  (Corner, Smooth or Symmetric) and each handle's length and angle.
+
+### Colour
+
+- The colours are all in one place: the colour well under the toolbar,
+  as Adobe's apps have it, holding what the current tool uses (Fill and
+  Stroke for the shape tools, the paint Colour and a Second colour for the
+  painting tools, the line's Stroke for the Pencil). Click one to change
+  it in the Colour tab, now beside Properties in every workspace. `X`
+  switches to the other colour (painting, swaps them) and `Shift+X` swaps
+  the colours. The paint colour has left Properties.
+- The picker comes in four styles, remembered: Wheel, Triangle (a hue
+  ring round a hue-white-black triangle), HSL sliders that show the
+  colours they run through, and Swatches (the project's, a standard set,
+  and the recent ones).
+
+### Fixes
+
+- Sounds, pictures and fonts are linked from wherever the project is
+  saved. A new project's files were linked in full, so the project folder
+  couldn't be moved or shared with them; and after Save As into another
+  folder, files kept beside the project went missing.
+- `inkframe --help`, `--version` or a mistyped option is answered in the
+  terminal, rather than opening a window that says the "file" can't be
+  opened. `--export --help` lists every format it takes.
+
+### Scripting
+
+- `doc.setSymbolLength(symbol, frames)`: a symbol made with
+  `convertToSymbol` is as long as the timeline, so a 24-frame walk made
+  in a longer scene held still after its first step. Set to 24, it loops.
+- The scripting guide says which way depth goes, that a polygon's points
+  are measured from `at`, and where a new symbol's instance is placed.
+
 File format 41: older versions can't open projects saved with this one.
 
 ## [0.9.0]

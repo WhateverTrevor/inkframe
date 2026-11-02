@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::audio::resolve_linked;
+use crate::audio::{resolve_linked, store_linked};
 use crate::document::Document;
 use crate::shape::Shape;
 
@@ -24,8 +24,8 @@ pub struct FontFileId(pub(crate) u64);
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FontFile {
     pub id: FontFileId,
-    /// The font file, relative to the project file's folder if it was inside
-    /// it when imported, otherwise absolute.
+    /// The font file, relative to the project file's folder when it's
+    /// inside it, otherwise in full (see [`Document::relink`]).
     pub path: PathBuf,
     /// The family names the file provides (usually one; a collection may
     /// hold several), recorded at import for showing in menus even while
@@ -58,9 +58,7 @@ impl Document {
         project_dir: Option<&Path>,
         families: Vec<String>,
     ) -> FontFileId {
-        let stored = project_dir
-            .and_then(|dir| path.strip_prefix(dir).ok())
-            .map_or_else(|| path.to_path_buf(), Path::to_path_buf);
+        let stored = store_linked(path, project_dir);
         if let Some(existing) = self.fonts.iter_mut().find(|f| f.path == stored) {
             existing.families = families;
             return existing.id;

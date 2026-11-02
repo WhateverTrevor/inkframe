@@ -197,6 +197,11 @@ pub(crate) enum Command {
     ResetRotation,
     /// Mirrors the view (not the drawing) left to right, or back.
     FlipView,
+    /// X: the toolbar's other colour becomes the active one (painting,
+    /// the two swap); see `colour_well.rs`.
+    SwitchColour,
+    /// Shift+X: the toolbar's two colours swap.
+    SwapColours,
     /// A toolbar slot's key: its last-used tool, or with `cycle` the next
     /// tool in the slot.
     UseSlot {
@@ -389,6 +394,10 @@ impl InkframeApp {
             app.editor.smoothing = prefs.smoothing.unwrap_or(crate::editor::DEFAULT_SMOOTHING);
             app.editor.pressure_feel = prefs.pressure_feel;
             crate::color_picker::set_recent(prefs.recent_colors.clone());
+            if let Some(style) = prefs.colour_style.as_deref().and_then(crate::color_picker::Style::from_key)
+            {
+                crate::color_picker::set_style(style);
+            }
             app.update_prefs = crate::updates::UpdatePrefs {
                 automatic: !prefs.no_update_check,
                 checked_at: prefs.update_checked_at,
@@ -441,6 +450,10 @@ impl InkframeApp {
             }
             if AutoScreenshot::pen_handles() {
                 app.views.stage().pick_anchor(&app.editor, 0, 1);
+            }
+            if let Some(style) = AutoScreenshot::colour() {
+                crate::color_picker::set_style(style);
+                app.layout.reveal(Kind::Colour);
             }
             if AutoScreenshot::graph() {
                 app.layout.timelines_to_graphs();
@@ -915,6 +928,7 @@ impl InkframeApp {
         match self.brush_panels.asked.take().or(self.editor.brush_request.take()) {
             Some(Asked::ShowBrushSettings) => self.layout.reveal(Kind::BrushSettings),
             Some(Asked::ShowBrushes) => self.layout.reveal(Kind::Brushes),
+            Some(Asked::ShowColour) => self.layout.reveal(Kind::Colour),
             Some(Asked::DefineBrush) => {
                 if let Err(problem) = self.editor.define_brush() {
                     show_error(tr("Couldn't define a brush"), &problem);
@@ -1016,6 +1030,13 @@ impl InkframeApp {
 impl eframe::App for InkframeApp {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let started = std::time::Instant::now();
+        // The project's swatches, for the colour picker's Swatches style.
+        let palette = &self.editor.doc.palette;
+        crate::color_picker::set_project_swatches(
+            (0..palette.swatches.len())
+                .filter_map(|i| Some((palette.swatches[i].name.clone(), palette.color(i)?)))
+                .collect(),
+        );
         self.update_ui(ui, frame);
         self.step_bench(ui.ctx(), started.elapsed());
     }
