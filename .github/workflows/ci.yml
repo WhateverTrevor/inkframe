@@ -24,6 +24,12 @@ env:
   WINDOWS_FFMPEG_VERSION: "9.0.2"
   WINDOWS_FFMPEG_URL: https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip
   WINDOWS_FFMPEG_SHA256: 60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba
+  # Linux (x86_64): martin-riedl.de's static build again, with ffprobe from
+  # the same build for the tests.
+  LINUX_FFMPEG_VERSION: "9.0.2"
+  LINUX_FFMPEG_URL: https://ffmpeg.martin-riedl.de/download/linux/amd64/1789931100_9.0.2
+  LINUX_FFMPEG_SHA256: fa8ecf4abbd290d98f7d188b8649cc6b391ae209a98452be955a15aab1909d7f
+  LINUX_FFPROBE_SHA256: 3f428c49070be3d24ec338602b76d412e401ffcb8a5641ef0e729181a232fc32
   # Rhubarb Lip Sync, bundled for the Lip Sync window, from its GitHub
   # releases. Only the program, its speech models (res/) and its licence are
   # kept. The Rhubarb tests fail rather than skip if it's missing.
@@ -31,6 +37,13 @@ env:
   RHUBARB_VERSION: "1.14.0"
   MACOS_RHUBARB_SHA256: f991deacac6c973a14a4431a16a58b842f436531e120cfaea142c87c0d3ab4c5
   WINDOWS_RHUBARB_SHA256: 62fa416a8d5e382a3828ee4bef358ce520d0b4cabdeaea75a7ac266d098d1fe3
+  LINUX_RHUBARB_SHA256: a9a9074862cff47b2d59b8bf399a678a3b0b74f9452ad6ad94cb292913dd8667
+  # appimagetool packs the Linux AppImage, in front of the AppImage runtime
+  # given to it here (it would otherwise fetch the latest one itself).
+  APPIMAGETOOL_VERSION: "1.9.1"
+  APPIMAGETOOL_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+  APPIMAGE_RUNTIME_VERSION: "20251108"
+  APPIMAGE_RUNTIME_SHA256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
 
 jobs:
   test:
@@ -39,7 +52,10 @@ jobs:
       fail-fast: false
       matrix:
         # Apple Silicon first; Windows keeps the code honest about portability.
-        os: [macos-latest, windows-latest]
+        # Linux builds on the oldest Ubuntu GitHub offers, since a program
+        # runs only on Linuxes whose C library is at least as new as the
+        # one it was built against.
+        os: [macos-latest, windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -47,6 +63,11 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+
+      # Sound playback goes through ALSA, whose headers aren't installed.
+      - name: Install build libraries (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
 
       # ffmpeg lets the video export tests run for real instead of skipping
       # (INKFRAME_REQUIRE_FFMPEG, above, makes them fail if it's missing).
@@ -86,6 +107,27 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: (Resolve-Path vendor/ffmpeg).Path | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+      # Linux, like Windows, tests with the build that goes into the AppImage.
+      - name: Cache the Linux ffmpeg
+        if: runner.os == 'Linux'
+        id: linux-ffmpeg
+        uses: actions/cache@v6
+        with:
+          path: vendor/ffmpeg
+          key: linux-ffmpeg-${{ env.LINUX_FFMPEG_VERSION }}-${{ env.LINUX_FFMPEG_SHA256 }}-${{ env.LINUX_FFPROBE_SHA256 }}
+      - name: Download the Linux ffmpeg
+        if: runner.os == 'Linux' && steps.linux-ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p vendor/ffmpeg
+          for tool in ffmpeg ffprobe; do
+            curl --fail --silent --show-error --location -o "$RUNNER_TEMP/$tool.zip" "$LINUX_FFMPEG_URL/$tool.zip"
+            unzip -o "$RUNNER_TEMP/$tool.zip" "$tool" -d vendor/ffmpeg
+          done
+          echo "$LINUX_FFMPEG_SHA256  $RUNNER_TEMP/ffmpeg.zip" | sha256sum --check
+          echo "$LINUX_FFPROBE_SHA256  $RUNNER_TEMP/ffprobe.zip" | sha256sum --check
+      - name: Put ffmpeg on PATH (Linux)
+        if: runner.os == 'Linux'
+        run: echo "$PWD/vendor/ffmpeg" >> "$GITHUB_PATH"
 
       # Rhubarb goes in vendor/rhubarb, where the tests find it and the
       # installers bundle it from. Its macOS build is for Intel, so Apple
@@ -95,7 +137,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/rhubarb
-          key: rhubarb-${{ runner.os }}-${{ env.RHUBARB_VERSION }}-${{ runner.os == 'macOS' && env.MACOS_RHUBARB_SHA256 || env.WINDOWS_RHUBARB_SHA256 }}
+          key: rhubarb-${{ runner.os }}-${{ env.RHUBARB_VERSION }}-${{ runner.os == 'macOS' && env.MACOS_RHUBARB_SHA256 || runner.os == 'Windows' && env.WINDOWS_RHUBARB_SHA256 || env.LINUX_RHUBARB_SHA256 }}
       - name: Download Rhubarb (macOS)
         if: runner.os == 'macOS' && steps.rhubarb.outputs.cache-hit != 'true'
         run: |
@@ -127,6 +169,16 @@ jobs:
           foreach ($part in "rhubarb.exe", "res", "LICENSE.md") {
             Copy-Item -Recurse (Join-Path $unpacked $part) vendor/rhubarb/
           }
+      - name: Download Rhubarb (Linux)
+        if: runner.os == 'Linux' && steps.rhubarb.outputs.cache-hit != 'true'
+        run: |
+          name="Rhubarb-Lip-Sync-$RHUBARB_VERSION-Linux"
+          curl --fail --silent --show-error --location -o "$RUNNER_TEMP/rhubarb.zip" \
+            "https://github.com/DanielSWolf/rhubarb-lip-sync/releases/download/v$RHUBARB_VERSION/$name.zip"
+          echo "$LINUX_RHUBARB_SHA256  $RUNNER_TEMP/rhubarb.zip" | sha256sum --check
+          unzip -q "$RUNNER_TEMP/rhubarb.zip" "$name/rhubarb" "$name/res/*" "$name/LICENSE.md" -d "$RUNNER_TEMP"
+          mkdir -p vendor
+          mv "$RUNNER_TEMP/$name" vendor/rhubarb
 
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -134,7 +186,7 @@ jobs:
 
       # Build the installers on every run, so packaging can't quietly break,
       # and keep them for two weeks so anyone can download a build to test
-      # (from the run's page on GitHub, under Artifacts). Both bundle a
+      # (from the run's page on GitHub, under Artifacts). Each bundles a
       # static ffmpeg, so video export works without installing anything.
       #
       # After bundling, every export format is encoded through the bundled
@@ -184,16 +236,51 @@ jobs:
         run: |
           $env:INKFRAME_FFMPEG = (Resolve-Path vendor/ffmpeg/ffmpeg.exe).Path
           cargo test --package inkframe-export
+
+      - name: Download appimagetool (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "$RUNNER_TEMP/appimage"
+          cd "$RUNNER_TEMP/appimage"
+          curl --fail --silent --show-error --location -o appimagetool \
+            "https://github.com/AppImage/appimagetool/releases/download/$APPIMAGETOOL_VERSION/appimagetool-x86_64.AppImage"
+          curl --fail --silent --show-error --location -o runtime \
+            "https://github.com/AppImage/type2-runtime/releases/download/$APPIMAGE_RUNTIME_VERSION/runtime-x86_64"
+          echo "$APPIMAGETOOL_SHA256  appimagetool" | sha256sum --check
+          echo "$APPIMAGE_RUNTIME_SHA256  runtime" | sha256sum --check
+          chmod +x appimagetool
+      - name: Build the Linux AppImage
+        if: runner.os == 'Linux'
+        # appimagetool is an AppImage itself, and the runner can't mount
+        # one (it has no FUSE); this has it unpack itself and run instead.
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          cargo xtask bundle-linux --ffmpeg vendor/ffmpeg/ffmpeg --rhubarb vendor/rhubarb \
+            --appimagetool "$RUNNER_TEMP/appimage/appimagetool" --runtime "$RUNNER_TEMP/appimage/runtime"
+      - name: Test the AppImage (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # Unpacked, the AppImage runs as it would once mounted. Exporting
+          # an example finds the bundled ffmpeg beside the executable.
+          cd "$RUNNER_TEMP"
+          "$GITHUB_WORKSPACE"/target/release/*.AppImage --appimage-extract > /dev/null
+          PATH=/usr/bin:/bin squashfs-root/AppRun --version
+          PATH=/usr/bin:/bin squashfs-root/AppRun --export "$GITHUB_WORKSPACE/examples/bouncing-ball.inkf" \
+            --format h264 --to renders
+          ls -l renders
+
       - uses: actions/upload-artifact@v7
         with:
           name: inkframe-${{ runner.os }}
           path: |
             target/release/*.dmg
             target/release/*-setup.exe
+            target/release/*.AppImage
           if-no-files-found: error
           retention-days: 14
 
-  # For a version tag: once both platforms have passed and built their
+  # For a version tag: once every platform has passed and built their
   # installers, gather the installers into a draft GitHub release, with that
   # version's section of CHANGELOG.md as its notes. It stays a draft until
   # someone looks it over and publishes it on GitHub.

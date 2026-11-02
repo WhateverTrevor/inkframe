@@ -3,6 +3,16 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
+## Unreleased
+
+### Linux
+
+- Inkframe comes for 64-bit Linux, as an AppImage: one file that runs on
+  most distributions (Ubuntu 22.04, Debian 12, Fedora 36 and later)
+  without installing anything. Like the other installers it carries
+  ffmpeg for video export and Rhubarb for lip sync, and Help › Check for
+  Updates offers the next AppImage. `cargo xtask bundle-linux` builds it.
+
 ## [0.10.0]
 
 The Pen works as Animate's and Illustrator's, with Add, Delete and

@@ -105,7 +105,10 @@ fn main() -> eframe::Result {
             .with_title("Inkframe")
             .with_inner_size([1440.0, 900.0])
             .with_min_inner_size([960.0, 600.0])
-            .with_icon(window_icon()),
+            .with_icon(window_icon())
+            // On Linux, how the desktop matches the window to Inkframe's
+            // launcher (packaging/linux/inkframe.desktop) for its icon.
+            .with_app_id("inkframe"),
         ..Default::default()
     };
 
@@ -114,7 +117,7 @@ fn main() -> eframe::Result {
 
 /// The icon shown in the Dock or taskbar while Inkframe runs. A packaged
 /// macOS app also has an `.icns` file, but setting it here covers
-/// `cargo run` and Windows too. The PNG is drawn by `cargo xtask icon`.
+/// `cargo run`, Windows and X11 too. The PNG is drawn by `cargo xtask icon`.
 fn window_icon() -> egui::IconData {
     eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/icon/inkframe-256.png"))
         .expect("the bundled icon is a valid PNG")

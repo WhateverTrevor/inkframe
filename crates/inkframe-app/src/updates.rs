@@ -236,6 +236,8 @@ fn is_installer_for_here(name: &str) -> bool {
         name.ends_with("-macos-arm64.dmg")
     } else if cfg!(windows) {
         name.ends_with("-windows-x64-setup.exe")
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        name.ends_with("-linux-x86_64.AppImage")
     } else {
         false
     }
@@ -271,6 +273,7 @@ mod tests {
             "assets": [
                 { "name": "Inkframe-9.1.0-macos-arm64.dmg", "browser_download_url": "https://example.com/mac.dmg" },
                 { "name": "Inkframe-9.1.0-windows-x64-setup.exe", "browser_download_url": "https://example.com/win.exe" },
+                { "name": "Inkframe-9.1.0-linux-x86_64.AppImage", "browser_download_url": "https://example.com/linux.AppImage" },
                 { "name": "Inkframe-for-Artists.pdf", "browser_download_url": "https://example.com/guide.pdf" }
             ]
         }"#;
@@ -281,6 +284,8 @@ mod tests {
             Some("https://example.com/mac.dmg")
         } else if cfg!(windows) {
             Some("https://example.com/win.exe")
+        } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+            Some("https://example.com/linux.AppImage")
         } else {
             None
         };

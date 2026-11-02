@@ -1,6 +1,6 @@
-//! Steps shared by the macOS and Windows packaging tasks, plus thin wrappers
-//! around file and process calls that turn their errors into messages
-//! saying which file or command failed.
+//! Steps shared by the packaging tasks, plus thin wrappers around file and
+//! process calls that turn their errors into messages saying which file or
+//! command failed.
 
 use std::fs;
 use std::path::Path;
