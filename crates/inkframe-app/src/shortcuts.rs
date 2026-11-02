@@ -98,6 +98,18 @@ pub const HARDER_BRUSH_CURLY: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::SHIFT, Key::CloseCurlyBracket);
 pub const NEXT_DRAWING: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::CloseBracket);
 
+/// Keys of their own for the Pen's slot-mates, besides the slot's P:
+/// Illustrator's, so they're picked without stepping through the slot.
+/// `+` is Shift and `=` on many keyboards, so `=` counts too.
+pub const ANCHOR_TOOL_KEYS: [(Modifiers, Key, Tool); 5] = [
+    // Shift+` is ~ on many keyboards, the key Illustrator shows for it.
+    (Modifiers::SHIFT, Key::Backtick, Tool::Curvature),
+    (Modifiers::NONE, Key::Equals, Tool::AddAnchor),
+    (Modifiers::NONE, Key::Plus, Tool::AddAnchor),
+    (Modifiers::NONE, Key::Minus, Tool::DeleteAnchor),
+    (Modifiers::SHIFT, Key::C, Tool::ConvertAnchor),
+];
+
 /// Single-key tool shortcuts, matching Animate (and, for painting,
 /// Photoshop) so muscle memory carries over. Tools sharing a toolbar slot
 /// share its key; Shift with it steps through them.
@@ -114,7 +126,7 @@ pub fn tool_key(tool: Tool) -> Key {
         Tool::MagicWand => Key::W,
         Tool::Select => Key::V,
         Tool::Subselect | Tool::Width => Key::A,
-        Tool::Pen => Key::P,
+        Tool::Pen | Tool::Curvature | Tool::AddAnchor | Tool::DeleteAnchor | Tool::ConvertAnchor => Key::P,
         Tool::Rectangle => Key::R,
         Tool::Ellipse => Key::O,
         Tool::Pencil => Key::Y,

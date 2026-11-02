@@ -20,6 +20,7 @@ mod brushes;
 mod cli;
 mod cli_script;
 mod color_picker;
+mod colour_well;
 mod command_finder;
 mod context_bar;
 mod convert;
@@ -85,6 +86,11 @@ fn main() -> eframe::Result {
     }
     if args.peek().is_some_and(|a| a == "--script") {
         std::process::exit(cli_script::run(args.skip(1).collect()));
+    }
+    // Anything else that looks like an option isn't a project to open.
+    // (`-psn_…`, which old macOS gave apps opened from the Finder, has one dash.)
+    if let Some(flag) = args.peek().filter(|a| a.starts_with("--") || *a == "-h" || *a == "-V") {
+        std::process::exit(cli::other_option(flag));
     }
     let open_path = std::env::args_os().nth(1).map(PathBuf::from);
 

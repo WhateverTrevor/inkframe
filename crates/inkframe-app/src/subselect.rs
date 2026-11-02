@@ -1,4 +1,4 @@
-//! The math behind the Subselection tool (and the Pen, between paths):
+//! The math behind the Subselection tool (and the Pen's point tools):
 //! moving anchors and their handles.
 //!
 //! Everything here works on a layer's anchors in its *local* coordinates.
@@ -122,6 +122,168 @@ pub fn toggle_smooth(anchors: &[Anchor], index: usize, closed: bool) -> Vec<Anch
     anchors
 }
 
+/// What sort of point an anchor is, as Illustrator names them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointKind {
+    /// No handles: the outline turns sharply here.
+    Corner,
+    /// Handles in line, so the curve flows through; each its own length,
+    /// so it can be tighter on one side.
+    Smooth,
+    /// Handles in line and the same length.
+    Symmetric,
+    /// Handles that aren't in line (or only one): a corner between curves,
+    /// as Alt-dragging a handle makes.
+    Broken,
+}
+
+impl PointKind {
+    /// How alike two handle lengths must be to count as the same.
+    const SAME_LENGTH: f32 = 0.005;
+
+    pub fn of(a: &Anchor) -> Self {
+        let (into, out) = ((a.handle_in - a.point).length(), (a.handle_out - a.point).length());
+        if a.handle_in == a.point && a.handle_out == a.point {
+            PointKind::Corner
+        } else if !is_smooth(a) {
+            PointKind::Broken
+        } else if (into - out).abs() <= Self::SAME_LENGTH * into.max(out) {
+            PointKind::Symmetric
+        } else {
+            PointKind::Smooth
+        }
+    }
+}
+
+/// Returns `anchors` with anchor `index` made a `kind` of point, changing
+/// its handles as little as that allows:
+///
+/// - **Corner**: the handles are taken in.
+/// - **Smooth**: a corner gets handles along its neighbours, as
+///   [`toggle_smooth`] gives it; handles out of line are brought into line
+///   along the way between them, each keeping its length.
+/// - **Symmetric**: smooth, and both handles the length of their average.
+///
+/// A broken point is one only Alt-dragging a handle makes, so asking for
+/// one leaves the anchor as it is.
+pub fn set_point_kind(anchors: &[Anchor], index: usize, closed: bool, kind: PointKind) -> Vec<Anchor> {
+    let a = anchors[index];
+    let mut anchors = anchors.to_vec();
+    match kind {
+        PointKind::Broken => {}
+        PointKind::Corner => anchors[index] = Anchor::corner(a.point),
+        PointKind::Smooth | PointKind::Symmetric => {
+            if PointKind::of(&a) == PointKind::Corner {
+                anchors = toggle_smooth(&anchors, index, closed);
+            } else if !is_smooth(&a) {
+                let (into, out) = (a.handle_in - a.point, a.handle_out - a.point);
+                let (len_in, len_out) = (into.length(), out.length());
+                // The way through: from the way in's handle towards the way
+                // out's, or along the only handle there is.
+                let unit = |v: Point| if v.length() > 1e-6 { v * (1.0 / v.length()) } else { Point::ZERO };
+                let along = unit(unit(out) - unit(into));
+                let along = if along == Point::ZERO { unit(out) } else { along };
+                // A handle that wasn't there takes the other's length, so
+                // both sides curve.
+                let (len_in, len_out) = match (len_in > 1e-6, len_out > 1e-6) {
+                    (true, true) => (len_in, len_out),
+                    (false, _) => (len_out, len_out),
+                    (_, false) => (len_in, len_in),
+                };
+                anchors[index] = Anchor {
+                    point: a.point,
+                    handle_in: a.point - along * len_in,
+                    handle_out: a.point + along * len_out,
+                };
+            }
+            if kind == PointKind::Symmetric {
+                let b = anchors[index];
+                let (into, out) = (b.handle_in - b.point, b.handle_out - b.point);
+                let length = (into.length() + out.length()) / 2.0;
+                if out.length() > 1e-6 {
+                    let unit = out * (1.0 / out.length());
+                    anchors[index] = Anchor {
+                        point: b.point,
+                        handle_in: b.point - unit * length,
+                        handle_out: b.point + unit * length,
+                    };
+                }
+            }
+        }
+    }
+    anchors
+}
+
+/// Returns `anchor` with one handle at `length` and `degrees` from its
+/// point (0° is to the right, turning clockwise as the stage's y runs
+/// down). The other handle keeps in line with it if the point is smooth,
+/// and the same length too if it's symmetric, as dragging it would.
+pub fn set_handle(anchor: &Anchor, part: AnchorPart, length: f32, degrees: f32) -> Anchor {
+    let kind = PointKind::of(anchor);
+    let radians = degrees.to_radians();
+    let target = anchor.point + Point::new(radians.cos(), radians.sin()) * length.max(0.0);
+    let mut moved = move_part(&[*anchor], 0, part, target, false)[0];
+    if kind == PointKind::Symmetric && length > 1e-6 {
+        let away = Point::new(-radians.cos(), -radians.sin()) * length;
+        match part {
+            AnchorPart::HandleIn => moved.handle_out = anchor.point + away,
+            AnchorPart::HandleOut => moved.handle_in = anchor.point + away,
+            AnchorPart::Point => {}
+        }
+    }
+    moved
+}
+
+/// A handle's length and direction from its point, in degrees as
+/// [`set_handle`] takes them.
+pub fn handle_polar(anchor: &Anchor, part: AnchorPart) -> (f32, f32) {
+    let d = part.position(anchor) - anchor.point;
+    (d.length(), d.y.atan2(d.x).to_degrees())
+}
+
+/// Anchors for the Curvature tool: the curve flows smoothly through each
+/// point but the `corners`, its handles along the line between the point's
+/// neighbours as [`toggle_smooth`] gives them, so moving one point bends the
+/// curve either side of it, as Illustrator's Curvature tool does.
+pub fn curvature_anchors(points: &[Point], corners: &[bool], closed: bool) -> Vec<Anchor> {
+    let corner_anchors: Vec<Anchor> = points.iter().map(|&p| Anchor::corner(p)).collect();
+    // Each point's handles come from its neighbours' places alone, so
+    // working them out one at a time gives the same as all at once.
+    (0..points.len())
+        .map(|i| {
+            if corners.get(i).copied().unwrap_or(false) {
+                corner_anchors[i]
+            } else {
+                toggle_smooth(&corner_anchors, i, closed)[i]
+            }
+        })
+        .collect()
+}
+
+/// Returns `anchors` with the curve re-flowed through point `index` and
+/// its neighbours, as the Curvature tool does when a point moves: each of
+/// them that isn't a corner gets its handles afresh from its neighbours.
+pub fn reflow_around(anchors: &[Anchor], index: usize, closed: bool) -> Vec<Anchor> {
+    let n = anchors.len();
+    let mut around = vec![index];
+    if index > 0 || closed {
+        around.push((index + n - 1) % n);
+    }
+    if index + 1 < n || closed {
+        around.push((index + 1) % n);
+    }
+    let mut anchors = anchors.to_vec();
+    for i in around {
+        let a = anchors[i];
+        if PointKind::of(&a) != PointKind::Corner {
+            // Made a corner first, so `toggle_smooth` makes it smooth anew.
+            anchors[i] = Anchor::corner(a.point);
+            anchors[i] = toggle_smooth(&anchors, i, closed)[i];
+        }
+    }
+    anchors
+}
+
 /// Removes an anchor, unless that would leave too little to be a shape:
 /// open paths need two anchors and closed paths need three.
 pub fn remove_anchor(anchors: &[Anchor], index: usize, closed: bool) -> Option<Vec<Anchor>> {
@@ -181,6 +343,67 @@ mod tests {
 
     fn close(a: Point, b: Point) -> bool {
         a.distance(b) < 1e-3
+    }
+
+    #[test]
+    fn moving_a_point_with_the_curvature_tool_reflows_its_neighbours_not_corners() {
+        let points = [p(0.0, 0.0), p(100.0, 0.0), p(200.0, 0.0), p(300.0, 0.0)];
+        let anchors = curvature_anchors(&points, &[true, false, false, false], false);
+        let mut moved = anchors.clone();
+        moved[1] = Anchor { point: p(100.0, -80.0), ..anchors[1] };
+        let flowed = reflow_around(&moved, 1, false);
+        assert_eq!(flowed[0], anchors[0], "a corner stays a corner");
+        assert!(flowed[2].handle_in.y < -1.0, "the next point's curve leans up to meet it: {:?}", flowed[2]);
+        assert_eq!(flowed[3], anchors[3], "two along, nothing changes");
+    }
+
+    #[test]
+    fn points_are_told_apart_by_their_handles() {
+        assert_eq!(PointKind::of(&Anchor::corner(p(0.0, 0.0))), PointKind::Corner);
+        assert_eq!(PointKind::of(&Anchor::smooth(p(0.0, 0.0), p(10.0, 0.0))), PointKind::Symmetric);
+        let uneven = Anchor { point: p(0.0, 0.0), handle_in: p(-20.0, 0.0), handle_out: p(10.0, 0.0) };
+        assert_eq!(PointKind::of(&uneven), PointKind::Smooth);
+        let bent = Anchor { point: p(0.0, 0.0), handle_in: p(0.0, -20.0), handle_out: p(10.0, 0.0) };
+        assert_eq!(PointKind::of(&bent), PointKind::Broken);
+    }
+
+    #[test]
+    fn a_broken_point_made_smooth_comes_into_line_keeping_its_lengths() {
+        let bent = Anchor { point: p(0.0, 0.0), handle_in: p(0.0, 20.0), handle_out: p(10.0, 0.0) };
+        let smooth = set_point_kind(&[bent], 0, false, PointKind::Smooth)[0];
+        assert_eq!(PointKind::of(&smooth), PointKind::Smooth);
+        assert!(((smooth.handle_in - smooth.point).length() - 20.0).abs() < 1e-3);
+        assert!(((smooth.handle_out - smooth.point).length() - 10.0).abs() < 1e-3);
+
+        let even = set_point_kind(&[bent], 0, false, PointKind::Symmetric)[0];
+        assert_eq!(PointKind::of(&even), PointKind::Symmetric);
+        assert!(((even.handle_out - even.point).length() - 15.0).abs() < 1e-3);
+
+        let corner = set_point_kind(&[bent], 0, false, PointKind::Corner)[0];
+        assert_eq!(corner, Anchor::corner(p(0.0, 0.0)));
+    }
+
+    #[test]
+    fn a_corner_made_smooth_gets_handles_along_its_neighbours() {
+        let line =
+            [Anchor::corner(p(0.0, 0.0)), Anchor::corner(p(50.0, 50.0)), Anchor::corner(p(100.0, 0.0))];
+        let smooth = set_point_kind(&line, 1, false, PointKind::Symmetric)[1];
+        assert_eq!(PointKind::of(&smooth), PointKind::Symmetric);
+        assert!((smooth.handle_out.y - 50.0).abs() < 1e-3, "level, along the neighbours: {smooth:?}");
+    }
+
+    #[test]
+    fn setting_a_handle_keeps_a_smooth_point_smooth() {
+        let uneven = Anchor { point: p(0.0, 0.0), handle_in: p(-20.0, 0.0), handle_out: p(10.0, 0.0) };
+        let turned = set_handle(&uneven, AnchorPart::HandleOut, 10.0, 90.0);
+        assert!(close(turned.handle_out, p(0.0, 10.0)));
+        assert!(close(turned.handle_in, p(0.0, -20.0)), "in line, its own length: {turned:?}");
+
+        let even = Anchor::smooth(p(0.0, 0.0), p(10.0, 0.0));
+        let longer = set_handle(&even, AnchorPart::HandleIn, 30.0, 180.0);
+        assert!(close(longer.handle_out, p(30.0, 0.0)), "symmetric stays so: {longer:?}");
+        let (length, degrees) = handle_polar(&longer, AnchorPart::HandleIn);
+        assert!((length - 30.0).abs() < 1e-3 && (degrees.abs() - 180.0).abs() < 1e-3);
     }
 
     #[test]

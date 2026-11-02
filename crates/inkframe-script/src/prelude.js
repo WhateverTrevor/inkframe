@@ -303,6 +303,12 @@
 
     /** The symbol library: [{ name, duration, layers, uses }]. */
     get symbols() { return parse(native.symbols(this._handle)); }
+    /**
+     * Sets how long a symbol's own timeline is, in frames. On Loop, its
+     * instances repeat every this many frames: a 24-frame walk made a symbol
+     * in a longer scene loops once set to 24.
+     */
+    setSymbolLength(symbol, frames) { native.setSymbolLength(this._handle, String(symbol), frames); }
     /** Adds an instance of a symbol, by name. Options: `at: [x, y]` and the first `frame`. */
     addInstance(symbol, options = {}) {
       return new Layer(this, native.addInstance(this._handle, String(symbol), json(options)));

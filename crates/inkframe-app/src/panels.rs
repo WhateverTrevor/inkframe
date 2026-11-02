@@ -13,8 +13,6 @@ use crate::theme;
 /// Panel settings that last while the app runs.
 #[derive(Default)]
 pub struct PanelState {
-    /// Whether swatches set the stroke rather than the fill.
-    pub stroke: bool,
     /// Whether the Align panel lines layers up with the stage.
     pub to_stage: bool,
 }
@@ -42,20 +40,23 @@ fn hsv(hue: f32, saturation: f32, value: f32) -> Color {
     Color::rgb(byte(r), byte(g), byte(b))
 }
 
-pub fn swatches(ui: &mut egui::Ui, editor: &mut Editor, state: &mut PanelState) {
-    // Which colour a click sets, shown as Animate's pair of fill and stroke
-    // chips; the paint tools have one colour, so no choice there.
-    if editor.tool.paints() {
-        ui.weak(tr("Click a swatch to paint with it."));
-    } else {
+pub fn swatches(ui: &mut egui::Ui, editor: &mut Editor) {
+    // Which colour a click sets: the one active in the toolbar's well (see
+    // `colour_well.rs`), chosen here as there.
+    let choices = editor.colour_choices();
+    if choices.len() > 1 {
+        let active = editor.active_colour();
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut state.stroke, false, tr("Fill"));
-            ui.selectable_value(&mut state.stroke, true, tr("Stroke"));
+            for &choice in choices {
+                if ui.selectable_label(active == choice, choice.label()).clicked() {
+                    editor.choose_colour(choice);
+                }
+            }
         });
     }
     ui.add_space(4.0);
     let mut picked = None;
-    palette_section(ui, editor, state, &mut picked);
+    palette_section(ui, editor, &mut picked);
 
     ui.add_space(8.0);
     egui::CollapsingHeader::new(egui::RichText::new(tr("BASIC COLOURS")).small().color(theme::TEXT_WEAK))
@@ -63,19 +64,20 @@ pub fn swatches(ui: &mut egui::Ui, editor: &mut Editor, state: &mut PanelState) 
         .default_open(editor.doc.palette.swatches.is_empty())
         .show(ui, |ui| chip_grid(ui, &palette(), &mut picked, |_, _| {}));
     if let Some(color) = picked {
-        editor.use_color(color, state.stroke);
+        use crate::colour_well::ColourChoice;
+        match editor.active_colour() {
+            // A shape's colours go to the selected shapes too.
+            ColourChoice::Fill => editor.use_color(color, false),
+            ColourChoice::Stroke => editor.use_color(color, true),
+            active => editor.set_colour(active, Some(color)),
+        }
     }
 }
 
 /// The document's palette: which version is in use, and each swatch with
 /// its name. Clicking a swatch uses its colour; right-clicking edits it,
 /// which recolours everything painted with it (see `palette.rs`).
-fn palette_section(
-    ui: &mut egui::Ui,
-    editor: &mut Editor,
-    state: &mut PanelState,
-    picked: &mut Option<Color>,
-) {
+fn palette_section(ui: &mut egui::Ui, editor: &mut Editor, picked: &mut Option<Color>) {
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(tr("PALETTE")).small().color(theme::TEXT_WEAK));
         let palette = &editor.doc.palette;
@@ -110,7 +112,7 @@ fn palette_section(
             let version = editor.doc.add_palette_version(name);
             editor.doc.use_palette_version(version);
         }
-        let current = current_color(editor, state.stroke);
+        let current = editor.colour(editor.active_colour());
         if ui.add(IconButton::new(Icon::Plus, tr("Add the current colour to the palette"))).clicked()
             && let Some(color) = current
         {
@@ -180,17 +182,6 @@ fn palette_section(
     }
     if let Some(i) = remove {
         editor.doc.remove_swatch(i);
-    }
-}
-
-/// The colour the next swatch would replace: what "+" saves.
-fn current_color(editor: &Editor, stroke: bool) -> Option<Color> {
-    if editor.tool.paints() {
-        Some(editor.paint_color)
-    } else if stroke {
-        editor.draw_style.stroke.map(|s| s.color)
-    } else {
-        editor.draw_style.fill
     }
 }
 

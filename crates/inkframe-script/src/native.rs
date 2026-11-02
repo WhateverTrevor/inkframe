@@ -384,6 +384,9 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, state: &Shared) -> rquickjs::Result<(
         let open = doc_mut(&ctx, &mut state, d)?;
         // Text the script added is measured here, as the editor would.
         inkframe_render::measure_text(&mut open.doc);
+        // As the editor does: linked files from where the project now is.
+        let from = open.path.as_deref().and_then(Path::parent).map(Path::to_path_buf);
+        open.doc.relink(from.as_deref(), path.parent().unwrap_or(Path::new(".")));
         open.doc.save(&path).map_err(|e| throw(&ctx, format!("couldn't save {}: {e}", path.display())))?;
         open.path = Some(path);
         Ok(())
@@ -415,6 +418,26 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, state: &Shared) -> rquickjs::Result<(
             })
             .collect();
         Ok(Value::Array(list).to_string())
+    });
+
+    let s = Rc::clone(state);
+    native!("setSymbolLength", move |ctx: Ctx<'js>,
+                                     d: usize,
+                                     name: String,
+                                     frames: f64|
+          -> rquickjs::Result<()> {
+        if !(frames >= 1.0 && frames.fract() == 0.0) {
+            return Err(throw(&ctx, format!("a symbol's length is a whole number of frames, not {frames}")));
+        }
+        let mut state = s.borrow_mut();
+        let doc = &mut doc_mut(&ctx, &mut state, d)?.doc;
+        let symbol = doc
+            .symbols
+            .iter_mut()
+            .find(|sym| sym.name == name)
+            .ok_or_else(|| throw(&ctx, format!("there's no symbol called {name}")))?;
+        symbol.duration = frames as u32;
+        Ok(())
     });
 
     let s = Rc::clone(state);

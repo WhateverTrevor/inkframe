@@ -58,7 +58,9 @@
 //!   action), with Replay and Pause buttons for a web page export, Replay picked.
 //! * `INKFRAME_SCREENSHOT_FINDER=envel` opens Find a Command with that typed.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
-//!   corners turned into a curve by Alt-dragging handles out of it, picked with the Pen.
+//!   corners turned into a curve by Alt-dragging handles out of it, picked (as ⌘-clicking it with the Pen would), with Properties › Point showing it.
+//! * `INKFRAME_SCREENSHOT_COLOUR=triangle` shows the Colour tab, its picker in that
+//!   style (`wheel`, `triangle`, `hsl` or `swatches`).
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
 //!   and a word bent by an envelope, its handles still out.
 //! * `INKFRAME_SCREENSHOT_TOOL=Subselection` picks a tool by its toolbar name.
@@ -345,6 +347,11 @@ impl AutoScreenshot {
         {
             editor.preview_turn(id, bone, turn);
         }
+    }
+
+    /// The colour picker style to show the Colour tab in, if any.
+    pub fn colour() -> Option<crate::color_picker::Style> {
+        crate::color_picker::Style::from_key(&std::env::var("INKFRAME_SCREENSHOT_COLOUR").ok()?)
     }
 
     /// Whether to show the Pen picking a point it's pulled handles out of.

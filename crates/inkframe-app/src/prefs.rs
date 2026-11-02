@@ -57,6 +57,8 @@ pub struct Prefs {
     pub pressure_feel: f32,
     /// The colour picker's recent colours, newest first.
     pub recent_colors: Vec<inkframe_core::Color>,
+    /// The colour picker's style, by its key (see `color_picker::Style`).
+    pub colour_style: Option<String>,
     /// Checking for updates (see `updates.rs`): whether the automatic
     /// check was turned off (saved this way round so a missing value means
     /// on), when it last ran, and a version chosen to be skipped.
@@ -108,6 +110,7 @@ impl Prefs {
             smoothing: None,
             pressure_feel: 0.0,
             recent_colors: Vec::new(),
+            colour_style: None,
             no_update_check: false,
             update_checked_at: None,
             skipped_version: None,

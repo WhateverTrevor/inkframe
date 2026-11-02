@@ -111,7 +111,7 @@ impl InkframeApp {
             Kind::Swatches => {
                 egui::ScrollArea::vertical()
                     .id_salt(("swatches", area))
-                    .show(ui, |ui| panels::swatches(ui, &mut self.editor, &mut self.panels));
+                    .show(ui, |ui| panels::swatches(ui, &mut self.editor));
             }
             Kind::Align => {
                 egui::ScrollArea::vertical()

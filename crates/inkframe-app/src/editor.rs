@@ -27,6 +27,15 @@ pub enum Tool {
     /// Shapes a pencil line's thickness point by point (see `line.rs`).
     Width,
     Pen,
+    /// The Pen's slot-mates, as in Animate and Illustrator: adding a point
+    /// to a shape's outline, deleting one, and switching one between a
+    /// corner and a curve (see `stage/pen_tool.rs`).
+    AddAnchor,
+    DeleteAnchor,
+    ConvertAnchor,
+    /// Illustrator's Curvature tool: points the curve flows through by
+    /// itself, without handles to pull.
+    Curvature,
     Rectangle,
     Ellipse,
     Pencil,
@@ -76,7 +85,7 @@ impl Tool {
         &[Tool::Subselect, Tool::Width],
         &[Tool::Bone, Tool::AddBone],
         &[Tool::Camera],
-        &[Tool::Pen],
+        &[Tool::Pen, Tool::Curvature, Tool::AddAnchor, Tool::DeleteAnchor, Tool::ConvertAnchor],
         &[Tool::Rectangle],
         &[Tool::Ellipse],
         &[Tool::Pencil],
@@ -109,6 +118,10 @@ impl Tool {
             Tool::Subselect => tr_later("Subselection"),
             Tool::Width => tr_later("Width"),
             Tool::Pen => tr_later("Pen"),
+            Tool::AddAnchor => tr_later("Add Anchor Point"),
+            Tool::DeleteAnchor => tr_later("Delete Anchor Point"),
+            Tool::ConvertAnchor => tr_later("Convert Anchor Point"),
+            Tool::Curvature => tr_later("Curvature"),
             Tool::Rectangle => tr_later("Rectangle"),
             Tool::Ellipse => tr_later("Oval"),
             Tool::Pencil => tr_later("Pencil"),
@@ -161,7 +174,15 @@ impl Tool {
             ),
             Tool::Width => tr_later("Drag sideways from a pencil line to make it wider or narrower there"),
             Tool::Pen => tr_later(
-                "Click for corners, drag for curves; click the first point to close. Edits points between paths",
+                "Click for corners, drag for curves (Alt breaks the handle, Space moves the point); click the first point to close. Over a selected shape: + adds a point, − deletes one",
+            ),
+            Tool::Curvature => tr_later(
+                "Click points and the curve flows through them; Alt-click for a corner. Drag a point and the curve follows; double-click one to make it a corner or smooth",
+            ),
+            Tool::AddAnchor => tr_later("Click a selected shape's outline to add a point there"),
+            Tool::DeleteAnchor => tr_later("Click a selected shape's point to delete it"),
+            Tool::ConvertAnchor => tr_later(
+                "Click a curve's point to make it a corner; drag a point to pull curve handles out; drag a handle to move it alone",
             ),
             Tool::Rectangle => tr_later("Drag to draw a rectangle; Shift for a square"),
             Tool::Ellipse => tr_later("Drag to draw an oval; Shift for a circle"),
@@ -202,6 +223,15 @@ impl Tool {
     }
 
     /// Whether the tool selects pixels.
+    /// The Pen and its slot-mates, which show a shape's points and work on
+    /// them.
+    pub fn edits_points(self) -> bool {
+        matches!(
+            self,
+            Tool::Pen | Tool::Curvature | Tool::AddAnchor | Tool::DeleteAnchor | Tool::ConvertAnchor
+        )
+    }
+
     pub fn selects(self) -> bool {
         matches!(
             self,
@@ -337,6 +367,11 @@ pub struct Editor {
     pub pencil_stroke: Stroke,
     /// The colour the brush paints with.
     pub paint_color: Color,
+    /// Which of the toolbar's colours the Colour tab edits, for the shape
+    /// tools (the fill or the stroke) and the painting tools (the colour
+    /// or the second one); see `colour_well.rs`.
+    pub shape_choice: crate::colour_well::ColourChoice,
+    pub paint_choice: crate::colour_well::ColourChoice,
     /// The brush's and eraser's settings, kept apart so switching between
     /// them doesn't change either, as in Photoshop.
     pub brush: BrushSettings,
@@ -416,6 +451,9 @@ pub struct Editor {
     /// stage last saw it: its layer, its shape in the line art, and its
     /// place in the shape's outline. For pinning it to a bone.
     pub picked_anchor: Option<(LayerId, usize, usize)>,
+    /// Points picked along with it (see `StageView::more_anchors`), which
+    /// Properties › Point's Type changes too.
+    pub more_picked_anchors: Vec<(LayerId, usize, usize)>,
     /// Rig setup, as Moho's frame 0: skeletons shown at rest, to draw and
     /// paint on and rig, rather than posed (see `skeleton.rs`).
     pub rig_setup: bool,
@@ -512,6 +550,8 @@ impl Editor {
             },
             pencil_stroke: Stroke::new(Color::rgb(0x1a, 0x1a, 0x1a), 4.0),
             paint_color: Color::rgb(0x1a, 0x1a, 0x1a),
+            shape_choice: crate::colour_well::ColourChoice::Fill,
+            paint_choice: crate::colour_well::ColourChoice::Paint,
             close_gaps: 4.0,
             draw_into_layer: true,
             colour_art: false,
@@ -520,6 +560,7 @@ impl Editor {
             lattice: None,
             selected_bone: None,
             picked_anchor: None,
+            more_picked_anchors: Vec::new(),
             rig_setup: false,
             folded_sections: Default::default(),
             properties_search: String::new(),
@@ -613,6 +654,9 @@ impl Editor {
     pub fn save_to(&mut self, path: &Path) -> Result<(), DocumentError> {
         // A correction under way is keyed first, so it's saved whole.
         self.finish_correction();
+        // Sounds, pictures and fonts are linked from where the project is.
+        let from = self.project_dir();
+        self.doc.relink(from.as_deref(), path.parent().unwrap_or(Path::new(".")));
         self.doc.save(path)?;
         self.saved = self.doc.clone();
         self.path = Some(path.to_owned());

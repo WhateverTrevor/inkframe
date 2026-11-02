@@ -213,7 +213,7 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
                 ui.weak(tr("Click something on the stage to see what you can do with it."));
             }
         }
-        Tool::Pen | Tool::Pencil | Tool::Rectangle | Tool::Ellipse => {
+        Tool::Pen | Tool::Curvature | Tool::Pencil | Tool::Rectangle | Tool::Ellipse => {
             let mut into = editor.draw_into_layer;
             if ui
                 .add(LabelledButton::new(Icon::Plus, tr("Draw into layer")).selected(into))

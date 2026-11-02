@@ -92,6 +92,8 @@ pub enum Asked {
     DefinePattern,
     ShowBrushSettings,
     ShowBrushes,
+    /// Bring up the Colour tab: a colour in the toolbar's well was clicked.
+    ShowColour,
 }
 
 impl BrushPanels {

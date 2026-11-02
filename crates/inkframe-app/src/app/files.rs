@@ -31,6 +31,7 @@ impl InkframeApp {
             smoothing: Some(self.editor.smoothing),
             pressure_feel: self.editor.pressure_feel,
             recent_colors: crate::color_picker::recent(),
+            colour_style: Some(crate::color_picker::style().key().to_owned()),
             no_update_check: !self.update_prefs.automatic,
             update_checked_at: self.update_prefs.checked_at,
             skipped_version: self.update_prefs.skipped.clone(),

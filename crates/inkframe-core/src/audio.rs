@@ -19,8 +19,8 @@ pub struct AudioId(pub(crate) u64);
 pub struct AudioTrack {
     pub id: AudioId,
     pub name: String,
-    /// The sound file, relative to the project file's folder if it was
-    /// inside it when imported, otherwise absolute.
+    /// The sound file, relative to the project file's folder when it's
+    /// inside it, otherwise in full (see [`Document::relink`]).
     pub path: PathBuf,
     /// The frame where the sound starts playing.
     #[serde(default)]
@@ -59,15 +59,45 @@ pub(crate) fn resolve_linked(path: &Path, project_dir: Option<&Path>) -> PathBuf
     }
 }
 
+/// How a linked file's path is kept: relative to the project folder when
+/// the file is inside it, so the folder can move as a whole; otherwise as
+/// it is.
+pub(crate) fn store_linked(path: &Path, project_dir: Option<&Path>) -> PathBuf {
+    project_dir
+        .and_then(|dir| path.strip_prefix(dir).ok())
+        .map_or_else(|| path.to_path_buf(), Path::to_path_buf)
+}
+
 impl Document {
+    /// Points the linked files (sounds, pictures and fonts) at the same
+    /// files from a project saved into `to` that was in `from` (`None` if
+    /// it had never been saved).
+    ///
+    /// Paths are made relative when a file is imported, but only to a
+    /// project that already has a folder: a new project's files are linked
+    /// in full, and stay so unless they're made relative here once it's
+    /// saved beside them. And a relative path means nothing once Save As
+    /// puts the project in another folder, so it's made full again.
+    pub fn relink(&mut self, from: Option<&Path>, to: &Path) {
+        let relink = |path: &mut PathBuf| {
+            // A relative path with no folder to be relative to can't be
+            // placed; leave it for whoever knows where it came from.
+            if from.is_none() && path.is_relative() {
+                return;
+            }
+            *path = store_linked(&resolve_linked(path, from), Some(to));
+        };
+        self.audio.iter_mut().for_each(|track| relink(&mut track.path));
+        self.images.iter_mut().for_each(|image| relink(&mut image.path));
+        self.fonts.iter_mut().for_each(|font| relink(&mut font.path));
+    }
+
     /// Adds an audio track starting at `start`. `path` is stored relative to
     /// `project_dir` when the file is inside it.
     pub fn add_audio(&mut self, path: &Path, project_dir: Option<&Path>, start: u32) -> AudioId {
         let id = AudioId(self.next_audio_id);
         self.next_audio_id += 1;
-        let stored = project_dir
-            .and_then(|dir| path.strip_prefix(dir).ok())
-            .map_or_else(|| path.to_path_buf(), Path::to_path_buf);
+        let stored = store_linked(path, project_dir);
         let name = path.file_stem().map_or_else(|| "Audio".to_owned(), |s| s.to_string_lossy().into_owned());
         self.audio.push(AudioTrack {
             id,
@@ -125,6 +155,23 @@ mod tests {
             doc.audio_track(id).unwrap().resolve(Some(Path::new("/elsewhere"))),
             Path::new("/elsewhere/voice.wav")
         );
+    }
+
+    #[test]
+    fn saving_relinks_files_for_the_projects_new_folder() {
+        let mut doc = Document::default();
+        // Imported before the project was ever saved: linked in full.
+        let sound = doc.add_audio(Path::new("/projects/walk/sound/voice.wav"), None, 0);
+        let song = doc.add_audio(Path::new("/music/song.mp3"), None, 0);
+        doc.relink(None, Path::new("/projects/walk"));
+        assert_eq!(doc.audio_track(sound).unwrap().path, Path::new("sound/voice.wav"));
+        assert_eq!(doc.audio_track(song).unwrap().path, Path::new("/music/song.mp3"));
+
+        // Saved as into another folder: the sound is still the one beside
+        // the first project.
+        doc.relink(Some(Path::new("/projects/walk")), Path::new("/backup"));
+        assert_eq!(doc.audio_track(sound).unwrap().path, Path::new("/projects/walk/sound/voice.wav"));
+        assert_eq!(doc.audio_track(song).unwrap().path, Path::new("/music/song.mp3"));
     }
 
     #[test]
