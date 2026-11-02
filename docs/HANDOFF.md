@@ -19,9 +19,10 @@ and how the work is done.
   pass, on macOS locally and on macOS and Windows in CI.
 - **File format:** version 41. Older files load and upgrade automatically
   (`crates/inkframe-core/tests/format_migration.rs`).
-- **Releases:** v0.2.0 to v0.9.0 are tagged. Their GitHub releases are
-  drafts (with the .dmg, setup.exe and guidebook PDF) that the user
-  publishes. Unreleased work is under *Unreleased* in the changelog.
+- **Releases:** v0.2.0 to v0.10.0 are tagged. CI drafts each GitHub
+  release with the .dmg and setup.exe; the guidebook PDF and install
+  notes are added to the draft, which is then published (from 0.10.0 on,
+  by the agent, as the user asked). Unreleased work is under *Unreleased* in the changelog.
 - **Remote:** https://github.com/WhateverTrevor/inkframe (public). CI runs
   on macOS and Windows for every push. Commits use the GitHub noreply
   address; the git identity is set for this repository only.

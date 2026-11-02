@@ -3,7 +3,15 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
-## Unreleased
+## [0.10.0]
+
+The Pen works as Animate's and Illustrator's, with Add, Delete and
+Convert Anchor Point and a Curvature tool beside it, and every point's
+curve can be shaped in Properties. Colours live in one place, a colour
+well under the toolbar with a Colour tab picking them as a wheel, a
+triangle, sliders or swatches. Adjustment layers, Liquify and unlinkable
+masks come to painting. Projects saved in 0.10.0 use file format 41,
+which older versions can't open; 0.10.0 opens everything they saved.
 
 ### Painting
 
@@ -88,7 +96,6 @@ notes on GitHub are its section here.
 - The scripting guide says which way depth goes, that a polygon's points
   are measured from `at`, and where a new symbol's instance is placed.
 
-File format 41: older versions can't open projects saved with this one.
 
 ## [0.9.0]
 
