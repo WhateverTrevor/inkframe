@@ -1,8 +1,8 @@
 # Inkframe
 
 An open-source 2D vector animation editor, in the spirit of Adobe Animate.
-Written in Rust. Runs natively on Apple Silicon Macs, with Windows support
-planned (the code is already cross-platform and CI builds it on Windows).
+Written in Rust. Runs natively on Apple Silicon Macs, 64-bit Windows and
+64-bit Linux.
 
 ![Inkframe editing a bouncing ball, with onion skinning on and per-property keyframes expanded in the timeline](docs/screenshot.png)
 
@@ -135,8 +135,8 @@ show off the bigger features.
 
 ## Download
 
-Installers for Apple Silicon Macs (`.dmg`) and 64-bit Windows
-(`-setup.exe`) are on the
+Installers for Apple Silicon Macs (`.dmg`), 64-bit Windows (`-setup.exe`)
+and 64-bit Linux (`.AppImage`) are on the
 [releases page](https://github.com/WhateverTrevor/inkframe/releases), with
 what's new in each in [CHANGELOG.md](CHANGELOG.md). They aren't signed with
 a developer certificate yet, so macOS and Windows warn the first time; the
@@ -152,6 +152,10 @@ brew install ffmpeg            # macOS; PNG sequences and sprite sheets work wit
 git clone <this repository> inkframe && cd inkframe
 cargo run --release -- examples/bouncing-ball.inkf
 ```
+
+On Linux, building also needs the ALSA sound library's headers
+(`sudo apt install libasound2-dev` on Debian and Ubuntu, `alsa-lib-devel`
+on Fedora).
 
 If ffmpeg is somewhere unusual, point Inkframe at it with the
 `INKFRAME_FFMPEG` environment variable.
@@ -187,7 +191,10 @@ cargo xtask bundle-macos --dmg
 ffmpeg inside the app and what still needs an Apple Developer account. On
 Windows, `cargo xtask bundle-windows` builds a `setup.exe` installer with
 [Inno Setup](https://jrsoftware.org/isinfo.php); see
-[packaging/windows/README.md](packaging/windows/README.md).
+[packaging/windows/README.md](packaging/windows/README.md). On Linux,
+`cargo xtask bundle-linux` builds an AppImage with
+[appimagetool](https://github.com/AppImage/appimagetool); see
+[packaging/linux/README.md](packaging/linux/README.md).
 
 ## Using the editor
 
@@ -310,7 +317,7 @@ crates/
   inkframe-audio/   decodes, resamples and mixes sound files
   inkframe-export/  PNG sequences, sprite sheets, ffmpeg video and GIF, SVG and Lottie
   inkframe-app/     the desktop editor (egui)
-xtask/              build tooling: `cargo xtask icon`, `bundle-macos`, `bundle-windows`
+xtask/              build tooling: `cargo xtask icon`, `bundle-macos`, `bundle-windows`, `bundle-linux`
 packaging/          per-platform packaging files
 assets/icon/        the app icon (drawn in code by xtask)
 ```

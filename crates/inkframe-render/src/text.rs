@@ -255,8 +255,9 @@ impl Fonts {
     /// symbols) on each platform are tried first, so the same characters
     /// look consistent; then every installed face. Emoji come from the
     /// bundled Noto Color Emoji, drawn as colored vector layers. (Apple's
-    /// color emoji font stores pictures rather than shapes, so it's
-    /// skipped: it has neither outlines nor color layers.)
+    /// color emoji font, and the version of Noto's that Linux installs,
+    /// store pictures rather than shapes, so they're skipped: they have
+    /// neither outlines nor color layers.)
     fn fallback_for(&self, c: char) -> Option<fontdb::ID> {
         if let Some(found) = self.fallbacks.lock().expect("fallback cache lock").get(&c) {
             return *found;
@@ -282,9 +283,14 @@ impl Fonts {
                 })
                 .unwrap_or(false)
         };
-        let by_name = PREFERRED.iter().filter_map(|family| {
-            let query = Query { families: &[Family::Name(family)], ..Query::default() };
-            self.installed.query(&query)
+        // Every face of each family, not just the best match by name: Linux
+        // often has its own Noto Color Emoji, the bitmap version, which
+        // would otherwise hide the bundled one of the same name.
+        let by_name = PREFERRED.iter().flat_map(|family| {
+            self.installed
+                .faces()
+                .filter(move |face| face.families.iter().any(|(name, _)| name == family))
+                .map(|face| face.id)
         });
         let everything = self.installed.faces().map(|face| face.id);
         let found = by_name.chain(everything).find(|id| has_outline(*id));

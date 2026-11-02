@@ -9,6 +9,9 @@ mod guide;
 mod icon;
 mod samples;
 mod strings;
+// Packs an AppImage with appimagetool, which runs only on Linux.
+#[cfg(target_os = "linux")]
+mod linux;
 // Bundling uses tools that only exist on macOS (iconutil, codesign, hdiutil).
 #[cfg(target_os = "macos")]
 mod macos;
@@ -36,6 +39,11 @@ Tasks:
   bundle-windows [options]   Build an installer in target/release/ (needs Inno Setup 6)
       --ffmpeg <path>        Bundle this ffmpeg.exe (must be a static build)
       --rhubarb <folder>     Bundle Rhubarb Lip Sync from this unpacked release
+  bundle-linux [options]     Build an AppImage in target/release/ (needs appimagetool)
+      --ffmpeg <path>        Bundle this ffmpeg (must be a static build)
+      --rhubarb <folder>     Bundle Rhubarb Lip Sync from this unpacked release
+      --appimagetool <path>  Use this appimagetool rather than the one on PATH
+      --runtime <path>       Use this AppImage runtime rather than downloading one
 ";
 
 fn main() -> ExitCode {
@@ -55,6 +63,10 @@ fn main() -> ExitCode {
         }
         #[cfg(not(windows))]
         Some("bundle-windows") => Err("bundle-windows has to run on Windows".to_string()),
+        #[cfg(target_os = "linux")]
+        Some("bundle-linux") => linux::Options::parse(&args[1..]).and_then(|options| linux::bundle(&options)),
+        #[cfg(not(target_os = "linux"))]
+        Some("bundle-linux") => Err("bundle-linux has to run on Linux".to_string()),
         _ => Err(USAGE.to_string()),
     };
     match result {

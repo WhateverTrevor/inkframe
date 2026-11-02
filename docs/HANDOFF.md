@@ -16,15 +16,16 @@ and how the work is done.
   merged into `main` with a merge commit and pushed.
 - **Checks:** `cargo fmt --all --check`, `cargo clippy --workspace
   --all-targets -- -D warnings` and `cargo test --workspace` (943 tests)
-  pass, on macOS locally and on macOS and Windows in CI.
+  pass, on macOS locally and on macOS, Windows and Linux (Ubuntu 22.04)
+  in CI.
 - **File format:** version 41. Older files load and upgrade automatically
   (`crates/inkframe-core/tests/format_migration.rs`).
 - **Releases:** v0.2.0 to v0.10.0 are tagged. CI drafts each GitHub
-  release with the .dmg and setup.exe; the guidebook PDF and install
+  release with the .dmg, setup.exe and (from 0.11.0) the Linux AppImage; the guidebook PDF and install
   notes are added to the draft, which is then published (from 0.10.0 on,
   by the agent, as the user asked). Unreleased work is under *Unreleased* in the changelog.
 - **Remote:** https://github.com/WhateverTrevor/inkframe (public). CI runs
-  on macOS and Windows for every push. Commits use the GitHub noreply
+  on macOS, Windows and Linux for every push. Commits use the GitHub noreply
   address; the git identity is set for this repository only.
 
 ## What's built
@@ -67,6 +68,9 @@ and Moho's main features, and more:
   painter; `MIX_PER_DAB` and `DRY_PER_DAB` in retouch.rs set it.
 - **View › Language** hasn't been clicked through in a running app (no
   app-level test harness; screenshots ignore the setting by design).
+- **The Linux AppImage** on a real desktop: CI builds it, unpacks it and
+  exports through it, but nobody has opened its window, drawn with a
+  tablet or played sound on Linux yet.
 - **The Windows installer** on a real PC, copy and paste between two
   windows, on-stage typing with a real input method, and hearing the
   Library's sound preview with an output device.

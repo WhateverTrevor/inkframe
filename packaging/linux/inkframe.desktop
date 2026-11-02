@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Inkframe
+Comment=Draw and animate in 2D
+Exec=inkframe %f
+Icon=inkframe
+Terminal=false
+Categories=Graphics;2DGraphics;VectorGraphics;
+# Matches the window's app id (see inkframe-app's main.rs), so the
+# window is grouped under this launcher.
+StartupWMClass=inkframe
+X-AppImage-Version={{VERSION}}
