@@ -205,6 +205,11 @@ impl Drawing {
         }
     }
 
+    /// Whether any of shape `element`'s points are animated.
+    pub fn animates_points_of(&self, element: usize) -> bool {
+        self.point_tracks.iter().any(|t| t.element == element)
+    }
+
     /// The frames point `anchor` of shape `element` is keyed on: none if
     /// it isn't animated.
     pub fn point_key_frames(&self, element: usize, anchor: usize) -> Vec<u32> {

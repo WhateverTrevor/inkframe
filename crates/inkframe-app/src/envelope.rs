@@ -107,7 +107,10 @@ impl Editor {
         let Some(edit) = &mut self.lattice else { return };
         edit.lattice.move_point(index, to, smooth);
         let (layer, lattice, originals) = (edit.layer, edit.lattice.clone(), edit.originals.clone());
-        self.reshape_layer_shapes(layer, &originals, |shape| lattice.bend(shape));
+        self.reshape_layer_shapes(layer, &originals, |shape, animated| {
+            // Animated points keep their keys only if no points are added.
+            if animated { lattice.bend_keeping_points(shape) } else { lattice.bend(shape) }
+        });
     }
 
     /// Leaves the shapes as the lattice has bent them.
@@ -173,6 +176,51 @@ mod tests {
         let bounds = shape_bounds(&editor, id);
         assert!((bounds.max.x - 90.0).abs() < 1e-2 && (bounds.max.y - 80.0).abs() < 1e-2, "{bounds:?}");
         assert!((bounds.min.x + 50.0).abs() < 1e-2, "the left side stays");
+    }
+
+    /// The square's corners on `frame`, as they show (posed).
+    fn posed_corners(editor: &Editor, id: LayerId, frame: u32) -> Vec<Point> {
+        let layer = editor.doc.layer(id).unwrap();
+        layer.posed_elements(frame)[0].shape.to_anchors().0.iter().map(|a| a.point).collect()
+    }
+
+    /// The square with its bottom right corner keyed 40 further right on
+    /// frame 10, the playhead there.
+    fn square_with_a_keyed_corner() -> (Editor, LayerId) {
+        let (mut editor, id) = editor_with_square();
+        let (mut anchors, _) = editor.doc.layer(id).unwrap().elements_at(0)[0].shape.to_anchors();
+        let right = Point::new(40.0, 0.0);
+        let corner = &mut anchors[2];
+        (corner.point, corner.handle_in, corner.handle_out) =
+            (corner.point + right, corner.handle_in + right, corner.handle_out + right);
+        editor.doc.layer_mut(id).unwrap().key_points(10, 0, &anchors);
+        editor.frame = 10;
+        (editor, id)
+    }
+
+    #[test]
+    fn the_lattice_goes_round_points_where_theyve_been_moved() {
+        let (mut editor, _) = square_with_a_keyed_corner();
+        editor.start_lattice(LatticeKind::Distort).unwrap();
+        let bounds = editor.lattice.as_ref().unwrap().lattice.bounds;
+        assert!((bounds.max.x - 90.0).abs() < 1e-2, "takes in the moved corner: {bounds:?}");
+    }
+
+    #[test]
+    fn bending_a_shape_keeps_its_points_animation() {
+        let (mut editor, id) = square_with_a_keyed_corner();
+        editor.start_lattice(LatticeKind::Distort).unwrap();
+        // Pull the box's top left corner up 30: the square's top left
+        // corner goes with it, on this frame...
+        editor.move_lattice_point(0, Point::new(-50.0, -80.0), true);
+        let here = posed_corners(&editor, id, 10);
+        assert!(here[0].distance(Point::new(-50.0, -80.0)) < 0.5, "{here:?}");
+        assert!(here[2].distance(Point::new(90.0, 50.0)) < 0.5, "the moved corner stays put: {here:?}");
+        // ...and the drawing too, with the corner still animating on top.
+        let first = posed_corners(&editor, id, 0);
+        assert!(first[0].distance(Point::new(-50.0, -80.0)) < 0.5, "{first:?}");
+        assert!(first[2].distance(Point::new(50.0, 50.0)) < 0.5, "{first:?}");
+        assert_eq!(editor.doc.layer(id).unwrap().key_frames(), [0, 10]);
     }
 
     #[test]

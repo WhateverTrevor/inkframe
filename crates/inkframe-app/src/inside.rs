@@ -11,6 +11,8 @@
 //! they were picked on. Changing frame, undoing, or anything else that
 //! could shuffle them clears the picked shapes (see [`Editor::check_inside`]).
 
+use std::borrow::Cow;
+
 use crate::i18n::tr;
 use inkframe_core::{
     Affine, CopiedShapes, Element, Layer, LayerId, Point, Rect, SymbolId, TimelineId, Transform,
@@ -52,10 +54,13 @@ pub struct Inside {
 }
 
 /// The line art and colour art showing on `frame`.
-fn parts(layer: &Layer, frame: u32) -> (&[Element], &[Element]) {
+/// The line art and colour art showing on `frame`: the line art posed,
+/// its animated points where they've been moved to (see `point_keys.rs` in
+/// the core), as it's seen and so as it's picked and changed.
+fn parts(layer: &Layer, frame: u32) -> (Cow<'_, [Element]>, &[Element]) {
     match layer.drawings.get(layer.drawing_index_at(frame)) {
-        Some(drawing) => (&drawing.elements, &drawing.colour_art),
-        None => (&[], &[]),
+        Some(drawing) => (drawing.posed(frame), &drawing.colour_art),
+        None => (Cow::Borrowed(&[]), &[]),
     }
 }
 
@@ -163,24 +168,24 @@ impl Editor {
 
     /// The line art and colour art of the layer being worked inside, on
     /// this frame.
-    fn inside_parts(&self) -> (&[Element], &[Element]) {
+    fn inside_parts(&self) -> (Cow<'_, [Element]>, &[Element]) {
         match self.inside_layer().and_then(|id| self.doc.layer(id)) {
             Some(layer) => parts(layer, self.frame),
-            None => (&[], &[]),
+            None => (Cow::Borrowed(&[]), &[]),
         }
     }
 
     /// Every shape of the layer being worked inside, bottom first: the
     /// colour art, then the line art over it.
-    fn inside_refs(&self) -> Vec<(ShapeRef, &Element)> {
+    fn inside_refs(&self) -> Vec<(ShapeRef, Element)> {
         let (lines, colour) = self.inside_parts();
-        let colour = colour.iter().enumerate().map(|(i, e)| (ShapeRef::colour(i), e));
-        colour.chain(lines.iter().enumerate().map(|(i, e)| (ShapeRef::line(i), e))).collect()
+        let colour = colour.iter().enumerate().map(|(i, e)| (ShapeRef::colour(i), e.clone()));
+        colour.chain(lines.iter().enumerate().map(|(i, e)| (ShapeRef::line(i), e.clone()))).collect()
     }
 
-    fn inside_shape(&self, shape: ShapeRef) -> Option<&Element> {
+    fn inside_shape(&self, shape: ShapeRef) -> Option<Element> {
         let (lines, colour) = self.inside_parts();
-        if shape.colour_art { colour.get(shape.index) } else { lines.get(shape.index) }
+        if shape.colour_art { colour.get(shape.index).cloned() } else { lines.get(shape.index).cloned() }
     }
 
     /// From the layer's own coordinates to the timeline's (the stage's, or
@@ -233,7 +238,7 @@ impl Editor {
         self.picked_shapes()
             .iter()
             .filter_map(|&s| self.inside_shape(s))
-            .map(Element::bounds)
+            .map(|e| e.bounds())
             .reduce(Rect::union)
     }
 
@@ -251,22 +256,24 @@ impl Editor {
     /// The picked shapes, as they are now, to transform from (see
     /// [`Editor::transform_shapes`]).
     pub fn picked_originals(&self) -> Vec<(ShapeRef, Element)> {
-        self.picked_shapes().iter().filter_map(|&s| Some((s, self.inside_shape(s)?.clone()))).collect()
+        self.picked_shapes().iter().filter_map(|&s| Some((s, self.inside_shape(s)?))).collect()
     }
 
     /// Puts each of `originals` back where it was, mapped by `m` (in the
     /// layer's coordinates). Dragging calls this with the shapes as they
     /// were when the drag began, so nothing drifts.
     pub fn transform_shapes(&mut self, originals: &[(ShapeRef, Element)], m: Affine) {
-        self.reshape_shapes(originals, |shape| shape.transformed(m));
+        self.reshape_shapes(originals, |shape, _| shape.transformed(m));
     }
 
     /// Puts each of `originals` back where it was, changed by `change`
-    /// (left as it is now where that gives nothing).
+    /// (left as it is now where that gives nothing). `change` is told
+    /// whether the shape's points are animated one by one, which it must
+    /// then keep point for point.
     pub fn reshape_shapes(
         &mut self,
         originals: &[(ShapeRef, Element)],
-        change: impl Fn(&Element) -> Option<Element>,
+        change: impl Fn(&Element, bool) -> Option<Element>,
     ) {
         if let Some(id) = self.inside_layer() {
             self.reshape_layer_shapes(id, originals, change);
@@ -279,13 +286,34 @@ impl Editor {
         &mut self,
         id: LayerId,
         originals: &[(ShapeRef, Element)],
-        change: impl Fn(&Element) -> Option<Element>,
+        change: impl Fn(&Element, bool) -> Option<Element>,
     ) {
         let frame = self.frame;
         let Some(layer) = self.doc.layer_mut(id) else { return };
+        let index = layer.drawing_index_at(frame);
+        let Some(drawing) = layer.drawings.get_mut(index) else { return };
         for (shape, original) in originals {
-            let part = part_mut(layer, frame, shape.colour_art);
-            if let (Some(slot), Some(changed)) = (part.get_mut(shape.index), change(original)) {
+            // The originals are as posed; a shape with animated points is
+            // redrawn so that, posed, it's the changed shape, its points'
+            // animation carrying on on top (as moving one point does).
+            let animated = !shape.colour_art && drawing.animates_points_of(shape.index);
+            let Some(changed) = change(original, animated) else { continue };
+            if animated {
+                let (anchors, closed) = changed.shape.to_anchors();
+                let drawn = drawing.elements.get(shape.index).map_or(0, |e| e.shape.to_anchors().0.len());
+                if anchors.len() == drawn {
+                    drawing.redraw_posed(frame, shape.index, &anchors, closed);
+                    if let Some(slot) = drawing.elements.get_mut(shape.index) {
+                        slot.style = changed.style;
+                    }
+                    continue;
+                }
+                // Points came or went, so the keys no longer belong to
+                // them: the shape keeps the look it has here, unanimated.
+                drawing.point_tracks.retain(|t| t.element != shape.index);
+            }
+            let part = if shape.colour_art { &mut drawing.colour_art } else { &mut drawing.elements };
+            if let Some(slot) = part.get_mut(shape.index) {
                 *slot = changed;
             }
         }
@@ -434,6 +462,32 @@ mod tests {
         let shapes = vec![square(0.0), square(50.0), square(100.0)];
         let id = editor.doc.add_layer("Shapes", shapes, 0, Transform::at(Point::new(100.0, 100.0)));
         (editor, id)
+    }
+
+    #[test]
+    fn moving_a_shape_inside_a_layer_starts_from_its_animated_points() {
+        let (mut editor, id) = editor_with_three_squares();
+        // The first square's top left corner keyed 30 up on frame 10.
+        let layer = editor.doc.layer_mut(id).unwrap();
+        let (mut anchors, _) = layer.elements_at(0)[0].shape.to_anchors();
+        let up = Point::new(0.0, -30.0);
+        anchors[0] =
+            inkframe_core::PointOffset { point: up, handle_in: up, handle_out: up }.apply(&anchors[0]);
+        layer.key_points(10, 0, &anchors);
+        editor.frame = 10;
+        assert!(editor.enter_layer(id));
+        // Picked where it shows: the moved corner is part of it.
+        assert_eq!(editor.shape_at(Point::new(90.0, 70.0), 2.0), Some(ShapeRef::line(0)));
+        editor.pick_shapes(vec![ShapeRef::line(0)]);
+        assert!((editor.picked_bounds().unwrap().min.y + 40.0).abs() < 1e-3, "the box takes it in");
+        // Moved 5 right, it's still the corner keyed up on frame 10...
+        let originals = editor.picked_originals();
+        editor.transform_shapes(&originals, Affine::translate(Point::new(5.0, 0.0)));
+        let corner =
+            |frame| editor.doc.layer(id).unwrap().posed_elements(frame)[0].shape.to_anchors().0[0].point;
+        assert!(corner(10).distance(Point::new(-5.0, -40.0)) < 1e-3, "{:?}", corner(10));
+        // ...and the square's drawn 5 right on every frame.
+        assert!(corner(0).distance(Point::new(-5.0, -10.0)) < 1e-3, "{:?}", corner(0));
     }
 
     #[test]
