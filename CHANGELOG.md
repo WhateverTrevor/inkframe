@@ -3,6 +3,24 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
+## Unreleased
+
+### Animation
+
+- Points animate one by one. Turn on **Animate Points** in the context
+  bar (with the Subselection tool, the Pen or a point tool) and moving a
+  point keys it on that frame, as Moho and After Effects' path keyframes
+  do, rather than redrawing the shape for every frame. Each point has its
+  own keys and easing, in the layer's timeline row with its other keys.
+  Points animate from where they're drawn, so redrawing a shape keeps its
+  animation; Properties › Point shows a picked point's keys and can
+  remove them.
+- Shape tweens can blend **Naturally** (Blend in the Drawings section):
+  shapes pair by likeness rather than drawing order, outlines match corner
+  to corner, and parts that turn keep their length instead of folding
+  through their middle. Linear, Animate's way, is still the default.
+- Projects use file format 42, which older versions can't open.
+
 ## [0.11.0]
 
 Inkframe comes to Linux. Alongside the Mac and Windows installers there's

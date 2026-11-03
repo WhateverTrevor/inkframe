@@ -59,6 +59,8 @@
 //! * `INKFRAME_SCREENSHOT_FINDER=envel` opens Find a Command with that typed.
 //! * `INKFRAME_SCREENSHOT_PEN_HANDLES=1` shows a shape drawn with the Pen, one of its
 //!   corners turned into a curve by Alt-dragging handles out of it, picked (as ⌘-clicking it with the Pen would), with Properties › Point showing it.
+//! * `INKFRAME_SCREENSHOT_POINT_KEYS=1` does the same, then animates the picked point with
+//!   Animate Points on: keyed up and to the right on frame 13, shown there with onion skins.
 //! * `INKFRAME_SCREENSHOT_COLOUR=triangle` shows the Colour tab, its picker in that
 //!   style (`wheel`, `triangle`, `hsl` or `swatches`).
 //! * `INKFRAME_SCREENSHOT_ENVELOPE=1` shows a striped card distorted into perspective,
@@ -311,6 +313,9 @@ impl AutoScreenshot {
         if Self::pen_handles() {
             pen_handles_demo(editor);
         }
+        if var("INKFRAME_SCREENSHOT_POINT_KEYS").is_some() {
+            point_keys_demo(editor);
+        }
         if var("INKFRAME_SCREENSHOT_ENVELOPE").is_some() {
             envelope_demo(editor);
         }
@@ -357,6 +362,7 @@ impl AutoScreenshot {
     /// Whether to show the Pen picking a point it's pulled handles out of.
     pub fn pen_handles() -> bool {
         std::env::var("INKFRAME_SCREENSHOT_PEN_HANDLES").is_ok()
+            || std::env::var("INKFRAME_SCREENSHOT_POINT_KEYS").is_ok()
     }
 
     /// The text layer to start typing into, if any.
@@ -1236,6 +1242,22 @@ fn pen_handles_demo(editor: &mut Editor) {
     let layer = editor.doc.add_layer("Hill", vec![shape], 0, Transform::at(Point::new(960.0, 560.0)));
     editor.select(Some(layer));
     editor.tool = Tool::Pen;
+}
+
+/// The Pen's hill with its curved top point animated: keyed up and to the
+/// right on frame 13 (12 in the document), Animate Points on.
+fn point_keys_demo(editor: &mut Editor) {
+    let Some(id) = editor.selection else { return };
+    let Some(layer) = editor.doc.layer_mut(id) else { return };
+    let (mut anchors, _) = layer.drawings[0].elements[0].shape.to_anchors();
+    let up = inkframe_core::Point::new(60.0, -50.0);
+    let top = &mut anchors[1];
+    (top.point, top.handle_in, top.handle_out) = (top.point + up, top.handle_in + up, top.handle_out + up);
+    layer.key_points(12, 0, &anchors);
+    editor.animate_points = true;
+    editor.tool = Tool::Subselect;
+    editor.frame = 12;
+    editor.onion.enabled = true;
 }
 
 /// A character rigged with a skeleton and posed: a spine, a head, and an

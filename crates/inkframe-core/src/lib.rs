@@ -55,6 +55,7 @@ mod palette;
 mod parallel;
 mod particles;
 mod perspective;
+mod point_keys;
 mod preset;
 mod psd;
 mod retouch;
@@ -121,12 +122,13 @@ pub use lip_sync::{
     LipSyncError, MouthCue, MouthMap, MouthShape, cues_from_loudness, parse_papagayo, parse_rhubarb,
     parse_timing,
 };
-pub use morph::{ShapeTween, morph};
+pub use morph::{ShapeBlend, ShapeTween, morph, morph_with};
 pub use node_places::{NodePlace, NodeRef};
 pub use paint::{Canvas, CanvasId, TILE, premultiply, unpremultiply};
 pub use palette::{Palette, Swatch};
 pub use particles::{Emitter, EmitterShape, MAX_PARTICLES, Particle, Preset, Sprite};
 pub use perspective::{Perspective, PerspectiveKind};
+pub use point_keys::{PointOffset, PointTrack};
 pub use preset::{MotionPreset, PRESET_EXTENSION, PresetKey};
 pub use psd::{Psd, PsdError, PsdLayer};
 pub use retouch::{LiquifyMode, Retouch, RetouchStroke, ToneRange};

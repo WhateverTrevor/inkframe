@@ -236,7 +236,10 @@ impl Layer {
         // Part way through a shape tween, the morph; otherwise the drawing.
         let elements: Cow<'_, [Element]> = match self.morph_at(frame) {
             Some(morphed) => Cow::Owned(morphed),
-            None => self.drawings.get(self.drawing_index_at(frame)).map_or(Cow::Borrowed(&[]), |d| d.shown()),
+            None => self
+                .drawings
+                .get(self.drawing_index_at(frame))
+                .map_or(Cow::Borrowed(&[]), |d| d.shown_at(frame)),
         };
         let bent = match &self.deformer {
             Some(deformer) if !deformer.is_at_rest(frame) => Cow::Owned(deformer.deform(&elements, frame)),
@@ -257,6 +260,7 @@ impl Layer {
     /// warp) on `frame`, as F6 does.
     pub fn insert_key(&mut self, frame: u32) -> bool {
         let mut added = self.track.insert_key(frame);
+        added |= self.insert_point_key(frame);
         added |= self.deformer.as_mut().is_some_and(|d| d.insert_key(frame));
         added |= self.skeleton.as_mut().is_some_and(|s| s.insert_key(frame));
         added | self.warp.as_mut().is_some_and(|w| w.insert_key(frame))
@@ -264,6 +268,7 @@ impl Layer {
 
     pub fn remove_key(&mut self, frame: u32) -> bool {
         let mut removed = self.track.remove_key(frame);
+        removed |= self.remove_point_key(frame);
         removed |= self.deformer.as_mut().is_some_and(|d| d.remove_key(frame));
         removed |= self.skeleton.as_mut().is_some_and(|s| s.remove_key(frame));
         let switched = self.switch_keys.len();
@@ -287,6 +292,12 @@ impl Layer {
             }
             self.switch_keys.sort_by_key(|k| k.frame);
         }
+        let had_point_key = self.point_key_frames().any(|f| f == from);
+        if had_point_key {
+            self.point_channels_mut().for_each(|c| {
+                c.move_key(from, to);
+            });
+        }
         let moved = self.track.move_key(from, to);
         if let Some(skeleton) = &mut self.skeleton
             && had_bone_key
@@ -303,7 +314,7 @@ impl Layer {
         {
             warp.move_key(from, to);
         }
-        moved || had_deformer_key || had_warp_key || had_bone_key || had_switch_key
+        moved || had_deformer_key || had_warp_key || had_bone_key || had_switch_key || had_point_key
     }
 
     /// Moves everything about the layer in time by `by` frames: where it
@@ -329,6 +340,7 @@ impl Layer {
         if let Some(warp) = &mut self.warp {
             warp.offsets.iter_mut().for_each(|c| c.shift(by));
         }
+        self.point_channels_mut().for_each(|c| c.shift(by));
         if let Some(skeleton) = &mut self.skeleton {
             skeleton.channels_mut().for_each(|c| c.shift(by));
         }
@@ -337,10 +349,11 @@ impl Layer {
         }
     }
 
-    /// Every frame with a key: the transform's, the deformer's and the
-    /// warp's.
+    /// Every frame with a key: the transform's, the animated points', the
+    /// deformer's and the warp's.
     pub fn key_frames(&self) -> Vec<u32> {
         let mut frames = self.track.key_frames();
+        frames.extend(self.point_key_frames());
         frames.extend(self.deformer.iter().flat_map(|d| d.key_frames()));
         frames.extend(self.warp.iter().flat_map(|w| w.key_frames()));
         frames.extend(self.skeleton.iter().flat_map(|s| s.key_frames()));

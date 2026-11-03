@@ -23,6 +23,12 @@
 //! Shapes with nothing to pair with shrink away to (or grow from) their
 //! centre. Pictures, text and paint can't be morphed; they hold until the
 //! swap.
+//!
+//! That's the Linear blend, Animate's. A tween can instead use the Natural
+//! blend, which pairs shapes by likeness, matches outlines corner to
+//! corner, and bends sides rather than sliding points (see `natural.rs`).
+
+mod natural;
 
 use serde::{Deserialize, Serialize};
 
@@ -41,6 +47,27 @@ pub struct ShapeTween {
     pub end: u32,
     #[serde(default)]
     pub easing: Easing,
+    #[serde(default, skip_serializing_if = "ShapeBlend::is_linear")]
+    pub blend: ShapeBlend,
+}
+
+/// How a shape tween works out the shapes in between.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShapeBlend {
+    /// As Animate does: shapes pair in drawing order and points move in
+    /// straight lines.
+    #[default]
+    Linear,
+    /// Shapes pair by likeness, outlines match corner to corner, and sides
+    /// turn rather than slide (see `natural.rs`).
+    Natural,
+}
+
+impl ShapeBlend {
+    fn is_linear(&self) -> bool {
+        *self == ShapeBlend::Linear
+    }
 }
 
 impl Layer {
@@ -63,7 +90,7 @@ impl Layer {
         };
         self.shape_tweens.retain(|t| t.end != end);
         if on {
-            self.shape_tweens.push(ShapeTween { end, easing: Easing::Linear });
+            self.shape_tweens.push(ShapeTween { end, easing: Easing::Linear, blend: ShapeBlend::Linear });
             self.shape_tweens.sort_by_key(|t| t.end);
         }
         true
@@ -89,15 +116,19 @@ impl Layer {
         if end <= start + 1 {
             return 0;
         }
-        let easing = self.shape_tweens.iter().find(|t| t.end == end).map_or(Easing::Linear, |t| t.easing);
+        let tween = self.shape_tweens.iter().find(|t| t.end == end);
+        let easing = tween.map_or(Easing::Linear, |t| t.easing);
+        let blend = tween.map_or(ShapeBlend::Linear, |t| t.blend);
         let from = self.drawings[self.drawing_index_at(start)].clone();
         let to = self.drawings[self.drawing_index_at(end)].clone();
         let hints = (from.hints.as_slice(), to.hints.as_slice());
         for f in start + 1..end {
             let t = easing.apply((f - start) as f32 / (end - start) as f32);
-            let mut drawing =
-                Drawing::new(self.next_drawing_name(), morph(&from.elements, &to.elements, hints, t));
-            drawing.colour_art = morph(&from.colour_art, &to.colour_art, (&[], &[]), t);
+            let mut drawing = Drawing::new(
+                self.next_drawing_name(),
+                morph_with(&from.elements, &to.elements, hints, t, blend),
+            );
+            drawing.colour_art = morph_with(&from.colour_art, &to.colour_art, (&[], &[]), t, blend);
             let index = self.add_drawing(drawing);
             self.expose(f, index);
         }
@@ -115,34 +146,55 @@ impl Layer {
         let from = &self.drawings[self.drawing_index_at(start)];
         let to = &self.drawings[self.drawing_index_at(end)];
         let t = tween.easing.apply((frame - start) as f32 / (end - start) as f32);
-        Some(morph(&from.shown(), &to.shown(), (&from.hints, &to.hints), t))
+        // Each drawing as posed (see `point_keys.rs`): the one morphing from
+        // as it is now, the one morphing into as it'll be on arriving.
+        Some(morph_with(&from.shown_at(frame), &to.shown_at(end), (&from.hints, &to.hints), t, tween.blend))
     }
 }
 
-/// The shapes `t` of the way from `from` to `to`. `hints` are the two
-/// drawings' shape hints, paired by position in their lists.
+/// The shapes `t` of the way from `from` to `to`, blended linearly.
+/// `hints` are the two drawings' shape hints, paired by position in their
+/// lists.
 pub fn morph(from: &[Element], to: &[Element], hints: (&[Point], &[Point]), t: f32) -> Vec<Element> {
-    let pairs = hints.0.len().min(hints.1.len());
-    (0..from.len().max(to.len()))
-        .filter_map(|i| match (from.get(i), to.get(i)) {
-            (Some(a), Some(b)) => {
+    morph_with(from, to, hints, t, ShapeBlend::Linear)
+}
+
+/// Like [`morph`], blended as `blend` says.
+pub fn morph_with(
+    from: &[Element],
+    to: &[Element],
+    hints: (&[Point], &[Point]),
+    t: f32,
+    blend: ShapeBlend,
+) -> Vec<Element> {
+    let pairs: Vec<(Option<usize>, Option<usize>)> = match blend {
+        ShapeBlend::Linear => (0..from.len().max(to.len()))
+            .map(|i| ((i < from.len()).then_some(i), (i < to.len()).then_some(i)))
+            .collect(),
+        ShapeBlend::Natural => natural::pair_shapes(from, to, t),
+    };
+    let hinted = hints.0.len().min(hints.1.len());
+    pairs
+        .into_iter()
+        .filter_map(|pair| match pair {
+            (Some(i), Some(j)) => {
                 // The hints that belong to this pair: the ones nearest its
                 // outline on the first drawing.
-                let mine: Vec<(Point, Point)> = (0..pairs)
+                let mine: Vec<(Point, Point)> = (0..hinted)
                     .filter(|&h| nearest_element(from, hints.0[h]) == Some(i))
                     .map(|h| (hints.0[h], hints.1[h]))
                     .collect();
-                Some(morph_element(a, b, &mine, t))
+                Some(morph_element(&from[i], &to[j], &mine, t, blend))
             }
-            (Some(a), None) => vanish(a, t),
-            (None, Some(b)) => vanish(b, 1.0 - t),
+            (Some(i), None) => vanish(&from[i], t),
+            (None, Some(j)) => vanish(&to[j], 1.0 - t),
             (None, None) => None,
         })
         .collect()
 }
 
 /// One shape `t` of the way to another.
-fn morph_element(a: &Element, b: &Element, hints: &[(Point, Point)], t: f32) -> Element {
+fn morph_element(a: &Element, b: &Element, hints: &[(Point, Point)], t: f32, blend: ShapeBlend) -> Element {
     let (from, from_closed) = a.shape.to_anchors();
     let (to, to_closed) = b.shape.to_anchors();
     if from.len() < 2 || to.len() < 2 {
@@ -158,16 +210,31 @@ fn morph_element(a: &Element, b: &Element, hints: &[(Point, Point)], t: f32) -> 
         }
         anchors
     };
-    let (from, to) = correspond(open(from, from_closed), open(to, to_closed), closed, hints);
-    let mixed: Vec<Anchor> = from
-        .iter()
-        .zip(&to)
-        .map(|(p, q)| Anchor {
-            point: p.point.lerp(q.point, t),
-            handle_in: p.handle_in.lerp(q.handle_in, t),
-            handle_out: p.handle_out.lerp(q.handle_out, t),
-        })
-        .collect();
+    let (from, to) = (open(from, from_closed), open(to, to_closed));
+    let (from, to) = match blend {
+        // Hints placed by hand always decide; otherwise Natural places its
+        // own where the outlines' features match.
+        ShapeBlend::Natural if hints.is_empty() => {
+            let (found, reversed) = natural::feature_hints(&from, &to, closed);
+            let to = if reversed { reverse(&to) } else { to };
+            pin_hints(&from, &to, closed, &found).unwrap_or_else(|| correspond(from, to, closed, &[]))
+        }
+        _ => correspond(from, to, closed, hints),
+    };
+    let linear = || -> Vec<Anchor> {
+        from.iter()
+            .zip(&to)
+            .map(|(p, q)| Anchor {
+                point: p.point.lerp(q.point, t),
+                handle_in: p.handle_in.lerp(q.handle_in, t),
+                handle_out: p.handle_out.lerp(q.handle_out, t),
+            })
+            .collect()
+    };
+    let mixed = match blend {
+        ShapeBlend::Linear => linear(),
+        ShapeBlend::Natural => natural::blend_intrinsic(&from, &to, closed, t).unwrap_or_else(linear),
+    };
     let shape = path_from_anchors(&mixed, closed).map_or_else(|| a.shape.clone(), Shape::Path);
     Element { shape, style: blend_style(&a.style, &b.style, t) }
 }
@@ -366,11 +433,7 @@ fn best_match(a: &[Anchor], b: Vec<Anchor>, closed: bool) -> Vec<Anchor> {
     let cost = |candidate: &[Anchor]| -> f32 {
         a.iter().zip(candidate).map(|(p, q)| (p.point - ca).distance(q.point - cb).powi(2)).sum()
     };
-    let reversed: Vec<Anchor> = b
-        .iter()
-        .rev()
-        .map(|a| Anchor { point: a.point, handle_in: a.handle_out, handle_out: a.handle_in })
-        .collect();
+    let reversed = reverse(&b);
     let n = b.len();
     let shifts = if closed { n } else { 1 };
     let mut best = (f32::INFINITY, b.clone());
@@ -384,6 +447,15 @@ fn best_match(a: &[Anchor], b: Vec<Anchor>, closed: bool) -> Vec<Anchor> {
         }
     }
     best.1
+}
+
+/// The same outline, run the other way.
+fn reverse(anchors: &[Anchor]) -> Vec<Anchor> {
+    anchors
+        .iter()
+        .rev()
+        .map(|a| Anchor { point: a.point, handle_in: a.handle_out, handle_out: a.handle_in })
+        .collect()
 }
 
 fn centroid(anchors: &[Anchor]) -> Point {
@@ -470,7 +542,7 @@ fn lerp_color(a: Color, b: Color, t: f32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Drawing, Rect};
+    use crate::{Drawing, Rect, path_from_anchors};
 
     fn element(shape: Shape, fill: Color) -> Element {
         Element { shape, style: Style { fill: Some(fill), stroke: None, gradient: None } }
@@ -582,6 +654,149 @@ mod tests {
         // And it's what the layer shows.
         assert_eq!(layer.shown_elements(5).as_ref(), middle.as_slice());
         assert!(!layer.set_shape_tween(12, true), "nothing to morph into after the last swap");
+    }
+
+    /// A closed polygon through `points`, in `fill`.
+    fn polygon(points: &[Point], fill: Color) -> Element {
+        let anchors: Vec<Anchor> = points.iter().copied().map(Anchor::corner).collect();
+        element(Shape::Path(path_from_anchors(&anchors, true).unwrap()), fill)
+    }
+
+    /// A thin stick 100 long hanging from the origin, turned `angle` from
+    /// straight down.
+    fn stick(angle: f32) -> Element {
+        let (s, c) = angle.sin_cos();
+        let turn = |x: f32, y: f32| Point::new(x * c - y * s, x * s + y * c);
+        polygon(&[turn(-4.0, 0.0), turn(4.0, 0.0), turn(4.0, 100.0), turn(-4.0, 100.0)], Color::BLACK)
+    }
+
+    fn outline(element: &Element) -> Vec<Point> {
+        let Shape::Path(path) = &element.shape else { panic!("a path") };
+        path.flatten()
+    }
+
+    /// How far apart two closed outlines are at most: each point of one
+    /// from the nearest side of the other.
+    fn apart(a: &Element, b: &Element) -> f32 {
+        let (pa, pb) = (outline(a), outline(b));
+        let nearest = |p: &Point, other: &[Point]| {
+            (0..other.len())
+                .map(|i| p.distance_to_segment(other[i], other[(i + 1) % other.len()]))
+                .fold(f32::MAX, f32::min)
+        };
+        pa.iter().map(|p| nearest(p, &pb)).chain(pb.iter().map(|p| nearest(p, &pa))).fold(0.0, f32::max)
+    }
+
+    #[test]
+    fn natural_tweens_start_and_end_on_the_drawings() {
+        let cases = [
+            (square(100.0), circle(60.0)),
+            (stick(0.3), stick(-1.4)),
+            (
+                polygon(
+                    &[Point::new(0.0, -50.0), Point::new(40.0, 30.0), Point::new(-40.0, 30.0)],
+                    Color::BLACK,
+                ),
+                square(80.0),
+            ),
+        ];
+        for (from, to) in cases {
+            let (a, b) = (std::slice::from_ref(&from), std::slice::from_ref(&to));
+            let start = morph_with(a, b, (&[], &[]), 0.0, ShapeBlend::Natural);
+            let end = morph_with(a, b, (&[], &[]), 1.0, ShapeBlend::Natural);
+            let as_path = |e: &Element| {
+                let (anchors, closed) = e.shape.to_anchors();
+                element(Shape::Path(path_from_anchors(&anchors, closed).unwrap()), Color::BLACK)
+            };
+            assert!(apart(&start[0], &as_path(&from)) < 0.5, "starts on the first drawing");
+            assert!(apart(&end[0], &as_path(&to)) < 0.5, "ends on the second");
+        }
+    }
+
+    #[test]
+    fn a_turning_part_keeps_its_length_in_a_natural_tween() {
+        let (from, to) = ([stick(0.3)], [stick(-1.4)]);
+        // The farthest apart two points of it are: end corner to corner.
+        let length = |shapes: &[Element]| {
+            let points = outline(&shapes[0]);
+            points.iter().flat_map(|p| points.iter().map(move |q| p.distance(*q))).fold(0.0, f32::max)
+        };
+        let natural = morph_with(&from, &to, (&[], &[]), 0.5, ShapeBlend::Natural);
+        let linear = morph_with(&from, &to, (&[], &[]), 0.5, ShapeBlend::Linear);
+        // About 100 long (and 8 wide) all the way round...
+        assert!((length(&natural) - 100.3).abs() < 3.0, "{}", length(&natural));
+        // ...where moving its points in straight lines shrinks it.
+        assert!(length(&linear) < 80.0, "{}", length(&linear));
+    }
+
+    #[test]
+    fn natural_tweens_pair_shapes_by_likeness_not_order() {
+        let head = |x: f32| {
+            let (anchors, _) = Shape::Ellipse { radius_x: 15.0, radius_y: 15.0 }.to_anchors();
+            let moved: Vec<Anchor> = anchors
+                .iter()
+                .map(|a| {
+                    let by = Point::new(x, -60.0);
+                    Anchor { point: a.point + by, handle_in: a.handle_in + by, handle_out: a.handle_out + by }
+                })
+                .collect();
+            element(Shape::Path(path_from_anchors(&moved, true).unwrap()), Color::rgb(255, 160, 0))
+        };
+        let body = |x: f32| {
+            let corners = Rect::from_center_size(Point::new(x, 20.0), 60.0, 80.0).corners();
+            polygon(&corners, Color::rgb(0, 0, 255))
+        };
+        // The head's listed first in one drawing and last in the other.
+        let from = [head(0.0), body(0.0)];
+        let to = [body(10.0), head(10.0)];
+        let middle = morph_with(&from, &to, (&[], &[]), 0.5, ShapeBlend::Natural);
+        assert_eq!(middle.len(), 2);
+        let small = middle.iter().find(|e| e.bounds().width() < 40.0).expect("the head stays a head");
+        assert_eq!(small.style.fill, Some(Color::rgb(255, 160, 0)), "and stays orange");
+        // Linear, by contrast, turns the head into the body.
+        let linear = morph_with(&from, &to, (&[], &[]), 0.5, ShapeBlend::Linear);
+        assert!(linear.iter().all(|e| e.style.fill != Some(Color::rgb(255, 160, 0))));
+    }
+
+    #[test]
+    fn natural_tweens_let_unlike_shapes_shrink_away_rather_than_pair() {
+        // A small red dot far to one side and a big blue square: nothing
+        // alike, so the dot goes and the square grows in.
+        let dot = polygon(
+            &Rect::from_center_size(Point::new(-300.0, 0.0), 6.0, 6.0).corners(),
+            Color::rgb(255, 0, 0),
+        );
+        let big = polygon(
+            &Rect::from_center_size(Point::new(300.0, 0.0), 200.0, 200.0).corners(),
+            Color::rgb(0, 0, 255),
+        );
+        let middle = morph_with(&[dot], &[big], (&[], &[]), 0.5, ShapeBlend::Natural);
+        assert_eq!(middle.len(), 2, "one fading out, one in");
+    }
+
+    #[test]
+    fn hand_placed_hints_still_decide_a_natural_tween() {
+        let from = [square(100.0)];
+        let to = [square(100.0)];
+        let (top_left, top_right) = (Point::new(-50.0, -50.0), Point::new(50.0, -50.0));
+        let middle = morph_with(&from, &to, (&[top_left], &[top_right]), 0.5, ShapeBlend::Natural);
+        // Turned an eighth of the way round, the top left corner has moved
+        // up and right, rather than staying put as it would unhinted.
+        let path = outline(&middle[0]);
+        assert!(path.iter().all(|p| p.distance(top_left) > 5.0), "nothing left at the old corner");
+    }
+
+    #[test]
+    fn the_blend_is_saved_only_when_its_natural() {
+        let linear = ShapeTween { end: 10, easing: Easing::Linear, blend: ShapeBlend::Linear };
+        let natural = ShapeTween { blend: ShapeBlend::Natural, ..linear };
+        assert!(!serde_json::to_string(&linear).unwrap().contains("blend"));
+        let json = serde_json::to_string(&natural).unwrap();
+        assert!(json.contains(r#""blend":"natural""#));
+        assert_eq!(serde_json::from_str::<ShapeTween>(&json).unwrap(), natural);
+        // Tweens saved before there was a choice are Linear.
+        let old: ShapeTween = serde_json::from_str(r#"{"end":10}"#).unwrap();
+        assert_eq!(old.blend, ShapeBlend::Linear);
     }
 
     #[test]

@@ -82,12 +82,13 @@ impl StageView {
         self.make_key(target);
         let layer = editor.doc.layer(target.layer)?;
         let to_local = editor.doc.layer_matrix(layer, editor.frame).inverse()?;
-        let elements = layer.elements_at(editor.frame);
+        // Points are edited where they show: posed, if they're animated.
+        let elements = layer.posed_elements(editor.frame);
         let (start, closed) = elements.get(target.element)?.shape.to_anchors();
         let pull = (alt || convert) && part == AnchorPart::Point;
         // Moving a point takes the points welded to it along, unless ⌘ was
         // held to part it from them; it can snap onto any other point.
-        let welded = inkframe_core::welded_to(elements, target.element, target.index);
+        let welded = inkframe_core::welded_to(&elements, target.element, target.index);
         let welds = if part == AnchorPart::Point && !pull && !self.unweld {
             welded
                 .iter()
@@ -153,7 +154,7 @@ impl StageView {
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
 
         let mut best: Option<OutlineHit> = None;
-        for (element, e) in layer.elements_at(editor.frame).iter().enumerate() {
+        for (element, e) in layer.posed_elements(editor.frame).iter().enumerate() {
             let (anchors, closed) = e.shape.to_anchors();
             let Some(hit) = nearest_on_anchors(&anchors, closed, local) else { continue };
             // Measure on screen, so the target is the same size at any zoom
@@ -212,7 +213,7 @@ impl StageView {
 
         let mut handles = Vec::new();
         let mut points = Vec::new();
-        for (element, e) in layer.elements_at(editor.frame).iter().enumerate() {
+        for (element, e) in layer.posed_elements(editor.frame).iter().enumerate() {
             for (index, anchor) in e.shape.to_anchors().0.iter().enumerate() {
                 let target = AnchorRef { layer: layer.id, element, index };
                 points.push((target, AnchorPart::Point, screen(anchor.point)));
@@ -251,8 +252,8 @@ impl StageView {
         let to_stage = editor.doc.layer_matrix(layer, editor.frame);
         let screen = |p: Point| view.to_screen(to_stage.apply(p));
 
-        let elements = layer.elements_at(editor.frame);
-        let welded = inkframe_core::welded_points(elements);
+        let elements = layer.posed_elements(editor.frame);
+        let welded = inkframe_core::welded_points(&elements);
         for (element, e) in elements.iter().enumerate() {
             let (anchors, closed) = e.shape.to_anchors();
             if let Some(path) = path_from_anchors(&anchors, closed) {
@@ -307,20 +308,18 @@ pub(super) struct OutlineHit {
 /// Switches an anchor between corner and smooth. Rectangles and ovals
 /// become paths.
 pub(super) fn convert_point(editor: &mut Editor, target: AnchorRef) {
-    let Some(element) = editor.element_mut(target.layer, target.element) else {
+    let Some(element) = editor.posed_element(target.layer, target.element) else {
         return;
     };
     let (anchors, closed) = element.shape.to_anchors();
     let anchors = toggle_smooth(&anchors, target.index, closed);
-    if let Some(path) = path_from_anchors(&anchors, closed) {
-        element.shape = Shape::Path(path);
-    }
+    editor.reshape(target.layer, target.element, &anchors, closed);
 }
 
 /// Makes a curve's point a corner, its handles taken in: a click with the
 /// Convert Anchor Point tool. A corner already is one, and stays.
 pub(super) fn make_corner(editor: &mut Editor, target: AnchorRef) {
-    let Some(element) = editor.element_mut(target.layer, target.element) else {
+    let Some(element) = editor.posed_element(target.layer, target.element) else {
         return;
     };
     let (mut anchors, closed) = element.shape.to_anchors();
@@ -329,20 +328,25 @@ pub(super) fn make_corner(editor: &mut Editor, target: AnchorRef) {
         return;
     }
     *anchor = Anchor::corner(anchor.point);
-    if let Some(path) = path_from_anchors(&anchors, closed) {
-        element.shape = Shape::Path(path);
-    }
+    editor.reshape(target.layer, target.element, &anchors, closed);
 }
 
 /// Adds a point to a shape's outline. Rectangles and ovals become paths.
+///
+/// It goes into the shape as drawn, at the same place along the same side
+/// as it was clicked on the shape as posed, and animated points after it
+/// keep their animation.
 pub(super) fn insert_point(editor: &mut Editor, hit: OutlineHit) {
-    let Some(element) = editor.element_mut(hit.layer, hit.element) else {
-        return;
-    };
+    let frame = editor.frame;
+    let Some(layer) = editor.doc.layer_mut(hit.layer) else { return };
+    let index = layer.drawing_index_at(frame);
+    let Some(drawing) = layer.drawings.get_mut(index) else { return };
+    let Some(element) = drawing.elements.get_mut(hit.element) else { return };
     let (anchors, closed) = element.shape.to_anchors();
     let anchors = insert_anchor(&anchors, closed, hit.segment, hit.t);
     if let Some(path) = path_from_anchors(&anchors, closed) {
         element.shape = Shape::Path(path);
+        drawing.point_inserted(hit.element, hit.segment + 1);
     }
 }
 

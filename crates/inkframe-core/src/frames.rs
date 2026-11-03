@@ -26,6 +26,7 @@ impl Layer {
         if let Some(warp) = &mut self.warp {
             warp.offsets.iter_mut().for_each(|c| c.retime(map, fallback));
         }
+        self.point_channels_mut().for_each(|c| c.retime(map, fallback));
         if let Some(skeleton) = &mut self.skeleton {
             skeleton.channels_mut().for_each(|c| c.retime(map, fallback));
         }
@@ -131,6 +132,7 @@ impl Layer {
         if let Some(warp) = &mut self.warp {
             warp.offsets.iter_mut().for_each(|c| reverse_channel(c, first, last));
         }
+        self.point_channels_mut().for_each(|c| reverse_channel(c, first, last));
         if let Some(skeleton) = &mut self.skeleton {
             skeleton.channels_mut().for_each(|c| reverse_channel(c, first, last));
         }
