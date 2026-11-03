@@ -3,7 +3,11 @@
 What changed in each release of Inkframe. The newest is first. A release's
 notes on GitHub are its section here.
 
-## Unreleased
+## [0.11.0]
+
+Inkframe comes to Linux. Alongside the Mac and Windows installers there's
+now an AppImage for 64-bit Linux, with the same features, video export and
+lip sync included. Projects are unchanged from 0.10.0 (file format 41).
 
 ### Linux
 
@@ -12,6 +16,11 @@ notes on GitHub are its section here.
   without installing anything. Like the other installers it carries
   ffmpeg for video export and Rhubarb for lip sync, and Help › Check for
   Updates offers the next AppImage. `cargo xtask bundle-linux` builds it.
+
+### Fixes
+
+- Emoji in text are drawn in colour on Linux, where the system's own
+  bitmap emoji font had been chosen over Inkframe's vector one.
 
 ## [0.10.0]
 
