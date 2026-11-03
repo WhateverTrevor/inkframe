@@ -59,6 +59,8 @@ In a traditional studio, a lead animator draws the *key* drawings and an assista
 
 A *shape tween* does the same morph live, without making drawings, as Animate's shape tweens do. Give a layer a second drawing on a later frame, then choose **Timeline › Create Shape Tween** on any frame before the swap (or tick **Shape tween into the next drawing** in the Drawings section). The span turns green in the timeline, and the drawing morphs smoothly into the next: shapes change, colours blend, and shapes with no partner shrink away.
 
+Shape tweens blend **Linearly** to start with, as Animate's do: shapes pair up in the order they were drawn, and each point moves in a straight line. Set **Blend** to **Natural** in the Drawings section and Inkframe works out what goes where itself. It pairs shapes by likeness (place, size and colour), matches the outlines corner to corner, and bends them rather than sliding their points, so an arm that swings keeps its length instead of folding through its middle. Natural takes a little longer to work out, which only shows with dozens of shapes tweening at once.
+
 If a morph twists in an odd way, add *shape hints* with **Modify › Add Shape Hint** ([[⇧⌘H]]). Drag hint **a** to a point on the first drawing, then, on the swap's frame, to the matching point on the second; those points will meet.
 
 ![A square shape-tweening into a circle, with a shape hint (a) on its corner](shape-tween)

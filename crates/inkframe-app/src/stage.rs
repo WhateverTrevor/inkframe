@@ -491,19 +491,27 @@ impl StageView {
     pub fn delete_selected_anchor(&mut self, editor: &mut Editor) {
         let picked = self.picked_points();
         self.clear_picked();
+        let frame = editor.frame;
         for (element, mut indices) in by_element(&picked) {
-            let Some(layer) = picked.first().map(|t| t.layer) else { return };
-            let Some(element) = editor.element_mut(layer, element) else { continue };
-            let (mut anchors, closed) = element.shape.to_anchors();
+            let Some(layer) = picked.first().and_then(|t| editor.doc.layer_mut(t.layer)) else { return };
+            let drawing = layer.drawing_index_at(frame);
+            let Some(drawing) = layer.drawings.get_mut(drawing) else { return };
+            let Some(shape) = drawing.elements.get(element) else { continue };
+            let (mut anchors, closed) = shape.shape.to_anchors();
             // From the last, so the indices still to go stay put.
             indices.sort_unstable_by(|a, b| b.cmp(a));
+            let mut removed = Vec::new();
             for index in indices {
                 if let Some(fewer) = remove_anchor(&anchors, index, closed) {
                     anchors = fewer;
+                    removed.push(index);
                 }
             }
             if let Some(path) = path_from_anchors(&anchors, closed) {
-                element.shape = Shape::Path(path);
+                drawing.elements[element].shape = Shape::Path(path);
+                // Animated points go with their point, and those after
+                // move up a place.
+                removed.into_iter().for_each(|index| drawing.point_removed(element, index));
             }
         }
     }
@@ -1000,12 +1008,7 @@ impl StageView {
                                 (a.point, a.handle_in, a.handle_out) =
                                     (a.point + delta, a.handle_in + delta, a.handle_out + delta);
                             }
-                            if let (Some(shape), Some(path)) = (
-                                editor.element_mut(target.layer, *element),
-                                path_from_anchors(&moved, *closed),
-                            ) {
-                                shape.shape = Shape::Path(path);
-                            }
+                            editor.reshape(target.layer, *element, &moved, *closed);
                         }
                         break 'edit;
                     }
@@ -1033,12 +1036,7 @@ impl StageView {
                                 anchors[*index].point + delta,
                                 false,
                             );
-                            if let (Some(shape), Some(path)) = (
-                                editor.element_mut(target.layer, *element),
-                                path_from_anchors(&moved, *closed),
-                            ) {
-                                shape.shape = Shape::Path(path);
-                            }
+                            editor.reshape(target.layer, *element, &moved, *closed);
                         }
                     }
                     let anchors = if *pull {
@@ -1051,12 +1049,9 @@ impl StageView {
                     } else {
                         anchors
                     };
-                    let element = editor.element_mut(target.layer, target.element);
-                    if let (Some(element), Some(path)) = (element, path_from_anchors(&anchors, *closed)) {
-                        // Rectangles and ovals become paths here, on the first
-                        // real edit, rather than as soon as they're clicked.
-                        element.shape = Shape::Path(path);
-                    }
+                    // Rectangles and ovals become paths here, on the first real
+                    // edit, rather than as soon as they're clicked.
+                    editor.reshape(target.layer, target.element, &anchors, *closed);
                 }
                 Some(Gesture::DrawShape { start, current, .. }) => {
                     let p = snap_to_guides(editor, view, p);

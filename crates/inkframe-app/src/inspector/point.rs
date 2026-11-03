@@ -7,7 +7,7 @@
 //! and its handles are seen, whatever the layer's own move, turn or scale.
 
 use egui::DragValue;
-use inkframe_core::{Anchor, LayerId, Shape, path_from_anchors};
+use inkframe_core::{Anchor, LayerId};
 
 use super::sections::section;
 use crate::editor::Editor;
@@ -22,7 +22,8 @@ pub(super) fn point_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId)
     let Some(layer) = editor.doc.layer(id) else { return };
     let to_stage = editor.doc.layer_matrix(layer, editor.frame);
     let Some(to_local) = to_stage.inverse() else { return };
-    let Some((anchors, closed)) = editor.element(id, element).map(|e| e.shape.to_anchors()) else {
+    // The point as it shows on this frame, posed if it's animated.
+    let Some((anchors, closed)) = editor.posed_element(id, element).map(|e| e.shape.to_anchors()) else {
         return;
     };
     let Some(&anchor) = anchors.get(index) else { return };
@@ -121,12 +122,10 @@ pub(super) fn point_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId)
     // point's own shape is done below).
     if let Some(kind) = new_kind {
         for &(other, other_index) in others.iter().filter(|(e, _)| *e != element) {
-            if let Some(shape) = editor.element_mut(id, other) {
+            if let Some(shape) = editor.posed_element(id, other) {
                 let (anchors, closed) = shape.shape.to_anchors();
                 let changed = set_point_kind(&anchors, other_index, closed, kind);
-                if let Some(path) = path_from_anchors(&changed, closed) {
-                    shape.shape = Shape::Path(path);
-                }
+                editor.reshape(id, other, &changed, closed);
             }
         }
     }
@@ -148,12 +147,32 @@ pub(super) fn point_section(ui: &mut egui::Ui, editor: &mut Editor, id: LayerId)
     } else {
         None
     };
-    if let Some(anchors) = local
-        && let Some(path) = path_from_anchors(&anchors, closed)
-        && let Some(element) = editor.element_mut(id, element)
-    {
+    if let Some(anchors) = local {
         // Rectangles and ovals become paths, as on their first point dragged.
-        element.shape = Shape::Path(path);
+        editor.reshape(id, element, &anchors, closed);
+    }
+
+    // Its animation, if it's keyed (see Animate Points in the tool's bar).
+    let frame = editor.frame;
+    let drawing = editor.doc.layer_mut(id).and_then(|layer| {
+        let index = layer.drawing_index_at(frame);
+        layer.drawings.get_mut(index)
+    });
+    if let Some(drawing) = drawing {
+        let keys = drawing.point_key_frames(element, index);
+        if !keys.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                let frames = keys.iter().map(|f| (f + 1).to_string()).collect::<Vec<_>>().join(", ");
+                ui.weak(tr_args("Animated, keyed on frames {frames}", &[("frames", &frames)]));
+                if ui
+                    .button(tr("Remove Animation"))
+                    .on_hover_text(tr("The point stays where it's drawn on every frame"))
+                    .clicked()
+                {
+                    drawing.clear_point_keys(element, index);
+                }
+            });
+        }
     }
     ui.add_space(8.0);
 }

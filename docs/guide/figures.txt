@@ -18,6 +18,7 @@ examples         | -                           | EXAMPLES=1
 # Chapter 2: Drawing with vectors
 new-layer        | examples/bouncing-ball.inkf | SELECT=Ball NEW_LAYER=1
 pen-handles      | -                           | PEN_HANDLES=1
+point-keys       | -                           | POINT_KEYS=1
 pressure-lines   | -                           | LINES=1
 styles           | -                           | STYLES=1
 combine          | -                           | COMBINE=1

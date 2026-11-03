@@ -141,6 +141,12 @@ fn actions(ui: &mut egui::Ui, editor: &mut Editor, command: &mut Option<Command>
         return;
     }
     let has_layer = editor.selection.is_some();
+    // The tools that move a shape's points: whether that animates them.
+    if has_layer && (editor.tool == Tool::Subselect || editor.tool.edits_points()) {
+        ui.toggle_value(&mut editor.animate_points, tr("Animate Points")).on_hover_text(tr(
+            "On, moving a point keys it on this frame, so points animate one by one. Off, it redraws the shape for every frame",
+        ));
+    }
     match editor.tool {
         Tool::Select | Tool::Subselect | Tool::Width => {
             if editor.inside_layer().is_some() {

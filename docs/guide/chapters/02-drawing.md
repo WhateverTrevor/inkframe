@@ -123,6 +123,14 @@ The **Width** tool ([[⇧A]], sharing a slot with Subselection) shapes Pencil li
 
 ![Pencil lines shaped with the Width tool](pressure-lines){crop=0.44,0.34,0.3,0.26}
 
+### Animating points one by one
+
+Usually, moving a point redraws the shape on every frame. Turn on **Animate Points** in the context bar (with the Subselection tool, the Pen or any of the point tools) and moving a point instead *keys* it on the current frame, as Moho and After Effects' path keyframes do. Pull an eyebrow up on frame 12 and it rises from frame 1 to 12, while the rest of the face holds. Each point gets its own keys and easing, and they show in the layer's row of the timeline with its other keys, where they can be dragged, copied and deleted.
+
+The drawing itself is untouched: the points move *from* where they're drawn. Turn Animate Points off and redraw the shape, and its points' animation carries on on top of the new drawing. With an animated point picked, Properties › Point says which frames it's keyed on, and **Remove Animation** puts it back where it's drawn.
+
+![The hill's top point keyed up and to the right on frame 13, with Animate Points on](point-keys){crop=0.0,0.0,1.0,0.75}
+
 ### Welded points
 
 Where shapes in a layer meet at a point, such as a roof on a wall or a sleeve on an arm, the point is *welded*: shared between them, and marked with a dot by the Subselection tool and the Pen. Dragging a welded point moves every shape's copy of it, so they stay joined. Drag a point onto another shape's point to weld them; [[⌘]]-drag a point to pull it away on its own.

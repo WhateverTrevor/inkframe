@@ -3,7 +3,7 @@
 //! the shape tween's controls.
 
 use egui::{Color32, DragValue, Sense, Stroke as EguiStroke, vec2};
-use inkframe_core::{Easing, LayerId, Property, Tween};
+use inkframe_core::{Easing, LayerId, Property, ShapeBlend, Tween};
 
 use super::mask_section;
 use super::sections::section;
@@ -163,6 +163,21 @@ pub(super) fn shape_tween_controls(ui: &mut egui::Ui, editor: &mut Editor) {
                 }
             },
         );
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("Blend"));
+        let label = |blend: ShapeBlend| match blend {
+            ShapeBlend::Linear => tr("Linear"),
+            ShapeBlend::Natural => tr("Natural"),
+        };
+        egui::ComboBox::from_id_salt("shape_tween_blend").selected_text(label(tween.blend)).show_ui(ui, |ui| {
+            ui.selectable_value(&mut tween.blend, ShapeBlend::Linear, label(ShapeBlend::Linear)).on_hover_text(tr(
+                "As Animate does: shapes pair up in the order they were drawn, and points move in straight lines",
+            ));
+            ui.selectable_value(&mut tween.blend, ShapeBlend::Natural, label(ShapeBlend::Natural)).on_hover_text(
+                tr("Shapes pair up by likeness, corners meet corners, and parts that turn keep their length"),
+            );
+        });
     });
     let hints = editor
         .shape_tween_drawings()

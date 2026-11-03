@@ -18,7 +18,7 @@ and how the work is done.
   --all-targets -- -D warnings` and `cargo test --workspace` (943 tests)
   pass, on macOS locally and on macOS, Windows and Linux (Ubuntu 22.04)
   in CI.
-- **File format:** version 41. Older files load and upgrade automatically
+- **File format:** version 42. Older files load and upgrade automatically
   (`crates/inkframe-core/tests/format_migration.rs`).
 - **Releases:** v0.2.0 to v0.10.0 are tagged. CI drafts each GitHub
   release with the .dmg, setup.exe and (from 0.11.0) the Linux AppImage; the guidebook PDF and install

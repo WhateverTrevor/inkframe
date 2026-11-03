@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 
 use inkframe_core::FontFileId;
 use inkframe_core::{
-    Affine, BrushSettings, BucketSettings, CanvasId, Color, Document, DocumentError, Drawing, Element,
-    GradientShape, History, Layer, LayerId, Point, Property, Rect, Selection, Shape, Stroke, Style, SymbolId,
-    Text, TimelineId, ToneRange, Transform,
+    Affine, Anchor, BrushSettings, BucketSettings, CanvasId, Color, Document, DocumentError, Drawing,
+    Element, GradientShape, History, Layer, LayerId, Point, Property, Rect, Selection, Shape, Stroke, Style,
+    SymbolId, Text, TimelineId, ToneRange, Transform,
 };
 use inkframe_core::{Asset, Clipboard, CopiedKeyframe, ImageId};
 use inkframe_render::ImageLibrary;
@@ -511,6 +511,10 @@ pub struct Editor {
     pub editing_mask: bool,
     /// What the Eraser takes on a drawn layer (see `erase.rs` in the core).
     pub erase_mode: inkframe_core::EraseMode,
+    /// Moving a shape's points keys them on the current frame, animating
+    /// them one by one (see `point_keys.rs` in the core), rather than
+    /// redrawing the shape for every frame.
+    pub animate_points: bool,
     /// The Magic Wand's tolerance and whether it selects only connected
     /// pixels.
     pub wand_tolerance: u8,
@@ -586,6 +590,7 @@ impl Editor {
             smoothing: DEFAULT_SMOOTHING,
             pressure_feel: 0.0,
             editing_mask: false,
+            animate_points: false,
             erase_mode: inkframe_core::EraseMode::Normal,
             second_color: Color::WHITE,
             strokes_painted: 0,
@@ -821,6 +826,30 @@ impl Editor {
     pub fn element_mut(&mut self, layer: LayerId, index: usize) -> Option<&mut Element> {
         let frame = self.frame;
         self.doc.layer_mut(layer)?.elements_at_mut(frame).get_mut(index)
+    }
+
+    /// Shape `index` as it's posed on the current frame, its animated
+    /// points where they've been moved to: what editing points works on.
+    pub fn posed_element(&self, layer: LayerId, index: usize) -> Option<Element> {
+        self.doc.layer(layer)?.posed_elements(self.frame).get(index).cloned()
+    }
+
+    /// Gives shape `index` the outline `anchors` on the current frame, as
+    /// it's posed. With Animate Points on, the points that moved are keyed
+    /// here; otherwise the shape is redrawn, its points' animation kept on
+    /// top. Rectangles and ovals become paths either way. An outline with a
+    /// point more or fewer can't be keyed point for point, so that's
+    /// redrawn too.
+    pub fn reshape(&mut self, layer: LayerId, index: usize, anchors: &[Anchor], closed: bool) {
+        let (frame, animate) = (self.frame, self.animate_points);
+        let Some(layer) = self.doc.layer_mut(layer) else { return };
+        if animate && layer.key_points(frame, index, anchors) {
+            return;
+        }
+        let drawing = layer.drawing_index_at(frame);
+        if let Some(drawing) = layer.drawings.get_mut(drawing) {
+            drawing.redraw_posed(frame, index, anchors, closed);
+        }
     }
 
     /// Brings every text shape's stored size up to date with its layout

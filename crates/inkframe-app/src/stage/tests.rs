@@ -1432,6 +1432,59 @@ fn dragging_a_rect_corner_turns_it_into_a_path() {
     assert_eq!(anchors[0].point, Point::new(-100.0, -100.0));
 }
 
+/// The box's points as they show on `frame`, posed.
+fn posed_points(harness: &Harness<'_, State>, id: LayerId, frame: u32) -> Vec<Point> {
+    let layer = harness.state().1.doc.layer(id).unwrap();
+    layer.posed_elements(frame)[0].shape.to_anchors().0.iter().map(|a| a.point).collect()
+}
+
+#[test]
+fn with_animate_points_on_dragging_a_point_keys_it() {
+    let (mut editor, id) = editor_with_selected_box();
+    editor.tool = Tool::Subselect;
+    editor.animate_points = true;
+    editor.frame = 10;
+    let mut h = harness(editor);
+    let corner = screen(&h, 500.0, 500.0);
+    let target = screen(&h, 560.0, 530.0);
+    drag(&mut h, corner, &[corner + vec2(5.0, 5.0), target]);
+
+    // Keyed on frame 10, and as drawn on the first frame.
+    assert!(posed_points(&h, id, 10)[2].distance(Point::new(160.0, 130.0)) < 3.0);
+    assert_eq!(posed_points(&h, id, 0)[2], Point::new(100.0, 100.0));
+    assert!(matches!(shape(&h, id), Shape::Rect { .. }), "the drawing itself isn't changed");
+    assert_eq!(h.state().1.doc.layer(id).unwrap().key_frames(), [0, 10]);
+
+    // On frame 10 the point is grabbed where it shows, and keyed again.
+    let posed = screen(&h, 560.0, 530.0);
+    let further = screen(&h, 580.0, 530.0);
+    drag(&mut h, posed, &[posed + vec2(5.0, 0.0), further]);
+    assert!(posed_points(&h, id, 10)[2].distance(Point::new(180.0, 130.0)) < 3.0);
+    assert_eq!(posed_points(&h, id, 0)[2], Point::new(100.0, 100.0));
+}
+
+#[test]
+fn with_animate_points_off_dragging_an_animated_point_redraws_it() {
+    let (mut editor, id) = editor_with_selected_box();
+    editor.tool = Tool::Subselect;
+    editor.frame = 10;
+    // The corner keyed 60 to the right on frame 10.
+    let (mut anchors, _) = editor.doc.layer(id).unwrap().drawings[0].elements[0].shape.to_anchors();
+    anchors[2].point = anchors[2].point + Point::new(60.0, 0.0);
+    (anchors[2].handle_in, anchors[2].handle_out) = (anchors[2].point, anchors[2].point);
+    editor.doc.layer_mut(id).unwrap().key_points(10, 0, &anchors);
+    let mut h = harness(editor);
+
+    // Dragged down 30 where it shows on frame 10...
+    let posed = screen(&h, 560.0, 500.0);
+    let target = screen(&h, 560.0, 530.0);
+    drag(&mut h, posed, &[posed + vec2(0.0, 5.0), target]);
+    // ...it's there on frame 10, and 30 lower on frame 0 too: the drawing
+    // changed, and the animation carried on on top of it.
+    assert!(posed_points(&h, id, 10)[2].distance(Point::new(160.0, 130.0)) < 3.0);
+    assert!(posed_points(&h, id, 0)[2].distance(Point::new(100.0, 130.0)) < 3.0);
+}
+
 #[test]
 fn dragging_a_handle_reshapes_the_curve_smoothly() {
     let (mut editor, id) = editor_with_selected_box();

@@ -40,16 +40,26 @@ pub struct Drawing {
     /// over the layer rather than the bones near them (see `skeleton.rs`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bone_points: Vec<crate::BonePoints>,
+    /// The line art's points that are animated, one by one (see
+    /// `point_keys.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub point_tracks: Vec<crate::PointTrack>,
 }
 
 impl Drawing {
-    /// Keeps the shapes bound to bones (see `skeleton.rs`) pointing at the
-    /// same shapes after shape `index` of the line art (or colour art) is
-    /// taken out: its bindings go, and those of the shapes after it move up.
+    /// Keeps the shapes bound to bones (see `skeleton.rs`) and the animated
+    /// points (see `point_keys.rs`) pointing at the same shapes after shape
+    /// `index` of the line art (or colour art) is taken out: its bindings
+    /// and animation go, and those of the shapes after it move up.
     pub fn shape_removed(&mut self, colour_art: bool, index: usize) {
         self.bone_points.retain(|b| b.colour_art != colour_art || b.element != index);
         for bound in self.bone_points.iter_mut().filter(|b| b.colour_art == colour_art && b.element > index) {
             bound.element -= 1;
+        }
+        // Only line art's points are animated.
+        if !colour_art {
+            self.point_tracks.retain(|t| t.element != index);
+            self.point_tracks.iter_mut().filter(|t| t.element > index).for_each(|t| t.element -= 1);
         }
     }
 
@@ -58,6 +68,9 @@ impl Drawing {
         for bound in self.bone_points.iter_mut().filter(|b| b.colour_art == colour_art && b.element >= index)
         {
             bound.element += count;
+        }
+        if !colour_art {
+            self.point_tracks.iter_mut().filter(|t| t.element >= index).for_each(|t| t.element += count);
         }
     }
 
@@ -78,6 +91,7 @@ impl Drawing {
             colour_art: Vec::new(),
             hints: Vec::new(),
             bone_points: Vec::new(),
+            point_tracks: Vec::new(),
         }
     }
 }
