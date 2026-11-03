@@ -217,6 +217,40 @@ impl Lattice {
     }
 }
 
+impl Lattice {
+    /// The shape bent by the lattice without adding points to it, for a
+    /// shape whose points are animated one by one (see `point_keys.rs`),
+    /// whose keys belong to its points as they are. Its straight sides get
+    /// handles first, a third of the way along, so they can still curve;
+    /// a long side bends a little less smoothly than [`Lattice::bend`]
+    /// bends it. `None` for what can't be bent.
+    pub fn bend_keeping_points(&self, element: &Element) -> Option<Element> {
+        if !element.is_reshapable() || self.points.len() != self.at_rest().points.len() {
+            return None;
+        }
+        let (mut anchors, closed) = element.shape.to_anchors();
+        let n = anchors.len();
+        let sides = if closed { n } else { n.saturating_sub(1) };
+        for i in 0..sides {
+            let j = (i + 1) % n;
+            let (p, q) = (anchors[i].point, anchors[j].point);
+            if anchors[i].handle_out == p && anchors[j].handle_in == q {
+                anchors[i].handle_out = p.lerp(q, 1.0 / 3.0);
+                anchors[j].handle_in = q.lerp(p, 1.0 / 3.0);
+            }
+        }
+        let bent: Vec<Anchor> = anchors
+            .iter()
+            .map(|a| Anchor {
+                point: self.map(a.point),
+                handle_in: self.map(a.handle_in),
+                handle_out: self.map(a.handle_out),
+            })
+            .collect();
+        Some(Element { shape: Shape::Path(path_from_anchors(&bent, closed)?), style: element.style.clone() })
+    }
+}
+
 fn cubic(a: Point, b: Point, c: Point, d: Point, t: f32) -> Point {
     let s = 1.0 - t;
     a * (s * s * s) + b * (3.0 * s * s * t) + c * (3.0 * s * t * t) + d * (t * t * t)

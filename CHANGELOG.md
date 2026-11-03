@@ -14,7 +14,8 @@ notes on GitHub are its section here.
   own keys and easing, in the layer's timeline row with its other keys.
   Points animate from where they're drawn, so redrawing a shape keeps its
   animation; Properties › Point shows a picked point's keys and can
-  remove them.
+  remove them. Distort, Envelope, and moving shapes inside a layer work
+  on the points where they've been animated to, keeping the animation.
 - Shape tweens can blend **Naturally** (Blend in the Drawings section):
   shapes pair by likeness rather than drawing order, outlines match corner
   to corner, and parts that turn keep their length instead of folding
